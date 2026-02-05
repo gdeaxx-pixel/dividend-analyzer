@@ -125,18 +125,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         st.subheader("📈 Evolución de Patrimonio")
                         st.line_chart(stats['daily_trend'])
                     
-                    # --- Debug / Detail View ---
-                    with st.expander("🔍 Ver Detalles de Dividendos (Auditoría)"):
-                        # Filter rows identified as DRIP
-                        drip_rows = stats['history'][
-                            stats['history']['Action'].str.contains('reinvest|reinversión|drip', 
-                                                                  case=False, na=False)
-                        ].copy()
-                        
-                        st.markdown(f"**Filas identificadas como DRIP:** {len(drip_rows)}")
-                        st.dataframe(drip_rows[['Date', 'Action', 'Amount', 'Quantity']])
-                        st.caption("Si ves filas duplicadas o incorrectas aquí, por favor repórtalo.")
-                    
+
                     st.divider()
 
     except Exception as e:
