@@ -105,11 +105,19 @@ def analyze_portfolio(df):
             elif is_drip:
                 # DRIP is not 'out of pocket', it's internal compounding
                 # Some brokers record DRIP as Dividend (Credit) + Reinvest (Debit).
-                # If this row is just the share add:
+                # Example: Recibes $100 (Credit), then buys shares for -$100 (Debit).
+                # We want to count the Value ($100) only ONCE.
+                
+                # Logic: 
+                # 1. Shares: Always accumulate shares (usually from the Debit row where Qty > 0).
+                # 2. Value: Only sum POSITIVE amounts (the Credit "Dividend Reinvest") or filter by description.
+                # Based on user screenshot: 'Reinvest Dividend' is positive, 'Reinvest Shares' is negative.
+                
                 shares_owned += abs(qty)
-                # DRIP value is usually in Amount (negative in some exports, positive in others)
-                dividends_collected_drip += abs(amount)
-                # Note: We do NOT add to pocket_investment because money came from dividend.
+                
+                if amount > 0:
+                    dividends_collected_drip += amount
+                # If negative (the share purchase), we ignore the value to avoid double counting.
                 
             elif is_div_payout:
                 # Cash dividend NOT reinvested
