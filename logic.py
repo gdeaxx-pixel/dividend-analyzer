@@ -83,6 +83,7 @@ def analyze_portfolio(df):
         pocket_investment = 0.0 # Net cash flow from user's pocket
         shares_owned = 0.0
         dividends_collected_cash = 0.0
+        dividends_collected_drip = 0.0 # Value of dividends reinvested
         
         # Iterate through transactions to build history
         for idx, row in ticker_df.iterrows():
@@ -106,6 +107,8 @@ def analyze_portfolio(df):
                 # Some brokers record DRIP as Dividend (Credit) + Reinvest (Debit).
                 # If this row is just the share add:
                 shares_owned += abs(qty)
+                # DRIP value is usually in Amount (negative in some exports, positive in others)
+                dividends_collected_drip += abs(amount)
                 # Note: We do NOT add to pocket_investment because money came from dividend.
                 
             elif is_div_payout:
@@ -130,9 +133,15 @@ def analyze_portfolio(df):
         
         # Total Return Formula from Skill:
         # Total Return = (Valor Mercado Actual + Cash Cobrado) - Inversión Bolsillo
+        # NOTE: Total Return includes the current VALUE of the DRIP shares (in market_value) PLUS the Cash collected.
+        # It does NOT include the historical `dividends_collected_drip` value directly, as that money is now inside `market_value`.
+        
         gross_value = market_value + dividends_collected_cash
         net_profit = gross_value - pocket_investment
         roi = (net_profit / pocket_investment * 100) if pocket_investment != 0 else 0
+        
+        # Total Dividends (Informational)
+        total_dividends = dividends_collected_cash + dividends_collected_drip
         
         # --- Calculate Daily History (For Chart) ---
         # 1. Resample transactions to daily to handle multiple trades per day
@@ -167,6 +176,8 @@ def analyze_portfolio(df):
             "pocket_investment": pocket_investment,
             "market_value": market_value,
             "dividends_collected_cash": dividends_collected_cash,
+            "dividends_collected_drip": dividends_collected_drip,
+            "total_dividends": total_dividends,
             "net_profit": net_profit,
             "roi_percent": roi,
             "history": ticker_df,

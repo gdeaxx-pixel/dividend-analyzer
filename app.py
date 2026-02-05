@@ -61,7 +61,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         "Indicador": [
                             "💰 Inversión Neta (Tu Bolsillo)",
                             "📉 Valor de Mercado Actual",
-                            "💵 Dividendos Cobrados (Cash)",
+                            "💵 Dividendos (Cash)",
+                            "🔄 Dividendos (DRIP)",
+                            "💰 Dividendos Totales (Suma)",
                             "🟢 Ganancia Neta Total",
                             "🚀 ROI (Retorno Total)",
                             "📊 Acciones Totales (Inc. DRIP)"
@@ -70,6 +72,8 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             f"${stats['pocket_investment']:,.2f}",
                             f"${stats['market_value']:,.2f}",
                             f"${stats['dividends_collected_cash']:,.2f}",
+                            f"${stats['dividends_collected_drip']:,.2f}",
+                            f"${stats['total_dividends']:,.2f}",
                             f"${stats['net_profit']:,.2f}",
                             f"{stats['roi_percent']:.2f}%",
                             f"{stats['shares_owned']:.4f}"
