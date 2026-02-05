@@ -63,7 +63,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             "📉 Valor de Mercado Actual",
                             "💵 Dividendos (Cash)",
                             "🔄 Dividendos (DRIP)",
-                            "💰 Dividendos Totales (Suma)",
+                            "💰 Total Generado (Cash + Valor DRIP)",
                             "🟢 Ganancia Neta Total",
                             "🚀 ROI (Retorno Total)",
                             "📊 Acciones Totales (Inc. DRIP)"
