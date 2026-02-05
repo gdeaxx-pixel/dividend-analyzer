@@ -76,6 +76,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         ]
                     }
                     
+                    results_df = pd.DataFrame(results_data)
                     st.table(results_df)
                     
                     # --- New Chart: Evolution of Capital ---
