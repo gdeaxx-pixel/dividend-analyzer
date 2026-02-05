@@ -108,16 +108,18 @@ def analyze_portfolio(df):
                 # Example: Recibes $100 (Credit), then buys shares for -$100 (Debit).
                 # We want to count the Value ($100) only ONCE.
                 
-                # Logic: 
-                # 1. Shares: Always accumulate shares (usually from the Debit row where Qty > 0).
-                # 2. Value: Only sum POSITIVE amounts (the Credit "Dividend Reinvest") or filter by description.
-                # Based on user screenshot: 'Reinvest Dividend' is positive, 'Reinvest Shares' is negative.
+                # Logic Revision (Step 3):
+                # User data shows TDA format: "Reinvest Shares" with NEGATIVE amount. 
+                # User data also showed "Reinvest Dividend" (Positive) + "Reinvest Shares" (Negative).
+                # To capture BOTH correctly without double counting:
+                # We count the "Purchase" (Negative Amount) as the realization of the DRIP.
+                # We ignore the "Credit" (Positive Amount) if it falls under 'Reinvest' to avoid double count.
                 
                 shares_owned += abs(qty)
                 
-                if amount > 0:
-                    dividends_collected_drip += amount
-                # If negative (the share purchase), we ignore the value to avoid double counting.
+                if amount < 0:
+                     dividends_collected_drip += abs(amount)
+                # If positive (the funding credit), we ignore it here.
                 
             elif is_div_payout:
                 # Cash dividend NOT reinvested
