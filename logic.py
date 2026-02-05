@@ -103,23 +103,32 @@ def analyze_portfolio(df):
                 shares_owned += abs(qty)
             
             elif is_drip:
-                # DRIP is not 'out of pocket', it's internal compounding
-                # Some brokers record DRIP as Dividend (Credit) + Reinvest (Debit).
-                # Example: Recibes $100 (Credit), then buys shares for -$100 (Debit).
-                # We want to count the Value ($100) only ONCE.
+                # Semantic Analysis of Description (User Request)
+                # instead of just looking at positive/negative, we look at the intent in the text.
                 
-                # Logic Revision (Step 3):
-                # User data shows TDA format: "Reinvest Shares" with NEGATIVE amount. 
-                # User data also showed "Reinvest Dividend" (Positive) + "Reinvest Shares" (Negative).
-                # To capture BOTH correctly without double counting:
-                # We count the "Purchase" (Negative Amount) as the realization of the DRIP.
-                # We ignore the "Credit" (Positive Amount) if it falls under 'Reinvest' to avoid double count.
+                # Pattern 1: "Reinvest Shares" / "Comprar Acciones"
+                # This explicitly describes the act of using money to buy shares.
+                # This is the "Realization" of the DRIP. We count this value.
+                if 'share' in action or 'acciones' in action:
+                    shares_owned += abs(qty)
+                    dividends_collected_drip += abs(amount)
+                    
+                # Pattern 2: "Reinvest Dividend" / "Dividendo Reinversión"
+                # This describes the source of funds (the dividend payout).
+                # To avoid double counting (since we counted the share purchase above), we ignore this value.
+                elif 'dividend' in action or 'dividendo' in action:
+                    # We might still want to capture shares if for some reason they are only reported here
+                    # But usually 'Dividend' rows are cash flow, not share movement, or they duplicate the share movement.
+                    # Safe bet: If Amount is positive, it's the funding. Ignore value.
+                    pass
                 
-                shares_owned += abs(qty)
-                
-                if amount < 0:
-                     dividends_collected_drip += abs(amount)
-                # If positive (the funding credit), we ignore it here.
+                # Pattern 3: Ambiguous / Fallback (e.g. just "DRIP" or "Reinv")
+                # Use the sign heuristic:
+                # Negative amount = Purchase = Count Value
+                else: 
+                     shares_owned += abs(qty)
+                     if amount < 0:
+                        dividends_collected_drip += abs(amount)
                 
             elif is_div_payout:
                 # Cash dividend NOT reinvested
