@@ -91,11 +91,26 @@ def analyze_portfolio(df):
             qty = float(row['Quantity']) if not pd.isna(row['Quantity']) else 0.0
             amount = float(row['Amount']) if not pd.isna(row['Amount']) else 0.0
             
-            # Identify Transaction Type
-            is_buy = 'buy' in action or 'compra' in action
-            is_sell = 'sell' in action or 'venta' in action
+            # --- Semantic Classification (Robust) ---
+            # Determine intent based on description keywords
+            
+            # 1. DRIP (Reinversión)
+            # Keywords: reinvest, reinversión, drip
             is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
-            is_div_payout = 'dividend' in action or 'dividendo' in action
+            
+            # 2. Buy (Compra)
+            # Keywords: buy, bought, compra
+            # Exclusion: Ensure it's not a 'reinvest' buy (which is handled by DRIP logic)
+            is_buy = ('buy' in action or 'bought' in action or 'compra' in action) and not is_drip
+            
+            # 3. Sell (Venta)
+            # Keywords: sell, sold, venta
+            is_sell = 'sell' in action or 'sold' in action or 'venta' in action
+            
+            # 4. Dividend Payout (Pago Cash)
+            # Keywords: dividend, dividendo, yield, interest
+            # Exclusion: MUST NOT be a reinvestment (handled by DRIP logic) to distinguish Cash vs Reinv.
+            is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
             
             # Logic
             if is_buy:
