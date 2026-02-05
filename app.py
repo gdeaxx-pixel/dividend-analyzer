@@ -119,6 +119,25 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     results_df = pd.DataFrame(results_data)
                     st.table(results_df)
+
+                    # --- Educational Equation (Dynamic) ---
+                    st.markdown("### 🧮 Tu Verificación Rápida")
+                    
+                    # LaTeX for the formula
+                    # We use color coding: Cyan=Market, Green=Cash, Red=Pocket
+                    equation_latex = r"""
+                    \text{Ganancia Total} = (\underbrace{\text{Valor Mercado}}_{\textcolor{cyan}{%s}} + \underbrace{\text{Cash}}_{\textcolor{green}{%s}}) - \underbrace{\text{Bolsillo}}_{\textcolor{red}{%s}}
+                    """ % (
+                        f"${stats['market_value']:,.2f}", 
+                        f"${stats['dividends_collected_cash']:,.2f}", 
+                        f"${stats['pocket_investment']:,.2f}"
+                    )
+                    
+                    st.latex(equation_latex)
+                    
+                    # Result line
+                    st.success(f"**Resultado:** (${stats['market_value']:,.2f} + ${stats['dividends_collected_cash']:,.2f}) - ${stats['pocket_investment']:,.2f} = **${stats['net_profit']:,.2f}**")
+
                     
                     # --- New Chart: Evolution of Capital ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
