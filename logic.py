@@ -134,6 +134,33 @@ def analyze_portfolio(df):
         net_profit = gross_value - pocket_investment
         roi = (net_profit / pocket_investment * 100) if pocket_investment != 0 else 0
         
+        # --- Calculate Daily History (For Chart) ---
+        # 1. Resample transactions to daily to handle multiple trades per day
+        daily_activity = ticker_df.groupby('Date')[['Quantity', 'Amount']].sum()
+        
+        # 2. Reindex to market data (daily)
+        daily_history = daily_activity.reindex(market_data.index).fillna(0)
+        
+        # 3. Calculate Cumulative Shares
+        # Note: simplistic split handling for chart (relying on market_data logic could be complex mixed with CSV)
+        # For a "good enough" visual, we cumsum shares. 
+        # Ideally, we would apply splits to the cumulative sum if not present in CSV. 
+        # Given constraints, we assume simplistically for the chart.
+        daily_history['Shares Held'] = daily_history['Quantity'].cumsum()
+        
+        # 4. Calculate Values
+        daily_history['Price'] = market_data['Close']
+        daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
+        
+        # 5. Calculate Cumulative Investment (Cost Basis) over time
+        # Amount is negative for buys. We want "Cost Basis" (positive input).
+        # Investment = Sum of (Buys - Sells). 
+        # To just show "Capital vs Market", we can track "Net Out of Pocket"
+        # We assume Amount is negative for buys.
+        daily_history['Daily Invested'] = daily_activity['Amount'].reindex(market_data.index).fillna(0) * -1 # Make buy positive
+        daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
+
+        
         results[ticker] = {
             "current_price": current_price,
             "shares_owned": shares_owned,
@@ -142,7 +169,8 @@ def analyze_portfolio(df):
             "dividends_collected_cash": dividends_collected_cash,
             "net_profit": net_profit,
             "roi_percent": roi,
-            "history": ticker_df # Return history for potential charting if needed
+            "history": ticker_df,
+            "daily_trend": daily_history[['Market Value', 'Invested Capital']] 
         }
         
     return results

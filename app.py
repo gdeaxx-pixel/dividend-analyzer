@@ -76,8 +76,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         ]
                     }
                     
-                    results_df = pd.DataFrame(results_data)
                     st.table(results_df)
+                    
+                    # --- New Chart: Evolution of Capital ---
+                    if 'daily_trend' in stats and not stats['daily_trend'].empty:
+                        st.subheader("📈 Evolución de Patrimonio")
+                        st.line_chart(stats['daily_trend'])
                     
                     st.divider()
 
