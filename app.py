@@ -13,6 +13,43 @@ Sube tu historial de transacciones para obtener una auditoría forense de tu ren
 o simula una estrategia de dividendos teórica.
 """)
 
+with st.expander("📚 ¿Cómo calcula la App mi Ganancia Real? (La Fórmula)"):
+    st.markdown(r"""
+    ### 🧮 La Fórmula de la Verdad
+    Esta app busca tu rentabilidad real, separando lo que pusiste de tu bolsillo de lo que el mercado te ha dado.
+
+    $$
+    \text{Ganancia Total} = (\text{Valor Mercado} + \text{Cash}) - \text{Bolsillo}
+    $$
+    
+    1. **🛑 Inversión de Bolsillo (Resta)**:  
+       Es la "deuda" que tienes contigo mismo. Solo suma el dinero nuevo que salió de tu banco.  
+       *Ejemplo: Transferiste $1,000 para comprar.*
+
+    2. **💵 Dividendos Cash (Suma)**:  
+       Dinero líquido que ya cobraste y salió del riesgo del mercado.  
+       *Ejemplo: Te pagaron $50 y te los gastaste en una cena.*
+
+    3. **🔄 Dividendos DRIP (Suma "Oculta")**:  
+       Aquí está el truco. No suman como dinero, **suman como Acciones**.  
+       Al hacer DRIP, tienes más acciones. Por tanto, tu **Valor de Mercado** crece.
+
+    ---
+    ### 💡 Ejemplo Visual
+    Imagina este escenario:
+    - Compras **10 acciones** a $100. (Bolsillo: **$1,000**)
+    - Te pagan **$50 en Cash**.
+    - Te pagan **$100 en DRIP** (te dan **1 acción** más).
+    - El precio sube a **$110**.
+
+    **El Cálculo de la App:**
+    1. **Valor Mercado**: Tienes **11 acciones** (10 originales + 1 de DRIP) × $110 = **$1,210**.
+    2. **Más Cash**: + **$50**.
+    3. **Menos Bolsillo**: - **$1,000**.
+
+    > **Ganancia Real** = $1,210 + $50 - $1,000 = **$260**
+    """)
+
 # --- Sidebar: Input Method ---
 with st.sidebar:
     st.header("Configuración")
