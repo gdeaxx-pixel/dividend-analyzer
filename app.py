@@ -257,9 +257,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     # LaTeX Formula (Simplified for compatibility)
                     # We render the generic formula first
-                    st.latex(r"""
-                    \text{Ganancia} = (\text{Valor Mercado} + \text{Cash}) - \text{Bolsillo}
-                    """)
+                    # LaTeX Formula (Simplified for compatibility)
+                    # We render the generic formula first
+                    # (Removed redundant single-line formula)
                     
                     # Then the inputs with specific values
                     # Determine color for the result
