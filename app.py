@@ -272,7 +272,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         f"{stats['dividends_collected_cash']:,.2f}", 
                         f"{stats['pocket_investment']:,.2f}",
                         result_color,
-                        f"${stats['net_profit']:,.2f}"
+                        f"\\${stats['net_profit']:,.2f}"
                     ))
                     
                     # Result line removed as requested
