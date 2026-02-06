@@ -266,6 +266,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     result_color = "green" if stats['net_profit'] >= 0 else "red"
                     
                     st.latex(r"""
+                    \text{Ganancia} = (\text{Valor Mercado} + \text{Cash}) - \text{Bolsillo} \\[0.5em]
                     \textcolor{%s}{%s} = (\overbrace{%s}^{\text{Acciones (Tú+DRIP)} \times \text{Precio}} + %s) - %s
                     """ % (
                         result_color,
