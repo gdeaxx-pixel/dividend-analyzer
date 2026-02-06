@@ -269,7 +269,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     \footnotesize
                     \text{Ganancia} = (\text{Divid. en acciones} + \text{Acciones compradas por ti}) \times \text{Precio Actual} + \text{Divid. en efectivo} - \text{Dinero que tú invertiste} \\[0.2em]
                     \text{Ganancia} = \text{Valor de Mercado} + \text{Divid. en efectivo} - \text{Dinero que tú invertiste} \\[0.2em]
-                    \textcolor{%s}{%s} = (%s + %s) - %s
+                    \textcolor{%s}{%s} = %s + %s - %s
                     """ % (
                         result_color,
                         f"\\${stats['net_profit']:,.2f}",
