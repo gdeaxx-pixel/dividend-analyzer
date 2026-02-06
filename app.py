@@ -266,9 +266,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     result_color = "green" if stats['net_profit'] >= 0 else "red"
                     
                     st.latex(r"""
-                    \small
-                    \text{Ganancia} = \text{Valor de Mercado} + \text{Divid. en efectivo} - \text{Dinero que tú invertiste} \\[0.2em]
+                    \footnotesize
                     \text{Ganancia} = (\text{Divid. en acciones} + \text{Acciones compradas por ti}) \times \text{Precio Actual} + \text{Divid. en efectivo} - \text{Dinero que tú invertiste} \\[0.2em]
+                    \text{Ganancia} = \text{Valor de Mercado} + \text{Divid. en efectivo} - \text{Dinero que tú invertiste} \\[0.2em]
                     \textcolor{%s}{%s} = (%s + %s) - %s
                     """ % (
                         result_color,
