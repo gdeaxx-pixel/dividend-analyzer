@@ -267,11 +267,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     st.latex(r"""
                     \footnotesize
-                    \begin{array}{r c l l}
-                    \text{Ganancia} = & \boxed{(\text{Div. Acciones} + \text{Tus Acciones}) \times \text{Precio}} & + \text{Div. Efectivo} & - \text{Inversión} \\[0.5em]
-                    & \downarrow & & \\[0.5em]
-                    \text{Ganancia} = & \text{Valor de Mercado} & + \text{Div. Efectivo} & - \text{Inversión} \\[1.5em]
-                    \textcolor{%s}{%s} = & %s & + %s & - %s
+                    \begin{array}{r c c c c c}
+                    \text{Ganancia} = & \boxed{(\text{Div. Acciones} + \text{Tus Acciones}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
+                    & \downarrow & & & & \\[0.5em]
+                    \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
+                    \textcolor{%s}{%s} = & %s & + & %s & - & %s
                     \end{array}
                     """ % (
                         result_color,
