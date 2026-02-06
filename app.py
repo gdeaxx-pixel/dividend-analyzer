@@ -262,16 +262,20 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     """)
                     
                     # Then the inputs with specific values
+                    # Determine color for the result
+                    result_color = "green" if stats['net_profit'] >= 0 else "red"
+                    
                     st.latex(r"""
-                    \text{Ganancia} = (%s + %s) - %s
+                    \text{Ganancia} = (%s + %s) - %s = \textcolor{%s}{%s}
                     """ % (
                         f"{stats['market_value']:,.2f}", 
                         f"{stats['dividends_collected_cash']:,.2f}", 
-                        f"{stats['pocket_investment']:,.2f}"
+                        f"{stats['pocket_investment']:,.2f}",
+                        result_color,
+                        f"${stats['net_profit']:,.2f}"
                     ))
                     
-                    # Result line
-                    st.success(f"**Resultado Final:** ${stats['net_profit']:,.2f}")
+                    # Result line removed as requested
 
                     
                     # --- New Chart: Evolution of Capital ---
