@@ -13,27 +13,48 @@ def normalize_csv(df):
     - Price: Precio
     - Amount: Monto/Total
     """
-    # Map common column names to standard internal names
-    col_map = {
-        'Fecha': 'Date', 'date': 'Date', 'Time': 'Date',
-        'Descripción': 'Action', 'Action': 'Action', 'Operación': 'Action',
-        'Símbolo': 'Ticker', 'Ticker': 'Ticker', 'Symbol': 'Ticker',
-        'Cantidad': 'Quantity', 'Quantity': 'Quantity', 'Shares': 'Quantity',
-        'Precio': 'Price', 'Price': 'Price',
-        'Monto': 'Amount', 'Amount': 'Amount', 'Total': 'Amount', 'Value': 'Amount'
+    # 0. Robust Column Renaming
+    # Strip whitespace from headers and try to match case-insensitively
+    df.columns = df.columns.str.strip()
+    
+    # Internal map (lowercase keys for matching)
+    col_map_lower = {
+        'fecha': 'Date', 'date': 'Date', 'time': 'Date',
+        'descripción': 'Action', 'descripcion': 'Action', 'action': 'Action', 'operación': 'Action', 'operacion': 'Action',
+        'símbolo': 'Ticker', 'simbolo': 'Ticker', 'ticker': 'Ticker', 'symbol': 'Ticker',
+        'cantidad': 'Quantity', 'quantity': 'Quantity', 'shares': 'Quantity',
+        'precio': 'Price', 'price': 'Price',
+        'monto': 'Amount', 'amount': 'Amount', 'total': 'Amount', 'value': 'Amount'
     }
     
-    df = df.rename(columns=col_map)
+    # Create a rename dict by checking lowercase versions of actual columns
+    actual_rename_map = {}
+    for col in df.columns:
+        col_lower = str(col).lower()
+        if col_lower in col_map_lower:
+            actual_rename_map[col] = col_map_lower[col_lower]
+            
+    df = df.rename(columns=actual_rename_map)
     
     # Ensure Date is datetime
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    # Filter out invalid dates (handles metadata rows like 'Data as of...')
-    df = df.dropna(subset=['Date'])
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date'])
     
     # Clean Ticker (remove spaces)
     if 'Ticker' in df.columns:
-        df['Ticker'] = df['Ticker'].str.strip()
-        
+        df['Ticker'] = df['Ticker'].astype(str).str.strip()
+
+    # Clean Numeric Columns (Aggressive Regex)
+    cols_to_clean = ['Quantity', 'Price', 'Amount']
+    for col in cols_to_clean:
+        if col in df.columns:
+            # 1. Convert to string
+            # 2. Remove anything that is NOT a digit, dot, or minus sign
+            # 3. Handle empty strings resulting from bad data
+            df[col] = df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+
     return df
 
 def fetch_market_data(ticker, start_date):
@@ -85,11 +106,24 @@ def analyze_portfolio(df):
         dividends_collected_cash = 0.0
         dividends_collected_drip = 0.0 # Value of dividends reinvested
         
+        # Helper for defensive parsing
+        def safe_float(val):
+            try:
+                if pd.isna(val): return 0.0
+                return float(val)
+            except ValueError:
+                # Cleaning fallback
+                clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
+                try:
+                    return float(clean_val)
+                except ValueError:
+                    return 0.0
+
         # Iterate through transactions to build history
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
-            qty = float(row['Quantity']) if not pd.isna(row['Quantity']) else 0.0
-            amount = float(row['Amount']) if not pd.isna(row['Amount']) else 0.0
+            qty = safe_float(row.get('Quantity', 0))
+            amount = safe_float(row.get('Amount', 0))
             
             # --- Semantic Classification (Robust) ---
             # Determine intent based on description keywords

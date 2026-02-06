@@ -3,15 +3,151 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
 import logic
+import importlib
+importlib.reload(logic)
 
-st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide")
+st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
 
-
-st.title("💰 Dividend Portfolio Analyzer")
+# --- CUSTOM CSS: THE "CYBER-INSTITUTIONAL" AESTHETIC ---
+# Guidelines: Bold, Dark, Neon Accents, Glassmorphism, 'Outfit' Font.
 st.markdown("""
-Sube tu historial de transacciones para obtener una auditoría forense de tu rendimiento, 
-o simula una estrategia de dividendos teórica.
-""")
+<style>
+    /* 1. IMPORT FONTS */
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+    
+    /* 2. GLOBAL VARIABLES */
+    :root {
+        --bg-color: #050505;
+        --card-bg: #121212;
+        --text-color: #E0E0E0;
+        --accent-green: #00FF94;  /* Cyber Green */
+        --accent-purple: #BC13FE; /* Cyber Purple for DRIP */
+        --border-color: #2A2A2A;
+    }
+    
+    /* 3. RESET & BASE STYLES */
+    html, body, [class*="css"] {
+        font-family: 'Outfit', sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+    }
+    
+    /* Hide Default Header/Footer */
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* 4. TYPOGRAPHY */
+    h1, h2, h3 {
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: white;
+    }
+    
+    h1 {
+        font-size: 3.5rem !important;
+        background: linear-gradient(90deg, #FFFFFF 0%, #888888 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+    
+    h3 {
+        color: var(--accent-green);
+        text-transform: uppercase;
+        font-size: 1rem !important;
+        letter-spacing: 0.1em;
+        margin-top: 2rem !important;
+        opacity: 0.9;
+    }
+    
+    /* 5. CARDS & CONTAINERS */
+    div[data-testid="stExpander"] {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    
+    div[data-testid="stExpander"] details {
+        background-color: transparent;
+    }
+    
+    /* 6. BUTTONS */
+    div.stButton > button {
+        background-color: transparent;
+        border: 1px solid var(--accent-green);
+        color: var(--accent-green);
+        border-radius: 8px;
+        padding: 0.6rem 1.2rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    div.stButton > button:hover {
+        background-color: var(--accent-green);
+        color: black;
+        box-shadow: 0 0 15px rgba(0, 255, 148, 0.4);
+        transform: translateY(-2px);
+    }
+    
+    /* 7. METRICS */
+    div[data-testid="stMetricValue"] {
+        font-size: 2.5rem !important;
+        font-weight: 700;
+        color: white;
+    }
+    
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.9rem !important;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    div[data-testid="stMetricDelta"] svg {
+        fill: var(--accent-green) !important;
+    }
+    
+    div[data-testid="stMetricDelta"] > div {
+        color: var(--accent-green) !important;
+    }
+    
+    /* 8. DATAFRAME / TABLES */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    /* 9. SIDEBAR */
+    section[data-testid="stSidebar"] {
+        background-color: #000000;
+        border-right: 1px solid var(--border-color);
+    }
+    
+    /* Custom Alert Boxes */
+    div[data-testid="stMarkdownContainer"] > div.stAlert {
+        background-color: rgba(255, 50, 50, 0.1);
+        border: 1px solid #ff3333;
+        color: #ffaaaa;
+    }
+    
+    /* Math Formula Style */
+    .katex { font-size: 1.2em; color: #b3b3b3; }
+    
+</style>
+""", unsafe_allow_html=True)
+
+
+st.title("DIVIDEND // ANALYZER")
+st.markdown("""
+<div style='margin-top: -15px; margin-bottom: 30px; color: #666; font-size: 1.1rem;'>
+    AUDITORÍA FORENSE DE PORTAFOLIOS & SIMULADOR DE ESTRATEGIAS
+</div>
+""", unsafe_allow_html=True)
+
 
 with st.expander("📚 ¿Cómo calcula la App mi Ganancia Real? (La Fórmula)"):
     st.markdown(r"""
@@ -23,31 +159,28 @@ with st.expander("📚 ¿Cómo calcula la App mi Ganancia Real? (La Fórmula)"):
     $$
     
     1. **🛑 Inversión de Bolsillo (Resta)**:  
-       Es la "deuda" que tienes contigo mismo. Solo suma el dinero nuevo que salió de tu banco.  
+       Es la "deuda" que tienes contigo mismo. Solo suma el dinero nuevo que salió de tu banco para compra de acciones.  
        *Ejemplo: Transferiste $1,000 para comprar.*
 
-    2. **💵 Dividendos Cash (Suma)**:  
-       Dinero líquido que ya cobraste y salió del riesgo del mercado.  
-       *Ejemplo: Te pagaron $50 y te los gastaste en una cena.*
+    2. **📉 Valor de Mercado (Suma)**:
+       Es cuánto valen TODAS tus acciones hoy si las vendieras.
+       * **Composición**: (Acciones Compradas + Acciones Ganadas por DRIP) × Precio Actual.
+       * *Nota: Aquí vive el valor acumulado de tus reinversiones.*
 
-    3. **🔄 Dividendos DRIP (Suma "Oculta")**:  
-       Aquí está el truco. No suman como dinero, **suman como Acciones**.  
-       Al hacer DRIP, tienes más acciones. Por tanto, tu **Valor de Mercado** crece.
+    3. **💵 Dividendos Cash (Suma)**:  
+       Es la **Suma Total** de los dividendos que cobraste en efectivo (líquido) y NO reinvertiste.
+       * *Este dinero ya está "a salvo" en tu cuenta, fuera del riesgo del mercado.*
 
     ---
     ### 💡 Ejemplo Visual
-    Imagina este escenario:
-    - Compras **10 acciones** a $100. (Bolsillo: **$1,000**)
-    - Te pagan **$50 en Cash**.
-    - Te pagan **$100 en DRIP** (te dan **1 acción** más).
-    - El precio sube a **$110**.
+    Imagina que compraste **10 acciones** y con el tiempo...
+    - El DRIP compró **1 acción extra** (Total: 11 acciones).
+    - Te pagaron **$50 en efectivo** (para la cena).
 
-    **El Cálculo de la App:**
-    1. **Valor Mercado**: Tienes **11 acciones** (10 originales + 1 de DRIP) × $110 = **$1,210**.
-    2. **Más Cash**: + **$50**.
-    3. **Menos Bolsillo**: - **$1,000**.
-
-    > **Ganancia Real** = $1,210 + $50 - $1,000 = **$260**
+    **Tu Riqueza Real es:**
+    1. Lo que valen esas **11 acciones** hoy en el mercado.
+    2. MAS los **$50** que ya te gastaste.
+    3. MENOS lo que te costaron las 10 originales.
     """)
 
 # --- Sidebar: Input Method ---
