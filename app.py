@@ -229,13 +229,13 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     # Create data for the requested table format
                     results_data = {
                         "Indicador": [
-                            "💰 Inversión Neta (Tu Bolsillo)",
-                            "📉 Valor de Mercado Actual",
-                            "💵 Dividendos (Cash)",
-                            "🔄 Dividendos (DRIP)",
-                            "💰 Total Generado (Cash + Valor DRIP)",
-                            "🟢 Ganancia Neta Total",
-                            "🚀 ROI (Retorno Total)",
+                            "💰 Inversión (el dinero que tu pusiste)",
+                            "📉 Valor de Mercado (valor de tu inversión hoy)",
+                            "💵 Div. Efectivo (dividendos pagados a tu balance)",
+                            "🔄 Div. Acciones (dividendos re invertidos)",
+                            "💰 Total generado en dividendos (Div. Efectivo + Div. Acciones)",
+                            "🟢 Ganancia en $",
+                            "🚀 Ganancia en %",
                             "📊 Acciones Totales (Inc. DRIP)"
                         ],
                         "Valor": [
