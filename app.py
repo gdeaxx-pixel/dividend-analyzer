@@ -229,7 +229,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     # Create data for the requested table format
                     results_data = {
                         "Indicador": [
-                            "💰 Inversión (el dinero que tu pusiste)",
+                            "🏦 Inversión (el dinero que tu pusiste)",
                             "📉 Valor de Mercado (valor de tu inversión hoy)",
                             "💰 Div. Efectivo (dividendos pagados a tu balance)",
                             "💰 Div. Acciones (dividendos re invertidos)",
