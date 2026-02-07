@@ -286,8 +286,22 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     # --- New Chart: Evolution of Capital ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                        st.subheader("📈 Evolución de Patrimonio")
-                        st.line_chart(stats['daily_trend'])
+                        st.markdown("### 📈 COMPARACIÓN DE RENDIMIENTO (vs S&P 500)")
+                        
+                        # Prepare data for chart
+                        chart_data = stats['daily_trend'][['User Profit', 'SPY Profit']].copy()
+                        
+                        # Rename columns for display
+                        chart_data = chart_data.rename(columns={
+                            'User Profit': 'Tu Ganancia',
+                            'SPY Profit': 'Ganancia S&P 500'
+                        })
+                        
+                        st.line_chart(
+                            chart_data,
+                            color=["#00FF94", "#888888"], # User Green, SPY Gray
+                            height=400
+                        )
                     
 
                     st.divider()

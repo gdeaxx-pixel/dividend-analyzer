@@ -219,10 +219,6 @@ def analyze_portfolio(df):
         daily_history = daily_activity.reindex(market_data.index).fillna(0)
         
         # 3. Calculate Cumulative Shares
-        # Note: simplistic split handling for chart (relying on market_data logic could be complex mixed with CSV)
-        # For a "good enough" visual, we cumsum shares. 
-        # Ideally, we would apply splits to the cumulative sum if not present in CSV. 
-        # Given constraints, we assume simplistically for the chart.
         daily_history['Shares Held'] = daily_history['Quantity'].cumsum()
         
         # 4. Calculate Values
@@ -230,12 +226,63 @@ def analyze_portfolio(df):
         daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
         
         # 5. Calculate Cumulative Investment (Cost Basis) over time
-        # Amount is negative for buys. We want "Cost Basis" (positive input).
-        # Investment = Sum of (Buys - Sells). 
-        # To just show "Capital vs Market", we can track "Net Out of Pocket"
-        # We assume Amount is negative for buys.
-        daily_history['Daily Invested'] = daily_activity['Amount'].reindex(market_data.index).fillna(0) * -1 # Make buy positive
+        # Investment = Sum of (Buys - Sells). Amount is negative for buys.
+        daily_history['Daily Invested'] = daily_activity['Amount'].reindex(market_data.index).fillna(0) * -1 
         daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
+
+        # 6. Calculate User Profit (Real)
+        # We need to track Cumulative Cash Dividends to add to Market Value
+        # Identify Cash Dividend rows in original DF
+        cash_div_rows = ticker_df[
+            (ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|interest')) & 
+            (~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip'))
+        ]
+        
+        # Resample cash divs to daily
+        if not cash_div_rows.empty:
+            daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().abs()
+            daily_history['Daily Cash Div'] = daily_cash_divs.reindex(market_data.index).fillna(0)
+        else:
+            daily_history['Daily Cash Div'] = 0.0
+            
+        daily_history['Cumulative Cash Div'] = daily_history['Daily Cash Div'].cumsum()
+        
+        # User Profit = (Market Value + Cumulative Cash Received) - Invested Capital
+        daily_history['User Profit'] = (daily_history['Market Value'] + daily_history['Cumulative Cash Div']) - daily_history['Invested Capital']
+
+        # 7. Calculate SPY Benchmark (Simulated)
+        try:
+             # Fetch SPY data covering the same range
+            spy_data = yf.download('SPY', start=first_date, progress=False, auto_adjust=True) # Use Adj Close for Total Return
+            if isinstance(spy_data.columns, pd.MultiIndex):
+                spy_data.columns = spy_data.columns.get_level_values(0)
+            
+            # Reindex SPY to match portfolio dates (ffill for missing days)
+            spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
+            
+            # Simulate buying SPY with the *same* invested capital flow
+            spy_shares_owned = 0.0
+            spy_value_history = []
+            
+            for date, row in daily_history.iterrows():
+                invested_today = row['Daily Invested']
+                spy_price = spy_prices.loc[date]
+                
+                if pd.notna(spy_price) and spy_price > 0:
+                    # Buy/Sell SPY shares equivalent to the cash flow
+                    shares_bought = invested_today / spy_price
+                    spy_shares_owned += shares_bought
+                
+                # Current Value of SPY position
+                current_spy_value = spy_shares_owned * (spy_price if pd.notna(spy_price) else 0)
+                spy_value_history.append(current_spy_value)
+            
+            daily_history['SPY Value'] = spy_value_history
+            daily_history['SPY Profit'] = daily_history['SPY Value'] - daily_history['Invested Capital']
+            
+        except Exception as e:
+            print(f"Error calculating benchmark: {e}")
+            daily_history['SPY Profit'] = 0.0 # Fallback
 
         
         results[ticker] = {
@@ -249,7 +296,7 @@ def analyze_portfolio(df):
             "net_profit": net_profit,
             "roi_percent": roi,
             "history": ticker_df,
-            "daily_trend": daily_history[['Market Value', 'Invested Capital']] 
+            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'Invested Capital', 'Market Value']] 
         }
         
     return results
