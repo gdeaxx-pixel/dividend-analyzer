@@ -235,7 +235,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             "🔄 Div. Acciones (dividendos re invertidos)",
                             "💰 Total generado en dividendos (Div. Efectivo + Div. Acciones)",
                             "🟢 Ganancia en $",
-                            "🚀 Ganancia en %",
+                            "🟢 Ganancia en %",
                             "📊 Acciones Totales (Inc. DRIP)"
                         ],
                         "Valor": [
