@@ -13,9 +13,45 @@ def normalize_csv(df):
     - Price: Precio
     - Amount: Monto/Total
     """
-    # 0. Robust Column Renaming
+    # 0. Smart Header Detection (Metadata Skipping)
+    # Check if we need to find the header row
+    # Heuristic: If "Ticker" or "Date" is not in columns, scan first 20 rows
+    
+    # Potential keywords that signify a header row
+    header_keywords = [
+        'ticker', 'symbol', 'símbolo', 'simbolo', 
+        'date', 'fecha', 'time',
+        'quantity', 'cantidad', 'shares', 'acciones',
+        'price', 'precio', 
+        'amount', 'monto', 'total', 'valor',
+        'action', 'accion', 'operacion', 'operation', 'tipo'
+    ]
+    
+    def is_likely_header(row_vals):
+        # Count how many keywords appear in this row
+        matches = 0
+        row_str = [str(x).lower() for x in row_vals]
+        for key in header_keywords:
+            if any(key in str(cell) for cell in row_str):
+                matches += 1
+        return matches >= 2 # At least 2 matches to be confident (e.g. Date AND Ticker)
+
+    # Check current columns first
+    if not is_likely_header(df.columns):
+        # Scan first 20 rows
+        for i in range(min(20, len(df))):
+            row = df.iloc[i]
+            if is_likely_header(row.values):
+                # Found the header!
+                # Set this row as header
+                df.columns = df.iloc[i]
+                # Mod: slice data from next row
+                df = df[i+1:].reset_index(drop=True)
+                break
+
+    # 1. Robust Column Renaming
     # Strip whitespace from headers and try to match case-insensitively
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.astype(str).str.strip()
     
     # Internal map (lowercase keys for matching)
     col_map_lower = {
@@ -49,6 +85,23 @@ def normalize_csv(df):
     cols_to_clean = ['Quantity', 'Price', 'Amount']
     for col in cols_to_clean:
         if col in df.columns:
+            # European Format Handling: 1.000,00 -> 1000.00
+            # 1. Remove thousands separator (.) if present
+            # 2. Replace decimal separator (,) with (.)
+            # NOTE: This approach optimizes for the user's specific Screenshot format ($ 2,34)
+            # It assumes the file is NOT using commas for thousands (e.g. 1,000.00 would break)
+            
+            # Helper to clean single value
+            def clean_val(x):
+                s = str(x)
+                # If it looks like European format (has comma, maybe has dot before)
+                if ',' in s:
+                    s = s.replace('.', '') # remove thousands dot
+                    s = s.replace(',', '.') # comma to decimal point
+                return s
+
+            df[col] = df[col].apply(clean_val)
+            
             # 1. Convert to string
             # 2. Remove anything that is NOT a digit, dot, or minus sign
             # 3. Handle empty strings resulting from bad data
@@ -278,12 +331,21 @@ def analyze_portfolio(df):
                 spy_value_history.append(current_spy_value)
             
             daily_history['SPY Value'] = spy_value_history
-            daily_history['SPY Profit'] = daily_history['SPY Value'] - daily_history['Invested Capital']
+            daily_history['SPY Profit'] = daily_history['SPY Profit'] = daily_history['SPY Value'] - daily_history['Invested Capital']
             
         except Exception as e:
             print(f"Error calculating benchmark: {e}")
             daily_history['SPY Profit'] = 0.0 # Fallback
 
+        # 8. Calculate Percentage Returns (ROI %)
+        # Avoid division by zero
+        daily_history['User Return %'] = daily_history.apply(
+            lambda row: (row['User Profit'] / row['Invested Capital'] * 100) if row['Invested Capital'] > 0 else 0.0, axis=1
+        )
+        
+        daily_history['SPY Return %'] = daily_history.apply(
+            lambda row: (row['SPY Profit'] / row['Invested Capital'] * 100) if row['Invested Capital'] > 0 else 0.0, axis=1
+        )
         
         results[ticker] = {
             "current_price": current_price,
@@ -296,7 +358,7 @@ def analyze_portfolio(df):
             "net_profit": net_profit,
             "roi_percent": roi,
             "history": ticker_df,
-            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'Invested Capital', 'Market Value']] 
+            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'SPY Return %', 'Invested Capital', 'Market Value']] 
         }
         
     return results

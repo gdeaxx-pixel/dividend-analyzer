@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+
 import datetime
 import logic
 import importlib
@@ -193,6 +193,10 @@ with st.sidebar:
         uploaded_file = st.file_uploader("Arrastra tu archivo aquí", type=['csv', 'xlsx'])
         st.info("El archivo debe contener columnas como: Fecha, Acción, Ticker, Cantidad, Monto.")
 
+    if st.sidebar.button("🧹 Limpiar Caché (Recargar Lógica)"):
+        st.cache_data.clear()
+        st.rerun()
+
 # --- Main Logic ---
 
 if input_method == "Subir CSV/Excel" and uploaded_file is not None:
@@ -200,7 +204,28 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     
     try:
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            # Ultra-Robust CSV Reader
+            success = False
+            encodings = ['utf-8', 'latin1', 'cp1252', 'utf-16']
+            separators = [None, ';', '\t'] # None = Auto-detect with python engine
+            
+            for encoding in encodings:
+                for sep in separators:
+                    try:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, engine='python')
+                        if len(df.columns) > 1: # Basic check: Did we parse columns?
+                            success = True
+                            st.toast(f"📖 Leído con éxito: {encoding} | Sep: {sep if sep else 'Auto'}", icon="✅")
+                            break
+                    except:
+                        continue
+                if success: break
+            
+            if not success:
+               st.error("❌ No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
+               st.stop()
+               
         else:
             df = pd.read_excel(uploaded_file)
             
@@ -209,6 +234,16 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         
         with st.expander("Ver datos procesados (Primeras 5 filas)"):
             st.dataframe(df_clean.head())
+
+        # 1.5 Validate Columns
+        required_cols = ['Date', 'Ticker', 'Amount']
+        missing_cols = [col for col in required_cols if col not in df_clean.columns]
+        
+        if missing_cols:
+            st.error(f"❌ Error de Formato: No encontramos las columnas: {', '.join(missing_cols)}")
+            st.warning(f"Columnas encontradas: {list(df_clean.columns)}")
+            st.info("💡 Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
+            st.stop()
         
         # 2. Analyze
         if st.button("Ejecutar Análisis Forense"):
@@ -286,15 +321,16 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     # --- New Chart: Evolution of Capital ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                        st.markdown("### 📈 COMPARACIÓN DE RENDIMIENTO (vs S&P 500)")
+                        st.markdown("### 📈 COMPARACIÓN DE RENDIMIENTO % (vs S&P 500)")
                         
                         # Prepare data for chart
-                        chart_data = stats['daily_trend'][['User Profit', 'SPY Profit']].copy()
+                        # Use the new Percentage Columns calculated in logic.py
+                        chart_data = stats['daily_trend'][['User Return %', 'SPY Return %']].copy()
                         
                         # Rename columns for display
                         chart_data = chart_data.rename(columns={
-                            'User Profit': 'Tu Ganancia',
-                            'SPY Profit': 'Ganancia S&P 500'
+                            'User Return %': 'Tu Rendimiento (%)',
+                            'SPY Return %': 'S&P 500 Rendimiento (%)'
                         })
                         
                         st.line_chart(
