@@ -1,6 +1,7 @@
 import pandas as pd
 import yfinance as yf
 import datetime
+import streamlit as st
 
 def normalize_csv(df):
     """
@@ -110,6 +111,7 @@ def normalize_csv(df):
 
     return df
 
+@st.cache_data(ttl=3600)
 def fetch_market_data(ticker, start_date):
     """
     Fetches raw market data (auto_adjust=False) to correctly calculate dividends and splits.
@@ -129,6 +131,7 @@ def fetch_market_data(ticker, start_date):
         print(f"Error downloading {ticker}: {e}")
         return pd.DataFrame()
 
+@st.cache_data(show_spinner=False)
 def analyze_portfolio(df):
     """
     Core function to analyze the portfolio from the normalized CSV.

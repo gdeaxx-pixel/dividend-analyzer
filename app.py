@@ -3,8 +3,7 @@ import pandas as pd
 
 import datetime
 import logic
-import importlib
-importlib.reload(logic)
+
 
 st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
 
