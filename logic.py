@@ -2,6 +2,13 @@ import pandas as pd
 import yfinance as yf
 import datetime
 import streamlit as st
+from curl_cffi import requests as crequests
+
+def get_session():
+    """
+    Creates a curl_cffi session mimicking Chrome to bypass bot detection.
+    """
+    return crequests.Session(impersonate="chrome")
 
 def normalize_csv(df):
     """
@@ -122,10 +129,16 @@ def fetch_market_data(ticker, start_date):
     buffer_date = start_date_obj - datetime.timedelta(days=10)
     
     # 1. Try yf.download (Standard Bulk API) - 2 Attempts
+    try:
+        session = get_session()
+    except Exception as e:
+        print(f"Failed to create curl_cffi session: {e}")
+        session = None
+
     for attempt in range(2):
         try:
             # print(f"Downloading {ticker} (Attempt {attempt+1})...")
-            data = yf.download(ticker, start=buffer_date, progress=False, auto_adjust=False, actions=True)
+            data = yf.download(ticker, start=buffer_date, progress=False, auto_adjust=False, actions=True, session=session)
             
             if not data.empty:
                 # Flatten MultiIndex if present
@@ -139,7 +152,7 @@ def fetch_market_data(ticker, start_date):
     # Sometimes yf.download fails for specific tickers/IPs, but Ticker object works.
     print(f"Falling back to yf.Ticker({ticker}).history()...")
     try:
-        t = yf.Ticker(ticker)
+        t = yf.Ticker(ticker, session=session)
         data = t.history(start=buffer_date, auto_adjust=False, actions=True)
         
         if not data.empty:
