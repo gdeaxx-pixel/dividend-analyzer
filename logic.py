@@ -406,14 +406,14 @@ def simulate_strategy(ticker, start_date, initial_investment):
     """
     Simulates a perfect DRIP vs No-DRIP strategy for comparison.
     """
-    market_data, _ = fetch_market_data(ticker, start_date)
+    market_data, error_msg = fetch_market_data(ticker, start_date)
     if market_data.empty:
-        return None
+        return None, error_msg
 
     # Filter data to start from start_date
     market_data = market_data[market_data.index >= pd.to_datetime(start_date)]
     if market_data.empty:
-        return None
+        return None, "No data found after start date"
 
     # Initial Setup
     start_price = market_data['Close'].iloc[0]
@@ -473,5 +473,5 @@ def simulate_strategy(ticker, start_date, initial_investment):
         'history': results_df
     }
     
-    return final_stats
+    return final_stats, None
 

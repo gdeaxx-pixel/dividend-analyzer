@@ -354,10 +354,10 @@ elif input_method == "Simulación Teórica":
     
     if st.button("Simular"):
         with st.spinner(f"Simulando {ticker}..."):
-            sim_results = logic.simulate_strategy(ticker, start_date, amount)
+            sim_results, error_msg = logic.simulate_strategy(ticker, start_date, amount)
             
         if sim_results is None:
-            st.error("No se encontraron datos o fecha inválida.")
+            st.error(f"Error: {error_msg}")
         else:
             # Metrics
             st.success("Simulación Completada")
