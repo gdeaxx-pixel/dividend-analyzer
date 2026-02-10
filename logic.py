@@ -1,3 +1,4 @@
+import pandas as pd
 import yfinance as yf
 import datetime
 import streamlit as st
