@@ -1,8 +1,9 @@
-import pandas as pd
 import yfinance as yf
 import datetime
 import streamlit as st
 from curl_cffi import requests as crequests
+import re
+import io
 
 def get_session():
     """
@@ -119,6 +120,54 @@ def normalize_csv(df):
     return df
 
 @st.cache_data(ttl=3600)
+
+def fetch_data_from_html(ticker):
+    """
+    Fallback: Scrapes historical data from Yahoo Finance HTML if API fails.
+    Uses curl_cffi to mimic a browser and regex to parse the table.
+    """
+    print(f"Scraping HTML for {ticker}...")
+    url = f"https://finance.yahoo.com/quote/{ticker}/history?p={ticker}"
+    
+    try:
+        session = get_session()
+        response = session.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            if "Historical Data" in response.text:
+                # Regex parse table rows
+                rows = re.findall(r'<tr.*?>(.*?)</tr>', response.text, re.DOTALL)
+                data = []
+                for row in rows:
+                    cols = re.findall(r'<td.*?>(.*?)</td>', row, re.DOTALL)
+                    cols = [re.sub(r'<.*?>', '', c).strip() for c in cols]
+                    if len(cols) == 7: # Standard price row
+                        data.append(cols)
+                
+                if data:
+                    df = pd.DataFrame(data, columns=['Date', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
+                    
+                    # Clean and Convert Data
+                    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                    df = df.dropna(subset=['Date'])
+                    df = df.set_index('Date').sort_index()
+                    
+                    cols_to_numeric = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+                    for col in cols_to_numeric:
+                        # Remove commas from volume, handle errors
+                        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce')
+                    
+                    return df.dropna()
+                    
+            print("HTML Scraping failed to find valid data table.")
+            return pd.DataFrame()
+        else:
+            print(f"HTML Scrape failed. Status: {response.status_code}")
+            return pd.DataFrame()
+    except Exception as e:
+        print(f"HTML Scrape Exception: {e}")
+        return pd.DataFrame()
+
 def fetch_market_data(ticker, start_date):
     """
     Fetches raw market data (auto_adjust=False) to correctly calculate dividends and splits.
@@ -162,9 +211,16 @@ def fetch_market_data(ticker, start_date):
             
     except Exception as e:
         print(f"Fallback error for {ticker}: {e}")
-        return pd.DataFrame(), f"Fallback failed: {str(e)}"
         
-    return pd.DataFrame(), "No data found (Empty)"
+    # 3. Last Resort: HTML Scraping
+    print(f"Attempting HTML scraping for {ticker}...")
+    data = fetch_data_from_html(ticker)
+    if not data.empty:
+        # Filter by start date if needed
+        data = data[data.index >= pd.to_datetime(buffer_date)]
+        return data, None
+
+    return pd.DataFrame(), "No market data found: API Rate Limited & Scraper failed."
 
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df):
