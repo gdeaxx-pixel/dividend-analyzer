@@ -1,38 +1,62 @@
 import streamlit as st
 import sys
 import subprocess
+import time
 
-st.set_page_config(page_title="Debug Mode v2", page_icon="🔧")
+st.set_page_config(page_title="Debug Mode v3", page_icon="🕵️")
 
-st.title("✅ App Started (Debug v2)")
-st.write(f"Python Version: {sys.version}")
+st.title("🕵️ Debug v3: Force Install & Log")
+st.write(f"**Python Version:** `{sys.version}`")
+st.write("**Goal:** Force install `yfinance` to capture the compilation error.")
 
-st.subheader("📦 Installed Packages")
-try:
-    # Run pip freeze to see what's actually installed
-    result = subprocess.run([sys.executable, "-m", "pip", "freeze"], capture_output=True, text=True)
-    st.code(result.stdout)
-except Exception as e:
-    st.error(f"Failed to run pip freeze: {e}")
-
-st.subheader("🔄 Attempting to Import 'yfinance'")
-try:
-    import yfinance
-    st.success(f"yfinance imported successfully! Version: {yfinance.__version__}")
-except ImportError as e:
-    st.error(f"Import failed: {e}")
+if st.button("🚀 Run Verbose Install (pip install -v yfinance)"):
+    st.info("Starting installation... This might take 30-60 seconds.")
     
-    # Emergency Install Attempt (Not recommended for prod, but good for debug)
-    if st.button("🚑 Emergency Install yfinance"):
-        with st.spinner("Installing yfinance..."):
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "yfinance"])
-                st.success("Installed! Please reload the page.")
-            except Exception as install_error:
-                st.error(f"Install failed: {install_error}")
+    # Create a placeholder for logs
+    log_container = st.empty()
+    full_output = []
+    
+    try:
+        # Run pip install with verbose output
+        process = subprocess.Popen(
+            [sys.executable, "-m", "pip", "install", "-v", "yfinance==0.2.36"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Stream output
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                full_output.append(output)
+                # Ensure we don't lag browser too much
+                if len(full_output) % 10 == 0:
+                    log_container.code("".join(full_output[-20:]), language="bash") # Show last 20 lines
+        
+        # Capture stderr
+        stderr_output = process.stderr.read()
+        full_output.append(stderr_output)
+        
+        rc = process.poll()
+        
+        st.subheader("🏁 Result")
+        if rc == 0:
+            st.success("Installation Successful!")
+        else:
+            st.error(f"Installation Failed with code {rc}")
+            
+        with st.expander("📜 Full Installation Log", expanded=True):
+            st.code("".join(full_output))
+            
+    except Exception as e:
+        st.error(f"Subprocess failed: {e}")
 
 if st.button("Load Main Dashboard"):
     try:
         import dashboard
-    except Exception as e:
-        st.error(f"Still failed: {e}")
+        st.success("Dashboard loaded!")
+    except ImportError as e:
+        st.error(f"Import Failed: {e}")
