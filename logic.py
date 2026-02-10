@@ -115,21 +115,43 @@ def normalize_csv(df):
 def fetch_market_data(ticker, start_date):
     """
     Fetches raw market data (auto_adjust=False) to correctly calculate dividends and splits.
+    Includes robust keys and fallback mechanisms.
     """
     # Extend start date back a bit to ensure we cover the first transaction
     start_date_obj = pd.to_datetime(start_date)
     buffer_date = start_date_obj - datetime.timedelta(days=10)
     
-    try:
-        data = yf.download(ticker, start=buffer_date, progress=False, auto_adjust=False, actions=True)
-        # Flatten MultiIndex if present
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
+    # 1. Try yf.download (Standard Bulk API) - 2 Attempts
+    for attempt in range(2):
+        try:
+            # print(f"Downloading {ticker} (Attempt {attempt+1})...")
+            data = yf.download(ticker, start=buffer_date, progress=False, auto_adjust=False, actions=True)
             
-        return data
+            if not data.empty:
+                # Flatten MultiIndex if present
+                if isinstance(data.columns, pd.MultiIndex):
+                    data.columns = data.columns.get_level_values(0)
+                return data, None
+        except Exception as e:
+            print(f"Error downloading {ticker} (Attempt {attempt+1}): {e}")
+    
+    # 2. Fallback: yf.Ticker().history (Single API)
+    # Sometimes yf.download fails for specific tickers/IPs, but Ticker object works.
+    print(f"Falling back to yf.Ticker({ticker}).history()...")
+    try:
+        t = yf.Ticker(ticker)
+        data = t.history(start=buffer_date, auto_adjust=False, actions=True)
+        
+        if not data.empty:
+            # Ensure index is timezone-aware/naive compatible if needed
+            # history() usually returns single header level for single ticker
+            return data, None
+            
     except Exception as e:
-        print(f"Error downloading {ticker}: {e}")
-        return pd.DataFrame()
+        print(f"Fallback error for {ticker}: {e}")
+        return pd.DataFrame(), f"Fallback failed: {str(e)}"
+        
+    return pd.DataFrame(), "No data found (Empty)"
 
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df):
@@ -148,10 +170,10 @@ def analyze_portfolio(df):
             continue
             
         first_date = ticker_df['Date'].min()
-        market_data = fetch_market_data(ticker, first_date)
+        market_data, error_msg = fetch_market_data(ticker, first_date)
         
         if market_data.empty:
-            results[ticker] = {"error": "No market data found"}
+            results[ticker] = {"error": f"No market data found: {error_msg}"}
             continue
 
         current_price = market_data['Close'].iloc[-1]
@@ -384,7 +406,7 @@ def simulate_strategy(ticker, start_date, initial_investment):
     """
     Simulates a perfect DRIP vs No-DRIP strategy for comparison.
     """
-    market_data = fetch_market_data(ticker, start_date)
+    market_data, _ = fetch_market_data(ticker, start_date)
     if market_data.empty:
         return None
 
