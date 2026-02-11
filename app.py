@@ -128,10 +128,13 @@ st.markdown("""
 
     /* Sidebar Button Specifics (Neutral & Small) */
     section[data-testid="stSidebar"] div.stButton > button {
-        color: #666666;
-        border: 1px solid #222222;
-        font-size: 0.65rem;
-        padding: 0.3rem 0.6rem;
+        color: #666666 !important;
+        border: 1px solid #222222 !important;
+        font-size: 0.6rem !important;
+        height: auto !important;
+        min-height: 0px !important;
+        padding: 0.3rem 0.8rem !important;
+        line-height: 1.2 !important;
     }
     
     section[data-testid="stSidebar"] div.stButton > button:hover {
@@ -194,11 +197,7 @@ st.markdown("""
         display: none;
     }
     [data-testid="stFileUploaderDropzone"] > div > div::before {
-        content: "Arrastra y suelta tu archivo aquí";
-        font-size: 1rem;
-        color: var(--text-color);
-        display: block;
-        margin-bottom: 0.5rem;
+        display: none;
     }
     [data-testid="stFileUploaderDropzone"] > div > div > small {
         display: none;
@@ -228,7 +227,7 @@ with st.sidebar:
 
 
     
-    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
     if st.sidebar.button("🧹 Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
