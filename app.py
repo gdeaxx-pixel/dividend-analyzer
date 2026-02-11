@@ -128,10 +128,10 @@ st.markdown("""
 
     /* Sidebar Button Specifics (Neutral & Small) */
     section[data-testid="stSidebar"] div.stButton > button {
-        color: #888888;
-        border: 1px solid #333333;
-        font-size: 0.75rem;
-        padding: 0.4rem 0.8rem;
+        color: #666666;
+        border: 1px solid #222222;
+        font-size: 0.65rem;
+        padding: 0.3rem 0.6rem;
     }
     
     section[data-testid="stSidebar"] div.stButton > button:hover {
@@ -227,6 +227,8 @@ with st.sidebar:
         uploaded_file = st.file_uploader("Upload", type=['csv', 'xlsx'], label_visibility="collapsed")
 
 
+    
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
     if st.sidebar.button("🧹 Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
