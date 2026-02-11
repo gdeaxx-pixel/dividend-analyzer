@@ -136,6 +136,42 @@ st.markdown("""
     /* Math Formula Style */
     .katex { font-size: 1.2em; color: #b3b3b3; }
     
+    /* 10. TRANSLATE FILE UPLOADER */
+    [data-testid="stFileUploaderDropzone"] button {
+        visibility: hidden;
+        position: relative;
+    }
+    [data-testid="stFileUploaderDropzone"] button::after {
+        content: "Explorar archivos";
+        visibility: visible;
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: transparent;
+        border: 1px solid var(--accent-green);
+        color: var(--accent-green);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        text-transform: uppercase;
+        cursor: pointer;
+    }
+    
+    [data-testid="stFileUploaderDropzone"] > div > div > span {
+        display: none;
+    }
+    [data-testid="stFileUploaderDropzone"] > div > div::before {
+        content: "Arrastra y suelta tu archivo aquí";
+        font-size: 1rem;
+        color: var(--text-color);
+        display: block;
+        margin-bottom: 0.5rem;
+    }
+    [data-testid="stFileUploaderDropzone"] > div > div > small {
+        display: none;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -148,39 +184,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-with st.expander("📚 ¿Cómo calcula la App mi Ganancia Real? (La Fórmula)"):
-    st.markdown(r"""
-    ### 🧮 La Fórmula de la Verdad
-    Esta app busca tu rentabilidad real, separando lo que pusiste de tu bolsillo de lo que el mercado te ha dado.
 
-    $$
-    \text{Ganancia Total} = (\text{Valor Mercado} + \text{Cash}) - \text{Bolsillo}
-    $$
-    
-    1. **🛑 Inversión de Bolsillo (Resta)**:  
-       Es la "deuda" que tienes contigo mismo. Solo suma el dinero nuevo que salió de tu banco para compra de acciones.  
-       *Ejemplo: Transferiste $1,000 para comprar.*
-
-    2. **📉 Valor de Mercado (Suma)**:
-       Es cuánto valen TODAS tus acciones hoy si las vendieras.
-       * **Composición**: (Acciones Compradas + Acciones Ganadas por DRIP) × Precio Actual.
-       * *Nota: Aquí vive el valor acumulado de tus reinversiones.*
-
-    3. **💵 Dividendos Cash (Suma)**:  
-       Es la **Suma Total** de los dividendos que cobraste en efectivo (líquido) y NO reinvertiste.
-       * *Este dinero ya está "a salvo" en tu cuenta, fuera del riesgo del mercado.*
-
-    ---
-    ### 💡 Ejemplo Visual
-    Imagina que compraste **10 acciones** y con el tiempo...
-    - El DRIP compró **1 acción extra** (Total: 11 acciones).
-    - Te pagaron **$50 en efectivo** (para la cena).
-
-    **Tu Riqueza Real es:**
-    1. Lo que valen esas **11 acciones** hoy en el mercado.
-    2. MAS los **$50** que ya te gastaste.
-    3. MENOS lo que te costaron las 10 originales.
-    """)
 
 # --- Sidebar: Input Method ---
 with st.sidebar:
