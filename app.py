@@ -142,7 +142,7 @@ st.markdown("""
         position: relative;
     }
     [data-testid="stFileUploaderDropzone"] button::after {
-        content: "SUBIR ARCHIVOS";
+        content: "SUBIR ARCHIVO";
         visibility: visible;
         position: absolute;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -195,7 +195,7 @@ with st.sidebar:
     uploaded_file = None
     if input_method == "Subir CSV/Excel":
         uploaded_file = st.file_uploader("Arrastra tu archivo aquí", type=['csv', 'xlsx'])
-        st.info("El archivo debe contener columnas como: Fecha, Acción, Ticker, Cantidad, Monto.")
+
 
     if st.sidebar.button("🧹 Limpiar Caché (Recargar Lógica)"):
         st.cache_data.clear()
