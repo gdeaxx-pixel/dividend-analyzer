@@ -125,6 +125,22 @@ st.markdown("""
         background-color: #000000;
         border-right: 1px solid var(--border-color);
     }
+
+    /* Sidebar Button Specifics (Neutral & Small) */
+    section[data-testid="stSidebar"] div.stButton > button {
+        color: #888888;
+        border: 1px solid #333333;
+        font-size: 0.75rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    section[data-testid="stSidebar"] div.stButton > button:hover {
+        color: #E0E0E0;
+        border-color: #666666;
+        background-color: rgba(255,255,255,0.05);
+        box-shadow: none;
+        transform: none;
+    }
     
     /* Custom Alert Boxes */
     div[data-testid="stMarkdownContainer"] > div.stAlert {
@@ -197,7 +213,7 @@ with st.sidebar:
         uploaded_file = st.file_uploader("Arrastra tu archivo aquí", type=['csv', 'xlsx'])
 
 
-    if st.sidebar.button("🧹 Limpiar Caché (Recargar Lógica)"):
+    if st.sidebar.button("🧹 Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
 
