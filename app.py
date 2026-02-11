@@ -177,8 +177,8 @@ st.markdown("""
         visibility: visible;
         position: relative;
         display: inline-block;
-        background-color: transparent;
-        border: 1px solid var(--accent-green);
+        background-color: rgba(255, 255, 255, 0.05); /* Slight BG for visibility */
+        border: 1px dashed var(--accent-green); /* Dashed to indicate dropzone */
         color: var(--accent-green);
         border-radius: 8px;
         font-weight: 600;
@@ -220,7 +220,6 @@ st.markdown("""
 
 # --- Sidebar: Input Method ---
 with st.sidebar:
-    st.header("Configuración")
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"])
 
     uploaded_file = None
