@@ -225,7 +225,7 @@ with st.sidebar:
 
     uploaded_file = None
     if input_method == "Subir CSV/Excel":
-        uploaded_file = st.file_uploader("Arrastra tu archivo aquí", type=['csv', 'xlsx'])
+        uploaded_file = st.file_uploader("Upload", type=['csv', 'xlsx'], label_visibility="collapsed")
 
 
     if st.sidebar.button("🧹 Limpiar Caché"):
