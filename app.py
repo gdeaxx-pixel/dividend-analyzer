@@ -203,6 +203,20 @@ st.markdown("""
         display: none;
     }
 
+    /* 11. GLASS METRIC CARD */
+    div[data-testid="stMetric"] {
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        transition: all 0.3s ease;
+    }
+    
+    div[data-testid="stMetric"]:hover {
+        background-color: rgba(255, 255, 255, 0.08); /* Lighter on hover */
+        border-color: var(--accent-green);
+        box-shadow: 0 0 15px rgba(0, 255, 148, 0.2);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -321,7 +335,17 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     }
                     
                     results_df = pd.DataFrame(results_data)
-                    st.table(results_df)
+                    
+                    # Enhanced Dataframe with Progress Bar for Profit %
+                    st.dataframe(
+                        results_df,
+                        column_config={
+                            "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
+                            "Valor": st.column_config.TextColumn("Resultado", width="large"),
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
 
                     st.markdown("### 🧮 Tu Verificación Rápida")
                     
