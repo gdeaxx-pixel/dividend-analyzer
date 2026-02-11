@@ -142,7 +142,7 @@ st.markdown("""
         position: relative;
     }
     [data-testid="stFileUploaderDropzone"] button::after {
-        content: "Explorar archivos";
+        content: "SUBIR ARCHIVOS";
         visibility: visible;
         position: absolute;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -154,6 +154,7 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         font-weight: 600;
+        font-size: 0.8rem;
         text-transform: uppercase;
         cursor: pointer;
     }
@@ -378,5 +379,3 @@ elif input_method == "Simulación Teórica":
             hist = sim_results['history']
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
-else:
-    st.info("👈 Selecciona una opción en el menú lateral para comenzar.")
