@@ -152,27 +152,42 @@ st.markdown("""
     /* Math Formula Style */
     .katex { font-size: 1.2em; color: #b3b3b3; }
     
-    /* 10. TRANSLATE FILE UPLOADER */
+    /* 10. TRANSLATE FILE UPLOADER & COMPACT STYLE */
+    [data-testid="stFileUploaderDropzone"] {
+        min-height: 0px !important;
+        padding: 0px !important;
+        border: none !important;
+        background-color: transparent !important;
+    }
+    
+    [data-testid="stFileUploaderDropzone"] div {
+        padding: 0px !important;
+        margin: 0px !important;
+    }
+
     [data-testid="stFileUploaderDropzone"] button {
         visibility: hidden;
         position: relative;
+        height: auto !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
     [data-testid="stFileUploaderDropzone"] button::after {
         content: "SUBIR ARCHIVO";
         visibility: visible;
-        position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
+        position: relative;
+        display: inline-block;
         background-color: transparent;
         border: 1px solid var(--accent-green);
         color: var(--accent-green);
         border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.75rem; /* Match sidebar button */
+        padding: 0.4rem 0.8rem; /* Match sidebar button */
         text-transform: uppercase;
         cursor: pointer;
+        width: 100%;
+        text-align: center;
     }
     
     [data-testid="stFileUploaderDropzone"] > div > div > span {
