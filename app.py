@@ -380,23 +380,50 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     
                     # --- New Chart: Evolution of Capital ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                        st.markdown("### 📈 COMPARACIÓN DE RENDIMIENTO % (vs S&P 500)")
+                        st.markdown("### 📈 RENDIMIENTO HISTÓRICO (%)")
                         
                         # Prepare data for chart
                         # Use the new Percentage Columns calculated in logic.py
-                        chart_data = stats['daily_trend'][['User Return %', 'SPY Return %']].copy()
+                        chart_data = stats['daily_trend'][['User Return %']].copy()
                         
                         # Rename columns for display
                         chart_data = chart_data.rename(columns={
-                            'User Return %': 'Tu Rendimiento (%)',
-                            'SPY Return %': 'S&P 500 Rendimiento (%)'
+                            'User Return %': 'Tu Rendimiento (%)'
                         })
                         
-                        st.line_chart(
-                            chart_data,
-                            color=["#00FF94", "#888888"], # User Green, SPY Gray
-                            height=400
+                        # Transform data for Altair (Long Format)
+                        chart_data_long = chart_data.reset_index().melt('Date', var_name='Metric', value_name='Return')
+                        
+                        import altair as alt
+                        
+                        base = alt.Chart(chart_data_long).encode(
+                            x=alt.X('Date:T', title='Fecha'),
+                            y=alt.Y('Return:Q', title='Rendimiento (%)', axis=alt.Axis(format='.0f', labelExpr="datum.value + '%'")), 
+                            color=alt.Color('Metric:N', scale=alt.Scale(domain=['Tu Rendimiento (%)'], range=['#00FF94'])),
+                            tooltip=[alt.Tooltip('Date:T', format='%Y-%m-%d'), alt.Tooltip('Metric:N'), alt.Tooltip('Return:Q', format='.2f')]
                         )
+                        
+                        # Note regarding Reverse Splits:
+                        # The logic in logic.py handles both forward (ratio > 1) and reverse (ratio < 1) splits correctly.
+                        # For a 1-for-2 reverse split, the ratio is 0.5, which halves the share count as expected.
+                        
+                        chart = base.mark_line().properties(
+                            height=400,
+                            background='transparent'
+                        ).configure_axis(
+                            grid=False,
+                            domainColor='#2A2A2A',
+                            tickColor='#2A2A2A',
+                            labelColor='#888',
+                            titleColor='#888'
+                        ).configure_view(
+                            strokeWidth=0
+                        ).configure_legend(
+                            labelColor='#E0E0E0',
+                            titleColor='#888'
+                        )
+                        
+                        st.altair_chart(chart, use_container_width=True)
                     
 
                     st.divider()
