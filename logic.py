@@ -488,6 +488,7 @@ def analyze_portfolio(df):
         #     daily_history['SPY Profit'] = 0.0
         
         daily_history['SPY Return %'] = 0.0 # Force 0 for now
+        daily_history['SPY Profit'] = 0.0 # Force 0 for now
 
         # B. User Portfolio TWR (Time-Weighted Return)
         # Formula: Unit Return r_t = (EndVal_t - (StartVal_t + NetFlow_t)) / (StartVal_t + NetFlow_t)
