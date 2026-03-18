@@ -451,7 +451,10 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.divider()
 
     except Exception as e:
+        import traceback
         st.error(f"Error procesando el archivo: {e}")
+        with st.expander("Ver detalles del error (Stacktrace)"):
+            st.code(traceback.format_exc())
 
 elif input_method == "Simulación Teórica":
     st.subheader("🧪 Simulación de Estrategia DRIP")
