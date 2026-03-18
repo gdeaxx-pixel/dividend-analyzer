@@ -378,29 +378,53 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     # Result line removed as requested
 
                     
-                    # --- New Chart: Evolution of Capital ---
+                    # --- New Chart: Evolution of Capital vs S&P 500 ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                        st.markdown("### 📈 RENDIMIENTO HISTÓRICO (%)")
+                        st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
                         
                         # Prepare data for chart
-                        # Use the new Percentage Columns calculated in logic.py
-                        chart_data = stats['daily_trend'][['User Return %']].copy()
+                        chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
                         
                         # Rename columns for display
                         chart_data = chart_data.rename(columns={
-                            'User Return %': 'Tu Rendimiento (%)'
+                            'User Total Value': 'Portafolio Real ($)',
+                            'SPY Profit': 'S&P 500 Simulado ($)'
                         })
                         
+                        # Calculate Percentage Difference daily
+                        # % Diff = (Portfolio - SPY) / SPY * 100
+                        # Avoid division by zero
+                        safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
+                        chart_data['Diferencia %'] = ((chart_data['Portafolio Real ($)'] - safe_spy) / safe_spy) * 100
+                        chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
+                        
+                        # Save the difference column before melting so we can attach it in tooltip
+                        # We need to reset index to have 'Date' as a column
+                        chart_data_reset = chart_data.reset_index()
+                        
                         # Transform data for Altair (Long Format)
-                        chart_data_long = chart_data.reset_index().melt('Date', var_name='Metric', value_name='Return')
+                        chart_data_long = chart_data_reset.melt(
+                            id_vars=['Date', 'Diferencia %'], 
+                            value_vars=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                            var_name='Estrategia', 
+                            value_name='Valor'
+                        )
                         
                         import altair as alt
                         
                         base = alt.Chart(chart_data_long).encode(
                             x=alt.X('Date:T', title='Fecha'),
-                            y=alt.Y('Return:Q', title='Rendimiento (%)', axis=alt.Axis(format='.0f', labelExpr="datum.value + '%'")), 
-                            color=alt.Color('Metric:N', scale=alt.Scale(domain=['Tu Rendimiento (%)'], range=['#00FF94'])),
-                            tooltip=[alt.Tooltip('Date:T', format='%Y-%m-%d'), alt.Tooltip('Metric:N'), alt.Tooltip('Return:Q', format='.2f')]
+                            y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')), 
+                            color=alt.Color('Estrategia:N', scale=alt.Scale(
+                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'], 
+                                range=['#00FF94', '#BC13FE'] # Cyber Green vs Cyber Purple
+                            )),
+                            tooltip=[
+                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'), 
+                                alt.Tooltip('Estrategia:N', title='Estrategia'), 
+                                alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
+                                alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
+                            ]
                         )
                         
                         # Note regarding Reverse Splits:

@@ -63,6 +63,18 @@ def normalize_csv(df):
     # Strip whitespace from headers and try to match case-insensitively
     df.columns = df.columns.astype(str).str.strip()
     
+    # Ensure column names are unique (to prevent Streamlit/Arrow rendering errors)
+    new_cols = []
+    seen = {}
+    for c in df.columns:
+        if c in seen:
+            seen[c] += 1
+            new_cols.append(f"{c}_{seen[c]}")
+        else:
+            seen[c] = 0
+            new_cols.append(c)
+    df.columns = new_cols
+    
     # Internal map (lowercase keys for matching)
     col_map_lower = {
         'fecha': 'Date', 'date': 'Date', 'time': 'Date',
@@ -268,6 +280,7 @@ def analyze_portfolio(df):
                     return 0.0
 
         # Iterate through transactions to build history
+        cash_flows = []
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
             qty = safe_float(row.get('Quantity', 0))
@@ -294,41 +307,12 @@ def analyze_portfolio(df):
             is_deposit = 'deposit' in action or 'depósito' in action or 'transfer' in action or 'journal' in action or 'contribution' in action
             
             # Logic
-            if is_buy or is_deposit:
-                # If it's a deposit of shares (Qty > 0), we treat it as an investment at current market price?
-                # Usually CSV has 'Amount' for the cost basis of the transfer.
-                # If Amount is 0 (free shares?), then Profit is huge. 
-                # If Amount is negative (money out of pocket), we add to investment.
-                # Logic: If Amount is 0 but Qty > 0, we can't guess the cost. We assume 0 cost (infinite profit).
-                # But usually 'Journal' has negative amount.
-                pocket_investment += abs(amount) 
-                shares_owned += abs(qty)
+            row_cash_flow = 0.0
             
-            elif is_drip:
-                # Semantic Analysis of Description (User Request)
-                # ... (rest of logic unchanged, just indenting if needed or keep flattened) 
-                # actually, I am replacing the block, so I need to copy the DRIP logic or just reference it?
-                # I will just add the `or is_deposit` to the first `if` and keep the rest.
-                
-                # ... wait, I need to match the indentation and block structure of the original file.
-                # The original had `if is_buy: ... elif is_drip: ...`.
-                # I will combine them.
-                pass
-                
-        # (Wait, the Replace tool requires me to overwrite the specific lines. I should target the `is_div_payout` definition and the `if is_buy` block)
-        
-            # 4. Dividend Payout (Pago Cash)
-            # Keywords: dividend, dividendo, yield, interest
-            # Exclusion: MUST NOT be a reinvestment (handled by DRIP logic) to distinguish Cash vs Reinv.
-            is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
-            
-            # 5. Deposit / Transfer (Depósito) - Treat as Buy
-            is_deposit = 'deposit' in action or 'depósito' in action or 'transfer' in action or 'journal' in action
-            
-            # Logic
             if is_buy or is_deposit:
                 pocket_investment += abs(amount) # Amount usually negative for buys in many brokers, force positive cost
                 shares_owned += abs(qty)
+                row_cash_flow = abs(amount)
             
             elif is_drip:
                 # Semantic Analysis of Description (User Request)
@@ -367,6 +351,7 @@ def analyze_portfolio(df):
                  # Selling returns money to pocket (reduces net investment)
                  pocket_investment -= abs(amount) 
                  shares_owned -= abs(qty)
+                 row_cash_flow = -abs(amount)
                  
             # Special Handling: Splits in CSV
             # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
@@ -374,6 +359,10 @@ def analyze_portfolio(df):
             if 'split' in action:
                 if qty > 0:
                      shares_owned = qty # Reset balance to what CSV says
+                     
+            cash_flows.append(row_cash_flow)
+            
+        ticker_df['Cash_Flow_In'] = cash_flows
         
         # --- Final High-Level Calculations ---
         market_value = shares_owned * current_price
@@ -392,7 +381,7 @@ def analyze_portfolio(df):
         
         # --- Calculate Daily History (For Chart) ---
         # 1. Resample transactions to daily to handle multiple trades per day
-        daily_activity = ticker_df.groupby('Date')[['Quantity', 'Amount']].sum()
+        daily_activity = ticker_df.groupby('Date')[['Quantity', 'Amount', 'Cash_Flow_In']].sum()
         
         # 2. Reindex to market data (daily)
         daily_history = daily_activity.reindex(market_data.index).fillna(0)
@@ -431,8 +420,9 @@ def analyze_portfolio(df):
         daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
         
         # 5. Calculate Cumulative Investment (Cost Basis) over time
-        # Investment = Sum of (Buys - Sells). Amount is negative for buys.
-        daily_history['Daily Invested'] = daily_activity['Amount'].reindex(market_data.index).fillna(0) * -1 
+        # Investment = Sum of (Buys - Sells). 
+        # Using explicit Cash_Flow_In which avoids CSV sign parsing issues
+        daily_history['Daily Invested'] = daily_activity['Cash_Flow_In'].reindex(market_data.index).fillna(0)
         daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
 
         # 6. Calculate User Profit (Real)
@@ -458,37 +448,43 @@ def analyze_portfolio(df):
         # 7. Calculate Time-Weighted Return (TWR) & SPY Benchmark
         # ---------------------------------------------------------
         
-        # A. SPY Benchmark (DISABLED for Debugging)
-        # try:
-        #     # Fetch SPY data covering the same range
-        #     # Auto_adjust=True gives us "Adj Close" which includes dividends/splits (Total Return)
-        #     spy_data = yf.download('SPY', start=first_date, progress=False, auto_adjust=True)
-        #     
-        #     if isinstance(spy_data.columns, pd.MultiIndex):
-        #         spy_data.columns = spy_data.columns.get_level_values(0)
-        #     
-        #     # Reindex SPY to match portfolio dates (ffill to handle weekends/holidays if mapped)
-        #     spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
-        #     
-        #     # Normalize SPY to start at 0% on the first day of the user's history
-        #     initial_spy = spy_prices.iloc[0]
-        #     if initial_spy > 0:
-        #         daily_history['SPY Return %'] = ((spy_prices - initial_spy) / initial_spy) * 100
-        #     else:
-        #         daily_history['SPY Return %'] = 0.0
-        #         
-        #     # Fallback for SPY Profit (Not really compatible with Buy & Hold vs DCA, but we can standardise)
-        #     # For the "Profit" chart (money), we might still want the copycat, but user specifically asked for "% return".
-        #     # We will leave 'SPY Profit' as 0.0 or simple scaling for now since the user focused on the % chart.
-        #     daily_history['SPY Profit'] = 0.0 
-        #     
-        # except Exception as e:
-        #     print(f"Error calculating benchmark: {e}")
-        #     daily_history['SPY Return %'] = 0.0
-        #     daily_history['SPY Profit'] = 0.0
-        
-        daily_history['SPY Return %'] = 0.0 # Force 0 for now
-        daily_history['SPY Profit'] = 0.0 # Force 0 for now
+        # A. SPY/VOO Benchmark Simulation
+        try:
+            # Fetch VOO data covering the same range (auto_adjust=True for Total Return)
+            benchmark_ticker = 'VOO'
+            session = None
+            try:
+                session = get_session()
+            except:
+                pass
+                
+            spy_data = yf.download(benchmark_ticker, start=first_date, progress=False, auto_adjust=True, session=session)
+            
+            if isinstance(spy_data.columns, pd.MultiIndex):
+                spy_data.columns = spy_data.columns.get_level_values(0)
+            
+            # Reindex SPY to match portfolio dates (ffill to handle weekends/holidays if mapped)
+            spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
+            
+            # Simulate buying VOO shares with the exact same 'Daily Invested' amounts
+            daily_history['VOO Price'] = spy_prices
+            # Handle potential zeros or NaNs in VOO Price to avoid division by zero
+            safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).fillna(method='ffill').fillna(method='bfill')
+            
+            # Calculate shares bought each day (Daily Invested / Price)
+            # Note: Sells (negative Daily Invested) will correctly reduce shares
+            daily_history['VOO Shares Bought'] = daily_history['Daily Invested'] / safe_voo_price
+            daily_history['VOO Shares Held'] = daily_history['VOO Shares Bought'].cumsum()
+            
+            # Simulated Total Value
+            daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price'] 
+            
+        except Exception as e:
+            print(f"Error calculating benchmark (VOO): {e}")
+            daily_history['SPY Profit'] = 0.0
+            
+        # Also compute User Total Value for graphing
+        daily_history['User Total Value'] = daily_history['Market Value'] + daily_history['Cumulative Cash Div']
 
         # B. User Portfolio TWR (Time-Weighted Return)
         # Formula: Unit Return r_t = (EndVal_t - (StartVal_t + NetFlow_t)) / (StartVal_t + NetFlow_t)
@@ -567,7 +563,7 @@ def analyze_portfolio(df):
             "net_profit": net_profit,
             "roi_percent": roi,
             "history": ticker_df,
-            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'SPY Return %', 'Invested Capital', 'Market Value']] 
+            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'Invested Capital', 'Market Value', 'User Total Value']] 
         }
         
     return results
