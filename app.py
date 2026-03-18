@@ -221,7 +221,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-st.title("DIVIDEND // ANALYZER")
+st.markdown("<h1 style='margin-bottom:0px;'>DIVIDEND // ANALYZER <span style='font-size:0.3em; color:#00ff94; vertical-align:middle;'>v1.2</span></h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='margin-top: -15px; margin-bottom: 30px; color: #666; font-size: 1.1rem;'>
     AUDITORÍA FORENSE DE PORTAFOLIOS & SIMULADOR DE ESTRATEGIAS
@@ -297,7 +297,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         # 2. Analyze
         if st.button("Ejecutar Análisis Forense"):
             with st.spinner("Analizando transacciones, splits y dividendos..."):
-                results = logic.analyze_portfolio(df_clean)
+                results = logic.analyze_portfolio(df_clean, version="1.2")
                 
             if not results:
                 st.error("No se pudieron extraer tickers válidos o datos del archivo.")

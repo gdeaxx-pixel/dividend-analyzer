@@ -236,7 +236,7 @@ def fetch_market_data(ticker, start_date):
     return pd.DataFrame(), "No market data found: API Rate Limited & Scraper failed."
 
 @st.cache_data(show_spinner=False)
-def analyze_portfolio(df):
+def analyze_portfolio(df, version="1.2"):
     """
     Core function to analyze the portfolio from the normalized CSV.
     Detailed 'Forensic' analysis logic from SKILL.md.
