@@ -330,8 +330,8 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             f"${stats['dividends_collected_cash']:,.2f}",
                             f"${stats['dividends_collected_drip']:,.2f}",
                             f"${stats['total_dividends']:,.2f}",
-                            f"{stats['shares_owned_pocket']:.4f}",
-                            f"{stats['shares_owned_drip']:.4f}",
+                            f"{stats.get('shares_owned_pocket', 0):.4f}",
+                            f"{stats.get('shares_owned_drip', 0):.4f}",
                             f"{stats['shares_owned']:.4f}",
                             f"${stats['net_profit']:,.2f}",
                             f"{stats['roi_percent']:.2f}%"

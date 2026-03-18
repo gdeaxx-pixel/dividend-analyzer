@@ -308,6 +308,10 @@ def analyze_portfolio(df):
             # Keywords: deposit, deposito, transfer, journal, contribution
             is_deposit = 'deposit' in action or 'depósito' in action or 'transfer' in action or 'journal' in action or 'contribution' in action
             
+            # 6. Dividend Payout (Pago de Dividendo en Efectivo)
+            # Keywords: dividend, payout, yield, interest (excluding reinvestment)
+            is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
+            
             # Logic
             row_cash_flow = 0.0
             
