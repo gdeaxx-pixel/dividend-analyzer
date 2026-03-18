@@ -492,3 +492,13 @@ elif input_method == "Simulación Teórica":
             hist = sim_results['history']
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
+# --- Footer Disclaimer ---
+st.markdown("---")
+st.markdown("""
+<div style="font-size: 0.8rem; color: #888; text-align: center; margin-top: 3rem; padding-bottom: 2rem;">
+    ⚠️ <b>Aviso Importante: Calculadora en Versión Beta</b><br><br>
+    Esta herramienta de seguimiento de dividendos se encuentra actualmente en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones que arroja son estrictamente de carácter informativo y estimativo, por lo que podrían presentar errores o inexactitudes.<br><br>
+    No tomes esta información como un resultado definitivo ni como asesoría financiera. Es fundamental que siempre verifiques y compares estos números con tus propios registros, los estados de cuenta de tu casa de bolsa o tus métodos personales de seguimiento.<br><br>
+    El uso de esta aplicación es bajo tu propio riesgo. ¡Agradecemos mucho tus reportes sobre cualquier fallo o inconsistencia para ayudarnos a seguir mejorando la herramienta!
+</div>
+""", unsafe_allow_html=True)
