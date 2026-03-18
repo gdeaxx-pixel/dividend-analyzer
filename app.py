@@ -316,11 +316,13 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             "🏦 Inversión (el dinero que tu pusiste)",
                             "📉 Valor de Mercado (valor de tu inversión hoy)",
                             "💰 Div. Efectivo (dividendos pagados a tu balance)",
-                            "💰 Div. Acciones (dividendos re invertidos)",
-                            "💰 Total generado en dividendos (Div. Efectivo + Div. Acciones)",
+                            "💰 Valor de Div. Reinvertidos",
+                            "💰 Total generado en dividendos (Cash + Reinversión)",
+                            "📊 Acciones Compradas",
+                            "📊 Acciones por DRIP",
+                            "📊 Acciones Totales",
                             "🟢 Ganancia en $",
-                            "🟢 Ganancia en %",
-                            "📊 Acciones Totales (Inc. DRIP)"
+                            "🟢 Ganancia en %"
                         ],
                         "Valor": [
                             f"${stats['pocket_investment']:,.2f}",
@@ -328,9 +330,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             f"${stats['dividends_collected_cash']:,.2f}",
                             f"${stats['dividends_collected_drip']:,.2f}",
                             f"${stats['total_dividends']:,.2f}",
+                            f"{stats['shares_owned_pocket']:.4f}",
+                            f"{stats['shares_owned_drip']:.4f}",
+                            f"{stats['shares_owned']:.4f}",
                             f"${stats['net_profit']:,.2f}",
-                            f"{stats['roi_percent']:.2f}%",
-                            f"{stats['shares_owned']:.4f}"
+                            f"{stats['roi_percent']:.2f}%"
                         ]
                     }
                     
@@ -349,20 +353,14 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                     st.markdown("### 🧮 Tu Verificación Rápida")
                     
-                    # LaTeX Formula (Simplified for compatibility)
-                    # We render the generic formula first
-                    # LaTeX Formula (Simplified for compatibility)
-                    # We render the generic formula first
-                    # (Removed redundant single-line formula)
-                    
-                    # Then the inputs with specific values
+                    # LaTeX Formula (Corrected conceptual error: Shares + Shares, not Dollars + Shares)
                     # Determine color for the result
                     result_color = "green" if stats['net_profit'] >= 0 else "red"
                     
                     st.latex(r"""
                     \footnotesize
                     \begin{array}{r c c c c c}
-                    \text{Ganancia} = & \boxed{(\text{Div. Acciones} + \text{Tus Acciones}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
+                    \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
                     & \downarrow & & & & \\[0.5em]
                     \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
                     \textcolor{%s}{%s} = & %s & + & %s & - & %s

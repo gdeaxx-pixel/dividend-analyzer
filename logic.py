@@ -263,6 +263,8 @@ def analyze_portfolio(df):
         # --- Analysis Variables ---
         pocket_investment = 0.0 # Net cash flow from user's pocket
         shares_owned = 0.0
+        shares_owned_pocket = 0.0
+        shares_owned_drip = 0.0
         dividends_collected_cash = 0.0
         dividends_collected_drip = 0.0 # Value of dividends reinvested
         
@@ -312,6 +314,7 @@ def analyze_portfolio(df):
             if is_buy or is_deposit:
                 pocket_investment += abs(amount) # Amount usually negative for buys in many brokers, force positive cost
                 shares_owned += abs(qty)
+                shares_owned_pocket += abs(qty)
                 row_cash_flow = abs(amount)
             
             elif is_drip:
@@ -323,6 +326,7 @@ def analyze_portfolio(df):
                 # This is the "Realization" of the DRIP. We count this value.
                 if 'share' in action or 'acciones' in action:
                     shares_owned += abs(qty)
+                    shares_owned_drip += abs(qty)
                     dividends_collected_drip += abs(amount)
                     
                 # Pattern 2: "Reinvest Dividend" / "Dividendo Reinversión"
@@ -339,6 +343,7 @@ def analyze_portfolio(df):
                 # Negative amount = Purchase = Count Value
                 else: 
                      shares_owned += abs(qty)
+                     shares_owned_drip += abs(qty)
                      if amount < 0:
                         dividends_collected_drip += abs(amount)
                 
@@ -351,6 +356,7 @@ def analyze_portfolio(df):
                  # Selling returns money to pocket (reduces net investment)
                  pocket_investment -= abs(amount) 
                  shares_owned -= abs(qty)
+                 shares_owned_pocket -= abs(qty)
                  row_cash_flow = -abs(amount)
                  
             # Special Handling: Splits in CSV
@@ -555,6 +561,8 @@ def analyze_portfolio(df):
         results[ticker] = {
             "current_price": current_price,
             "shares_owned": shares_owned,
+            "shares_owned_pocket": shares_owned_pocket,
+            "shares_owned_drip": shares_owned_drip,
             "pocket_investment": pocket_investment,
             "market_value": market_value,
             "dividends_collected_cash": dividends_collected_cash,
