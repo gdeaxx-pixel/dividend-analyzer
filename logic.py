@@ -12,16 +12,15 @@ def get_session():
     """
     return crequests.Session(impersonate="chrome")
 
-def normalize_csv(df):
+def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalizes input dataframe to allow for different broker export formats.
-    Expected columns (mappings will be attempted):
-    - Date: Fecha
-    - Action: Tipo de operacion (Buy, Reinvest, Dividend)
-    - Ticker: Simbolo
-    - Quantity: Cantidad
-    - Price: Precio
-    - Amount: Monto/Total
+    Standardizes a broker's CSV export into a unified format for analysis.
+    
+    Args:
+        df: The raw DataFrame loaded from the CSV.
+        
+    Returns:
+        A normalized DataFrame with standard columns: Date, Action, Ticker, Quantity, Price, Amount.
     """
     # 0. Smart Header Detection (Metadata Skipping)
     # Check if we need to find the header row
@@ -236,10 +235,19 @@ def fetch_market_data(ticker, start_date):
     return pd.DataFrame(), "No market data found: API Rate Limited & Scraper failed."
 
 @st.cache_data(show_spinner=False)
-def analyze_portfolio(df, version="1.2"):
+def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
     """
-    Core function to analyze the portfolio from the normalized CSV.
-    Detailed 'Forensic' analysis logic from SKILL.md.
+    Performs a forensic analysis of a portfolio history to calculate true ROI and dividend performance.
+    
+    This function separates 'Pocket Investment' (real cash out) from 'DRIP implementation' 
+    (dividends used to buy shares) to provide a true picture of performance.
+    
+    Args:
+        df: Normalized DataFrame containing transaction history.
+        version: Cache-busting version string.
+        
+    Returns:
+        A dictionary keyed by Ticker containing detailed performance metrics and daily history.
     """
     results = {}
     
