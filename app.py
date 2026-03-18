@@ -493,12 +493,17 @@ elif input_method == "Simulación Teórica":
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
 # --- Footer Disclaimer ---
-st.markdown("---")
 st.markdown("""
-<div style="font-size: 0.8rem; color: #888; text-align: center; margin-top: 3rem; padding-bottom: 2rem;">
-    ⚠️ <b>Aviso Importante: Calculadora en Versión Beta</b><br><br>
-    Esta herramienta de seguimiento de dividendos se encuentra actualmente en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones que arroja son estrictamente de carácter informativo y estimativo, por lo que podrían presentar errores o inexactitudes.<br><br>
-    No tomes esta información como un resultado definitivo ni como asesoría financiera. Es fundamental que siempre verifiques y compares estos números con tus propios registros, los estados de cuenta de tu casa de bolsa o tus métodos personales de seguimiento.<br><br>
-    El uso de esta aplicación es bajo tu propio riesgo. ¡Agradecemos mucho tus reportes sobre cualquier fallo o inconsistencia para ayudarnos a seguir mejorando la herramienta!
+<div style="border: 1px solid #2A2A2A; border-radius: 10px; background-color: #121212; padding: 25px; margin-top: 3rem; margin-bottom: 2rem; text-align: center; max-width: 900px; margin-left: auto; margin-right: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    <h3 style="color: #E0E0E0; font-size: 1.1rem; margin-bottom: 0.8rem; font-weight: 600; text-transform: none; letter-spacing: normal; margin-top: 0 !important;">⚠️ Aviso Importante: Versión Beta</h3>
+    <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
+        Esta herramienta de seguimiento de dividendos se encuentra actualmente en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones que arroja son estrictamente<br>de carácter informativo y estimativo, por lo que podrían presentar errores o inexactitudes.
+    </p>
+    <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
+        No tomes esta información como un resultado definitivo ni como asesoría financiera. Es fundamental que siempre verifiques y compares estos números con tus propios registros, los estados<br>de cuenta de tu casa de bolsa o tus métodos personales de seguimiento.
+    </p>
+    <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 0;">
+        El uso de esta aplicación es bajo tu propio riesgo. ¡Agradecemos mucho tus reportes sobre cualquier fallo o inconsistencia para ayudarnos a seguir mejorando la herramienta!
+    </p>
 </div>
 """, unsafe_allow_html=True)
