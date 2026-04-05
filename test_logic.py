@@ -10,7 +10,7 @@ def run_test():
     print("🚀 Iniciando Validación de Lógica...")
     
     # Path del CSV de referencia (Ground Truth)
-    csv_path = "../CONY 3-15-2026 Individual_XXX535_Transactions_20260315-155550.csv"
+    csv_path = "CONY_test.csv"
     
     if not os.path.exists(csv_path):
         print(f"❌ Error: No se encontró el archivo de referencia en {csv_path}")

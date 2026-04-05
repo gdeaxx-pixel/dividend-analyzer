@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import yfinance as yf
 import datetime
 import streamlit as st
@@ -233,6 +234,13 @@ def fetch_market_data(ticker, start_date):
         return data, None
 
     return pd.DataFrame(), "No market data found: API Rate Limited & Scraper failed."
+
+@st.cache_data(show_spinner=False)
+def simulate_strategy_cached(ticker, start_date_str, initial_investment):
+    """Cache wrapper for simulate_strategy. Uses string for start_date to ensure hashability."""
+    start_date = datetime.date.fromisoformat(start_date_str)
+    return simulate_strategy(ticker, start_date, initial_investment)
+
 
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
@@ -487,7 +495,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             # Simulate buying VOO shares with the exact same 'Daily Invested' amounts
             daily_history['VOO Price'] = spy_prices
             # Handle potential zeros or NaNs in VOO Price to avoid division by zero
-            safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).fillna(method='ffill').fillna(method='bfill')
+            safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).ffill().bfill()
             
             # Calculate shares bought each day (Daily Invested / Price)
             # Note: Sells (negative Daily Invested) will correctly reduce shares
@@ -569,8 +577,89 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             prev_total_val = market_val 
             
         daily_history['User Return %'] = twr_series
-        
+
+        # ============================================================
+        # MÉTRICAS CUANTITATIVAS AJUSTADAS POR RIESGO
+        # Generadas por quant-analyst — inserción no destructiva
+        # ============================================================
+
+        # 1. Retornos diarios desde la serie TWR acumulada (evita contaminación por flujos de capital)
+        # User Return % es TWR acumulado en %. Convertimos a factor y derivamos retornos diarios.
+        twr_factor = (1 + daily_history['User Return %'] / 100).replace(0, np.nan)
+        daily_returns_q = twr_factor.pct_change().dropna()
+
+        spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
+        spy_daily_returns_q = spy_vals.pct_change().dropna()
+
+        # 2. Volatilidad anualizada
+        if len(daily_returns_q) >= 2:
+            volatilidad_anualizada = float(daily_returns_q.std() * np.sqrt(252) * 100)
+        else:
+            volatilidad_anualizada = None
+
+        # 3. Sharpe Ratio (Rf = 5% anual)
+        RF_ANUAL = 0.05
+        rf_diario = RF_ANUAL / 252
+        if len(daily_returns_q) >= 2 and daily_returns_q.std() > 1e-9:
+            exceso = daily_returns_q.mean() - rf_diario
+            sharpe_ratio = float((exceso / daily_returns_q.std()) * np.sqrt(252))
+        else:
+            sharpe_ratio = None
+
+        # 4. Sortino Ratio
+        retornos_neg = daily_returns_q[daily_returns_q < 0]
+        if len(retornos_neg) >= 2 and retornos_neg.std() > 1e-9:
+            exceso_s = daily_returns_q.mean() - rf_diario
+            sortino_ratio = float((exceso_s / retornos_neg.std()) * np.sqrt(252))
+        else:
+            sortino_ratio = None
+
+        # 5. Maximum Drawdown
+        valor_port = daily_history['User Total Value'].replace(0, np.nan).dropna()
+        if len(valor_port) >= 2:
+            peak_acum = valor_port.cummax()
+            drawdown_serie = (valor_port - peak_acum) / peak_acum * 100
+            max_drawdown = float(drawdown_serie.min())
+            daily_history['Drawdown %'] = drawdown_serie.reindex(daily_history.index).fillna(np.nan)
+        else:
+            max_drawdown = None
+            daily_history['Drawdown %'] = np.nan
+
+        # 6. Calmar Ratio — CAGR derivado de TWR para consistencia temporal
+        if max_drawdown is not None and max_drawdown < -1e-9 and len(daily_returns_q) >= 2:
+            # Usamos el TWR acumulado final (no ROI simple) para calcular CAGR
+            twr_final = daily_history['User Return %'].dropna()
+            if len(twr_final) > 0:
+                cum_twr_final = 1 + twr_final.iloc[-1] / 100
+                anios_twr = len(twr_final) / 252
+                cagr_twr = ((cum_twr_final ** (1 / anios_twr)) - 1) * 100 if anios_twr > 0 else 0
+                calmar_ratio = float(cagr_twr / abs(max_drawdown))
+            else:
+                calmar_ratio = None
+        else:
+            calmar_ratio = None
+
+        # 7. Beta vs VOO
+        retornos_alineados = pd.DataFrame({
+            'portfolio': daily_returns_q,
+            'spy': spy_daily_returns_q
+        }).dropna()
+        if len(retornos_alineados) >= 10 and retornos_alineados['spy'].var() > 1e-12:
+            cov_mat = retornos_alineados.cov()
+            beta = float(cov_mat.loc['portfolio', 'spy'] / retornos_alineados['spy'].var())
+        else:
+            beta = None
+
+        # 8. Alpha de Jensen
+        if beta is not None and len(retornos_alineados) >= 10:
+            rp_anual = float(retornos_alineados['portfolio'].mean() * 252 * 100)
+            rm_anual = float(retornos_alineados['spy'].mean() * 252 * 100)
+            alpha = float(rp_anual - (RF_ANUAL * 100 + beta * (rm_anual - RF_ANUAL * 100)))
+        else:
+            alpha = None
+
         results[ticker] = {
+            # Métricas existentes (sin cambios)
             "current_price": current_price,
             "shares_owned": shares_owned,
             "shares_owned_pocket": shares_owned_pocket,
@@ -583,7 +672,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             "net_profit": net_profit,
             "roi_percent": roi,
             "history": ticker_df,
-            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'Invested Capital', 'Market Value', 'User Total Value']] 
+            "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'Invested Capital', 'Market Value', 'User Total Value', 'Drawdown %']],
+            # Nuevas métricas cuantitativas
+            "volatilidad_anualizada": volatilidad_anualizada,
+            "sharpe_ratio":           sharpe_ratio,
+            "sortino_ratio":          sortino_ratio,
+            "max_drawdown":           max_drawdown,
+            "calmar_ratio":           calmar_ratio,
+            "beta_vs_voo":            beta,
+            "alpha_anualizado":       alpha,
         }
         
     return results

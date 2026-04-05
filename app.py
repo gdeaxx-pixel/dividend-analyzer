@@ -3,47 +3,47 @@ import pandas as pd
 
 import datetime
 import logic
-import importlib
-importlib.reload(logic)
 
 
 st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
 
 # --- CUSTOM CSS: THE "CYBER-INSTITUTIONAL" AESTHETIC ---
-# Guidelines: Bold, Dark, Neon Accents, Glassmorphism, 'Outfit' Font.
+# Guidelines: Inter font, Electric Blue #006497, 0px radius, tonal layering — The Architectural Authority.
 st.markdown("""
 <style>
-    /* 1. IMPORT FONTS */
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
-    
-    /* 2. GLOBAL VARIABLES */
+    /* 1. IMPORT FONTS — Inter (The Architectural Authority system font) */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
+
+    /* 2. GLOBAL VARIABLES — Invierte & Gana Design System */
     :root {
-        --bg-color: #050505;
-        --card-bg: #121212;
-        --text-color: #E0E0E0;
-        --accent-green: #00FF94;  /* Cyber Green */
-        --accent-purple: #BC13FE; /* Cyber Purple for DRIP */
-        --border-color: #2A2A2A;
+        --bg-color: #000000;
+        --card-bg: #021C36;
+        --text-color: #fcf9f8;
+        --electric-blue: #006497;
+        --logo-blue: #0086d4;
+        --surface-low: #f6f3f2;
+        --surface-high: #eae7e7;
     }
-    
+
     /* 3. RESET & BASE STYLES */
     html, body, [class*="css"] {
-        font-family: 'Outfit', sans-serif;
+        font-family: 'Inter', sans-serif;
         background-color: var(--bg-color);
         color: var(--text-color);
     }
-    
+
     /* Hide Default Header/Footer */
     header {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    /* 4. TYPOGRAPHY */
+
+    /* 4. TYPOGRAPHY — Architectural Authority scale */
     h1, h2, h3 {
-        font-weight: 700;
+        font-weight: 800;
         letter-spacing: -0.02em;
         color: white;
     }
-    
+
     h1 {
         font-size: 3.5rem !important;
         background: linear-gradient(90deg, #FFFFFF 0%, #888888 100%);
@@ -51,81 +51,77 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.5rem;
     }
-    
+
     h3 {
-        color: var(--accent-green);
+        color: var(--electric-blue);
         text-transform: uppercase;
         font-size: 1rem !important;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.10em;
         margin-top: 2rem !important;
         opacity: 0.9;
     }
-    
-    /* 5. CARDS & CONTAINERS */
+
+    /* 5. CARDS & CONTAINERS — tonal layering, no explicit borders */
     div[data-testid="stExpander"] {
         background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        border-radius: 0px;
+        box-shadow: 0 0 32px rgba(0, 0, 0, 0.5);
     }
-    
+
     div[data-testid="stExpander"] details {
         background-color: transparent;
     }
-    
-    /* 6. BUTTONS */
+
+    /* 6. BUTTONS — sharp, Electric Blue */
     div.stButton > button {
         background-color: transparent;
-        border: 1px solid var(--accent-green);
-        color: var(--accent-green);
-        border-radius: 8px;
+        border: 1px solid var(--electric-blue);
+        color: var(--electric-blue);
+        border-radius: 0px;
         padding: 0.6rem 1.2rem;
         font-weight: 600;
         transition: all 0.3s ease;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
     }
-    
+
     div.stButton > button:hover {
-        background-color: var(--accent-green);
-        color: black;
-        box-shadow: 0 0 15px rgba(0, 255, 148, 0.4);
-        transform: translateY(-2px);
+        background-color: var(--electric-blue);
+        color: #fcf9f8;
+        box-shadow: 0 0 32px rgba(0, 100, 151, 0.25);
     }
-    
+
     /* 7. METRICS */
     div[data-testid="stMetricValue"] {
         font-size: 2.5rem !important;
         font-weight: 700;
         color: white;
     }
-    
+
     div[data-testid="stMetricLabel"] {
         font-size: 0.9rem !important;
         color: #888;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.10em;
     }
-    
+
     div[data-testid="stMetricDelta"] svg {
-        fill: var(--accent-green) !important;
+        fill: var(--electric-blue) !important;
     }
-    
+
     div[data-testid="stMetricDelta"] > div {
-        color: var(--accent-green) !important;
+        color: var(--electric-blue) !important;
     }
-    
+
     /* 8. DATAFRAME / TABLES */
     div[data-testid="stDataFrame"] {
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
+        border-radius: 0px;
         overflow: hidden;
     }
-    
+
     /* 9. SIDEBAR */
     section[data-testid="stSidebar"] {
         background-color: #000000;
-        border-right: 1px solid var(--border-color);
     }
 
     /* Sidebar Button Specifics (Neutral & Small) */
@@ -138,33 +134,33 @@ st.markdown("""
         padding: 0.3rem 0.8rem !important;
         line-height: 1.2 !important;
     }
-    
+
     section[data-testid="stSidebar"] div.stButton > button:hover {
-        color: #E0E0E0;
-        border-color: #666666;
-        background-color: rgba(255,255,255,0.05);
+        color: #fcf9f8;
+        border-color: var(--electric-blue);
+        background-color: rgba(0, 100, 151, 0.08);
         box-shadow: none;
         transform: none;
     }
-    
+
     /* Custom Alert Boxes */
     div[data-testid="stMarkdownContainer"] > div.stAlert {
         background-color: rgba(255, 50, 50, 0.1);
         border: 1px solid #ff3333;
         color: #ffaaaa;
     }
-    
+
     /* Math Formula Style */
     .katex { font-size: 1.2em; color: #b3b3b3; }
-    
-    /* 10. TRANSLATE FILE UPLOADER & COMPACT STYLE */
+
+    /* 10. FILE UPLOADER — functional CSS preserved, aesthetic updated */
     [data-testid="stFileUploaderDropzone"] {
         min-height: 0px !important;
         padding: 0px !important;
         border: none !important;
         background-color: transparent !important;
     }
-    
+
     [data-testid="stFileUploaderDropzone"] div {
         padding: 0px !important;
         margin: 0px !important;
@@ -182,19 +178,20 @@ st.markdown("""
         visibility: visible;
         position: relative;
         display: inline-block;
-        background-color: rgba(255, 255, 255, 0.05); /* Slight BG for visibility */
-        border: 1px dashed var(--accent-green); /* Dashed to indicate dropzone */
-        color: var(--accent-green);
-        border-radius: 8px;
+        background-color: rgba(0, 100, 151, 0.05);
+        border: 1px dashed var(--electric-blue);
+        color: var(--electric-blue);
+        border-radius: 0px;
         font-weight: 600;
-        font-size: 0.75rem; /* Match sidebar button */
-        padding: 0.4rem 0.8rem; /* Match sidebar button */
+        font-size: 0.75rem;
+        padding: 0.4rem 0.8rem;
         text-transform: uppercase;
+        letter-spacing: 0.08em;
         cursor: pointer;
         width: 100%;
         text-align: center;
     }
-    
+
     [data-testid="stFileUploaderDropzone"] > div > div > span {
         display: none;
     }
@@ -205,25 +202,23 @@ st.markdown("""
         display: none;
     }
 
-    /* 11. GLASS METRIC CARD */
+    /* 11. METRIC CARDS — tonal layering, no borders */
     div[data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: rgba(2, 28, 54, 0.6);
         padding: 15px;
-        border-radius: 10px;
+        border-radius: 0px;
         transition: all 0.3s ease;
     }
-    
+
     div[data-testid="stMetric"]:hover {
-        background-color: rgba(255, 255, 255, 0.08); /* Lighter on hover */
-        border-color: var(--accent-green);
-        box-shadow: 0 0 15px rgba(0, 255, 148, 0.2);
+        background-color: rgba(0, 100, 151, 0.12);
+        box-shadow: 0 0 32px rgba(0, 100, 151, 0.12);
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-st.markdown("<h1 style='margin-bottom:0px;'>DIVIDEND // ANALYZER <span style='font-size:0.3em; color:#00ff94; vertical-align:middle;'>v1.2.1</span></h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='margin-bottom:0px;'>DIVIDEND // ANALYZER <span style='font-size:0.3em; color:#006497; vertical-align:middle;'>v1.2.1</span></h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='margin-top: -15px; margin-bottom: 30px; color: #666; font-size: 1.1rem;'>
     AUDITORÍA FORENSE DE PORTAFOLIOS & SIMULADOR DE ESTRATEGIAS
@@ -248,6 +243,11 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+# --- Utilidad de formateo para métricas cuantitativas ---
+def fmt_ratio(val, decimales=2, sufijo=""):
+    if val is None: return "N/A"
+    return f"{val:.{decimales}f}{sufijo}"
+
 # --- Main Logic ---
 
 if input_method == "Subir CSV/Excel" and uploaded_file is not None:
@@ -269,7 +269,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             success = True
                             st.toast(f"📖 Leído con éxito: {encoding} | Sep: {sep if sep else 'Auto'}", icon="✅")
                             break
-                    except:
+                    except Exception:
                         continue
                 if success: break
             
@@ -379,9 +379,18 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         f"{stats['pocket_investment']:,.2f}"
                     ))
                     
-                    # Result line removed as requested
+                    # --- Métricas de Riesgo Ajustado (quant-analyst) ---
+                    st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
+                    qr1, qr2, qr3 = st.columns(3)
+                    qr1.metric("Sharpe Ratio",       fmt_ratio(stats.get('sharpe_ratio')))
+                    qr2.metric("Sortino Ratio",      fmt_ratio(stats.get('sortino_ratio')))
+                    qr3.metric("Max Drawdown",       fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
 
-                    
+                    qr4, qr5, qr6 = st.columns(3)
+                    qr4.metric("Beta vs VOO",        fmt_ratio(stats.get('beta_vs_voo')))
+                    qr5.metric("Alpha Anualizado",   fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
+                    qr6.metric("Volatilidad Anual",  fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
+
                     # --- New Chart: Evolution of Capital vs S&P 500 ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
                         st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
@@ -421,7 +430,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')), 
                             color=alt.Color('Estrategia:N', scale=alt.Scale(
                                 domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'], 
-                                range=['#00FF94', '#BC13FE'] # Cyber Green vs Cyber Purple
+                                range=['#0086d4', '#fcf9f8'] # Logo Blue (portfolio) vs Surface White (S&P 500)
                             )),
                             tooltip=[
                                 alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'), 
@@ -447,7 +456,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         ).configure_view(
                             strokeWidth=0
                         ).configure_legend(
-                            labelColor='#E0E0E0',
+                            labelColor='#fcf9f8',
                             titleColor='#888'
                         )
                         
@@ -472,7 +481,7 @@ elif input_method == "Simulación Teórica":
     
     if st.button("Simular"):
         with st.spinner(f"Simulando {ticker}..."):
-            sim_results, error_msg = logic.simulate_strategy(ticker, start_date, amount)
+            sim_results, error_msg = logic.simulate_strategy_cached(ticker, start_date.isoformat(), amount)
             
         if sim_results is None:
             st.error(f"Error: {error_msg}")
@@ -494,16 +503,16 @@ elif input_method == "Simulación Teórica":
 
 # --- Footer Disclaimer ---
 st.markdown("""
-<div style="border: 1px solid #2A2A2A; border-radius: 10px; background-color: #121212; padding: 25px; margin-top: 3rem; margin-bottom: 2rem; max-width: 900px; margin-left: auto; margin-right: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; min-height: 200px;">
+<div style="background-color: #021C36; padding: 25px; margin-top: 3rem; margin-bottom: 2rem; max-width: 900px; margin-left: auto; margin-right: auto; box-shadow: 0 0 32px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; min-height: 200px;">
     <div style="text-align: center; max-width: 850px;">
-        <h3 style="color: #E0E0E0; font-size: 1.1rem; margin-bottom: 0.8rem; font-weight: 600; text-transform: none; letter-spacing: normal; margin-top: 0 !important;">⚠️ Aviso Importante: Versión Beta</h3>
-        <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
+        <h3 style="color: #fcf9f8; font-size: 1.1rem; margin-bottom: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.10em; margin-top: 0 !important;">⚠️ Aviso Importante: Versión Beta</h3>
+        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
             Esta herramienta de seguimiento de dividendos se encuentra actualmente en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones que arroja son estrictamente<br>de carácter informativo y estimativo, por lo que podrían presentar errores o inexactitudes.
         </p>
-        <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
+        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
             No tomes esta información como un resultado definitivo ni como asesoría financiera. Es fundamental que siempre verifiques y compares estos números con tus propios registros, los estados<br>de cuenta de tu casa de bolsa o tus métodos personales de seguimiento.
         </p>
-        <p style="color: #b3b3b3; font-size: 0.85rem; line-height: 1.6; margin-bottom: 0;">
+        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 0;">
             El uso de esta aplicación es bajo tu propio riesgo. ¡Agradecemos mucho tus reportes sobre cualquier fallo o inconsistencia para ayudarnos a seguir mejorando la herramienta!
         </p>
     </div>
