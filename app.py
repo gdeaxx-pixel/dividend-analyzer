@@ -593,11 +593,11 @@ elif input_method == "Simulación Teórica":
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
-FOOTER_STYLE = "background-color:#021C36;padding:40px 48px;margin-top:48px;border-top:2px solid #006497;"
-BADGE_STYLE  = "display:inline-block;font-family:'Inter',sans-serif;font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#006497;border:1px solid #006497;padding:4px 10px;"
-TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:14px;font-weight:700;letter-spacing:-0.01em;color:#fcf9f8;margin:16px 0 20px 0;max-width:680px;line-height:1.4;"
-BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:12px;color:rgba(252,249,248,0.55);line-height:1.7;margin:0 0 12px 0;max-width:680px;"
-BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:12px;color:rgba(252,249,248,0.35);line-height:1.7;margin:0;max-width:680px;"
+FOOTER_STYLE = "background-color:#eae7e7;padding:32px 40px;margin-top:48px;border-left:3px solid #006497;"
+BADGE_STYLE  = "display:inline-block;font-family:'Inter',sans-serif;font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#006497;border:1px solid #006497;padding:3px 8px;margin-bottom:14px;"
+TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:13px;font-weight:700;letter-spacing:-0.01em;color:#1a1a1a;margin:0 0 12px 0;max-width:720px;line-height:1.5;"
+BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#555555;line-height:1.7;margin:0 0 8px 0;max-width:720px;"
+BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#888888;line-height:1.7;margin:0;max-width:720px;"
 
 st.markdown(
     f'<div style="{FOOTER_STYLE}">'
