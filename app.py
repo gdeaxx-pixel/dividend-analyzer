@@ -283,6 +283,16 @@ st.markdown("""
 
 
 
+# --- Paleta Python para Altair (Altair no interpreta CSS vars) ---
+CHART_PALETTE = {
+    "portfolio": "#006497",        # Electric Blue
+    "sp500":     "#8a8a8a",        # Gris neutro referencia
+    "axis":      "#555555",        # on-surface-muted
+    "grid":      "rgba(26,26,26,0.08)",
+    "bg":        "#fcf9f8",        # surface
+    "title":     "#1a1a1a",        # on-surface
+}
+
 # --- Sidebar: Input Method ---
 with st.sidebar:
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"])
@@ -480,21 +490,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         
                         import altair as alt
 
-                        # Colores — The Architectural Authority surface mode
-                        _C_PORTFOLIO = "#006497"  # Electric Blue — portafolio real
-                        _C_SP500     = "#8a8a8a"  # Gris neutro — referencia S&P 500
-                        _C_AXIS      = "#555555"  # on-surface-muted
-                        _C_GRID      = "rgba(26,26,26,0.08)"
-                        _C_BG        = "#fcf9f8"  # surface
-                        _C_TITLE     = "#1a1a1a"  # on-surface
-                        _C_LEGEND_BG = "#fcf9f8"
-
                         base = alt.Chart(chart_data_long).encode(
                             x=alt.X('Date:T', title='Fecha'),
                             y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
                             color=alt.Color('Estrategia:N', scale=alt.Scale(
                                 domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
-                                range=[_C_PORTFOLIO, _C_SP500]
+                                range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
                             )),
                             tooltip=[
                                 alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
@@ -511,7 +512,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         # Área bajo la curva solo para el portafolio (mejora visual premium)
                         area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
                             opacity=0.08,
-                            color=_C_PORTFOLIO,
+                            color=CHART_PALETTE["portfolio"],
                             interpolate='monotone'
                         ).encode(
                             x=alt.X('Date:T'),
@@ -520,32 +521,32 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                         chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
                             height=400,
-                            background=_C_BG
+                            background=CHART_PALETTE["bg"]
                         ).configure_view(
                             strokeOpacity=0,
-                            fill=_C_BG
+                            fill=CHART_PALETTE["bg"]
                         ).configure_axis(
                             grid=True,
-                            gridColor=_C_GRID,
-                            domainColor=_C_AXIS,
-                            tickColor=_C_AXIS,
-                            labelColor=_C_AXIS,
-                            titleColor=_C_TITLE,
+                            gridColor=CHART_PALETTE["grid"],
+                            domainColor=CHART_PALETTE["axis"],
+                            tickColor=CHART_PALETTE["axis"],
+                            labelColor=CHART_PALETTE["axis"],
+                            titleColor=CHART_PALETTE["title"],
                             labelFont='Inter, system-ui, sans-serif',
                             titleFont='Inter, system-ui, sans-serif',
                             labelFontSize=11,
                             titleFontSize=12,
                             titleFontWeight=500
                         ).configure_legend(
-                            labelColor=_C_TITLE,
-                            titleColor=_C_AXIS,
+                            labelColor=CHART_PALETTE["title"],
+                            titleColor=CHART_PALETTE["axis"],
                             labelFont='Inter, system-ui, sans-serif',
                             titleFont='Inter, system-ui, sans-serif',
                             labelFontSize=12,
                             titleFontSize=10,
                             titleFontWeight=500,
                             strokeColor='transparent',
-                            fillColor=_C_LEGEND_BG,
+                            fillColor=CHART_PALETTE["bg"],
                             padding=12,
                             cornerRadius=0
                         )
