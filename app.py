@@ -592,53 +592,67 @@ elif input_method == "Simulación Teórica":
             hist = sim_results['history']
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
-# --- Footer Disclaimer — anclaje oscuro deliberado (#021C36) ---
+# --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
 st.markdown("""
 <div style="
     background-color: #021C36;
-    padding: 32px 40px;
+    padding: 40px 48px;
     margin-top: 48px;
     margin-bottom: 0;
     border-radius: 0;
+    border-top: 2px solid #006497;
 ">
+    <!-- Badge estilo branding -->
+    <div style="margin-bottom: 20px;">
+        <span style="
+            display: inline-block;
+            font-family: 'Inter', sans-serif;
+            font-size: 10px;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #006497;
+            border: 1px solid #006497;
+            padding: 4px 10px;
+            border-radius: 0;
+        ">Versión Beta</span>
+    </div>
+
+    <!-- Título editorial -->
     <p style="
         font-family: 'Inter', sans-serif;
-        font-size: 10px;
-        font-weight: 500;
-        letter-spacing: 0.10em;
-        text-transform: uppercase;
-        color: rgba(255,255,255,0.5);
-        margin-bottom: 16px;
-    ">⚠️ Aviso Importante — Versión Beta</p>
-    <p style="
-        font-family: 'Inter', sans-serif;
-        font-size: 12px;
-        color: rgba(255,255,255,0.65);
-        line-height: 1.6;
-        margin-bottom: 10px;
-        max-width: 860px;
-    ">
-        Esta herramienta se encuentra en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones son estrictamente de carácter informativo y estimativo — podrían presentar errores o inexactitudes.
-    </p>
-    <p style="
-        font-family: 'Inter', sans-serif;
-        font-size: 12px;
-        color: rgba(255,255,255,0.65);
-        line-height: 1.6;
-        margin-bottom: 10px;
-        max-width: 860px;
-    ">
-        No tomes esta información como asesoría financiera. Siempre verifica y compara estos números con tus propios registros o los estados de cuenta de tu casa de bolsa.
-    </p>
-    <p style="
-        font-family: 'Inter', sans-serif;
-        font-size: 12px;
-        color: rgba(255,255,255,0.45);
-        line-height: 1.6;
-        margin: 0;
-        max-width: 860px;
-    ">
-        El uso de esta aplicación es bajo tu propio riesgo. Reporta cualquier fallo para ayudarnos a mejorar.
-    </p>
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #fcf9f8;
+        margin: 0 0 20px 0;
+        max-width: 680px;
+        line-height: 1.4;
+    ">Esta herramienta es de carácter informativo y estimativo — no constituye asesoría financiera.</p>
+
+    <!-- Cuerpo en dos columnas de texto -->
+    <div style="display: flex; gap: 40px; max-width: 860px; flex-wrap: wrap;">
+        <p style="
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            color: rgba(252,249,248,0.55);
+            line-height: 1.7;
+            margin: 0;
+            flex: 1;
+            min-width: 240px;
+        ">Los datos, cálculos y proyecciones pueden presentar errores o inexactitudes. Siempre verifica con tus propios registros o los estados de cuenta de tu casa de bolsa.</p>
+
+        <p style="
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            color: rgba(252,249,248,0.35);
+            line-height: 1.7;
+            margin: 0;
+            flex: 1;
+            min-width: 240px;
+        ">El uso de esta aplicación es bajo tu propio riesgo. Reporta cualquier fallo o inconsistencia para ayudarnos a seguir mejorando.</p>
+    </div>
 </div>
 """, unsafe_allow_html=True)
