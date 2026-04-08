@@ -602,7 +602,6 @@ st.markdown("""
     border-radius: 0;
     border-top: 2px solid #006497;
 ">
-    <!-- Badge estilo branding -->
     <div style="margin-bottom: 20px;">
         <span style="
             display: inline-block;
@@ -617,8 +616,6 @@ st.markdown("""
             border-radius: 0;
         ">Versión Beta</span>
     </div>
-
-    <!-- Título editorial -->
     <p style="
         font-family: 'Inter', sans-serif;
         font-size: 14px;
@@ -629,8 +626,6 @@ st.markdown("""
         max-width: 680px;
         line-height: 1.4;
     ">Esta herramienta es de carácter informativo y estimativo — no constituye asesoría financiera.</p>
-
-    <!-- Cuerpo en dos columnas de texto -->
     <div style="display: flex; gap: 40px; max-width: 860px; flex-wrap: wrap;">
         <p style="
             font-family: 'Inter', sans-serif;
