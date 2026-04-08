@@ -26,7 +26,7 @@ env/
 ENV/
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
 secrets.toml
 
 # macOS

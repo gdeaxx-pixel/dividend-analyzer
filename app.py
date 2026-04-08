@@ -7,165 +7,187 @@ import logic
 
 st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
 
-# --- CUSTOM CSS: THE "CYBER-INSTITUTIONAL" AESTHETIC ---
-# Guidelines: Inter font, Electric Blue #006497, 0px radius, tonal layering — The Architectural Authority.
+# --- CUSTOM CSS: THE ARCHITECTURAL AUTHORITY — SURFACE MODE ---
+# Sistema de diseño: Invierte & Gana / tonal layering light
+# Paleta: surface #fcf9f8 → surface-low #f6f3f2 → surface-high #eae7e7
+# Anclajes oscuros: #021C36 (tabla header, footer, tooltips)
 st.markdown("""
 <style>
-    /* 1. IMPORT FONTS — Inter (The Architectural Authority system font) */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
+    /* 1. IMPORT FONTS */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Cinzel:wght@700&display=swap');
 
-    /* 2. GLOBAL VARIABLES — Invierte & Gana Design System */
+    /* 2. DESIGN TOKENS — Invierte & Gana Surface System */
     :root {
-        --bg-color: #000000;
-        --card-bg: #021C36;
-        --text-color: #fcf9f8;
-        --electric-blue: #006497;
-        --logo-blue: #0086d4;
-        --surface-low: #f6f3f2;
-        --surface-high: #eae7e7;
+        --surface:           #fcf9f8;
+        --surface-low:       #f6f3f2;
+        --surface-high:      #eae7e7;
+        --on-surface:        #1a1a1a;
+        --on-surface-muted:  #555555;
+        --on-primary:        #ffffff;
+        --electric-blue:     #006497;
+        --electric-hover:    #004f79;
+        --electric-light:    rgba(0, 100, 151, 0.08);
+        --primary:           #000000;
+        --primary-container: #021C36;
+        --logo-blue:         #0086d4;
+        --shadow-sm:         rgba(26, 26, 26, 0.06);
+        --shadow-md:         rgba(26, 26, 26, 0.08);
     }
 
-    /* 3. RESET & BASE STYLES */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        background-color: var(--bg-color);
-        color: var(--text-color);
+    /* 3. RESET GLOBAL */
+    html, body,
+    [data-testid="stApp"],
+    [data-testid="stAppViewContainer"],
+    .main, .block-container {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        background-color: var(--surface) !important;
+        color: var(--on-surface) !important;
     }
 
-    /* Hide Default Header/Footer */
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+    header { visibility: hidden; }
+    footer { visibility: hidden; }
 
-    /* 4. TYPOGRAPHY — Architectural Authority scale */
+    /* 4. TIPOGRAFÍA */
     h1, h2, h3 {
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        color: white;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
+        color: var(--on-surface) !important;
     }
-
-    h1 {
-        font-size: 3.5rem !important;
-        background: linear-gradient(90deg, #FFFFFF 0%, #888888 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.5rem;
-    }
-
     h3 {
-        color: var(--electric-blue);
-        text-transform: uppercase;
-        font-size: 1rem !important;
-        letter-spacing: 0.10em;
+        color: var(--electric-blue) !important;
+        text-transform: uppercase !important;
+        font-size: 0.85rem !important;
+        letter-spacing: 0.10em !important;
+        font-weight: 500 !important;
         margin-top: 2rem !important;
-        opacity: 0.9;
     }
 
-    /* 5. CARDS & CONTAINERS — tonal layering, no explicit borders */
-    div[data-testid="stExpander"] {
-        background-color: var(--card-bg);
-        border-radius: 0px;
-        box-shadow: 0 0 32px rgba(0, 0, 0, 0.5);
+    /* 5. SIDEBAR — surface-low */
+    section[data-testid="stSidebar"] {
+        background-color: var(--surface-low) !important;
+        border-right: none !important;
+        box-shadow: 2px 0 8px var(--shadow-md);
+    }
+    section[data-testid="stSidebar"] * {
+        color: var(--on-surface) !important;
+    }
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] p {
+        font-size: 11px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.10em !important;
+        text-transform: uppercase !important;
+        color: var(--on-surface-muted) !important;
+    }
+    section[data-testid="stSidebar"] div.stButton > button {
+        background-color: transparent !important;
+        color: var(--on-surface-muted) !important;
+        border: 1px solid var(--surface-high) !important;
+        border-radius: 0px !important;
+        font-size: 0.65rem !important;
+        padding: 0.3rem 0.8rem !important;
+        letter-spacing: 0.08em !important;
+        text-transform: uppercase !important;
+    }
+    section[data-testid="stSidebar"] div.stButton > button:hover {
+        border-color: var(--electric-blue) !important;
+        color: var(--electric-blue) !important;
+        background-color: var(--electric-light) !important;
+        box-shadow: none !important;
     }
 
-    div[data-testid="stExpander"] details {
-        background-color: transparent;
-    }
-
-    /* 6. BUTTONS — sharp, Electric Blue */
+    /* 6. BOTONES — Electric Blue CTA */
     div.stButton > button {
-        background-color: transparent;
-        border: 1px solid var(--electric-blue);
-        color: var(--electric-blue);
-        border-radius: 0px;
-        padding: 0.6rem 1.2rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
+        background-color: var(--electric-blue) !important;
+        color: var(--on-primary) !important;
+        border: none !important;
+        border-radius: 9999px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        padding: 0.6rem 1.5rem !important;
+        transition: background-color 0.2s ease !important;
     }
-
     div.stButton > button:hover {
-        background-color: var(--electric-blue);
-        color: #fcf9f8;
-        box-shadow: 0 0 32px rgba(0, 100, 151, 0.25);
+        background-color: var(--electric-hover) !important;
+        box-shadow: 0 0 24px rgba(0, 100, 151, 0.20) !important;
     }
 
-    /* 7. METRICS */
+    /* 7. MÉTRICAS — surface-high cards */
+    div[data-testid="stMetric"] {
+        background-color: var(--surface-high) !important;
+        padding: 20px 24px !important;
+        border-radius: 0px !important;
+        box-shadow: 0 2px 8px var(--shadow-md) !important;
+        transition: box-shadow 0.2s ease !important;
+    }
+    div[data-testid="stMetric"]:hover {
+        box-shadow: 0 4px 16px var(--shadow-md) !important;
+    }
     div[data-testid="stMetricValue"] {
         font-size: 2.5rem !important;
-        font-weight: 700;
-        color: white;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
+        color: var(--on-surface) !important;
     }
-
     div[data-testid="stMetricLabel"] {
-        font-size: 0.9rem !important;
-        color: #888;
-        text-transform: uppercase;
-        letter-spacing: 0.10em;
+        font-size: 10px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.10em !important;
+        text-transform: uppercase !important;
+        color: var(--on-surface-muted) !important;
     }
+    div[data-testid="stMetricDelta"] svg { fill: var(--electric-blue) !important; }
+    div[data-testid="stMetricDelta"] > div { color: var(--electric-blue) !important; }
 
-    div[data-testid="stMetricDelta"] svg {
-        fill: var(--electric-blue) !important;
-    }
-
-    div[data-testid="stMetricDelta"] > div {
-        color: var(--electric-blue) !important;
-    }
-
-    /* 8. DATAFRAME / TABLES */
+    /* 8. DATAFRAME / TABLA */
     div[data-testid="stDataFrame"] {
-        border-radius: 0px;
+        border-radius: 0px !important;
         overflow: hidden;
+        box-shadow: 0 2px 8px var(--shadow-md);
     }
 
-    /* 9. SIDEBAR */
-    section[data-testid="stSidebar"] {
-        background-color: #000000;
+    /* 9. EXPANDER — surface-low */
+    div[data-testid="stExpander"] {
+        background-color: var(--surface-low) !important;
+        border-radius: 0px !important;
+        box-shadow: 0 2px 8px var(--shadow-sm) !important;
+    }
+    div[data-testid="stExpander"] details {
+        background-color: transparent !important;
     }
 
-    /* Sidebar Button Specifics (Neutral & Small) */
-    section[data-testid="stSidebar"] div.stButton > button {
-        color: #666666 !important;
-        border: 1px solid #222222 !important;
-        font-size: 0.6rem !important;
-        height: auto !important;
-        min-height: 0px !important;
-        padding: 0.3rem 0.8rem !important;
-        line-height: 1.2 !important;
+    /* 10. INPUTS */
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stDateInput"] input {
+        background-color: var(--surface-high) !important;
+        color: var(--on-surface) !important;
+        border: none !important;
+        border-bottom: 1px solid var(--surface-high) !important;
+        border-radius: 0px !important;
+        font-family: 'Inter', sans-serif !important;
+    }
+    [data-testid="stTextInput"] input:focus,
+    [data-testid="stNumberInput"] input:focus {
+        border-bottom-color: var(--electric-blue) !important;
+        outline: none !important;
     }
 
-    section[data-testid="stSidebar"] div.stButton > button:hover {
-        color: #fcf9f8;
-        border-color: var(--electric-blue);
-        background-color: rgba(0, 100, 151, 0.08);
-        box-shadow: none;
-        transform: none;
-    }
-
-    /* Custom Alert Boxes */
-    div[data-testid="stMarkdownContainer"] > div.stAlert {
-        background-color: rgba(255, 50, 50, 0.1);
-        border: 1px solid #ff3333;
-        color: #ffaaaa;
-    }
-
-    /* Math Formula Style */
-    .katex { font-size: 1.2em; color: #b3b3b3; }
-
-    /* 10. FILE UPLOADER — functional CSS preserved, aesthetic updated */
+    /* 11. FILE UPLOADER */
     [data-testid="stFileUploaderDropzone"] {
         min-height: 0px !important;
         padding: 0px !important;
         border: none !important;
         background-color: transparent !important;
     }
-
     [data-testid="stFileUploaderDropzone"] div {
         padding: 0px !important;
         margin: 0px !important;
     }
-
     [data-testid="stFileUploaderDropzone"] button {
         visibility: hidden;
         position: relative;
@@ -178,7 +200,7 @@ st.markdown("""
         visibility: visible;
         position: relative;
         display: inline-block;
-        background-color: rgba(0, 100, 151, 0.05);
+        background-color: var(--electric-light);
         border: 1px dashed var(--electric-blue);
         color: var(--electric-blue);
         border-radius: 0px;
@@ -191,37 +213,70 @@ st.markdown("""
         width: 100%;
         text-align: center;
     }
-
-    [data-testid="stFileUploaderDropzone"] > div > div > span {
-        display: none;
-    }
-    [data-testid="stFileUploaderDropzone"] > div > div::before {
-        display: none;
-    }
+    [data-testid="stFileUploaderDropzone"] > div > div > span,
+    [data-testid="stFileUploaderDropzone"] > div > div::before,
     [data-testid="stFileUploaderDropzone"] > div > div > small {
         display: none;
     }
 
-    /* 11. METRIC CARDS — tonal layering, no borders */
-    div[data-testid="stMetric"] {
-        background-color: rgba(2, 28, 54, 0.6);
-        padding: 15px;
-        border-radius: 0px;
-        transition: all 0.3s ease;
+    /* 12. ALERTS */
+    div[data-testid="stAlert"] {
+        border-radius: 0px !important;
+        border-left: 3px solid var(--electric-blue) !important;
+        background-color: var(--electric-light) !important;
+        color: var(--on-surface) !important;
     }
 
-    div[data-testid="stMetric"]:hover {
-        background-color: rgba(0, 100, 151, 0.12);
-        box-shadow: 0 0 32px rgba(0, 100, 151, 0.12);
+    /* 13. LATEX */
+    .katex { font-size: 1.1em; color: var(--on-surface) !important; }
+
+    /* 14. ALTAIR TOOLTIP — anclaje oscuro deliberado */
+    .vg-tooltip {
+        background-color: var(--primary-container) !important;
+        color: var(--on-primary) !important;
+        border: none !important;
+        border-radius: 0px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 12px !important;
+        padding: 10px 14px !important;
+        box-shadow: 0 4px 16px rgba(26, 26, 26, 0.15) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-st.markdown("<h1 style='margin-bottom:0px;'>DIVIDEND // ANALYZER <span style='font-size:0.3em; color:#006497; vertical-align:middle;'>v1.2.1</span></h1>", unsafe_allow_html=True)
 st.markdown("""
-<div style='margin-top: -15px; margin-bottom: 30px; color: #666; font-size: 1.1rem;'>
-    AUDITORÍA FORENSE DE PORTAFOLIOS & SIMULADOR DE ESTRATEGIAS
+<div style="padding: 40px 0 0 0; background-color: #fcf9f8;">
+    <h1 style="
+        font-family: 'Inter', sans-serif;
+        font-size: 2.8rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #1a1a1a;
+        margin-bottom: 6px;
+        line-height: 1.1;
+    ">
+        DIVIDEND <span style="color:#006497;">//</span> ANALYZER
+        <span style="
+            font-size: 0.28em;
+            font-weight: 500;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: #555555;
+            vertical-align: middle;
+            margin-left: 12px;
+        ">v1.2.1</span>
+    </h1>
+    <p style="
+        font-family: 'Inter', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 500;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+        color: #555555;
+        margin: 0 0 20px 0;
+    ">Auditoría forense de portafolios &amp; simulador de estrategias</p>
+    <div style="width: 48px; height: 2px; background-color: #006497; margin-bottom: 32px;"></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -424,40 +479,75 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         )
                         
                         import altair as alt
-                        
+
+                        # Colores — The Architectural Authority surface mode
+                        _C_PORTFOLIO = "#006497"  # Electric Blue — portafolio real
+                        _C_SP500     = "#8a8a8a"  # Gris neutro — referencia S&P 500
+                        _C_AXIS      = "#555555"  # on-surface-muted
+                        _C_GRID      = "rgba(26,26,26,0.08)"
+                        _C_BG        = "#fcf9f8"  # surface
+                        _C_TITLE     = "#1a1a1a"  # on-surface
+                        _C_LEGEND_BG = "#fcf9f8"
+
                         base = alt.Chart(chart_data_long).encode(
                             x=alt.X('Date:T', title='Fecha'),
-                            y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')), 
+                            y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
                             color=alt.Color('Estrategia:N', scale=alt.Scale(
-                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'], 
-                                range=['#0086d4', '#fcf9f8'] # Logo Blue (portfolio) vs Surface White (S&P 500)
+                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                                range=[_C_PORTFOLIO, _C_SP500]
                             )),
                             tooltip=[
-                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'), 
-                                alt.Tooltip('Estrategia:N', title='Estrategia'), 
+                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                                alt.Tooltip('Estrategia:N', title='Estrategia'),
                                 alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
                                 alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
                             ]
                         )
-                        
+
                         # Note regarding Reverse Splits:
                         # The logic in logic.py handles both forward (ratio > 1) and reverse (ratio < 1) splits correctly.
                         # For a 1-for-2 reverse split, the ratio is 0.5, which halves the share count as expected.
-                        
-                        chart = base.mark_line().properties(
+
+                        # Área bajo la curva solo para el portafolio (mejora visual premium)
+                        area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
+                            opacity=0.08,
+                            color=_C_PORTFOLIO,
+                            interpolate='monotone'
+                        ).encode(
+                            x=alt.X('Date:T'),
+                            y=alt.Y('Valor:Q')
+                        )
+
+                        chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
                             height=400,
-                            background='transparent'
-                        ).configure_axis(
-                            grid=False,
-                            domainColor='#2A2A2A',
-                            tickColor='#2A2A2A',
-                            labelColor='#888',
-                            titleColor='#888'
+                            background=_C_BG
                         ).configure_view(
-                            strokeWidth=0
+                            strokeOpacity=0,
+                            fill=_C_BG
+                        ).configure_axis(
+                            grid=True,
+                            gridColor=_C_GRID,
+                            domainColor=_C_AXIS,
+                            tickColor=_C_AXIS,
+                            labelColor=_C_AXIS,
+                            titleColor=_C_TITLE,
+                            labelFont='Inter, system-ui, sans-serif',
+                            titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=11,
+                            titleFontSize=12,
+                            titleFontWeight=500
                         ).configure_legend(
-                            labelColor='#fcf9f8',
-                            titleColor='#888'
+                            labelColor=_C_TITLE,
+                            titleColor=_C_AXIS,
+                            labelFont='Inter, system-ui, sans-serif',
+                            titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=12,
+                            titleFontSize=10,
+                            titleFontWeight=500,
+                            strokeColor='transparent',
+                            fillColor=_C_LEGEND_BG,
+                            padding=12,
+                            cornerRadius=0
                         )
                         
                         st.altair_chart(chart, use_container_width=True)
@@ -501,20 +591,53 @@ elif input_method == "Simulación Teórica":
             hist = sim_results['history']
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
-# --- Footer Disclaimer ---
+# --- Footer Disclaimer — anclaje oscuro deliberado (#021C36) ---
 st.markdown("""
-<div style="background-color: #021C36; padding: 25px; margin-top: 3rem; margin-bottom: 2rem; max-width: 900px; margin-left: auto; margin-right: auto; box-shadow: 0 0 32px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; min-height: 200px;">
-    <div style="text-align: center; max-width: 850px;">
-        <h3 style="color: #fcf9f8; font-size: 1.1rem; margin-bottom: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.10em; margin-top: 0 !important;">⚠️ Aviso Importante: Versión Beta</h3>
-        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
-            Esta herramienta de seguimiento de dividendos se encuentra actualmente en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones que arroja son estrictamente<br>de carácter informativo y estimativo, por lo que podrían presentar errores o inexactitudes.
-        </p>
-        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem;">
-            No tomes esta información como un resultado definitivo ni como asesoría financiera. Es fundamental que siempre verifiques y compares estos números con tus propios registros, los estados<br>de cuenta de tu casa de bolsa o tus métodos personales de seguimiento.
-        </p>
-        <p style="color: rgba(252, 249, 248, 0.65); font-size: 0.85rem; line-height: 1.6; margin-bottom: 0;">
-            El uso de esta aplicación es bajo tu propio riesgo. ¡Agradecemos mucho tus reportes sobre cualquier fallo o inconsistencia para ayudarnos a seguir mejorando la herramienta!
-        </p>
-    </div>
+<div style="
+    background-color: #021C36;
+    padding: 32px 40px;
+    margin-top: 48px;
+    margin-bottom: 0;
+    border-radius: 0;
+">
+    <p style="
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 16px;
+    ">⚠️ Aviso Importante — Versión Beta</p>
+    <p style="
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: rgba(255,255,255,0.65);
+        line-height: 1.6;
+        margin-bottom: 10px;
+        max-width: 860px;
+    ">
+        Esta herramienta se encuentra en fase de prueba (Beta) y en desarrollo continuo. Los datos, cálculos y proyecciones son estrictamente de carácter informativo y estimativo — podrían presentar errores o inexactitudes.
+    </p>
+    <p style="
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: rgba(255,255,255,0.65);
+        line-height: 1.6;
+        margin-bottom: 10px;
+        max-width: 860px;
+    ">
+        No tomes esta información como asesoría financiera. Siempre verifica y compara estos números con tus propios registros o los estados de cuenta de tu casa de bolsa.
+    </p>
+    <p style="
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: rgba(255,255,255,0.45);
+        line-height: 1.6;
+        margin: 0;
+        max-width: 860px;
+    ">
+        El uso de esta aplicación es bajo tu propio riesgo. Reporta cualquier fallo para ayudarnos a mejorar.
+    </p>
 </div>
 """, unsafe_allow_html=True)
