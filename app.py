@@ -3,6 +3,7 @@ import pandas as pd
 
 import datetime
 import logic
+import json
 
 
 st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
@@ -265,7 +266,7 @@ st.markdown("""
             color: #555555;
             vertical-align: middle;
             margin-left: 12px;
-        ">v1.2.1</span>
+        ">v2.0</span>
     </h1>
     <p style="
         font-family: 'Inter', sans-serif;
@@ -302,7 +303,7 @@ with st.sidebar:
         uploaded_file = st.file_uploader("Upload", type=['csv', 'xlsx'], label_visibility="collapsed")
 
 
-    
+
     st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
     if st.sidebar.button("🧹 Limpiar Caché"):
         st.cache_data.clear()
@@ -317,178 +318,203 @@ def fmt_ratio(val, decimales=2, sufijo=""):
 
 if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     st.subheader("📊 Análisis de Portafolio Real")
-    
+
     try:
-        if uploaded_file.name.endswith('.csv'):
-            # Ultra-Robust CSV Reader
-            success = False
-            encodings = ['utf-8', 'latin1', 'cp1252', 'utf-16']
-            separators = [None, ';', '\t'] # None = Auto-detect with python engine
-            
-            for encoding in encodings:
-                for sep in separators:
-                    try:
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, sep=sep, encoding=encoding, engine='python')
-                        if len(df.columns) > 1: # Basic check: Did we parse columns?
-                            success = True
-                            st.toast(f"📖 Leído con éxito: {encoding} | Sep: {sep if sep else 'Auto'}", icon="✅")
-                            break
-                    except Exception:
-                        continue
-                if success: break
-            
-            if not success:
-               st.error("❌ No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
-               st.stop()
-               
-        else:
+        if uploaded_file.name.endswith('.xlsx'):
             df = pd.read_excel(uploaded_file)
-            
+            broker = 'generic'
+        else:
+            df, broker = logic.load_and_detect_csv(uploaded_file)
+            if df.empty:
+                st.error("❌ No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
+                st.stop()
+
+        # Section A — Broker badge
+        BROKER_LABELS = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}
+        BROKER_COLORS = {'schwab': '#006497', 'ibkr': '#c8102e', 'generic': '#555555'}
+        broker_label = BROKER_LABELS.get(broker, broker.upper())
+        broker_color = BROKER_COLORS.get(broker, '#555555')
+        st.markdown(f'<div style="display:inline-block;background-color:{broker_color};color:#ffffff;font-family:Inter,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;padding:4px 12px;margin-bottom:12px;">BROKER DETECTADO: {broker_label}</div>', unsafe_allow_html=True)
+
         # 1. Normalize
         df_clean = logic.normalize_csv(df)
-        
+
         with st.expander("Ver datos procesados (Primeras 5 filas)"):
             st.dataframe(df_clean.head())
 
         # 1.5 Validate Columns
         required_cols = ['Date', 'Ticker', 'Amount']
         missing_cols = [col for col in required_cols if col not in df_clean.columns]
-        
+
         if missing_cols:
             st.error(f"❌ Error de Formato: No encontramos las columnas: {', '.join(missing_cols)}")
             st.warning(f"Columnas encontradas: {list(df_clean.columns)}")
             st.info("💡 Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
             st.stop()
-        
+
         # 2. Analyze
         if st.button("Ejecutar Análisis Forense"):
             with st.spinner("Analizando transacciones, splits y dividendos..."):
-                # Use a defensive call in case version is not yet supported in memory
                 try:
-                    results = logic.analyze_portfolio(df_clean, version="1.2.1")
+                    results = logic.analyze_portfolio(df_clean, version="2.0")
                 except TypeError:
                     results = logic.analyze_portfolio(df_clean)
-                
+
             if not results:
                 st.error("No se pudieron extraer tickers válidos o datos del archivo.")
             else:
+                classify_map = logic.classify_tickers(list(results.keys()))
+
+                # Section B — Classification summary
+                mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
+                mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
+
+                st.markdown("### 📊 CLASIFICACIÓN DE PORTAFOLIO")
+                b_col1, b_col2 = st.columns(2)
+                with b_col1:
+                    st.markdown("**MODO A — YieldMax (Income)**")
+                    pills_a = " ".join([f'<span style="display:inline-block;background-color:#c8102e;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:9999px;">{t}</span>' for t in mode_a_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
+                    st.markdown(pills_a, unsafe_allow_html=True)
+                with b_col2:
+                    st.markdown("**MODO B — ETFs de Crecimiento**")
+                    pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:9999px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
+                    st.markdown(pills_b, unsafe_allow_html=True)
+
+                st.divider()
+
                 # Display Results per Ticker
                 for ticker, stats in results.items():
                     if "error" in stats:
                         st.error(f"Error con {ticker}: {stats['error']}")
                         continue
-                        
-                    st.markdown(f"### Result for: **{ticker}**")
-                    
-                    # Create data for the requested table format
-                    results_data = {
-                        "Indicador": [
-                            "🏦 Inversión (el dinero que tu pusiste)",
-                            "📉 Valor de Mercado (valor de tu inversión hoy)",
-                            "💰 Div. Efectivo (dividendos pagados a tu balance)",
-                            "💰 Valor de Div. Reinvertidos",
-                            "💰 Total generado en dividendos (Cash + Reinversión)",
-                            "📊 Acciones Compradas",
-                            "📊 Acciones por DRIP",
-                            "📊 Acciones Totales",
-                            "🟢 Ganancia en $",
-                            "🟢 Ganancia en %"
-                        ],
-                        "Valor": [
-                            f"${stats['pocket_investment']:,.2f}",
-                            f"${stats['market_value']:,.2f}",
-                            f"${stats['dividends_collected_cash']:,.2f}",
-                            f"${stats['dividends_collected_drip']:,.2f}",
-                            f"${stats['total_dividends']:,.2f}",
-                            f"{stats.get('shares_owned_pocket', 0):.4f}",
-                            f"{stats.get('shares_owned_drip', 0):.4f}",
-                            f"{stats['shares_owned']:.4f}",
-                            f"${stats['net_profit']:,.2f}",
-                            f"{stats['roi_percent']:.2f}%"
-                        ]
-                    }
-                    
-                    results_df = pd.DataFrame(results_data)
-                    
-                    # Enhanced Dataframe with Progress Bar for Profit %
-                    st.dataframe(
-                        results_df,
-                        column_config={
-                            "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
-                            "Valor": st.column_config.TextColumn("Resultado", width="large"),
-                        },
-                        hide_index=True,
-                        use_container_width=True
-                    )
 
-                    st.markdown("### 🧮 Tu Verificación Rápida")
-                    
-                    # LaTeX Formula (Corrected conceptual error: Shares + Shares, not Dollars + Shares)
-                    # Determine color for the result
-                    result_color = "green" if stats['net_profit'] >= 0 else "red"
-                    
-                    st.latex(r"""
-                    \footnotesize
-                    \begin{array}{r c c c c c}
-                    \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
-                    & \downarrow & & & & \\[0.5em]
-                    \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
-                    \textcolor{%s}{%s} = & %s & + & %s & - & %s
-                    \end{array}
-                    """ % (
-                        result_color,
-                        f"\\${stats['net_profit']:,.2f}",
-                        f"{stats['market_value']:,.2f}", 
-                        f"{stats['dividends_collected_cash']:,.2f}", 
-                        f"{stats['pocket_investment']:,.2f}"
-                    ))
-                    
-                    # --- Métricas de Riesgo Ajustado (quant-analyst) ---
+                    ticker_mode = stats.get('ticker_mode', classify_map.get(ticker, 'mode_b'))
+                    mode_badge_color = '#c8102e' if ticker_mode == 'mode_a' else '#006497'
+                    mode_badge_label = 'MODO A' if ticker_mode == 'mode_a' else 'MODO B'
+                    mode_badge = f'<span style="display:inline-block;background-color:{mode_badge_color};color:#fff;font-family:Inter,sans-serif;font-size:9px;font-weight:600;letter-spacing:0.10em;padding:1px 6px;border-radius:9999px;vertical-align:middle;margin-left:8px;">{mode_badge_label}</span>'
+                    st.markdown(f"### **{ticker}** {mode_badge}", unsafe_allow_html=True)
+
+                    if ticker_mode == 'mode_b':
+                        # Section C — Mode B: Growth ETF metrics
+                        cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
+                        bc1, bc2, bc3, bc4 = st.columns(4)
+                        bc1.metric("Inversión", f"${stats['pocket_investment']:,.2f}")
+                        bc2.metric("Valor Actual", f"${stats['market_value']:,.2f}")
+                        ganancia = stats['market_value'] - stats['pocket_investment']
+                        bc3.metric("Ganancia $", f"${ganancia:,.2f}", delta=f"{stats['roi_percent']:.2f}%")
+                        bc4.metric("CAGR", cagr_str)
+                        shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
+                    else:
+                        # Mode A: full dividend table
+                        results_data = {
+                            "Indicador": [
+                                "🏦 Inversión (el dinero que tu pusiste)",
+                                "📉 Valor de Mercado (valor de tu inversión hoy)",
+                                "💰 Div. Efectivo (dividendos pagados a tu balance)",
+                                "💰 Valor de Div. Reinvertidos",
+                                "💰 Total generado en dividendos (Cash + Reinversión)",
+                                "📊 Acciones Compradas",
+                                "📊 Acciones por DRIP",
+                                "📊 Acciones Totales",
+                                "🟢 Ganancia en $",
+                                "🟢 Ganancia en %"
+                            ],
+                            "Valor": [
+                                f"${stats['pocket_investment']:,.2f}",
+                                f"${stats['market_value']:,.2f}",
+                                f"${stats['dividends_collected_cash']:,.2f}",
+                                f"${stats['dividends_collected_drip']:,.2f}",
+                                f"${stats['total_dividends']:,.2f}",
+                                f"{stats.get('shares_owned_pocket', 0):.4f}",
+                                f"{stats.get('shares_owned_drip', 0):.4f}",
+                                f"{stats['shares_owned']:.4f}",
+                                f"${stats['net_profit']:,.2f}",
+                                f"{stats['roi_percent']:.2f}%"
+                            ]
+                        }
+                        results_df = pd.DataFrame(results_data)
+                        st.dataframe(
+                            results_df,
+                            column_config={
+                                "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
+                                "Valor": st.column_config.TextColumn("Resultado", width="large"),
+                            },
+                            hide_index=True,
+                            use_container_width=True
+                        )
+
+                        st.markdown("### 🧮 Tu Verificación Rápida")
+                        result_color = "green" if stats['net_profit'] >= 0 else "red"
+                        st.latex(r"""
+                        \footnotesize
+                        \begin{array}{r c c c c c}
+                        \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
+                        & \downarrow & & & & \\[0.5em]
+                        \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
+                        \textcolor{%s}{%s} = & %s & + & %s & - & %s
+                        \end{array}
+                        """ % (
+                            result_color,
+                            f"\\${stats['net_profit']:,.2f}",
+                            f"{stats['market_value']:,.2f}",
+                            f"{stats['dividends_collected_cash']:,.2f}",
+                            f"{stats['pocket_investment']:,.2f}"
+                        ))
+
+                        # Section D — Monthly income calendar (Mode A only)
+                        monthly_income = stats.get('monthly_income')
+                        if monthly_income is not None and not monthly_income.empty:
+                            import altair as alt
+                            st.markdown("### 📅 CALENDARIO DE INCOME MENSUAL")
+                            yoc = stats.get('yield_on_cost', 0)
+                            st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Yield on Cost: <b style="color:#006497;">{yoc:.2f}%</b> anual sobre tu capital invertido</p>', unsafe_allow_html=True)
+                            income_df = monthly_income.reset_index()
+                            income_df.columns = ['Mes', 'Dividendo']
+                            income_chart = alt.Chart(income_df).mark_bar(color='#006497', opacity=0.85).encode(
+                                x=alt.X('Mes:O', title='Mes', sort=None),
+                                y=alt.Y('Dividendo:Q', title='Dividendo ($)', axis=alt.Axis(format='$,.2f')),
+                                tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
+                            ).properties(height=200, background=CHART_PALETTE["bg"]).configure_view(
+                                strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                            ).configure_axis(
+                                grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                                tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                                titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                                titleFont='Inter, system-ui, sans-serif', labelFontSize=10, titleFontSize=11, titleFontWeight=500
+                            )
+                            st.altair_chart(income_chart, use_container_width=True)
+
+                    # --- Métricas de Riesgo Ajustado (ambos modos) ---
                     st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
                     qr1, qr2, qr3 = st.columns(3)
                     qr1.metric("Sharpe Ratio",       fmt_ratio(stats.get('sharpe_ratio')))
                     qr2.metric("Sortino Ratio",      fmt_ratio(stats.get('sortino_ratio')))
                     qr3.metric("Max Drawdown",       fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
-
                     qr4, qr5, qr6 = st.columns(3)
                     qr4.metric("Beta vs VOO",        fmt_ratio(stats.get('beta_vs_voo')))
                     qr5.metric("Alpha Anualizado",   fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
                     qr6.metric("Volatilidad Anual",  fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
 
-                    # --- New Chart: Evolution of Capital vs S&P 500 ---
+                    # --- Chart: Evolution vs S&P 500 ---
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
+                        import altair as alt
                         st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
-                        
-                        # Prepare data for chart
                         chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
-                        
-                        # Rename columns for display
                         chart_data = chart_data.rename(columns={
                             'User Total Value': 'Portafolio Real ($)',
                             'SPY Profit': 'S&P 500 Simulado ($)'
                         })
-                        
-                        # Calculate Percentage Difference daily
-                        # % Diff = (Portfolio - SPY) / SPY * 100
-                        # Avoid division by zero
                         safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
                         chart_data['Diferencia %'] = ((chart_data['Portafolio Real ($)'] - safe_spy) / safe_spy) * 100
                         chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
-                        
-                        # Save the difference column before melting so we can attach it in tooltip
-                        # We need to reset index to have 'Date' as a column
                         chart_data_reset = chart_data.reset_index()
-                        
-                        # Transform data for Altair (Long Format)
                         chart_data_long = chart_data_reset.melt(
-                            id_vars=['Date', 'Diferencia %'], 
+                            id_vars=['Date', 'Diferencia %'],
                             value_vars=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
-                            var_name='Estrategia', 
+                            var_name='Estrategia',
                             value_name='Valor'
                         )
-                        
-                        import altair as alt
 
                         base = alt.Chart(chart_data_long).encode(
                             x=alt.X('Date:T', title='Fecha'),
@@ -504,57 +530,133 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
                             ]
                         )
-
-                        # Note regarding Reverse Splits:
-                        # The logic in logic.py handles both forward (ratio > 1) and reverse (ratio < 1) splits correctly.
-                        # For a 1-for-2 reverse split, the ratio is 0.5, which halves the share count as expected.
-
-                        # Área bajo la curva solo para el portafolio (mejora visual premium)
                         area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
-                            opacity=0.08,
-                            color=CHART_PALETTE["portfolio"],
-                            interpolate='monotone'
-                        ).encode(
-                            x=alt.X('Date:T'),
-                            y=alt.Y('Valor:Q')
-                        )
+                            opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
+                        ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
 
                         chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
-                            height=400,
-                            background=CHART_PALETTE["bg"]
+                            height=400, background=CHART_PALETTE["bg"]
                         ).configure_view(
-                            strokeOpacity=0,
-                            fill=CHART_PALETTE["bg"]
+                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
                         ).configure_axis(
-                            grid=True,
-                            gridColor=CHART_PALETTE["grid"],
-                            domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"],
-                            labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"],
-                            labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif',
-                            labelFontSize=11,
-                            titleFontSize=12,
-                            titleFontWeight=500
+                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11,
+                            titleFontSize=12, titleFontWeight=500
                         ).configure_legend(
-                            labelColor=CHART_PALETTE["title"],
-                            titleColor=CHART_PALETTE["axis"],
-                            labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif',
-                            labelFontSize=12,
-                            titleFontSize=10,
-                            titleFontWeight=500,
-                            strokeColor='transparent',
-                            fillColor=CHART_PALETTE["bg"],
-                            padding=12,
-                            cornerRadius=0
+                            labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                            strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
                         )
-                        
                         st.altair_chart(chart, use_container_width=True)
-                    
 
                     st.divider()
+
+                # ============================================================
+                # Section E — Triple Strategy Comparison
+                # ============================================================
+                st.markdown("### ⚖️ COMPARATIVA DE ESTRATEGIAS")
+                st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 12px 0;">¿Qué habría pasado si hubieras invertido el mismo dinero en VTI, YMAX o SPY?</p>', unsafe_allow_html=True)
+
+                if st.button("Calcular Comparativa"):
+                    all_buy_rows = []
+                    for t_key, t_stats in results.items():
+                        if 'error' in t_stats:
+                            continue
+                        hist = t_stats.get('history')
+                        if hist is not None and not hist.empty:
+                            buys = hist[hist['Action'].str.lower().str.contains('buy|compra', na=False)]
+                            for _, row in buys.iterrows():
+                                amt = abs(float(row.get('Amount', 0)))
+                                if amt > 0:
+                                    all_buy_rows.append([str(row['Date'].date()), amt])
+
+                    if not all_buy_rows:
+                        st.warning("No se encontraron transacciones de compra en el portafolio.")
+                    else:
+                        buy_flows_json = json.dumps(all_buy_rows)
+                        real_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
+                        real_value = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
+                        real_return_pct = (real_value - real_invested) / real_invested * 100 if real_invested > 0 else 0
+
+                        with st.spinner("Calculando estrategias alternativas..."):
+                            strat_results = logic.simulate_triple_comparison(buy_flows_json)
+
+                        if strat_results:
+                            all_strategies = {
+                                'real': {'label': 'Tu Portafolio Real', 'total_invested': real_invested, 'final_value': real_value, 'return_pct': real_return_pct},
+                                **strat_results
+                            }
+                            sorted_strats = sorted(all_strategies.items(), key=lambda x: -x[1]['return_pct'])
+                            strat_df = pd.DataFrame([
+                                {
+                                    'Estrategia': v['label'],
+                                    'Invertido': f"${v['total_invested']:,.0f}",
+                                    'Valor Final': f"${v['final_value']:,.0f}",
+                                    'Retorno %': f"{v['return_pct']:+.2f}%"
+                                }
+                                for _, v in sorted_strats
+                            ])
+                            st.dataframe(strat_df, hide_index=True, use_container_width=True)
+
+                            import altair as alt
+                            strat_chart_df = pd.DataFrame([
+                                {'Estrategia': v['label'], 'Retorno': v['return_pct']}
+                                for _, v in sorted_strats
+                            ])
+                            bar_chart = alt.Chart(strat_chart_df).mark_bar().encode(
+                                x=alt.X('Retorno:Q', title='Retorno Total (%)', axis=alt.Axis(format='+.1f')),
+                                y=alt.Y('Estrategia:N', sort='-x', title=None),
+                                color=alt.condition(alt.datum.Retorno > 0, alt.value('#006497'), alt.value('#c8102e')),
+                                tooltip=[alt.Tooltip('Estrategia:N', title='Estrategia'), alt.Tooltip('Retorno:Q', format='+.2f', title='Retorno %')]
+                            ).properties(height=180, background=CHART_PALETTE["bg"]).configure_view(
+                                strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                            ).configure_axis(
+                                grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                                tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                                titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                                titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                            )
+                            st.altair_chart(bar_chart, use_container_width=True)
+
+                # ============================================================
+                # Section F — Risk Analysis
+                # ============================================================
+                st.markdown("### 🔍 ANÁLISIS DE RIESGO")
+                total_port_value = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
+                risk_data = logic.build_risk_analysis(results, classify_map, total_port_value)
+
+                if risk_data['yieldmax_risk']:
+                    st.markdown("#### YieldMax — Riesgo por Subyacente")
+                    for item in risk_data['yieldmax_risk']:
+                        risk_color = '#c8102e' if item['risk_level'] == 'HIGH' else '#e68a00' if item['risk_level'] == 'MEDIUM' else '#555555'
+                        risk_badge = f'<span style="display:inline-block;background-color:{risk_color};color:#fff;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.10em;padding:2px 7px;border-radius:9999px;">{item["risk_level"]}</span>'
+                        port_pct = item['portfolio_pct']
+                        st.markdown(
+                            f'<div style="background-color:#f6f3f2;padding:12px 16px;margin-bottom:8px;border-left:3px solid {risk_color};">'
+                            f'<div style="font-family:Inter,sans-serif;font-weight:700;font-size:14px;color:#1a1a1a;margin-bottom:4px;">{item["ticker"]} {risk_badge} · <span style="font-weight:400;font-size:12px;color:#555555;">Subyacente: {item["underlying"]} ({item["name"]})</span></div>'
+                            f'<div style="font-family:Inter,sans-serif;font-size:11px;color:#555555;">{item["reason"]} · <b style="color:#006497;">{port_pct:.1f}% del portafolio</b></div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                if risk_data['etf_holdings']:
+                    st.markdown("#### ETFs de Crecimiento — Top Holdings")
+                    for etf_item in risk_data['etf_holdings']:
+                        conc = etf_item.get('top3_concentration_pct', 0)
+                        with st.expander(f"{etf_item['ticker']} — Top 3 concentración: {conc:.1f}%"):
+                            holdings_df = pd.DataFrame([
+                                {
+                                    'Symbol': h['symbol'],
+                                    'Empresa': h['name'],
+                                    'Peso %': f"{h['weight']*100:.2f}%",
+                                    'Descripción': h['description']
+                                }
+                                for h in etf_item['top_holdings']
+                            ])
+                            st.dataframe(holdings_df, hide_index=True, use_container_width=True)
 
     except Exception as e:
         import traceback
@@ -564,29 +666,29 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
 elif input_method == "Simulación Teórica":
     st.subheader("🧪 Simulación de Estrategia DRIP")
-    
+
     col1, col2, col3 = st.columns(3)
     ticker = col1.text_input("Ticker", "TSLY")
     start_date = col2.date_input("Fecha Inicio", datetime.date(2023, 1, 1))
     amount = col3.number_input("Inversión Inicial ($)", value=10000)
-    
+
     if st.button("Simular"):
         with st.spinner(f"Simulando {ticker}..."):
             sim_results, error_msg = logic.simulate_strategy_cached(ticker, start_date.isoformat(), amount)
-            
+
         if sim_results is None:
             st.error(f"Error: {error_msg}")
         else:
             # Metrics
             st.success("Simulación Completada")
-            
+
             m1, m2, m3 = st.columns(3)
             m1.metric("Inversión Inicial", f"${amount:,.0f}")
-            m2.metric("Final (DRIP)", f"${sim_results['drip_final_value']:,.2f}", 
+            m2.metric("Final (DRIP)", f"${sim_results['drip_final_value']:,.2f}",
                       delta=f"{sim_results['drip_roi_percent']:.2f}%")
             m3.metric("Final (NO-DRIP + Cash)", f"${sim_results['nodrip_final_value']:,.2f}",
                       delta=f"{sim_results['nodrip_roi_percent']:.2f}%")
-            
+
             # Chart
             st.subheader("Evolución de Patrimonio")
             hist = sim_results['history']
