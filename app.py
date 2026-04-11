@@ -363,7 +363,26 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             if not results:
                 st.error("No se pudieron extraer tickers válidos o datos del archivo.")
             else:
-                classify_map = logic.classify_tickers(list(results.keys()))
+                # v2.1 — Separar tickers descartados (mode_skip) de los válidos
+                skipped_tickers = {t: s for t, s in results.items() if s.get("skipped")}
+                valid_results   = {t: s for t, s in results.items() if not s.get("skipped")}
+
+                # classify_map solo sobre válidos
+                classify_map = logic.classify_tickers(list(valid_results.keys()))
+
+                # Mostrar descartados si los hay
+                if skipped_tickers:
+                    with st.expander(f"⏩ {len(skipped_tickers)} ticker(s) excluidos — no reconocidos como ETF de largo plazo"):
+                        st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Estos tickers no están en la lista de ETFs conocidos. Pueden ser acciones individuales o trades de corto plazo. Si quieres incluirlos, contáctanos para agregarlos a la lista.</p>', unsafe_allow_html=True)
+                        for t in skipped_tickers:
+                            st.markdown(f'<span style="font-family:Inter,sans-serif;font-size:12px;color:#888888;">— <b>{t}</b></span>', unsafe_allow_html=True)
+
+                # Usar valid_results para todo el análisis
+                results = valid_results
+
+                if not results:
+                    st.warning("Todos los tickers del archivo fueron descartados. Asegúrate de subir transacciones de ETFs conocidos (VTI, VOO, TSLY, etc.).")
+                    st.stop()
 
                 # Section B — Classification summary
                 mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']

@@ -266,7 +266,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         ticker_df = df[df['Ticker'] == ticker].sort_values('Date')
         if ticker_df.empty:
             continue
-            
+
+        # v2.1 — Descartar tickers no reconocidos como ETF de largo plazo (antes de API call)
+        ticker_mode_early = classify_tickers([ticker]).get(ticker, 'mode_skip')
+        if ticker_mode_early == 'mode_skip':
+            results[ticker] = {
+                "skipped": True,
+                "reason": "not_known_etf",
+                "ticker": ticker,
+            }
+            continue
+
         first_date = ticker_df['Date'].min()
         market_data, error_msg = fetch_market_data(ticker, first_date)
         
@@ -1040,16 +1050,42 @@ YIELDMAX_WHITELIST = {
     'PYPY', 'GDXY', 'SNOY', 'XOMY', 'AMZY', 'MRNY', 'BALY', 'COINY',
 }
 
+# v2.1 — ETFs de largo plazo reconocidos (mode_b)
+ETF_WHITELIST = {
+    # Broad market
+    'VTI', 'VOO', 'SPY', 'IVV', 'VT', 'ITOT', 'SCHB', 'SCHX', 'SCHA',
+    # International
+    'VEA', 'VWO', 'VXUS', 'EFA', 'EEM', 'ACWI',
+    # Bonds
+    'BND', 'AGG', 'BNDX', 'TLT', 'IEF', 'SHY', 'VCSH', 'VCIT',
+    # Sector SPDR
+    'XLK', 'XLF', 'XLE', 'XLV', 'XLI', 'XLC', 'XLP', 'XLY', 'XLRE', 'XLU', 'XLB',
+    # Tech / Semiconductores
+    'QQQ', 'QQQM', 'SOXX', 'SMH', 'VGT', 'IGV', 'CIBR', 'HACK', 'BOTZ',
+    # Dividend
+    'SCHD', 'VYM', 'JEPI', 'JEPQ', 'HDV', 'DVY', 'DGRO',
+    # Small / Mid cap
+    'VB', 'VO', 'IJR', 'IJH', 'IWM', 'IWO', 'IWN',
+    # Real estate
+    'VNQ', 'IYR',
+    # Commodities / Gold
+    'GLD', 'IAU', 'SLV', 'GSG', 'DJP',
+    # Leveraged
+    'TQQQ', 'UPRO', 'SSO', 'QLD', 'SPXL',
+    # Growth / Thematic
+    'ARKK', 'ARKW', 'ARKG', 'ARKF', 'ARKQ',
+    'SCHG', 'IWF', 'VUG', 'MGK',
+}
+
+
 def classify_tickers(tickers: list) -> dict:
     """
-    Classifies each ticker as 'mode_a' (YieldMax) or 'mode_b' (Growth ETF/Stock).
-    Rules (priority order):
-    1. Explicit whitelist → mode_a
-    2. Regex pattern ^[A-Z]{3,4}Y$ (4-5 char ending in Y) → mode_a
-    3. Everything else → mode_b
+    Classifies each ticker into one of three modes:
+    - 'mode_a': YieldMax ETF (explicit whitelist + regex ^[A-Z]{3,5}Y$)
+    - 'mode_b': Known long-term growth/sector ETF (ETF_WHITELIST)
+    - 'mode_skip': Unknown ticker — likely individual stock or short-term trade
     """
     result = {}
-    import re
     yieldmax_pattern = re.compile(r'^[A-Z]{3,5}Y$')
     for ticker in tickers:
         t = str(ticker).upper().strip()
@@ -1057,8 +1093,10 @@ def classify_tickers(tickers: list) -> dict:
             result[t] = 'mode_a'
         elif yieldmax_pattern.match(t):
             result[t] = 'mode_a'
-        else:
+        elif t in ETF_WHITELIST:
             result[t] = 'mode_b'
+        else:
+            result[t] = 'mode_skip'
     return result
 
 
