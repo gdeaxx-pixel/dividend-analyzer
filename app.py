@@ -372,10 +372,16 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                 # Mostrar descartados si los hay
                 if skipped_tickers:
-                    with st.expander(f"⏩ {len(skipped_tickers)} ticker(s) excluidos — no reconocidos como ETF de largo plazo"):
-                        st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Estos tickers no están en la lista de ETFs conocidos. Pueden ser acciones individuales o trades de corto plazo. Si quieres incluirlos, contáctanos para agregarlos a la lista.</p>', unsafe_allow_html=True)
-                        for t in skipped_tickers:
-                            st.markdown(f'<span style="font-family:Inter,sans-serif;font-size:12px;color:#888888;">— <b>{t}</b></span>', unsafe_allow_html=True)
+                    with st.expander(f"⏩ {len(skipped_tickers)} ticker(s) excluidos del análisis"):
+                        for t, s in skipped_tickers.items():
+                            reason = s.get('reason', '')
+                            if reason == 'not_known_etf':
+                                reason_label = 'No reconocido como ETF de largo plazo (acción individual, ETF inverso o apalancado)'
+                            elif reason == 'held_less_than_14_days':
+                                reason_label = f'Posición cerrada en {s.get("holding_days", "?")} días (< 2 semanas)'
+                            else:
+                                reason_label = 'Excluido'
+                            st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:2px 0;">— <b>{t}</b> · <span style="color:#888888;">{reason_label}</span></p>', unsafe_allow_html=True)
 
                 # Usar valid_results para todo el análisis
                 results = valid_results

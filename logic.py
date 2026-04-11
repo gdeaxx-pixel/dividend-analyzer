@@ -277,6 +277,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             }
             continue
 
+        # v2.1 — Descartar posiciones cerradas en < 14 días (trades de muy corto plazo)
+        too_brief, holding_days = is_held_too_briefly(ticker_df, threshold_days=14)
+        if too_brief:
+            results[ticker] = {
+                "skipped": True,
+                "reason": "held_less_than_14_days",
+                "holding_days": holding_days,
+                "ticker": ticker,
+            }
+            continue
+
         first_date = ticker_df['Date'].min()
         market_data, error_msg = fetch_market_data(ticker, first_date)
         
@@ -1044,13 +1055,15 @@ def load_and_detect_csv(uploaded_file) -> tuple:
 # v2.0 — TICKER CLASSIFICATION
 # ============================================================
 
+# v2.1 — Solo ETFs YieldMax confirmados (sin regex — evita capturar acciones como PLAY, CHWY, INFY)
 YIELDMAX_WHITELIST = {
     'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOGY', 'CONY', 'JPMO', 'DISO',
     'YMAX', 'YMAG', 'MSTY', 'NVDL', 'AMDY', 'ULTY', 'APLY', 'NFLY',
-    'PYPY', 'GDXY', 'SNOY', 'XOMY', 'AMZY', 'MRNY', 'BALY', 'COINY',
+    'PYPY', 'GDXY', 'SNOY', 'XOMY', 'MRNY', 'BALY', 'COINY',
+    'TSMY', 'AMDY', 'PLTY', 'CRWV', 'FIAT', 'ABNY', 'LFGY',
 }
 
-# v2.1 — ETFs de largo plazo reconocidos (mode_b)
+# v2.1 — ETFs de crecimiento/sectoriales de largo plazo (sin inversos ni apalancados)
 ETF_WHITELIST = {
     # Broad market
     'VTI', 'VOO', 'SPY', 'IVV', 'VT', 'ITOT', 'SCHB', 'SCHX', 'SCHA',
@@ -1070,34 +1083,65 @@ ETF_WHITELIST = {
     'VNQ', 'IYR',
     # Commodities / Gold
     'GLD', 'IAU', 'SLV', 'GSG', 'DJP',
-    # Leveraged
-    'TQQQ', 'UPRO', 'SSO', 'QLD', 'SPXL',
     # Growth / Thematic
     'ARKK', 'ARKW', 'ARKG', 'ARKF', 'ARKQ',
     'SCHG', 'IWF', 'VUG', 'MGK',
+    # Multi-asset / Balanced
+    'AOA', 'AOM', 'AOR', 'AOK',
 }
+# NOTA: Los ETFs inversos (SDS, SQQQ, SPXS) y apalancados (TQQQ, UPRO, SPXL)
+# NO están en ninguna whitelist — se descartan automáticamente como mode_skip.
 
 
 def classify_tickers(tickers: list) -> dict:
     """
     Classifies each ticker into one of three modes:
-    - 'mode_a': YieldMax ETF (explicit whitelist + regex ^[A-Z]{3,5}Y$)
-    - 'mode_b': Known long-term growth/sector ETF (ETF_WHITELIST)
-    - 'mode_skip': Unknown ticker — likely individual stock or short-term trade
+    - 'mode_a': YieldMax ETF — solo whitelist explícita (sin regex para evitar falsos positivos)
+    - 'mode_b': ETF de largo plazo conocido (ETF_WHITELIST) — sin inversos ni apalancados
+    - 'mode_skip': Todo lo demás (acciones individuales, ETFs inversos/apalancados, desconocidos)
     """
     result = {}
-    yieldmax_pattern = re.compile(r'^[A-Z]{3,5}Y$')
     for ticker in tickers:
         t = str(ticker).upper().strip()
         if t in YIELDMAX_WHITELIST:
-            result[t] = 'mode_a'
-        elif yieldmax_pattern.match(t):
             result[t] = 'mode_a'
         elif t in ETF_WHITELIST:
             result[t] = 'mode_b'
         else:
             result[t] = 'mode_skip'
     return result
+
+
+def is_held_too_briefly(ticker_df: pd.DataFrame, threshold_days: int = 14) -> tuple:
+    """
+    Returns (True, holding_days) if the position was fully closed in < threshold_days.
+    Returns (False, None) if position is still open OR was held long enough.
+    Only triggers when ALL shares have been sold (net_shares ≈ 0).
+    """
+    buys = ticker_df[ticker_df['Action'].str.lower().str.contains(
+        'buy|bought|compra|deposit|transfer|contribution|journal', na=False)]
+    sells = ticker_df[ticker_df['Action'].str.lower().str.contains(
+        'sell|sold|venta', na=False)]
+
+    if buys.empty or sells.empty:
+        return False, None  # Sin ventas → posición abierta → no filtrar
+
+    total_bought = pd.to_numeric(buys['Quantity'], errors='coerce').fillna(0).sum()
+    total_sold = pd.to_numeric(sells['Quantity'], errors='coerce').fillna(0).sum()
+    net_shares = total_bought - total_sold
+
+    if net_shares > 0.01:
+        return False, None  # Todavía tiene shares → no filtrar
+
+    # Posición completamente cerrada — calcular período
+    first_buy = buys['Date'].min()
+    last_sell = sells['Date'].max()
+    holding_days = (last_sell - first_buy).days
+
+    if holding_days < threshold_days:
+        return True, holding_days
+
+    return False, None
 
 
 # ============================================================
