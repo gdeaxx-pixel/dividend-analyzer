@@ -242,6 +242,41 @@ st.markdown("""
         padding: 10px 14px !important;
         box-shadow: 0 4px 16px rgba(26, 26, 26, 0.15) !important;
     }
+
+    /* 15. TABS — Portafolio A / B prominentes */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0 !important;
+        background-color: var(--surface-high) !important;
+        padding: 0 !important;
+        border-radius: 0 !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 52px !important;
+        background-color: var(--surface-high) !important;
+        border-radius: 0 !important;
+        color: var(--on-surface-muted) !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.10em !important;
+        text-transform: uppercase !important;
+        padding: 0 32px !important;
+        border: none !important;
+        border-bottom: 3px solid transparent !important;
+        transition: color 0.15s ease, border-color 0.15s ease !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--electric-blue) !important;
+        background-color: var(--surface) !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: var(--surface) !important;
+        color: var(--electric-blue) !important;
+        border-bottom: 3px solid var(--electric-blue) !important;
+    }
+    /* Ocultar la línea gris debajo del tab list que Streamlit agrega */
+    .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+    .stTabs [data-baseweb="tab-border"]    { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -414,7 +449,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 ])
 
                 # ── Helper: render quant metrics + SPY chart (shared) ──────
-                def render_quant_and_chart(stats):
+                def render_quant_and_chart(stats, ticker=""):
                     import altair as alt
                     st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
                     qr1, qr2, qr3 = st.columns(3)
@@ -428,24 +463,25 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                     if 'daily_trend' in stats and not stats['daily_trend'].empty:
                         st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
+                        port_label = f"{ticker} ($)" if ticker else "Portafolio Real ($)"
                         chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
                         chart_data = chart_data.rename(columns={
-                            'User Total Value': 'Portafolio Real ($)',
+                            'User Total Value': port_label,
                             'SPY Profit': 'S&P 500 Simulado ($)'
                         })
                         safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
-                        chart_data['Diferencia %'] = ((chart_data['Portafolio Real ($)'] - safe_spy) / safe_spy) * 100
+                        chart_data['Diferencia %'] = ((chart_data[port_label] - safe_spy) / safe_spy) * 100
                         chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
                         chart_data_long = chart_data.reset_index().melt(
                             id_vars=['Date', 'Diferencia %'],
-                            value_vars=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                            value_vars=[port_label, 'S&P 500 Simulado ($)'],
                             var_name='Estrategia', value_name='Valor'
                         )
                         base = alt.Chart(chart_data_long).encode(
                             x=alt.X('Date:T', title='Fecha'),
                             y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
                             color=alt.Color('Estrategia:N', scale=alt.Scale(
-                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                                domain=[port_label, 'S&P 500 Simulado ($)'],
                                 range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
                             )),
                             tooltip=[
@@ -455,7 +491,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
                             ]
                         )
-                        area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
+                        area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == port_label]).mark_area(
                             opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
                         ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
                         chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
@@ -563,7 +599,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             )
                             st.altair_chart(income_chart, use_container_width=True)
 
-                        render_quant_and_chart(stats)
+                        render_quant_and_chart(stats, ticker)
                         st.divider()
 
                     if not shown_a:
@@ -591,7 +627,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
                         st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
 
-                        render_quant_and_chart(stats)
+                        render_quant_and_chart(stats, ticker)
                         st.divider()
 
                     if not shown_b:

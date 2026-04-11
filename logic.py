@@ -428,7 +428,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         
         # --- Calculate Daily History (For Chart) ---
         # 1. Resample transactions to daily to handle multiple trades per day
-        daily_activity = ticker_df.groupby('Date')[['Quantity', 'Amount', 'Cash_Flow_In']].sum()
+        # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
+        # sometimes carry a non-zero Quantity that would inflate the running share count.
+        qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
+            r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|split|deposit|transfer|journal|contribution',
+            na=False, regex=True
+        )]
+        qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
+        daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
+        daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
         
         # 2. Reindex to market data (daily)
         daily_history = daily_activity.reindex(market_data.index).fillna(0)
@@ -521,7 +529,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             # Calculate shares bought each day (Daily Invested / Price)
             # Note: Sells (negative Daily Invested) will correctly reduce shares
             daily_history['VOO Shares Bought'] = daily_history['Daily Invested'] / safe_voo_price
-            daily_history['VOO Shares Held'] = daily_history['VOO Shares Bought'].cumsum()
+            daily_history['VOO Shares Held'] = daily_history['VOO Shares Bought'].cumsum().clip(lower=0)
             
             # Simulated Total Value
             daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price'] 
