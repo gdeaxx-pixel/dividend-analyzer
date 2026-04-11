@@ -390,7 +390,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.warning("Todos los tickers del archivo fueron descartados. Asegúrate de subir transacciones de ETFs conocidos (VTI, VOO, TSLY, etc.).")
                     st.stop()
 
-                # Section B — Classification summary
+                # Section B — Classification pills header
                 mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
                 mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
 
@@ -405,33 +405,88 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:9999px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
                     st.markdown(pills_b, unsafe_allow_html=True)
 
-                st.divider()
+                st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-                # Display Results per Ticker
-                for ticker, stats in results.items():
-                    if "error" in stats:
-                        st.error(f"Error con {ticker}: {stats['error']}")
-                        continue
+                # ── TABS: Portafolio A / Portafolio B ──────────────────────
+                tab_a, tab_b = st.tabs([
+                    f"💰 Portafolio A — YieldMax ({len(mode_a_tickers)})",
+                    f"📈 Portafolio B — ETFs de Crecimiento ({len(mode_b_tickers)})",
+                ])
 
-                    ticker_mode = stats.get('ticker_mode', classify_map.get(ticker, 'mode_b'))
-                    mode_badge_color = '#c8102e' if ticker_mode == 'mode_a' else '#006497'
-                    mode_badge_label = 'MODO A' if ticker_mode == 'mode_a' else 'MODO B'
-                    mode_badge = f'<span style="display:inline-block;background-color:{mode_badge_color};color:#fff;font-family:Inter,sans-serif;font-size:9px;font-weight:600;letter-spacing:0.10em;padding:1px 6px;border-radius:9999px;vertical-align:middle;margin-left:8px;">{mode_badge_label}</span>'
-                    st.markdown(f"### **{ticker}** {mode_badge}", unsafe_allow_html=True)
+                # ── Helper: render quant metrics + SPY chart (shared) ──────
+                def render_quant_and_chart(stats):
+                    import altair as alt
+                    st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
+                    qr1, qr2, qr3 = st.columns(3)
+                    qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
+                    qr2.metric("Sortino Ratio",     fmt_ratio(stats.get('sortino_ratio')))
+                    qr3.metric("Max Drawdown",      fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
+                    qr4, qr5, qr6 = st.columns(3)
+                    qr4.metric("Beta vs VOO",       fmt_ratio(stats.get('beta_vs_voo')))
+                    qr5.metric("Alpha Anualizado",  fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
+                    qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
 
-                    if ticker_mode == 'mode_b':
-                        # Section C — Mode B: Growth ETF metrics
-                        cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
-                        bc1, bc2, bc3, bc4 = st.columns(4)
-                        bc1.metric("Inversión", f"${stats['pocket_investment']:,.2f}")
-                        bc2.metric("Valor Actual", f"${stats['market_value']:,.2f}")
-                        ganancia = stats['market_value'] - stats['pocket_investment']
-                        bc3.metric("Ganancia $", f"${ganancia:,.2f}", delta=f"{stats['roi_percent']:.2f}%")
-                        bc4.metric("CAGR", cagr_str)
-                        shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
-                    else:
-                        # Mode A: full dividend table
+                    if 'daily_trend' in stats and not stats['daily_trend'].empty:
+                        st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
+                        chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
+                        chart_data = chart_data.rename(columns={
+                            'User Total Value': 'Portafolio Real ($)',
+                            'SPY Profit': 'S&P 500 Simulado ($)'
+                        })
+                        safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
+                        chart_data['Diferencia %'] = ((chart_data['Portafolio Real ($)'] - safe_spy) / safe_spy) * 100
+                        chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
+                        chart_data_long = chart_data.reset_index().melt(
+                            id_vars=['Date', 'Diferencia %'],
+                            value_vars=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                            var_name='Estrategia', value_name='Valor'
+                        )
+                        base = alt.Chart(chart_data_long).encode(
+                            x=alt.X('Date:T', title='Fecha'),
+                            y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
+                            color=alt.Color('Estrategia:N', scale=alt.Scale(
+                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
+                                range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
+                            )),
+                            tooltip=[
+                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                                alt.Tooltip('Estrategia:N', title='Estrategia'),
+                                alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
+                                alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
+                            ]
+                        )
+                        area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
+                            opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
+                        ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
+                        chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
+                            height=400, background=CHART_PALETTE["bg"]
+                        ).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                        ).configure_axis(
+                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                        ).configure_legend(
+                            labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                            strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                        )
+                        st.altair_chart(chart, use_container_width=True)
+
+                # ── TAB A — YieldMax (Income) ──────────────────────────────
+                with tab_a:
+                    shown_a = False
+                    for ticker, stats in results.items():
+                        if classify_map.get(ticker) != 'mode_a':
+                            continue
+                        if "error" in stats:
+                            st.error(f"Error con {ticker}: {stats['error']}")
+                            continue
+                        shown_a = True
+                        st.markdown(f"### **{ticker}**")
+
                         results_data = {
                             "Indicador": [
                                 "🏦 Inversión (el dinero que tu pusiste)",
@@ -458,15 +513,13 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 f"{stats['roi_percent']:.2f}%"
                             ]
                         }
-                        results_df = pd.DataFrame(results_data)
                         st.dataframe(
-                            results_df,
+                            pd.DataFrame(results_data),
                             column_config={
                                 "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
                                 "Valor": st.column_config.TextColumn("Resultado", width="large"),
                             },
-                            hide_index=True,
-                            use_container_width=True
+                            hide_index=True, use_container_width=True
                         )
 
                         st.markdown("### 🧮 Tu Verificación Rápida")
@@ -487,7 +540,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             f"{stats['pocket_investment']:,.2f}"
                         ))
 
-                        # Section D — Monthly income calendar (Mode A only)
+                        # Section D — Monthly income calendar
                         monthly_income = stats.get('monthly_income')
                         if monthly_income is not None and not monthly_income.empty:
                             import altair as alt
@@ -496,7 +549,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Yield on Cost: <b style="color:#006497;">{yoc:.2f}%</b> anual sobre tu capital invertido</p>', unsafe_allow_html=True)
                             income_df = monthly_income.reset_index()
                             income_df.columns = ['Mes', 'Dividendo']
-                            income_chart = alt.Chart(income_df).mark_bar(color='#006497', opacity=0.85).encode(
+                            income_chart = alt.Chart(income_df).mark_bar(color='#c8102e', opacity=0.85).encode(
                                 x=alt.X('Mes:O', title='Mes', sort=None),
                                 y=alt.Y('Dividendo:Q', title='Dividendo ($)', axis=alt.Axis(format='$,.2f')),
                                 tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
@@ -510,74 +563,39 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             )
                             st.altair_chart(income_chart, use_container_width=True)
 
-                    # --- Métricas de Riesgo Ajustado (ambos modos) ---
-                    st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
-                    qr1, qr2, qr3 = st.columns(3)
-                    qr1.metric("Sharpe Ratio",       fmt_ratio(stats.get('sharpe_ratio')))
-                    qr2.metric("Sortino Ratio",      fmt_ratio(stats.get('sortino_ratio')))
-                    qr3.metric("Max Drawdown",       fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
-                    qr4, qr5, qr6 = st.columns(3)
-                    qr4.metric("Beta vs VOO",        fmt_ratio(stats.get('beta_vs_voo')))
-                    qr5.metric("Alpha Anualizado",   fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
-                    qr6.metric("Volatilidad Anual",  fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
+                        render_quant_and_chart(stats)
+                        st.divider()
 
-                    # --- Chart: Evolution vs S&P 500 ---
-                    if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                        import altair as alt
-                        st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
-                        chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
-                        chart_data = chart_data.rename(columns={
-                            'User Total Value': 'Portafolio Real ($)',
-                            'SPY Profit': 'S&P 500 Simulado ($)'
-                        })
-                        safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
-                        chart_data['Diferencia %'] = ((chart_data['Portafolio Real ($)'] - safe_spy) / safe_spy) * 100
-                        chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
-                        chart_data_reset = chart_data.reset_index()
-                        chart_data_long = chart_data_reset.melt(
-                            id_vars=['Date', 'Diferencia %'],
-                            value_vars=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
-                            var_name='Estrategia',
-                            value_name='Valor'
-                        )
+                    if not shown_a:
+                        st.info("No hay posiciones YieldMax activas en este portafolio.")
 
-                        base = alt.Chart(chart_data_long).encode(
-                            x=alt.X('Date:T', title='Fecha'),
-                            y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
-                            color=alt.Color('Estrategia:N', scale=alt.Scale(
-                                domain=['Portafolio Real ($)', 'S&P 500 Simulado ($)'],
-                                range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
-                            )),
-                            tooltip=[
-                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
-                                alt.Tooltip('Estrategia:N', title='Estrategia'),
-                                alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
-                                alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
-                            ]
-                        )
-                        area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == 'Portafolio Real ($)']).mark_area(
-                            opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
-                        ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
+                # ── TAB B — ETFs de Crecimiento ────────────────────────────
+                with tab_b:
+                    shown_b = False
+                    for ticker, stats in results.items():
+                        if classify_map.get(ticker) != 'mode_b':
+                            continue
+                        if "error" in stats:
+                            st.error(f"Error con {ticker}: {stats['error']}")
+                            continue
+                        shown_b = True
+                        st.markdown(f"### **{ticker}**")
 
-                        chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
-                            height=400, background=CHART_PALETTE["bg"]
-                        ).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        ).configure_axis(
-                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11,
-                            titleFontSize=12, titleFontWeight=500
-                        ).configure_legend(
-                            labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
-                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
-                            labelFontSize=12, titleFontSize=10, titleFontWeight=500,
-                            strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
-                        )
-                        st.altair_chart(chart, use_container_width=True)
+                        cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
+                        bc1, bc2, bc3, bc4 = st.columns(4)
+                        bc1.metric("Inversión", f"${stats['pocket_investment']:,.2f}")
+                        bc2.metric("Valor Actual", f"${stats['market_value']:,.2f}")
+                        ganancia = stats['market_value'] - stats['pocket_investment']
+                        bc3.metric("Ganancia $", f"${ganancia:,.2f}", delta=f"{stats['roi_percent']:.2f}%")
+                        bc4.metric("CAGR", cagr_str)
+                        shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
 
-                    st.divider()
+                        render_quant_and_chart(stats)
+                        st.divider()
+
+                    if not shown_b:
+                        st.info("No hay ETFs de crecimiento activos en este portafolio.")
 
                 # ============================================================
                 # Section E — Triple Strategy Comparison

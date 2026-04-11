@@ -1055,24 +1055,27 @@ def load_and_detect_csv(uploaded_file) -> tuple:
 # v2.0 — TICKER CLASSIFICATION
 # ============================================================
 
-# v2.1 — Solo ETFs YieldMax confirmados (sin regex — evita capturar acciones como PLAY, CHWY, INFY)
+# v2.2 — Solo ETFs YieldMax confirmados por YieldMax LLC
+# NVDL removido: es GraniteShares 2x Long NVDA, NO es YieldMax
 YIELDMAX_WHITELIST = {
     'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOGY', 'CONY', 'JPMO', 'DISO',
-    'YMAX', 'YMAG', 'MSTY', 'NVDL', 'AMDY', 'ULTY', 'APLY', 'NFLY',
+    'YMAX', 'YMAG', 'MSTY', 'AMDY', 'ULTY', 'APLY', 'NFLY',
     'PYPY', 'GDXY', 'SNOY', 'XOMY', 'MRNY', 'BALY', 'COINY',
-    'TSMY', 'AMDY', 'PLTY', 'CRWV', 'FIAT', 'ABNY', 'LFGY',
+    'TSMY', 'PLTY', 'ABNY', 'LFGY',
 }
 
-# v2.1 — ETFs de crecimiento/sectoriales de largo plazo (sin inversos ni apalancados)
+# v2.2 — ETFs de crecimiento de largo plazo
+# Removidos: TLT, XLE, XLI, XLF (sectoriales de corto plazo), ARKK (thematic especulativo)
+# Excluidos por diseño: inversos (SDS, SQQQ, SPXS) y apalancados (TQQQ, UPRO, SPXL)
 ETF_WHITELIST = {
     # Broad market
     'VTI', 'VOO', 'SPY', 'IVV', 'VT', 'ITOT', 'SCHB', 'SCHX', 'SCHA',
     # International
     'VEA', 'VWO', 'VXUS', 'EFA', 'EEM', 'ACWI',
-    # Bonds
-    'BND', 'AGG', 'BNDX', 'TLT', 'IEF', 'SHY', 'VCSH', 'VCIT',
-    # Sector SPDR
-    'XLK', 'XLF', 'XLE', 'XLV', 'XLI', 'XLC', 'XLP', 'XLY', 'XLRE', 'XLU', 'XLB',
+    # Bonds (solo corto/medio plazo)
+    'BND', 'AGG', 'BNDX', 'IEF', 'SHY', 'VCSH', 'VCIT',
+    # Sector — solo tecnología y salud (largo plazo)
+    'XLK', 'XLV', 'XLC', 'XLP', 'XLY', 'XLRE', 'XLU', 'XLB',
     # Tech / Semiconductores
     'QQQ', 'QQQM', 'SOXX', 'SMH', 'VGT', 'IGV', 'CIBR', 'HACK', 'BOTZ',
     # Dividend
@@ -1083,14 +1086,11 @@ ETF_WHITELIST = {
     'VNQ', 'IYR',
     # Commodities / Gold
     'GLD', 'IAU', 'SLV', 'GSG', 'DJP',
-    # Growth / Thematic
-    'ARKK', 'ARKW', 'ARKG', 'ARKF', 'ARKQ',
+    # Growth
     'SCHG', 'IWF', 'VUG', 'MGK',
     # Multi-asset / Balanced
     'AOA', 'AOM', 'AOR', 'AOK',
 }
-# NOTA: Los ETFs inversos (SDS, SQQQ, SPXS) y apalancados (TQQQ, UPRO, SPXL)
-# NO están en ninguna whitelist — se descartan automáticamente como mode_skip.
 
 
 def classify_tickers(tickers: list) -> dict:
