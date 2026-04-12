@@ -1110,10 +1110,6 @@ ETF_WHITELIST = {
     'SCHG', 'IWF', 'VUG', 'MGK',
     # Multi-asset / Balanced
     'AOA', 'AOM', 'AOR', 'AOK',
-    # Usuario — acciones individuales activas en portafolio
-    'AXTI', 'SNDK', 'LITE', 'BW', 'WDC', 'CIEN', 'TERN', 'ERAS', 'HYMC', 'ORKA',
-    # Usuario — ETFs temáticos activos en portafolio
-    'BWET', 'BBC', 'WGMI', 'LITP', 'EWY', 'PSI', 'SETM', 'FTXL', 'REMX', 'FLXR',
 }
 
 
