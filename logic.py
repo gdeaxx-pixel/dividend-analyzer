@@ -430,8 +430,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         # 1. Resample transactions to daily to handle multiple trades per day
         # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
         # sometimes carry a non-zero Quantity that would inflate the running share count.
+        # 'split' is excluded: the split loop below (Stock Splits column from yfinance) is
+        # the authoritative handler. If the broker CSV also records splits as share-adding rows,
+        # including 'split' here would double-count (CSV shares + loop multiplication).
         qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
-            r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|split|deposit|transfer|journal|contribution',
+            r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
             na=False, regex=True
         )]
         qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
@@ -690,22 +693,31 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         # --- v2.0: Classify ticker mode ---
         ticker_mode = classify_tickers([ticker]).get(ticker, 'mode_b')
 
-        # --- v2.0: Mode A — YieldMax monthly income & yield on cost ---
+        # --- v2.0: Monthly income & yield on cost (Mode A and Mode B) ---
+        # Mode A: all dividend/reinvest rows (YieldMax pays monthly)
+        # Mode B: cash dividends only (VTI, SCHB, SCHD pay quarterly cash divs)
         monthly_income = pd.Series(dtype=float)
         yield_on_cost = 0.0
-        if ticker_mode == 'mode_a':
+        if ticker_mode in ('mode_a', 'mode_b'):
             try:
-                all_div_rows = ticker_df[
-                    ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|reinvest', na=False)
-                ].copy()
-                if not all_div_rows.empty:
-                    all_div_rows['Month'] = all_div_rows['Date'].dt.to_period('M').astype(str)
-                    monthly_income = all_div_rows.groupby('Month')['Amount'].sum().abs()
+                if ticker_mode == 'mode_a':
+                    div_rows = ticker_df[
+                        ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|reinvest', na=False)
+                    ].copy()
+                else:
+                    # mode_b: cash dividends only (exclude reinvest rows to avoid double-count)
+                    div_rows = ticker_df[
+                        ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield', na=False) &
+                        ~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip', na=False)
+                    ].copy()
+                if not div_rows.empty:
+                    div_rows['Month'] = div_rows['Date'].dt.to_period('M').astype(str)
+                    monthly_income = div_rows.groupby('Month')['Amount'].sum().abs()
                 years = max((ticker_df['Date'].max() - ticker_df['Date'].min()).days / 365.25, 0.01)
                 ann_divs = total_dividends / years
                 yield_on_cost = (ann_divs / pocket_investment * 100) if pocket_investment > 0 else 0
             except Exception as e:
-                print(f"Mode A income calc error for {ticker}: {e}")
+                print(f"Income calc error for {ticker}: {e}")
 
         # --- v2.0: Mode B — growth metrics ---
         shares_bought = shares_owned_pocket

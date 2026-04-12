@@ -425,6 +425,27 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.warning("Todos los tickers del archivo fueron descartados. Asegúrate de subir transacciones de ETFs conocidos (VTI, VOO, TSLY, etc.).")
                     st.stop()
 
+                # ── Portfolio Global Summary ──────────────────────────────
+                total_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
+                total_market   = sum(s.get('market_value', 0)      for s in results.values() if 'error' not in s)
+                total_divs     = sum(s.get('dividends_collected_cash', 0) + s.get('dividends_collected_drip', 0)
+                                     for s in results.values() if 'error' not in s)
+                total_gain     = (total_market + sum(s.get('dividends_collected_cash', 0)
+                                     for s in results.values() if 'error' not in s)) - total_invested
+                total_roi      = (total_gain / total_invested * 100) if total_invested else 0
+
+                st.markdown("### 💼 RESUMEN GLOBAL DEL PORTAFOLIO")
+                sg1, sg2, sg3, sg4, sg5 = st.columns(5)
+                sg1.metric("Total Invertido",    f"${total_invested:,.2f}")
+                sg2.metric("Valor de Mercado",   f"${total_market:,.2f}")
+                sg3.metric("Ganancia / Pérdida",
+                           f"${total_gain:,.2f}",
+                           delta=f"{total_roi:.2f}%",
+                           delta_color="normal")
+                sg4.metric("Dividendos Totales", f"${total_divs:,.2f}")
+                sg5.metric("Posiciones Activas", f"{len(results)}")
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
                 # Section B — Classification pills header
                 mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
                 mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
@@ -626,6 +647,32 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         bc4.metric("CAGR", cagr_str)
                         shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
                         st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
+
+                        # Mode B dividends (VTI, SCHB, SCHD pay quarterly cash dividends)
+                        b_monthly = stats.get('monthly_income')
+                        if b_monthly is not None and not b_monthly.empty:
+                            import altair as alt
+                            b_yoc = stats.get('yield_on_cost', 0)
+                            b_total_div = stats.get('dividends_collected_cash', 0)
+                            st.markdown("### 💵 DIVIDENDOS COBRADOS")
+                            bd1, bd2 = st.columns(2)
+                            bd1.metric("Total Dividendos", f"${b_total_div:,.2f}")
+                            bd2.metric("Yield on Cost", f"{b_yoc:.2f}%" if b_yoc else "—")
+                            b_income_df = b_monthly.reset_index()
+                            b_income_df.columns = ['Mes', 'Dividendo']
+                            b_income_chart = alt.Chart(b_income_df).mark_bar(color='#006497', opacity=0.85).encode(
+                                x=alt.X('Mes:O', title='Mes', sort=None),
+                                y=alt.Y('Dividendo:Q', title='Dividendo ($)', axis=alt.Axis(format='$,.2f')),
+                                tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
+                            ).properties(height=160, background=CHART_PALETTE["bg"]).configure_view(
+                                strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                            ).configure_axis(
+                                grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                                tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                                titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                                titleFont='Inter, system-ui, sans-serif', labelFontSize=10, titleFontSize=11, titleFontWeight=500
+                            )
+                            st.altair_chart(b_income_chart, use_container_width=True)
 
                         render_quant_and_chart(stats, ticker)
                         st.divider()
