@@ -436,7 +436,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
             r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
             na=False, regex=True
-        )]
+        )].copy()
+        # Schwab (y algunos otros brokers) exporta Quantity positiva para ventas.
+        # Negamos explícitamente las filas de venta para que el cumsum reste shares correctamente.
+        sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
+        qty_rows.loc[sell_mask, 'Quantity'] = -qty_rows.loc[sell_mask, 'Quantity'].abs()
         qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
         daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
         daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
