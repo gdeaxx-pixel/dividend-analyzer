@@ -456,21 +456,34 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
 
         running_shares = 0.0
         shares_series = []
-        
+
         for date in daily_history.index:
-            # Check for split
             split_val = splits.loc[date]
-            if split_val != 0:
-                 # Standard definition: Split 2.0 means 2-for-1 (shares double).
-                 # Split 0.5 means 1-for-2 (shares halve).
-                 running_shares *= split_val
-            
-            # Add daily activity (Net Quantity from Buys/Sells)
+            if split_val != 0 and split_val > 0:
+                loc = daily_history.index.get_loc(date)
+                if loc > 0:
+                    prev_date = daily_history.index[loc - 1]
+                    try:
+                        price_today = float(market_data['Close'].loc[date])
+                        price_prev  = float(market_data['Close'].loc[prev_date])
+                        actual_ratio   = price_today / price_prev if price_prev > 0 else 1.0
+                        expected_ratio = 1.0 / float(split_val)
+                        # yfinance sometimes returns already-adjusted prices even with
+                        # auto_adjust=False (confirmed for SCHB 3-for-1, Oct 2024).
+                        # When prices didn't drop by ~1/split_val, they're pre-adjusted:
+                        # retroactively scale all past share counts so the chart is smooth.
+                        if abs(actual_ratio - expected_ratio) / expected_ratio > 0.15:
+                            shares_series = [s * split_val for s in shares_series]
+                        running_shares *= split_val
+                    except Exception:
+                        running_shares *= split_val
+                else:
+                    running_shares *= split_val
+
             net_qty = daily_history.loc[date, 'Quantity']
             running_shares += net_qty
-            
             shares_series.append(running_shares)
-            
+
         daily_history['Shares Held'] = shares_series
         
         # 4. Calculate Values
@@ -508,35 +521,47 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         
         # A. SPY/VOO Benchmark Simulation
         try:
-            # Fetch VOO data covering the same range (auto_adjust=True for Total Return)
             benchmark_ticker = 'VOO'
             session = None
             try:
                 session = get_session()
             except:
                 pass
-                
-            spy_data = yf.download(benchmark_ticker, start=first_date, progress=False, auto_adjust=True, session=session)
-            
+
+            # auto_adjust=False mantiene precios históricos reales (no ajustados por dividendos).
+            # actions=True trae columna Dividends para reinvertirlos en la simulación.
+            spy_data = yf.download(benchmark_ticker, start=first_date, progress=False,
+                                   auto_adjust=False, actions=True, session=session)
+
             if isinstance(spy_data.columns, pd.MultiIndex):
                 spy_data.columns = spy_data.columns.get_level_values(0)
-            
-            # Reindex SPY to match portfolio dates (ffill to handle weekends/holidays if mapped)
+
             spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
-            
-            # Simulate buying VOO shares with the exact same 'Daily Invested' amounts
+            voo_divs   = (spy_data['Dividends'].reindex(daily_history.index).fillna(0)
+                          if 'Dividends' in spy_data.columns
+                          else pd.Series(0.0, index=daily_history.index))
+
             daily_history['VOO Price'] = spy_prices
-            # Handle potential zeros or NaNs in VOO Price to avoid division by zero
             safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).ffill().bfill()
-            
-            # Calculate shares bought each day (Daily Invested / Price)
-            # Note: Sells (negative Daily Invested) will correctly reduce shares
-            daily_history['VOO Shares Bought'] = daily_history['Daily Invested'] / safe_voo_price
-            daily_history['VOO Shares Held'] = daily_history['VOO Shares Bought'].cumsum().clip(lower=0)
-            
-            # Simulated Total Value
-            daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price'] 
-            
+
+            # Simulación con reinversión de dividendos de VOO (Total Return apples-to-apples).
+            voo_shares_running = 0.0
+            voo_shares_series  = []
+            daily_invested_s   = daily_history['Daily Invested']
+
+            for date in daily_history.index:
+                vp = float(safe_voo_price.loc[date]) if not pd.isna(safe_voo_price.loc[date]) else 0.0
+                if vp > 0:
+                    voo_shares_running += float(daily_invested_s.loc[date]) / vp
+                    div = float(voo_divs.loc[date])
+                    if div > 0 and voo_shares_running > 0:
+                        voo_shares_running += (div * voo_shares_running) / vp
+                voo_shares_running = max(voo_shares_running, 0.0)
+                voo_shares_series.append(voo_shares_running)
+
+            daily_history['VOO Shares Held'] = voo_shares_series
+            daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price']
+
         except Exception as e:
             print(f"Error calculating benchmark (VOO): {e}")
             daily_history['SPY Profit'] = 0.0
