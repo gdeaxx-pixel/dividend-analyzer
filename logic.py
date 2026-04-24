@@ -304,6 +304,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         shares_owned_drip = 0.0
         dividends_collected_cash = 0.0
         dividends_collected_drip = 0.0 # Value of dividends reinvested
+        history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
         
         # Helper for defensive parsing
         def safe_float(val):
@@ -352,11 +353,20 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             # Logic
             row_cash_flow = 0.0
             
-            if is_buy or is_deposit:
-                pocket_investment += abs(amount) # Amount usually negative for buys in many brokers, force positive cost
+            if is_buy:
+                pocket_investment += abs(amount)
                 shares_owned += abs(qty)
                 shares_owned_pocket += abs(qty)
                 row_cash_flow = abs(amount)
+            elif is_deposit:
+                # Internal transfers (journal, transfer): signed qty so transfer-out + transfer-in = 0 net
+                # External contributions (deposit, contribution): new money, treat as buy
+                is_internal = 'transfer' in action or 'journal' in action
+                if not is_internal:
+                    pocket_investment += abs(amount)
+                    row_cash_flow = abs(amount)
+                shares_owned += qty
+                shares_owned_pocket += qty
             
             elif is_drip:
                 # Semantic Analysis of Description (User Request)
@@ -395,17 +405,27 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                      
             elif is_sell:
                  # Selling returns money to pocket (reduces net investment)
-                 pocket_investment -= abs(amount) 
+                 pocket_investment -= abs(amount)
                  shares_owned -= abs(qty)
                  shares_owned_pocket -= abs(qty)
                  row_cash_flow = -abs(amount)
+                 # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
+                 if shares_owned < 0:
+                     shares_owned = 0.0
+                     history_incomplete = True
+                 if shares_owned_pocket < 0:
+                     shares_owned_pocket = 0.0
                  
             # Special Handling: Splits in CSV
             # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
             # But the SKILL says: "Balance Reset: Al detectar un 'Reverse Split' con una cantidad positiva en el CSV, trátalo como un Reinicio de Balance."
             if 'split' in action:
                 if qty > 0:
-                     shares_owned = qty # Reset balance to what CSV says
+                    if shares_owned > 0:
+                        ratio = qty / shares_owned
+                        shares_owned_pocket *= ratio
+                        shares_owned_drip *= ratio
+                    shares_owned = qty
                      
             cash_flows.append(row_cash_flow)
             
@@ -486,6 +506,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
 
             net_qty = daily_history.loc[date, 'Quantity']
             running_shares += net_qty
+            if running_shares < 0:
+                running_shares = 0.0
             shares_series.append(running_shares)
 
         daily_history['Shares Held'] = shares_series
@@ -796,9 +818,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             "ticker_mode":     ticker_mode,
             "monthly_income":  monthly_income,
             "yield_on_cost":   yield_on_cost,
-            "shares_bought":   shares_bought,
-            "shares_sold":     shares_sold,
-            "cagr":            cagr,
+            "shares_bought":      shares_bought,
+            "shares_sold":        shares_sold,
+            "cagr":               cagr,
+            "history_incomplete": history_incomplete,
         }
         
     return results

@@ -544,6 +544,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         shown_a = True
                         st.markdown(f"### **{ticker}**")
 
+                        if stats.get('history_incomplete'):
+                            st.warning(f"⚠️ {ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+
                         results_data = {
                             "Indicador": [
                                 "🏦 Inversión (el dinero que tu pusiste)",
@@ -637,6 +640,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             continue
                         shown_b = True
                         st.markdown(f"### **{ticker}**")
+
+                        if stats.get('history_incomplete'):
+                            st.warning(f"⚠️ {ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
                         cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
                         bc1, bc2, bc3, bc4 = st.columns(4)
