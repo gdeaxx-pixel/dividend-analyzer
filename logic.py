@@ -359,14 +359,21 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 shares_owned_pocket += abs(qty)
                 row_cash_flow = abs(amount)
             elif is_deposit:
-                # Internal transfers (journal, transfer): signed qty so transfer-out + transfer-in = 0 net
-                # External contributions (deposit, contribution): new money, treat as buy
                 is_internal = 'transfer' in action or 'journal' in action
-                if not is_internal:
+                if is_internal:
+                    # Internal transfers: signed qty so transfer-out(-) + transfer-in(+) = 0 net shares
+                    # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
+                    shares_owned += qty
+                    shares_owned_pocket += qty
+                    if qty > 0 and amount != 0:
+                        pocket_investment += abs(amount)
+                        row_cash_flow = abs(amount)
+                else:
+                    # External deposit / contribution: new money from pocket
                     pocket_investment += abs(amount)
+                    shares_owned += abs(qty)
+                    shares_owned_pocket += abs(qty)
                     row_cash_flow = abs(amount)
-                shares_owned += qty
-                shares_owned_pocket += qty
             
             elif is_drip:
                 # Semantic Analysis of Description (User Request)
