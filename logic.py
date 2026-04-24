@@ -439,6 +439,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         ticker_df['Cash_Flow_In'] = cash_flows
         
         # --- Final High-Level Calculations ---
+        print(f"[DEBUG {ticker}] shares_owned={shares_owned:.4f} price={current_price:.4f} pocket={pocket_investment:.2f} div_cash={dividends_collected_cash:.2f}")
         market_value = shares_owned * current_price
         
         # Total Return Formula from Skill:
