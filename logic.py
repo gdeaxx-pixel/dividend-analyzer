@@ -502,10 +502,20 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
 
         # 6. Calculate User Profit (Real)
         # We need to track Cumulative Cash Dividends to add to Market Value
-        # Identify Cash Dividend rows in original DF
+        # Identify Cash Dividend rows in original DF.
+        # Schwab records DRIP as two rows: "Cash Dividend" + "Reinvestment".
+        # The "Cash Dividend" row must be excluded when a reinvestment happened on
+        # the same date — otherwise it is double-counted (once as shares in Market
+        # Value, once as cash in Cumulative Cash Div).
+        drip_dates = set(
+            ticker_df[ticker_df['Action'].str.lower().str.contains(
+                r'reinvest|reinversión|drip', na=False, regex=True
+            )]['Date'].tolist()
+        )
         cash_div_rows = ticker_df[
-            (ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|interest')) & 
-            (~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip'))
+            (ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|interest', na=False)) &
+            (~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip', na=False)) &
+            (~ticker_df['Date'].isin(drip_dates))
         ]
         
         # Resample cash divs to daily
