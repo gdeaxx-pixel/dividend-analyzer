@@ -547,6 +547,16 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         if stats.get('history_incomplete'):
                             st.warning(f"⚠️ {ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
+                        # DEBUG TEMPORAL — remover después
+                        _mv = stats.get('market_value', 0)
+                        _sh = stats.get('shares_owned', 0)
+                        _pr = (_mv / _sh) if _sh else 0
+                        _dc = stats.get('dividends_collected_cash', 0)
+                        _pi = stats.get('pocket_investment', 0)
+                        _np = _mv + _dc - _pi
+                        _ri = (_np / _pi * 100) if _pi else 0
+                        st.info(f"DEBUG {ticker}: precio={_pr:.4f} | shares={_sh:.4f} | market_value={_mv:.2f} | div_cash={_dc:.2f} | pocket={_pi:.2f} | net_profit={_np:.2f} | roi_calc={_ri:.2f}% | roi_stored={stats.get('roi_percent',0):.2f}%")
+
                         results_data = {
                             "Indicador": [
                                 "🏦 Inversión (el dinero que tu pusiste)",
