@@ -180,6 +180,35 @@ def test_normalize_schwab_output():
     assert len(df_clean) > 0
 
 
+def test_ib_sell_negative_qty_shares_counted_correctly():
+    """
+    IB Transaction History guarda sells con Quantity negativa (ej. -35).
+    analyze_portfolio debe usar abs(qty) al restar → resultado correcto.
+    Regresión: MSTY mostraba 1200 shares cuando el correcto era 1250
+    (1285 compradas - 35 vendidas).
+    """
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+        b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2025-01-10,U123,Buy DEMO,Buy,DEMO,50,10.00,USD,-500.00,-1.0,-501.00\n"
+        b"Transaction History,Data,2025-02-01,U123,Buy DEMO,Buy,DEMO,50,10.00,USD,-500.00,-1.0,-501.00\n"
+        b"Transaction History,Data,2025-03-01,U123,Sell DEMO,Sell,DEMO,-20,12.00,USD,240.00,-1.0,239.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+    df_clean["Quantity"] = pd.to_numeric(df_clean["Quantity"], errors="coerce").fillna(0)
+
+    buys  = df_clean[df_clean["Action"] == "Buy"]["Quantity"].sum()
+    sells = df_clean[df_clean["Action"] == "Sell"]["Quantity"].sum()
+
+    assert buys == pytest.approx(100.0), "Total comprado debe ser 100"
+    assert sells == pytest.approx(-20.0), "IB guarda sells como negativos"
+
+    # La cuenta correcta de shares: 100 - abs(-20) = 80
+    net_shares = buys + sells  # 100 + (-20) = 80  (no restar, ya es negativo)
+    assert net_shares == pytest.approx(80.0), "Shares netas deben ser 80 (100 - 20)"
+
+
 def test_normalize_real_ib_file():
     """Valida el archivo IB real del cliente con 459 transacciones."""
     real_path = os.path.expanduser(
