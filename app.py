@@ -446,6 +446,20 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 sg5.metric("Posiciones Activas", f"{len(results)}")
                 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
+                # ── PDF Report Download ───────────────────────────────────
+                try:
+                    from report import generate_report_pdf
+                    from datetime import date as _date
+                    _pdf_bytes = generate_report_pdf(results, broker, version="2.0")
+                    st.download_button(
+                        label="Descargar Reporte PDF",
+                        data=_pdf_bytes,
+                        file_name=f"auditoria-portafolio-{_date.today().isoformat()}.pdf",
+                        mime="application/pdf",
+                    )
+                except Exception:
+                    pass
+
                 # Section B — Classification pills header
                 mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
                 mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
