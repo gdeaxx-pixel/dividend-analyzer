@@ -198,25 +198,27 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
         pdf._row("Acciones Netas",      f"{s.get('shares_owned', 0):,.4f}",   shade=False)
         pdf._row("Precio Actual",       _fmt_usd(s.get("current_price", 0)),  shade=True)
 
-        # Risk metrics — guard against None values returned when data is insufficient
-        def _n(key: str) -> float:
+        # Risk metrics — show N/A when value is None (insufficient data)
+        def _risk_fmt(key: str, pct: bool = False) -> str:
             v = s.get(key)
-            return float(v) if v is not None else 0.0
+            if v is None:
+                return "N/A"
+            return _fmt_pct(float(v)) if pct else f"{float(v):.2f}"
 
         pdf._section_title("MÉTRICAS DE RIESGO AJUSTADO")
         pdf._two_col_row(
-            "Sharpe Ratio",    f"{_n('sharpe_ratio'):.2f}",
-            "Sortino Ratio",   f"{_n('sortino_ratio'):.2f}",
+            "Sharpe Ratio",    _risk_fmt("sharpe_ratio"),
+            "Sortino Ratio",   _risk_fmt("sortino_ratio"),
             shade=False,
         )
         pdf._two_col_row(
-            "Max Drawdown",    _fmt_pct(_n("max_drawdown")),
-            "Volatilidad Anual", _fmt_pct(_n("volatilidad_anualizada")),
+            "Max Drawdown",    _risk_fmt("max_drawdown", pct=True),
+            "Volatilidad Anual", _risk_fmt("volatilidad_anualizada", pct=True),
             shade=True,
         )
         pdf._two_col_row(
-            "Beta vs VOO",     f"{_n('beta_vs_voo'):.2f}",
-            "Alpha Anualizado", _fmt_pct(_n("alpha_anualizado")),
+            "Beta vs VOO",     _risk_fmt("beta_vs_voo"),
+            "Alpha Anualizado", _risk_fmt("alpha_anualizado", pct=True),
             shade=False,
         )
 

@@ -302,6 +302,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         shares_owned = 0.0
         shares_owned_pocket = 0.0
         shares_owned_drip = 0.0
+        total_shares_bought = 0.0  # gross buys (before sells)
+        total_shares_sold = 0.0    # gross sells
         dividends_collected_cash = 0.0
         dividends_collected_drip = 0.0 # Value of dividends reinvested
         history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
@@ -357,6 +359,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 pocket_investment += abs(amount)
                 shares_owned += abs(qty)
                 shares_owned_pocket += abs(qty)
+                total_shares_bought += abs(qty)
                 row_cash_flow = abs(amount)
             elif is_deposit:
                 is_internal = 'transfer' in action or 'journal' in action
@@ -416,6 +419,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                  pocket_investment -= abs(amount)
                  shares_owned -= abs(qty)
                  shares_owned_pocket -= abs(qty)
+                 total_shares_sold += abs(qty)
                  row_cash_flow = -abs(amount)
                  # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
                  if shares_owned < 0:
@@ -690,7 +694,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         daily_returns_q = twr_factor.pct_change().dropna()
 
         spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
-        spy_daily_returns_q = spy_vals.pct_change().dropna()
+        spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
 
         # 2. Volatilidad anualizada
         if len(daily_returns_q) >= 2:
@@ -789,8 +793,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 print(f"Income calc error for {ticker}: {e}")
 
         # --- v2.0: Mode B — growth metrics ---
-        shares_bought = shares_owned_pocket
-        shares_sold = max(0, shares_owned_pocket - shares_owned) if shares_owned < shares_owned_pocket else 0
+        shares_bought = total_shares_bought
+        shares_sold   = total_shares_sold
         cagr = None
         try:
             years_held = max((ticker_df['Date'].max() - ticker_df['Date'].min()).days / 365.25, 0.01)
