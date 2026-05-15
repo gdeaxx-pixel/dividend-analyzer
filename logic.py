@@ -406,9 +406,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                         dividends_collected_drip += abs(amount)
                 
             elif is_div_payout:
-                # Cash dividend NOT reinvested
-                if not is_drip: # Ensure we didn't double count if logic overlaps
-                     dividends_collected_cash += abs(amount)
+                # Cash dividend NOT reinvested. Use signed amount so IB correction
+                # entries (negative) reduce the total instead of inflating it.
+                if not is_drip:
+                     dividends_collected_cash += amount
                      
             elif is_sell:
                  # Selling returns money to pocket (reduces net investment)

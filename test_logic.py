@@ -226,6 +226,49 @@ def test_normalize_real_ib_file():
     assert len(df_clean) > 0
 
 
+# ── Regresión: correcciones negativas de dividendo IB ────────────────────────
+
+def test_ib_negative_dividend_corrections_reduce_total(monkeypatch):
+    """
+    IB emite entradas de dividendo con Amount negativo para corregir pagos duplicados.
+    analyze_portfolio debe RESTAR esas correcciones, no sumarlas.
+    Regresión: abs(amount) inflaba MSTY en $1,863.76 (correcciones de ago-2025 y ene-2026).
+    """
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+        b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        # Dividendo real pagado
+        b"Transaction History,Data,2025-08-01,U123,MSTY Dividend,Dividend,MSTY,-,-,-,414.23,-,414.23\n"
+        # IB revierte el pago (error) → negativo
+        b"Transaction History,Data,2025-08-01,U123,MSTY Dividend Correction,Dividend,MSTY,-,-,-,-414.23,-,-414.23\n"
+        # Nuevo pago correcto
+        b"Transaction History,Data,2025-08-02,U123,MSTY Dividend Corrected,Dividend,MSTY,-,-,-,410.00,-,410.00\n"
+        # Compra para tener posición
+        b"Transaction History,Data,2025-07-01,U123,Buy MSTY,Buy,MSTY,100,20.00,USD,-2000.00,-1.0,-2001.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    def mock_fetch(ticker, start_date):
+        data = pd.DataFrame(
+            {"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0], "VOO Price": [500.0]},
+            index=[pd.Timestamp("2025-08-15")],
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+    results = logic.analyze_portfolio(df_clean, version="TEST_DIV_NEG")
+
+    assert "MSTY" in results
+    div_cash = results["MSTY"]["dividends_collected_cash"]
+
+    # Correcto: 414.23 - 414.23 + 410.00 = 410.00
+    # Incorrecto (bug abs): 414.23 + 414.23 + 410.00 = 1238.46
+    assert div_cash == pytest.approx(410.00, abs=0.01), (
+        f"Dividendos deben ser $410.00 (corrección restada), no ${div_cash:.2f}"
+    )
+
+
 # ── Lógica de negocio existente (CONY ground truth) ───────────────────────────
 
 def test_cony_portfolio_analysis(monkeypatch):
