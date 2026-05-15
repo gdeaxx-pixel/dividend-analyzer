@@ -934,7 +934,7 @@ def detect_broker(raw_text: str) -> str:
     lines = raw_text[:3000].lower()
     if 'charles schwab' in lines or 'brokerage account' in lines or 'transactions for account' in lines:
         return 'schwab'
-    if 'interactive brokers' in lines or 'brokerid' in lines or ('trades' in lines and 'header' in lines and 'symbol' in lines):
+    if 'interactive brokers' in lines or 'brokerid' in lines or ('transaction history' in lines and 'transaction type' in lines) or ('trades' in lines and 'header' in lines and 'symbol' in lines):
         return 'ibkr'
     return 'generic'
 
@@ -992,24 +992,89 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     else:
         text = raw_bytes.decode('utf-8', errors='replace')
 
+    import csv as _csv
+    text = text.lstrip('﻿')  # Remove BOM if present
     lines = text.splitlines()
     frames = []
 
+    def _safe_float(raw: str) -> float:
+        s = str(raw).strip().replace(',', '')
+        try:
+            return float(s)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def _ibkr_reader(section_name: str):
+        """Yield (header, [data_rows]) for a named IB section using csv.reader."""
+        header = None
+        rows = []
+        for parts in _csv.reader(io.StringIO(text)):
+            parts = [p.strip() for p in parts]
+            if len(parts) < 2:
+                continue
+            if parts[0] == section_name and parts[1] == 'Header':
+                header = parts[2:]
+            elif parts[0] == section_name and parts[1] == 'Data' and header:
+                row = parts[2:]
+                if len(row) >= len(header):
+                    rows.append(row[:len(header)])
+                elif row:
+                    rows.append(row + [''] * (len(header) - len(row)))
+        return header, rows
+
+    # --- Transaction History format (IB "Transaction History" export, not Activity Statement) ---
+    # Rows look like: Transaction History,Data,Date,Account,Description,Transaction Type,Symbol,...
+    try:
+        tx_header, tx_rows = _ibkr_reader('Transaction History')
+
+        if tx_header and tx_rows:
+            tx_df = pd.DataFrame(tx_rows, columns=tx_header)
+
+            action_map = {'Dividend': 'Dividend', 'Buy': 'Buy', 'Sell': 'Sell'}
+            tx_type_col = next((c for c in tx_df.columns if 'transaction type' in c.lower() or 'tipo' in c.lower()), None)
+            if tx_type_col:
+                tx_df = tx_df[tx_df[tx_type_col].isin(action_map)].copy()
+            else:
+                tx_type_col = 'Transaction Type'
+
+            gross_col = next((c for c in tx_df.columns if 'gross' in c.lower()), None)
+            net_col = next((c for c in tx_df.columns if c.lower() == 'net amount' or (c.lower().startswith('net') and 'amount' in c.lower())), None)
+            symbol_col = next((c for c in tx_df.columns if c.lower() in ('symbol', 'símbolo', 'simbolo', 'ticker')), None) or 'Symbol'
+            qty_col = next((c for c in tx_df.columns if 'quantity' in c.lower() or 'cantidad' in c.lower()), None) or 'Quantity'
+            price_col = next((c for c in tx_df.columns if c.lower() == 'price' or c.lower() == 'precio'), None) or 'Price'
+            date_col = next((c for c in tx_df.columns if c.lower() in ('date', 'fecha')), None) or 'Date'
+
+            result_rows = []
+            for _, row in tx_df.iterrows():
+                action = action_map.get(str(row.get(tx_type_col, '')).strip(), '')
+                if not action:
+                    continue
+                qty_raw = str(row.get(qty_col, '-')).strip()
+                price_raw = str(row.get(price_col, '-')).strip()
+                gross_raw = str(row.get(gross_col, '-')).strip() if gross_col else '-'
+                net_raw = str(row.get(net_col, '-')).strip() if net_col else '-'
+                qty = 0.0 if qty_raw in ('-', '') else _safe_float(qty_raw)
+                price = 0.0 if price_raw in ('-', '') else _safe_float(price_raw)
+                amount_raw = (net_raw if net_raw not in ('-', '') else gross_raw) if action == 'Dividend' else gross_raw
+                amount = 0.0 if amount_raw in ('-', '') else _safe_float(amount_raw)
+                result_rows.append({
+                    'Date': str(row.get(date_col, '')).strip(),
+                    'Action': action,
+                    'Ticker': str(row.get(symbol_col, '')).strip(),
+                    'Quantity': qty,
+                    'Price': price,
+                    'Amount': amount,
+                })
+
+            if result_rows:
+                frames.append(pd.DataFrame(result_rows))
+                return pd.concat(frames, ignore_index=True)
+    except Exception as e:
+        print(f"IBKR Transaction History parse error: {e}")
+
     # --- Extract Trades section ---
     try:
-        trade_header = None
-        trade_rows = []
-        for line in lines:
-            parts = [p.strip().strip('"') for p in line.split(',')]
-            if not parts:
-                continue
-            section = parts[0]
-            if section == 'Trades' and len(parts) > 1 and parts[1] == 'Header':
-                trade_header = parts[2:]
-            elif section == 'Trades' and len(parts) > 1 and parts[1] == 'Data' and trade_header:
-                row = parts[2:]
-                if len(row) == len(trade_header):
-                    trade_rows.append(row)
+        trade_header, trade_rows = _ibkr_reader('Trades')
 
         if trade_header and trade_rows:
             trades_df = pd.DataFrame(trade_rows, columns=trade_header)
@@ -1050,19 +1115,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
 
     # --- Extract Dividends section ---
     try:
-        div_header = None
-        div_rows = []
-        for line in lines:
-            parts = [p.strip().strip('"') for p in line.split(',')]
-            if not parts:
-                continue
-            section = parts[0]
-            if section == 'Dividends' and len(parts) > 1 and parts[1] == 'Header':
-                div_header = parts[2:]
-            elif section == 'Dividends' and len(parts) > 1 and parts[1] == 'Data' and div_header:
-                row = parts[2:]
-                if len(row) == len(div_header):
-                    div_rows.append(row)
+        div_header, div_rows = _ibkr_reader('Dividends')
 
         if div_header and div_rows:
             divs_df = pd.DataFrame(div_rows, columns=div_header)
