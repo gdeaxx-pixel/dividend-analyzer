@@ -368,14 +368,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                     # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
                     shares_owned += qty
                     shares_owned_pocket += qty
-                    if qty > 0 and amount != 0:
-                        pocket_investment += abs(amount)
-                        row_cash_flow = abs(amount)
+                    if qty > 0:
+                        total_shares_bought += qty
+                        if amount != 0:
+                            pocket_investment += abs(amount)
+                            row_cash_flow = abs(amount)
                 else:
                     # External deposit / contribution: new money from pocket
                     pocket_investment += abs(amount)
                     shares_owned += abs(qty)
                     shares_owned_pocket += abs(qty)
+                    total_shares_bought += abs(qty)
                     row_cash_flow = abs(amount)
             
             elif is_drip:
