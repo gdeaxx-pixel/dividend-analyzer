@@ -140,6 +140,7 @@ st.markdown("""
         background-color: var(--surface-high) !important;
         padding: 20px 24px !important;
         border-radius: 0px !important;
+        border-left: 3px solid var(--electric-blue) !important;
         box-shadow: 0 2px 8px var(--shadow-md) !important;
         transition: box-shadow 0.2s ease !important;
     }
@@ -302,10 +303,10 @@ st.markdown("""
 st.markdown("""
 <div style="padding: 40px 0 0 0; background-color: #fcf9f8;">
     <h1 style="
-        font-family: 'Inter', sans-serif;
+        font-family: 'Cinzel', serif;
         font-size: 2.8rem;
-        font-weight: 800;
-        letter-spacing: -0.02em;
+        font-weight: 700;
+        letter-spacing: 0.02em;
         color: #1a1a1a;
         margin-bottom: 6px;
         line-height: 1.1;
@@ -868,11 +869,11 @@ elif input_method == "Simulación Teórica":
             st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
-FOOTER_STYLE = "background-color:#eae7e7;padding:32px 40px;margin-top:48px;border-left:3px solid #006497;"
+FOOTER_STYLE = "background-color:#021C36;padding:32px 40px;margin-top:48px;"
 BADGE_STYLE  = "display:inline-block;font-family:'Inter',sans-serif;font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#006497;border:1px solid #006497;padding:3px 8px;margin-bottom:14px;"
-TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:13px;font-weight:700;letter-spacing:-0.01em;color:#1a1a1a;margin:0 0 12px 0;max-width:720px;line-height:1.5;"
-BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#555555;line-height:1.7;margin:0 0 8px 0;max-width:720px;"
-BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#888888;line-height:1.7;margin:0;max-width:720px;"
+TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:13px;font-weight:700;letter-spacing:-0.01em;color:#ffffff;margin:0 0 12px 0;max-width:720px;line-height:1.5;"
+BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.65);line-height:1.7;margin:0 0 8px 0;max-width:720px;"
+BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.40);line-height:1.7;margin:0;max-width:720px;"
 
 st.markdown(
     f'<div style="{FOOTER_STYLE}">'
