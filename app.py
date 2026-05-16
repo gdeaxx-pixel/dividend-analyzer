@@ -586,6 +586,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     shown_a = True
                     st.markdown(f"### **{ticker}**")
 
+                    for _sp in stats.get('splits_detected', []):
+                        _ratio = _sp['ratio']
+                        _kind = "Split" if _ratio > 1 else "Reverse Split"
+                        st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
+
                     if stats.get('history_incomplete'):
                         st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
@@ -682,6 +687,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         continue
                     shown_b = True
                     st.markdown(f"### **{ticker}**")
+
+                    for _sp in stats.get('splits_detected', []):
+                        _ratio = _sp['ratio']
+                        _kind = "Split" if _ratio > 1 else "Reverse Split"
+                        st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
 
                     if stats.get('history_incomplete'):
                         st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")

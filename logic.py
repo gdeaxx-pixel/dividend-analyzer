@@ -13,6 +13,35 @@ def get_session():
     """
     return crequests.Session(impersonate="chrome")
 
+
+def _cumul_split_factor(tx_date, splits_series: pd.Series) -> float:
+    """Return the cumulative split factor that applies to a share purchased on tx_date.
+
+    Multiplies all split ratios that occurred AFTER tx_date so that historical
+    share quantities from the CSV (which are in pre-split units) are correctly
+    scaled to today's share count.
+
+    Example: XLK 2:1 split on 2025-12-05.
+    A share bought on 2024-08-26 → factor = 2.0 → counts as 2 shares today.
+    A share bought on 2026-01-29 (post-split) → factor = 1.0 → no adjustment.
+    """
+    if splits_series is None or splits_series.empty:
+        return 1.0
+    try:
+        tx_ts = pd.Timestamp(tx_date).normalize()
+        if tx_ts.tzinfo is not None:
+            tx_ts = tx_ts.tz_localize(None)
+        idx = splits_series.index
+        if idx.tzinfo is not None:
+            idx = idx.tz_localize(None)
+        future = splits_series[idx.normalize() > tx_ts]
+        factor = 1.0
+        for r in future:
+            factor *= float(r)
+        return factor
+    except Exception:
+        return 1.0
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -297,6 +326,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
 
         current_price = market_data['Close'].iloc[-1]
         
+        # --- Split data for per-transaction adjustment ---
+        # market_data is fetched with actions=True so it includes Stock Splits column.
+        # We build a Series of (split_date → ratio) covering the holding period.
+        _splits_col = pd.Series(dtype=float)
+        if 'Stock Splits' in market_data.columns:
+            _raw = market_data['Stock Splits']
+            _splits_col = _raw[_raw > 0]  # keep only actual split events
+        splits_detected = []
+        if not _splits_col.empty:
+            for _sd, _sr in _splits_col.items():
+                splits_detected.append({"date": str(_sd)[:10], "ratio": float(_sr)})
+
         # --- Analysis Variables ---
         pocket_investment = 0.0 # Net cash flow from user's pocket
         shares_owned = 0.0
@@ -355,81 +396,79 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             # Logic
             row_cash_flow = 0.0
             
+            # Split adjustment: shares from this transaction may have multiplied since
+            # the purchase date due to forward splits (or reduced via reverse splits).
+            _tx_date = row.get('Date', None)
+            _sf = _cumul_split_factor(_tx_date, _splits_col)
+
             if is_buy:
+                _adj_qty = abs(qty) * _sf
                 pocket_investment += abs(amount)
-                shares_owned += abs(qty)
-                shares_owned_pocket += abs(qty)
-                total_shares_bought += abs(qty)
+                shares_owned += _adj_qty
+                shares_owned_pocket += _adj_qty
+                total_shares_bought += _adj_qty
                 row_cash_flow = abs(amount)
             elif is_deposit:
                 is_internal = 'transfer' in action or 'journal' in action
                 if is_internal:
                     # Internal transfers: signed qty so transfer-out(-) + transfer-in(+) = 0 net shares
                     # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
-                    shares_owned += qty
-                    shares_owned_pocket += qty
-                    if qty > 0:
-                        total_shares_bought += qty
+                    _adj_qty = qty * _sf
+                    shares_owned += _adj_qty
+                    shares_owned_pocket += _adj_qty
+                    if _adj_qty > 0:
+                        total_shares_bought += _adj_qty
                         if amount != 0:
                             pocket_investment += abs(amount)
                             row_cash_flow = abs(amount)
                 else:
                     # External deposit / contribution: new money from pocket
+                    _adj_qty = abs(qty) * _sf
                     pocket_investment += abs(amount)
-                    shares_owned += abs(qty)
-                    shares_owned_pocket += abs(qty)
-                    total_shares_bought += abs(qty)
+                    shares_owned += _adj_qty
+                    shares_owned_pocket += _adj_qty
+                    total_shares_bought += _adj_qty
                     row_cash_flow = abs(amount)
-            
+
             elif is_drip:
-                # Semantic Analysis of Description (User Request)
-                # instead of just looking at positive/negative, we look at the intent in the text.
-                
                 # Pattern 1: "Reinvest Shares" / "Comprar Acciones"
-                # This explicitly describes the act of using money to buy shares.
-                # This is the "Realization" of the DRIP. We count this value.
                 if 'share' in action or 'acciones' in action:
-                    shares_owned += abs(qty)
-                    shares_owned_drip += abs(qty)
+                    _adj_qty = abs(qty) * _sf
+                    shares_owned += _adj_qty
+                    shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
-                    
-                # Pattern 2: "Reinvest Dividend" / "Dividendo Reinversión"
-                # This describes the source of funds (the dividend payout).
-                # To avoid double counting (since we counted the share purchase above), we ignore this value.
+
+                # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
                 elif 'dividend' in action or 'dividendo' in action:
-                    # We might still want to capture shares if for some reason they are only reported here
-                    # But usually 'Dividend' rows are cash flow, not share movement, or they duplicate the share movement.
-                    # Safe bet: If Amount is positive, it's the funding. Ignore value.
                     pass
-                
-                # Pattern 3: Ambiguous / Fallback (e.g. just "DRIP" or "Reinv")
-                # Use the sign heuristic:
-                # Negative amount = Purchase = Count Value
-                else: 
-                     shares_owned += abs(qty)
-                     shares_owned_drip += abs(qty)
-                     if amount < 0:
+
+                # Pattern 3: Ambiguous fallback
+                else:
+                    _adj_qty = abs(qty) * _sf
+                    shares_owned += _adj_qty
+                    shares_owned_drip += _adj_qty
+                    if amount < 0:
                         dividends_collected_drip += abs(amount)
-                
+
             elif is_div_payout:
                 # Cash dividend NOT reinvested. Use signed amount so IB correction
                 # entries (negative) reduce the total instead of inflating it.
                 if not is_drip:
-                     dividends_collected_cash += amount
-                     
+                    dividends_collected_cash += amount
+
             elif is_sell:
-                 # Selling returns money to pocket (reduces net investment)
-                 pocket_investment -= abs(amount)
-                 shares_owned -= abs(qty)
-                 shares_owned_pocket -= abs(qty)
-                 total_shares_sold += abs(qty)
-                 row_cash_flow = -abs(amount)
-                 # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
-                 if shares_owned < 0:
-                     shares_owned = 0.0
-                     history_incomplete = True
-                 if shares_owned_pocket < 0:
-                     shares_owned_pocket = 0.0
+                _adj_qty = abs(qty) * _sf
+                pocket_investment -= abs(amount)
+                shares_owned -= _adj_qty
+                shares_owned_pocket -= _adj_qty
+                total_shares_sold += _adj_qty
+                row_cash_flow = -abs(amount)
+                # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
+                if shares_owned < 0:
+                    shares_owned = 0.0
+                    history_incomplete = True
+                if shares_owned_pocket < 0:
+                    shares_owned_pocket = 0.0
                  
             # Special Handling: Splits in CSV
             # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
@@ -837,6 +876,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             "shares_sold":        shares_sold,
             "cagr":               cagr,
             "history_incomplete": history_incomplete,
+            "splits_detected":    splits_detected,
         }
         
     return results
