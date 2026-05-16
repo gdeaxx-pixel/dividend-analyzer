@@ -740,6 +740,68 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     render_quant_and_chart(stats, ticker)
                     st.divider()
 
+                if shown_a:
+                    _ca_rows = [
+                        (ticker, stats) for ticker, stats in results.items()
+                        if classify_map.get(ticker) == 'mode_a' and 'error' not in stats
+                    ]
+                    if _ca_rows:
+                        st.markdown("### RESUMEN CONSOLIDADO — FONDOS DE DIVIDENDOS")
+                        _ca_total_inv = sum(s['pocket_investment'] for _, s in _ca_rows)
+                        _ca_total_mv  = sum(s['market_value'] for _, s in _ca_rows)
+                        _ca_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _ca_rows)
+                        _ca_total_tr  = _ca_total_mv + _ca_total_div - _ca_total_inv
+                        _ca_total_tr_pct = (_ca_total_tr / _ca_total_inv * 100) if _ca_total_inv > 0 else 0
+                        _ca_tbody = ""
+                        for _ct, _cs in _ca_rows:
+                            _cr = _cs['roi_percent']
+                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _ca_tbody += (
+                                f'<tr style="border-bottom:1px solid #0d2a42;">'
+                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
+                                f'</tr>'
+                            )
+                        _ca_tr_color = "#4caf82" if _ca_total_tr_pct >= 0 else "#e05c5c"
+                        st.markdown(f"""
+<div style="overflow-x:auto;margin:4px 0 6px 0;">
+<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+  <thead>
+    <tr style="border-bottom:2px solid #006497;">
+      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Costo Real</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_ca_tbody}
+    <tr style="border-top:2px solid #006497;font-weight:700;">
+      <td style="padding:8px 10px;color:#ffffff;">Total</td>
+      <td style="padding:8px 10px;"></td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_inv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_div:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_mv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#445566;">Ver broker</td>
+      <td style="padding:8px 10px;text-align:right;color:#445566;">—</td>
+      <td style="padding:8px 10px;text-align:right;color:{_ca_tr_color};">{_ca_total_tr_pct:+.2f}%</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En IB: Posiciones → Sus participaciones → columna "Base de Coste". En Schwab: Cuentas → Posiciones → Base de coste.</p>
+                        """, unsafe_allow_html=True)
+
                 if not shown_a:
                     st.info("No hay posiciones YieldMax activas en este portafolio.")
 
@@ -855,6 +917,68 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                     render_quant_and_chart(stats, ticker)
                     st.divider()
+
+                if shown_b:
+                    _cb_rows = [
+                        (ticker, stats) for ticker, stats in results.items()
+                        if classify_map.get(ticker) == 'mode_b' and 'error' not in stats
+                    ]
+                    if _cb_rows:
+                        st.markdown("### RESUMEN CONSOLIDADO — ETFs DE CRECIMIENTO")
+                        _cb_total_inv = sum(s['pocket_investment'] for _, s in _cb_rows)
+                        _cb_total_mv  = sum(s['market_value'] for _, s in _cb_rows)
+                        _cb_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cb_rows)
+                        _cb_total_tr  = _cb_total_mv + _cb_total_div - _cb_total_inv
+                        _cb_total_tr_pct = (_cb_total_tr / _cb_total_inv * 100) if _cb_total_inv > 0 else 0
+                        _cb_tbody = ""
+                        for _ct, _cs in _cb_rows:
+                            _cr = _cs['roi_percent']
+                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _cb_tbody += (
+                                f'<tr style="border-bottom:1px solid #0d2a42;">'
+                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
+                                f'</tr>'
+                            )
+                        _cb_tr_color = "#4caf82" if _cb_total_tr_pct >= 0 else "#e05c5c"
+                        st.markdown(f"""
+<div style="overflow-x:auto;margin:4px 0 6px 0;">
+<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+  <thead>
+    <tr style="border-bottom:2px solid #006497;">
+      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Costo Real</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_cb_tbody}
+    <tr style="border-top:2px solid #006497;font-weight:700;">
+      <td style="padding:8px 10px;color:#ffffff;">Total</td>
+      <td style="padding:8px 10px;"></td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_inv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_div:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_mv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#445566;">Ver broker</td>
+      <td style="padding:8px 10px;text-align:right;color:#445566;">—</td>
+      <td style="padding:8px 10px;text-align:right;color:{_cb_tr_color};">{_cb_total_tr_pct:+.2f}%</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En IB: Posiciones → Sus participaciones → columna "Base de Coste". En Schwab: Cuentas → Posiciones → Base de coste.</p>
+                        """, unsafe_allow_html=True)
 
                 if not shown_b:
                     st.info("No hay ETFs de crecimiento activos en este portafolio.")
