@@ -6,7 +6,7 @@ import logic
 import json
 
 
-st.set_page_config(page_title="Dividend Portfolio Analyzer", layout="wide", page_icon="💰")
+st.set_page_config(page_title="Dividend Analyzer", layout="wide")
 
 # --- CUSTOM CSS: THE ARCHITECTURAL AUTHORITY — SURFACE MODE ---
 # Sistema de diseño: Invierte & Gana / tonal layering light
@@ -103,7 +103,7 @@ st.markdown("""
         background-color: var(--electric-blue) !important;
         color: var(--on-primary) !important;
         border: none !important;
-        border-radius: 9999px !important;
+        border-radius: 0px !important;
         font-family: 'Inter', sans-serif !important;
         font-weight: 600 !important;
         font-size: 13px !important;
@@ -114,7 +114,25 @@ st.markdown("""
     }
     div.stButton > button:hover {
         background-color: var(--electric-hover) !important;
-        box-shadow: 0 0 24px rgba(0, 100, 151, 0.20) !important;
+        box-shadow: none !important;
+    }
+
+    /* 6b. DOWNLOAD BUTTON */
+    div[data-testid="stDownloadButton"] > button {
+        background-color: var(--primary-container) !important;
+        color: var(--on-primary) !important;
+        border: none !important;
+        border-radius: 0px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        padding: 0.6rem 1.5rem !important;
+    }
+    div[data-testid="stDownloadButton"] > button:hover {
+        background-color: #010f1e !important;
+        box-shadow: none !important;
     }
 
     /* 7. MÉTRICAS — surface-high cards */
@@ -340,7 +358,7 @@ with st.sidebar:
 
 
     st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
-    if st.sidebar.button("🧹 Limpiar Caché"):
+    if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
 
@@ -352,7 +370,7 @@ def fmt_ratio(val, decimales=2, sufijo=""):
 # --- Main Logic ---
 
 if input_method == "Subir CSV/Excel" and uploaded_file is not None:
-    st.subheader("📊 Análisis de Portafolio Real")
+    st.subheader("Análisis de Portafolio Real")
 
     try:
         if uploaded_file.name.endswith('.xlsx'):
@@ -361,7 +379,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         else:
             df, broker = logic.load_and_detect_csv(uploaded_file)
             if df.empty:
-                st.error("❌ No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
+                st.error("No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
                 st.stop()
 
         # Section A — Broker badge
@@ -382,9 +400,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         missing_cols = [col for col in required_cols if col not in df_clean.columns]
 
         if missing_cols:
-            st.error(f"❌ Error de Formato: No encontramos las columnas: {', '.join(missing_cols)}")
+            st.error(f"Error de Formato: No encontramos las columnas: {', '.join(missing_cols)}")
             st.warning(f"Columnas encontradas: {list(df_clean.columns)}")
-            st.info("💡 Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
+            st.info("Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
             st.stop()
 
         # 2. Analyze
@@ -443,7 +461,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                  for s in results.values() if 'error' not in s)) - total_invested
             total_roi      = (total_gain / total_invested * 100) if total_invested else 0
 
-            st.markdown("### 💼 RESUMEN GLOBAL DEL PORTAFOLIO")
+            st.markdown("### RESUMEN GLOBAL DEL PORTAFOLIO")
             sg1, sg2, sg3, sg4, sg5 = st.columns(5)
             sg1.metric("Total Invertido",    f"${total_invested:,.2f}")
             sg2.metric("Valor de Mercado",   f"${total_market:,.2f}")
@@ -473,29 +491,29 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
             mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
 
-            st.markdown("### 📊 CLASIFICACIÓN DE PORTAFOLIO")
+            st.markdown("### CLASIFICACIÓN DE PORTAFOLIO")
             b_col1, b_col2 = st.columns(2)
             with b_col1:
                 st.markdown("**MODO A — YieldMax (Income)**")
-                pills_a = " ".join([f'<span style="display:inline-block;background-color:#c8102e;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:9999px;">{t}</span>' for t in mode_a_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
+                pills_a = " ".join([f'<span style="display:inline-block;background-color:#c8102e;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_a_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
                 st.markdown(pills_a, unsafe_allow_html=True)
             with b_col2:
                 st.markdown("**MODO B — ETFs de Crecimiento**")
-                pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:9999px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
+                pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
                 st.markdown(pills_b, unsafe_allow_html=True)
 
             st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
             # ── TABS: Portafolio A / Portafolio B ──────────────────────
             tab_a, tab_b = st.tabs([
-                f"💰 Portafolio A — YieldMax ({len(mode_a_tickers)})",
-                f"📈 Portafolio B — ETFs de Crecimiento ({len(mode_b_tickers)})",
+                f"Portafolio A — YieldMax ({len(mode_a_tickers)})",
+                f"Portafolio B — ETFs de Crecimiento ({len(mode_b_tickers)})",
             ])
 
             # ── Helper: render quant metrics + SPY chart (shared) ──────
             def render_quant_and_chart(stats, ticker=""):
                 import altair as alt
-                st.markdown("### 📐 MÉTRICAS DE RIESGO AJUSTADO")
+                st.markdown("### MÉTRICAS DE RIESGO AJUSTADO")
                 qr1, qr2, qr3 = st.columns(3)
                 qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
                 qr2.metric("Sortino Ratio",     fmt_ratio(stats.get('sortino_ratio')))
@@ -506,7 +524,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
 
                 if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                    st.markdown("### 📈 SIMULACIÓN VS S&P 500 (VOO)")
+                    st.markdown("### SIMULACIÓN VS S&P 500 (VOO)")
                     port_label = f"{ticker} ($)" if ticker else "Portafolio Real ($)"
                     chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
                     chart_data = chart_data.rename(columns={
@@ -568,20 +586,20 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.markdown(f"### **{ticker}**")
 
                     if stats.get('history_incomplete'):
-                        st.warning(f"⚠️ {ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
                     results_data = {
                         "Indicador": [
-                            "🏦 Inversión (el dinero que tu pusiste)",
-                            "📉 Valor de Mercado (valor de tu inversión hoy)",
-                            "💰 Div. Efectivo (dividendos pagados a tu balance)",
-                            "💰 Valor de Div. Reinvertidos",
-                            "💰 Total generado en dividendos (Cash + Reinversión)",
-                            "📊 Acciones Compradas",
-                            "📊 Acciones por DRIP",
-                            "📊 Acciones Totales",
-                            "🟢 Ganancia en $",
-                            "🟢 Ganancia en %"
+                            "Inversión (el dinero que tu pusiste)",
+                            "Valor de Mercado (valor de tu inversión hoy)",
+                            "Div. Efectivo (dividendos pagados a tu balance)",
+                            "Valor de Div. Reinvertidos",
+                            "Total generado en dividendos (Cash + Reinversión)",
+                            "Acciones Compradas",
+                            "Acciones por DRIP",
+                            "Acciones Totales",
+                            "Ganancia en $",
+                            "Ganancia en %"
                         ],
                         "Valor": [
                             f"${stats['pocket_investment']:,.2f}",
@@ -605,7 +623,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         hide_index=True, use_container_width=True
                     )
 
-                    st.markdown("### 🧮 Tu Verificación Rápida")
+                    st.markdown("### VERIFICACIÓN RÁPIDA")
                     result_color = "green" if stats['net_profit'] >= 0 else "red"
                     st.latex(r"""
                     \footnotesize
@@ -627,7 +645,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     monthly_income = stats.get('monthly_income')
                     if monthly_income is not None and not monthly_income.empty:
                         import altair as alt
-                        st.markdown("### 📅 CALENDARIO DE INCOME MENSUAL")
+                        st.markdown("### CALENDARIO DE INCOME MENSUAL")
                         yoc = stats.get('yield_on_cost', 0)
                         st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Yield on Cost: <b style="color:#006497;">{yoc:.2f}%</b> anual sobre tu capital invertido</p>', unsafe_allow_html=True)
                         income_df = monthly_income.reset_index()
@@ -665,7 +683,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.markdown(f"### **{ticker}**")
 
                     if stats.get('history_incomplete'):
-                        st.warning(f"⚠️ {ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
                     cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
                     bc1, bc2, bc3, bc4 = st.columns(4)
@@ -683,7 +701,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         import altair as alt
                         b_yoc = stats.get('yield_on_cost', 0)
                         b_total_div = stats.get('dividends_collected_cash', 0)
-                        st.markdown("### 💵 DIVIDENDOS COBRADOS")
+                        st.markdown("### DIVIDENDOS COBRADOS")
                         bd1, bd2 = st.columns(2)
                         bd1.metric("Total Dividendos", f"${b_total_div:,.2f}")
                         bd2.metric("Yield on Cost", f"{b_yoc:.2f}%" if b_yoc else "—")
@@ -712,7 +730,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             # ============================================================
             # Section E — Triple Strategy Comparison
             # ============================================================
-            st.markdown("### ⚖️ COMPARATIVA DE ESTRATEGIAS")
+            st.markdown("### COMPARATIVA DE ESTRATEGIAS")
             st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 12px 0;">¿Qué habría pasado si hubieras invertido el mismo dinero en VTI, YMAX o SPY?</p>', unsafe_allow_html=True)
 
             if st.button("Calcular Comparativa"):
@@ -779,7 +797,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             # ============================================================
             # Section F — Risk Analysis
             # ============================================================
-            st.markdown("### 🔍 ANÁLISIS DE RIESGO")
+            st.markdown("### ANÁLISIS DE RIESGO")
             total_port_value = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
             risk_data = logic.build_risk_analysis(results, classify_map, total_port_value)
 
@@ -787,7 +805,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 st.markdown("#### YieldMax — Riesgo por Subyacente")
                 for item in risk_data['yieldmax_risk']:
                     risk_color = '#c8102e' if item['risk_level'] == 'HIGH' else '#e68a00' if item['risk_level'] == 'MEDIUM' else '#555555'
-                    risk_badge = f'<span style="display:inline-block;background-color:{risk_color};color:#fff;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.10em;padding:2px 7px;border-radius:9999px;">{item["risk_level"]}</span>'
+                    risk_badge = f'<span style="display:inline-block;background-color:{risk_color};color:#fff;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.10em;padding:2px 7px;border-radius:0px;">{item["risk_level"]}</span>'
                     port_pct = item['portfolio_pct']
                     st.markdown(
                         f'<div style="background-color:#f6f3f2;padding:12px 16px;margin-bottom:8px;border-left:3px solid {risk_color};">'
@@ -820,7 +838,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             st.code(traceback.format_exc())
 
 elif input_method == "Simulación Teórica":
-    st.subheader("🧪 Simulación de Estrategia DRIP")
+    st.subheader("Simulación de Estrategia DRIP")
 
     col1, col2, col3 = st.columns(3)
     ticker = col1.text_input("Ticker", "TSLY")
