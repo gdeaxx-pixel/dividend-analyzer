@@ -163,6 +163,7 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
         mode_label = "YieldMax" if s.get("ticker_mode") == "mode_a" else "ETF Crecimiento"
 
         pdf.add_page()
+        pdf.set_x(pdf.l_margin)  # reset cursor after header() leaves it at right edge
 
         # Ticker header bar
         color = _RED if s.get("ticker_mode") == "mode_a" else _BLUE
