@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
+import numpy_financial as npf
 import yfinance as yf
 import datetime
 import streamlit as st
 from curl_cffi import requests as crequests
 import re
 import io
+from collections import defaultdict
 
 def get_session():
     """
@@ -363,6 +365,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                     return 0.0
 
         # Iterate through transactions to build history
+        cash_flows      = []
+        irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
         cash_flows = []
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
@@ -408,6 +412,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 shares_owned_pocket += _adj_qty
                 total_shares_bought += _adj_qty
                 row_cash_flow = abs(amount)
+                irr_flows_dated.append((_tx_date, -abs(amount)))
             elif is_deposit:
                 is_internal = 'transfer' in action or 'journal' in action
                 if is_internal:
@@ -455,6 +460,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 # entries (negative) reduce the total instead of inflating it.
                 if not is_drip:
                     dividends_collected_cash += amount
+                    irr_flows_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf
@@ -463,6 +469,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                 shares_owned_pocket -= _adj_qty
                 total_shares_sold += _adj_qty
                 row_cash_flow = -abs(amount)
+                irr_flows_dated.append((_tx_date, abs(amount)))
                 # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
                 if shares_owned < 0:
                     shares_owned = 0.0
@@ -484,9 +491,65 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             cash_flows.append(row_cash_flow)
             
         ticker_df['Cash_Flow_In'] = cash_flows
-        
+
         # --- Final High-Level Calculations ---
         market_value = shares_owned * current_price
+
+        # ── Fase 7: IRR anualizado con timing real de flujos ─────────────
+        irr_anual = None
+        try:
+            _irr_all = list(irr_flows_dated) + [(pd.Timestamp.today(), market_value)]
+            _buckets  = defaultdict(float)
+            for _dt, _amt in _irr_all:
+                _ts = pd.Timestamp(_dt)
+                _buckets[(_ts.year, _ts.month)] += _amt
+            _min_k = min(_buckets.keys())
+            _max_k = max(_buckets.keys())
+            _keys, _y, _m = [], _min_k[0], _min_k[1]
+            while (_y, _m) <= _max_k:
+                _keys.append((_y, _m))
+                _m += 1
+                if _m > 12:
+                    _m, _y = 1, _y + 1
+            _cf_list = [_buckets.get(k, 0.0) for k in _keys]
+            _monthly  = npf.irr(_cf_list)
+            if _monthly is not None and not np.isnan(_monthly) and not np.isinf(_monthly) and _monthly > -1:
+                irr_anual = round(((1 + _monthly) ** 12 - 1) * 100, 2)
+        except Exception:
+            irr_anual = None
+
+        # ── Fase 2: Validación cruzada precio CSV vs yfinance ────────────
+        price_discrepancies = []
+        try:
+            _close = market_data['Close'].copy()
+            _cidx  = pd.to_datetime(_close.index).tz_localize(None) if _close.index.tzinfo else pd.to_datetime(_close.index)
+            _close.index = _cidx
+            _buy_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
+                r'buy|bought|compra', na=False, regex=True)]
+            for _, _br in _buy_rows.iterrows():
+                _bq  = abs(safe_float(_br.get('Quantity', 0)))
+                _bam = abs(safe_float(_br.get('Amount',   0)))
+                _bp  = safe_float(_br.get('Price', 0)) or (_bam / _bq if _bq > 0 else 0)
+                if _bp <= 0:
+                    continue
+                _bdt   = pd.Timestamp(_br['Date']).tz_localize(None)
+                _diffs = abs(_close.index - _bdt)
+                _ni    = _diffs.argmin()
+                if _diffs[_ni].days > 5:
+                    continue
+                _yp = float(_close.iloc[_ni])
+                if _yp <= 0:
+                    continue
+                _ratio = _bp / _yp
+                if _ratio > 1.15 or _ratio < 0.85:
+                    price_discrepancies.append({
+                        "date":      str(_br['Date'])[:10],
+                        "csv_price": round(_bp,    2),
+                        "yf_price":  round(_yp,    2),
+                        "ratio":     round(_ratio,  2),
+                    })
+        except Exception:
+            price_discrepancies = []
         
         # Total Return Formula from Skill:
         # Total Return = (Valor Mercado Actual + Cash Cobrado) - Inversión Bolsillo
@@ -655,7 +718,16 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         except Exception as e:
             print(f"Error calculating benchmark (VOO): {e}")
             daily_history['SPY Profit'] = 0.0
-            
+
+        # ── Fase 8: Benchmark con timing real (extraído de SPY Profit ya calculado) ─
+        try:
+            _spy_final    = float(daily_history['SPY Profit'].replace(0, np.nan).dropna().iloc[-1])
+            benchmark_value = _spy_final
+            benchmark_roi   = (_spy_final - pocket_investment) / pocket_investment * 100 if pocket_investment > 0 else None
+        except Exception:
+            benchmark_value = None
+            benchmark_roi   = None
+
         # Also compute User Total Value for graphing
         daily_history['User Total Value'] = daily_history['Market Value'] + daily_history['Cumulative Cash Div']
 
@@ -845,6 +917,43 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         except Exception:
             pass
 
+        # ── Fase 6: Cobertura del CSV vs historial completo disponible ───
+        csv_coverage_pct  = None
+        csv_inception_yf  = None
+        try:
+            _fi = yf.Ticker(ticker).fast_info
+            _ep = getattr(_fi, 'first_trade_date', None)
+            if _ep:
+                _inc = pd.Timestamp(_ep).tz_localize(None)
+                _tot = (pd.Timestamp.today() - _inc).days
+                _cov = (pd.Timestamp.today() - pd.Timestamp(first_date).tz_localize(None)).days
+                csv_coverage_pct = min(round(_cov / _tot * 100, 1), 100.0) if _tot > 0 else 100.0
+                csv_inception_yf = str(_inc)[:10]
+        except Exception:
+            pass
+
+        # ── Fase 3: Acciones corporativas en el período ──────────────────
+        corporate_actions = []
+        try:
+            if 'Stock Splits' in market_data.columns:
+                _sp = market_data['Stock Splits'][market_data['Stock Splits'] > 0]
+                for _sd, _sr in _sp.items():
+                    corporate_actions.append({
+                        "type": "Split" if _sr > 1 else "Reverse Split",
+                        "date": str(_sd)[:10], "ratio": float(_sr)
+                    })
+            if 'Dividends' in market_data.columns:
+                _divs = market_data['Dividends'][market_data['Dividends'] > 0]
+                if not _divs.empty:
+                    _avg = _divs.mean()
+                    for _dd, _da in _divs[_divs > _avg * 3].items():
+                        corporate_actions.append({
+                            "type": "Dividendo especial",
+                            "date": str(_dd)[:10], "amount": round(float(_da), 4)
+                        })
+        except Exception:
+            pass
+
         results[ticker] = {
             # Métricas existentes (sin cambios)
             "current_price": current_price,
@@ -877,6 +986,14 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             "cagr":               cagr,
             "history_incomplete": history_incomplete,
             "splits_detected":    splits_detected,
+            # Fases 2, 3, 6, 7, 8
+            "irr_anual":           irr_anual,
+            "price_discrepancies": price_discrepancies,
+            "benchmark_value":     benchmark_value,
+            "benchmark_roi":       benchmark_roi,
+            "csv_coverage_pct":    csv_coverage_pct,
+            "csv_inception_yf":    csv_inception_yf,
+            "corporate_actions":   corporate_actions,
         }
         
     return results

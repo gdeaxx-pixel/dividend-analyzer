@@ -594,6 +594,46 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     if stats.get('history_incomplete'):
                         st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
+                    # Fase 6: Cobertura del CSV
+                    _cov = stats.get('csv_coverage_pct')
+                    _inc_yf = stats.get('csv_inception_yf')
+                    if _cov is not None:
+                        _cov_color = "#006497" if _cov >= 80 else ("#e67e22" if _cov >= 50 else "#c0392b")
+                        _inc_txt = f" (ticker cotiza desde {_inc_yf})" if _inc_yf else ""
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_cov_color};margin:0 0 6px 0;">CSV cubre el <b>{_cov:.0f}%</b> del historial disponible{_inc_txt}</p>', unsafe_allow_html=True)
+
+                    # Fase 2: Discrepancias de precio
+                    for _disc in stats.get('price_discrepancies', []):
+                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_disc['date']}: precio CSV ${_disc['csv_price']:.2f} vs yfinance ${_disc['yf_price']:.2f} (ratio {_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
+
+                    # Fase 3: Eventos corporativos (dividendos especiales)
+                    for _ca in stats.get('corporate_actions', []):
+                        if _ca['type'] == 'Dividendo especial':
+                            st.info(f"Dividendo especial detectado en {ticker} el {_ca['date']}: ${_ca.get('amount', 0):.4f} por acción")
+
+                    # Fase 9: Total Return primero — Capital + Income desglosados
+                    _total_ret = stats['market_value'] + stats['dividends_collected_cash'] - stats['pocket_investment']
+                    _total_ret_pct = (_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
+                    _cap_comp = stats['market_value'] - stats['pocket_investment']
+                    _inc_comp = stats['dividends_collected_cash']
+                    _tr_color = "#4caf82" if _total_ret >= 0 else "#e05c5c"
+                    _cap_color = "#4caf82" if _cap_comp >= 0 else "#e05c5c"
+                    st.markdown(f"""
+                    <div style="background-color:#021C36;padding:16px 20px;margin:8px 0 12px 0;border-left:4px solid #006497;">
+                        <p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 4px 0;letter-spacing:0.12em;text-transform:uppercase;">Retorno Total</p>
+                        <p style="font-family:Inter,sans-serif;font-size:26px;font-weight:800;color:{_tr_color};margin:0 0 8px 0;">${_total_ret:+,.2f} &nbsp;<span style="font-size:16px;font-weight:600;">({_total_ret_pct:+.2f}%)</span></p>
+                        <p style="font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;margin:0;">Capital: <b style="color:{_cap_color};">${_cap_comp:+,.2f}</b> &nbsp;&nbsp;·&nbsp;&nbsp; Income: <b style="color:#4caf82;">${_inc_comp:,.2f}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Fase 7: IRR + ROI + Yield on Cost
+                    _irr_val = stats.get('irr_anual')
+                    _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
+                    _a1, _a2, _a3 = st.columns(3)
+                    _a1.metric("ROI Total", f"{stats['roi_percent']:+.2f}%")
+                    _a2.metric("IRR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
+                    _a3.metric("Yield on Cost", f"{stats.get('yield_on_cost', 0):.2f}%")
+
                     results_data = {
                         "Indicador": [
                             "Inversión (el dinero que tu pusiste)",
@@ -696,15 +736,48 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     if stats.get('history_incomplete'):
                         st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
 
+                    # Fase 6: Cobertura del CSV
+                    _b_cov = stats.get('csv_coverage_pct')
+                    _b_inc_yf = stats.get('csv_inception_yf')
+                    if _b_cov is not None:
+                        _b_cov_color = "#006497" if _b_cov >= 80 else ("#e67e22" if _b_cov >= 50 else "#c0392b")
+                        _b_inc_txt = f" (ticker cotiza desde {_b_inc_yf})" if _b_inc_yf else ""
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_b_cov_color};margin:0 0 6px 0;">CSV cubre el <b>{_b_cov:.0f}%</b> del historial disponible{_b_inc_txt}</p>', unsafe_allow_html=True)
+
+                    # Fase 2: Discrepancias de precio
+                    for _b_disc in stats.get('price_discrepancies', []):
+                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_b_disc['date']}: precio CSV ${_b_disc['csv_price']:.2f} vs yfinance ${_b_disc['yf_price']:.2f} (ratio {_b_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
+
+                    # Fase 3: Eventos corporativos (dividendos especiales)
+                    for _b_ca in stats.get('corporate_actions', []):
+                        if _b_ca['type'] == 'Dividendo especial':
+                            st.info(f"Dividendo especial detectado en {ticker} el {_b_ca['date']}: ${_b_ca.get('amount', 0):.4f} por acción")
+
+                    # Fase 4: Retorno total incluye dividendos cobrados (no solo apreciación de precio)
+                    _b_divs = stats.get('dividends_collected_cash', 0)
+                    _b_total_ret = stats['market_value'] + _b_divs - stats['pocket_investment']
+                    _b_total_ret_pct = (_b_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
                     cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
+                    _b_irr_val = stats.get('irr_anual')
+                    _b_irr_str = f"{_b_irr_val:+.2f}%" if _b_irr_val is not None else "N/A"
                     bc1, bc2, bc3, bc4 = st.columns(4)
                     bc1.metric("Inversión", f"${stats['pocket_investment']:,.2f}")
                     bc2.metric("Valor Actual", f"${stats['market_value']:,.2f}")
-                    ganancia = stats['market_value'] - stats['pocket_investment']
-                    bc3.metric("Ganancia $", f"${ganancia:,.2f}", delta=f"{stats['roi_percent']:.2f}%")
-                    bc4.metric("CAGR", cagr_str)
+                    # Fase 4: mostrar retorno total (capital + dividendos) no solo apreciación
+                    bc3.metric("Retorno Total", f"${_b_total_ret:+,.2f}", delta=f"{_b_total_ret_pct:+.2f}%", help="Apreciación de precio + dividendos cobrados")
+                    # Fase 7: IRR en lugar de CAGR (más preciso para compras escalonadas)
+                    bc4.metric("IRR Anualizado", _b_irr_str, help="Tasa interna de retorno — considera el timing real de cada compra. Más preciso que CAGR para compras escalonadas.")
                     shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
-                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 16px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b></p>', unsafe_allow_html=True)
+                    _b_bench_roi = stats.get('benchmark_roi')
+                    _b_bench_str = f" · Benchmark VOO (timing real): {_b_bench_roi:+.2f}%" if _b_bench_roi is not None else ""
+                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 4px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b> · CAGR: <b>{cagr_str}</b></p>', unsafe_allow_html=True)
+                    # Fase 8: Benchmark con timing real
+                    if _b_bench_roi is not None:
+                        _b_diff = _b_total_ret_pct - _b_bench_roi
+                        _b_bench_color = "#4caf82" if _b_diff >= 0 else "#e05c5c"
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:{_b_bench_color};margin:0 0 12px 0;">vs VOO (mismo timing): <b>{_b_bench_roi:+.2f}%</b> · Tu ventaja: <b>{_b_diff:+.2f}%</b></p>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
 
                     # Mode B dividends (VTI, SCHB, SCHD pay quarterly cash dividends)
                     b_monthly = stats.get('monthly_income')
