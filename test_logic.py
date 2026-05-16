@@ -210,17 +210,23 @@ def test_ib_sell_negative_qty_shares_counted_correctly():
 
 
 def test_normalize_real_ib_file():
-    """Valida el archivo IB real del cliente con 459 transacciones."""
-    real_path = os.path.expanduser(
-        "~/Desktop/U15179613.TRANSACTIONS.20240820.20260514.csv"
-    )
+    """Valida el archivo IB real con FTW y Payment in Lieu incluidos (922 filas)."""
+    base = os.path.dirname(__file__)
+    real_path = os.path.join(base, "interactive_brokers_data",
+                             "U15179613.TRANSACTIONS.20240820.20260514.csv")
     if not os.path.exists(real_path):
         pytest.skip("Archivo IB real no disponible")
     with open(real_path, "rb") as f:
         df, broker = logic.load_and_detect_csv(FakeFile(f.read(), "real_ib.csv"))
     assert broker == "ibkr"
-    assert len(df) == 459
-    assert len(df[df["Action"] == "Dividend"]) == 282
+    assert len(df) == 922
+    # Foreign Tax Withholding deben estar presentes como Dividend con monto negativo
+    ftw_rows = df[(df["Action"] == "Dividend") & (df["Amount"] < 0)]
+    assert len(ftw_rows) > 0, "Foreign Tax Withholding debe generar filas con monto negativo"
+    # Normalización TSLY.OLD → TSLY
+    assert "TSLY.OLD" not in df["Ticker"].values, "TSLY.OLD debe normalizarse a TSLY"
+    # 745 Dividend = dividendos ordinarios + FTW (negativo) + Payment in Lieu
+    assert len(df[df["Action"] == "Dividend"]) == 745
     assert len(df[df["Action"] == "Buy"]) == 153
     df_clean = logic.normalize_csv(df)
     assert len(df_clean) > 0

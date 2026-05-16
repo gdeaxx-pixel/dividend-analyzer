@@ -1200,7 +1200,13 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
         if tx_header and tx_rows:
             tx_df = pd.DataFrame(tx_rows, columns=tx_header)
 
-            action_map = {'Dividend': 'Dividend', 'Buy': 'Buy', 'Sell': 'Sell'}
+            action_map = {
+                'Dividend':              'Dividend',
+                'Buy':                   'Buy',
+                'Sell':                  'Sell',
+                'Payment in Lieu':       'Dividend',   # pago sustituto de dividendo (securities lending)
+                'Foreign Tax Withholding': 'Dividend', # retención de impuesto — monto negativo, reduce dividendos
+            }
             tx_type_col = next((c for c in tx_df.columns if 'transaction type' in c.lower() or 'tipo' in c.lower()), None)
             if tx_type_col:
                 tx_df = tx_df[tx_df[tx_type_col].isin(action_map)].copy()
@@ -1227,10 +1233,15 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                 price = 0.0 if price_raw in ('-', '') else _safe_float(price_raw)
                 amount_raw = (net_raw if net_raw not in ('-', '') else gross_raw) if action == 'Dividend' else gross_raw
                 amount = 0.0 if amount_raw in ('-', '') else _safe_float(amount_raw)
+                raw_ticker = str(row.get(symbol_col, '')).strip()
+                # Normalizar sufijos IB: TSLY.OLD → TSLY, XYZ.WS → XYZ, etc.
+                norm_ticker = raw_ticker.split('.')[0] if '.' in raw_ticker and raw_ticker.split('.')[-1].upper() in ('OLD', 'WS', 'WI', 'RT', 'CV') else raw_ticker
+                if not norm_ticker or norm_ticker == '-':
+                    continue
                 result_rows.append({
                     'Date': str(row.get(date_col, '')).strip(),
                     'Action': action,
-                    'Ticker': str(row.get(symbol_col, '')).strip(),
+                    'Ticker': norm_ticker,
                     'Quantity': qty,
                     'Price': price,
                     'Amount': amount,
