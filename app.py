@@ -586,6 +586,33 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     shown_a = True
                     st.markdown(f"### **{ticker}**")
 
+                    _h_buys = stats.get('shares_bought', 0)
+                    _h_sells = stats.get('shares_sold', 0)
+                    st.markdown(f"""
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:8px 0 14px 0;">
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Acciones</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">{stats['shares_owned']:.4f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo Real</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Capital de bolsillo</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ver Base de Coste en IB</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['market_value']:,.2f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">@ ${stats['current_price']:,.2f} por acción</p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                     for _sp in stats.get('splits_detected', []):
                         _ratio = _sp['ratio']
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
@@ -728,6 +755,33 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     shown_b = True
                     st.markdown(f"### **{ticker}**")
 
+                    _hb_buys = stats.get('shares_bought', 0)
+                    _hb_sells = stats.get('shares_sold', 0)
+                    st.markdown(f"""
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:8px 0 14px 0;">
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Acciones</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">{stats['shares_owned']:.4f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo Real</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Capital de bolsillo</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ver Base de Coste en IB</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
+                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['market_value']:,.2f}</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">@ ${stats['current_price']:,.2f} por acción</p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                     for _sp in stats.get('splits_detected', []):
                         _ratio = _sp['ratio']
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
@@ -760,17 +814,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
                     _b_irr_val = stats.get('irr_anual')
                     _b_irr_str = f"{_b_irr_val:+.2f}%" if _b_irr_val is not None else "N/A"
-                    bc1, bc2, bc3, bc4 = st.columns(4)
-                    bc1.metric("Inversión", f"${stats['pocket_investment']:,.2f}")
-                    bc2.metric("Valor Actual", f"${stats['market_value']:,.2f}")
-                    # Fase 4: mostrar retorno total (capital + dividendos) no solo apreciación
+                    bc3, bc4 = st.columns(2)
                     bc3.metric("Retorno Total", f"${_b_total_ret:+,.2f}", delta=f"{_b_total_ret_pct:+.2f}%", help="Apreciación de precio + dividendos cobrados")
-                    # Fase 7: IRR en lugar de CAGR (más preciso para compras escalonadas)
                     bc4.metric("IRR Anualizado", _b_irr_str, help="Tasa interna de retorno — considera el timing real de cada compra. Más preciso que CAGR para compras escalonadas.")
-                    shares_net = stats.get('shares_bought', 0) - stats.get('shares_sold', 0)
                     _b_bench_roi = stats.get('benchmark_roi')
-                    _b_bench_str = f" · Benchmark VOO (timing real): {_b_bench_roi:+.2f}%" if _b_bench_roi is not None else ""
-                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:4px 0 4px 0;">Acciones compradas: <b>{stats.get("shares_bought", 0):.4f}</b> · Vendidas: <b>{stats.get("shares_sold", 0):.4f}</b> · Netas: <b>{shares_net:.4f}</b> · CAGR: <b>{cagr_str}</b></p>', unsafe_allow_html=True)
+                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#556677;margin:4px 0 4px 0;">CAGR: <b>{cagr_str}</b></p>', unsafe_allow_html=True)
                     # Fase 8: Benchmark con timing real
                     if _b_bench_roi is not None:
                         _b_diff = _b_total_ret_pct - _b_bench_roi
