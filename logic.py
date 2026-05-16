@@ -542,12 +542,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
                     continue
                 _ratio = _bp / _yp
                 if _ratio > 1.15 or _ratio < 0.85:
-                    price_discrepancies.append({
-                        "date":      str(_br['Date'])[:10],
-                        "csv_price": round(_bp,    2),
-                        "yf_price":  round(_yp,    2),
-                        "ratio":     round(_ratio,  2),
-                    })
+                    # Suprimir si el ratio coincide con un split ya detectado (Fase 1 ya lo maneja)
+                    _already_known = any(
+                        abs(_ratio - _sp['ratio']) < 0.2 or abs(_ratio - 1.0 / _sp['ratio']) < 0.2
+                        for _sp in splits_detected
+                    )
+                    if not _already_known:
+                        price_discrepancies.append({
+                            "date":      str(_br['Date'])[:10],
+                            "csv_price": round(_bp,    2),
+                            "yf_price":  round(_yp,    2),
+                            "ratio":     round(_ratio,  2),
+                        })
         except Exception:
             price_discrepancies = []
         
