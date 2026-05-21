@@ -720,6 +720,19 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         # 1. Normalize
         df_clean = logic.normalize_csv(df)
 
+        # Build lightweight CSV summary for richer error cards
+        _csv_ticker_data = {}
+        if 'Ticker' in df_clean.columns and 'Action' in df_clean.columns:
+            for _et, _eg in df_clean.groupby('Ticker'):
+                _et_buys = _eg[_eg['Action'].str.lower().str.contains('buy', na=False)]
+                _et_divs = _eg[_eg['Action'].str.lower().str.contains('div', na=False)]
+                _csv_ticker_data[_et] = {
+                    'shares': float(_et_buys['Quantity'].sum()) if 'Quantity' in _et_buys.columns and not _et_buys.empty else 0.0,
+                    'invested': abs(float(_et_buys['Amount'].sum())) if not _et_buys.empty else 0.0,
+                    'dividends_csv': float(_et_divs['Amount'].sum()) if not _et_divs.empty else 0.0,
+                    'first_date': str(_eg['Date'].min())[:10] if not _eg.empty else 'N/A',
+                }
+
         with st.expander("Ver datos procesados (Primeras 5 filas)"):
             st.dataframe(df_clean.head())
 
@@ -1050,11 +1063,138 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             # ── TAB A — Dividendos Income ──────────────────────────────
             with tab_a:
                 shown_a = False
+                _a_valid = [(t, s) for t, s in results.items()
+                            if classify_map.get(t) == 'mode_a' and 'error' not in s]
+
+                # ── NAV PILLS ─────────────────────────────────────────────
+                if _a_valid:
+                    _pill_html = []
+                    for _pt, _ps in _a_valid:
+                        _pr = _ps.get('roi_percent', 0)
+                        _pc = '#4caf82' if _pr >= 0 else '#e05c5c'
+                        _yoc = _ps.get('yield_on_cost') or 0
+                        _pill_html.append(
+                            f'<div style="background:#021C36;padding:8px 14px;display:inline-flex;'
+                            f'flex-direction:column;gap:1px;align-items:center;min-width:64px;">'
+                            f'<span style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                            f'color:#ffffff;letter-spacing:0.05em;">{_pt}</span>'
+                            f'<span style="font-family:Inter,sans-serif;font-size:10px;font-weight:600;'
+                            f'color:{_pc};">{_pr:+.1f}%</span>'
+                            f'<span style="font-family:Inter,sans-serif;font-size:9px;color:#556677;'
+                            f'letter-spacing:0.08em;">YoC {_yoc:.1f}%</span>'
+                            f'</div>'
+                        )
+                    st.markdown(
+                        '<div style="display:flex;gap:2px;flex-wrap:wrap;margin:4px 0 16px 0;">'
+                        + ''.join(_pill_html) + '</div>',
+                        unsafe_allow_html=True
+                    )
+
+                # ── DIVIDEND CALENDAR ─────────────────────────────────────
+                if _a_valid:
+                    import altair as alt
+                    _cal_agg = {}
+                    for _ct, _cs in _a_valid:
+                        _cmi = _cs.get('monthly_income')
+                        if _cmi is not None and not _cmi.empty:
+                            for _mon, _val in _cmi.items():
+                                _cal_agg[_mon] = _cal_agg.get(_mon, 0.0) + float(_val)
+                    if _cal_agg:
+                        _cal_df = pd.DataFrame({
+                            'Mes': list(_cal_agg.keys()),
+                            'Income': list(_cal_agg.values())
+                        })
+                        _cal_df = _cal_df[_cal_df['Income'] > 0].sort_values('Mes').tail(12).copy()
+                        _cal_df['Tipo'] = 'Histórico'
+                        _avg_proj_cal = float(_cal_df['Income'].tail(3).mean())
+                        if _avg_proj_cal > 0:
+                            _last_dt_cal = pd.to_datetime(_cal_df['Mes'].max() + '-01')
+                            _proj_rows_cal = [
+                                {'Mes': (_last_dt_cal + pd.DateOffset(months=_i)).strftime('%Y-%m'),
+                                 'Income': _avg_proj_cal, 'Tipo': 'Proyectado'}
+                                for _i in range(1, 7)
+                            ]
+                            _cal_df = pd.concat([_cal_df, pd.DataFrame(_proj_rows_cal)], ignore_index=True)
+                        _cal_df['MesDate'] = pd.to_datetime(_cal_df['Mes'] + '-01')
+                        st.markdown("### CALENDARIO DE DIVIDENDOS")
+                        _cal_chart = alt.Chart(_cal_df).mark_bar(cornerRadiusTopLeft=0, cornerRadiusTopRight=0).encode(
+                            x=alt.X('MesDate:T', title=None, axis=alt.Axis(format='%b %y', labelAngle=-45)),
+                            y=alt.Y('Income:Q', title='Dividendos ($)', axis=alt.Axis(format='$,.0f')),
+                            color=alt.Color('Tipo:N', scale=alt.Scale(
+                                domain=['Histórico', 'Proyectado'],
+                                range=['#006497', '#8899aa']
+                            ), legend=alt.Legend(orient='top-right', title=None)),
+                            opacity=alt.condition(
+                                alt.datum.Tipo == 'Proyectado', alt.value(0.55), alt.value(1.0)
+                            ),
+                            tooltip=[
+                                alt.Tooltip('MesDate:T', title='Mes', format='%b %Y'),
+                                alt.Tooltip('Income:Q', format='$,.2f', title='Dividendos'),
+                                alt.Tooltip('Tipo:N', title='Tipo'),
+                            ]
+                        ).properties(height=200, background=CHART_PALETTE["bg"]).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                        ).configure_axis(
+                            grid=True, gridColor=CHART_PALETTE["grid"],
+                            domainColor=CHART_PALETTE["axis"], tickColor=CHART_PALETTE["axis"],
+                            labelColor=CHART_PALETTE["axis"], titleColor=CHART_PALETTE["title"],
+                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                        ).configure_legend(
+                            labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                            strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                        )
+                        st.altair_chart(_cal_chart, use_container_width=True)
+                        st.caption(
+                            f"Histórico: dividendos cobrados por mes · "
+                            f"Proyectado (gris): estimación basada en promedio últimos 3 meses "
+                            f"(${_avg_proj_cal:,.2f}/mes para todo el portafolio Income)"
+                        )
+                        st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+
                 for ticker, stats in results.items():
                     if classify_map.get(ticker) != 'mode_a':
                         continue
                     if "error" in stats:
-                        st.error(f"Error con {ticker}: {stats['error']}")
+                        _ec = _csv_ticker_data.get(ticker, {})
+                        _ec_data_html = ''
+                        if _ec:
+                            _ec_data_html = (
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("shares",0):.4f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec.get("invested",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos CSV</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#4caf82;margin:2px 0 0 0;">${_ec.get("dividends_csv",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("first_date","N/A")}</p></div>'
+                            )
+                        st.markdown(
+                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
+                            f'padding:16px 20px;margin:8px 0 16px 0;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
+                            f'yfinance no pudo cargar datos de mercado. Suele ocurrir con ETFs recientes '
+                            f'(PLTY, NFLY, SMCY). Métricas de riesgo y valor de mercado no disponibles.</p>'
+                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
+                            f'{_ec_data_html}</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
+                            f'Detalle: {stats["error"]}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
                         continue
                     shown_a = True
                     _roi_a = stats.get('roi_percent', 0)
@@ -1418,7 +1558,38 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     if classify_map.get(ticker) != 'mode_b':
                         continue
                     if "error" in stats:
-                        st.error(f"Error con {ticker}: {stats['error']}")
+                        _ec_b = _csv_ticker_data.get(ticker, {})
+                        _ec_b_html = ''
+                        if _ec_b:
+                            _ec_b_html = (
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("shares",0):.4f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec_b.get("invested",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("first_date","N/A")}</p></div>'
+                            )
+                        st.markdown(
+                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
+                            f'padding:16px 20px;margin:8px 0 16px 0;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
+                            f'yfinance no pudo cargar datos de mercado para este ETF.</p>'
+                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
+                            f'{_ec_b_html}</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
+                            f'Detalle: {stats["error"]}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
                         continue
                     shown_b = True
                     _roi_b = stats.get('roi_percent', 0)
