@@ -594,7 +594,7 @@ with st.sidebar:
         'letter-spacing:0.12em;text-transform:uppercase;display:block;">'
         'Costo de Tu Inversion por Ticker</span>'
         '</div>'
-        '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #4caf82;">'
+        '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #006497;">'
         '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:400 !important;'
         'color:#445566 !important;line-height:1.7 !important;text-transform:none !important;display:block;">'
         'Ingresa el <b style="color:#1a1a1a !important;">costo de tu inversion</b> tal como aparece '
