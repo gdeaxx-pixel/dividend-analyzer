@@ -606,6 +606,14 @@ with st.sidebar:
         '</div>',
         unsafe_allow_html=True
     )
+    st.sidebar.markdown(
+        '<div style="height:8px;"></div>'
+        '<div style="background:#021C36;padding:7px 12px;margin-bottom:4px;">'
+        '<span class="da-sidebar-white-text" style="font-family:Inter,sans-serif;font-size:9px;font-weight:700;'
+        'letter-spacing:0.12em;text-transform:uppercase;display:block;">Tus tickers</span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
     _roc_tickers = ["MSTY", "CONY", "TSLY", "NVDY", "YMAX", "FEPI", "PLTY", "SMCY", "NFLY"]
     ib_cost_basis_map = {}
     for _rt in _roc_tickers:
