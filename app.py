@@ -1113,13 +1113,82 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Fase 7: IRR + ROI + Yield on Cost
+                    # NAV Erosion callout — solo cuando el precio cayó (relevante para YieldMax)
+                    if _cap_comp < 0:
+                        _erosion_amt = abs(_cap_comp)
+                        _offset = _inc_comp - _erosion_amt
+                        _nav_m_income = stats.get('monthly_income')
+                        _nav_avg_monthly = (
+                            _nav_m_income.mean()
+                            if (_nav_m_income is not None and not _nav_m_income.empty and _nav_m_income.mean() > 0)
+                            else None
+                        )
+                        if _offset >= 0:
+                            _nav_label   = "COMPENSADO"
+                            _nav_border  = "#4caf82"
+                            _nav_verdict = f"Los dividendos superaron la caída de precio en <b style='color:#4caf82;'>${_offset:,.2f}</b>. Tu capital está cubierto por el income."
+                        else:
+                            _deficit_nav = abs(_offset)
+                            _nav_label   = "DEFICIT NETO"
+                            _nav_border  = "#e05c5c"
+                            if _nav_avg_monthly and _nav_avg_monthly > 0:
+                                _months_nav = _deficit_nav / _nav_avg_monthly
+                                _nav_verdict = (
+                                    f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída — "
+                                    f"a tasa actual (~${_nav_avg_monthly:,.0f}/mes): <b>~{_months_nav:.0f} meses más</b>"
+                                )
+                            else:
+                                _nav_verdict = f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída de precio"
+                        st.markdown(
+                            f'<div style="border-left:4px solid {_nav_border};padding:12px 16px;margin:0 0 12px 0;background:#f6f3f2;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:{_nav_border};font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">NAV EROSION · {_nav_label}</p>'
+                            f'<div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:8px;">'
+                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
+                            f'letter-spacing:0.10em;text-transform:uppercase;">Caida de precio</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#e05c5c;margin:0;">'
+                            f'${_erosion_amt:,.2f}</p></div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:16px;color:#cccccc;margin:0 0 4px 0;">vs</p>'
+                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
+                            f'letter-spacing:0.10em;text-transform:uppercase;">Income cobrado</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#4caf82;margin:0;">'
+                            f'${_inc_comp:,.2f}</p></div>'
+                            f'</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0;">{_nav_verdict}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    # Fase 7: IRR + ROI + Yield on Cost + Break-even
                     _irr_val = stats.get('irr_anual')
                     _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
-                    _a1, _a2, _a3 = st.columns(3)
+                    _be_income = stats.get('monthly_income')
+                    _be_avg = (
+                        _be_income.mean()
+                        if (_be_income is not None and not _be_income.empty and _be_income.mean() > 0)
+                        else None
+                    )
+                    _divs_recv = stats.get('dividends_collected_cash', 0)
+                    if _divs_recv >= stats['pocket_investment']:
+                        _be_str = "Ya recuperado"
+                        _be_help = f"Los dividendos cobrados (${_divs_recv:,.0f}) ya superan tu inversión inicial"
+                    elif _be_avg and _be_avg > 0:
+                        _remaining_to_recover = stats['pocket_investment'] - _divs_recv
+                        _months_left = _remaining_to_recover / _be_avg
+                        _be_date = (datetime.date.today() + datetime.timedelta(days=int(_months_left * 30.44))).strftime('%b %Y')
+                        _be_str = f"{_be_date} (~{int(_months_left)} m)"
+                        _be_help = (
+                            f"Faltan ${_remaining_to_recover:,.0f} en dividendos para recuperar tu inversión. "
+                            f"A ${_be_avg:,.0f}/mes promedio, ~{int(_months_left)} meses más."
+                        )
+                    else:
+                        _be_str = "N/A"
+                        _be_help = "Sin historial de dividendos suficiente para calcular"
+                    _a1, _a2, _a3, _a4 = st.columns(4)
                     _a1.metric("ROI Total", f"{stats['roi_percent']:+.2f}%")
-                    _a2.metric("IRR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
+                    _a2.metric("TIR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
                     _a3.metric("Yield on Cost", f"{stats.get('yield_on_cost', 0):.2f}%")
+                    _a4.metric("Break-even", _be_str, help=_be_help)
 
                     results_data = {
                         "Indicador": [
@@ -1554,7 +1623,46 @@ elif input_method == "Simulación Teórica":
             # Chart
             st.subheader("Evolución de Patrimonio")
             hist = sim_results['history']
-            st.line_chart(hist[['DRIP Wealth', 'No-DRIP Wealth']])
+            import altair as alt
+            _sim_long = hist[['DRIP Wealth', 'No-DRIP Wealth']].reset_index().melt(
+                id_vars='Date', var_name='Estrategia', value_name='Valor'
+            )
+            _sim_long['Estrategia'] = _sim_long['Estrategia'].map({
+                'DRIP Wealth': 'Con DRIP (reinvirtiendo)',
+                'No-DRIP Wealth': 'Sin DRIP (efectivo)'
+            })
+            _sim_area = alt.Chart(_sim_long[_sim_long['Estrategia'] == 'Con DRIP (reinvirtiendo)']).mark_area(
+                opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
+            ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
+            _sim_lines = alt.Chart(_sim_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
+                x=alt.X('Date:T', title='Fecha'),
+                y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                color=alt.Color('Estrategia:N', scale=alt.Scale(
+                    domain=['Con DRIP (reinvirtiendo)', 'Sin DRIP (efectivo)'],
+                    range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
+                )),
+                tooltip=[
+                    alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                    alt.Tooltip('Estrategia:N', title='Estrategia'),
+                    alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
+                ]
+            )
+            _sim_chart = (_sim_area + _sim_lines).properties(
+                height=320, background=CHART_PALETTE["bg"]
+            ).configure_view(
+                strokeOpacity=0, fill=CHART_PALETTE["bg"]
+            ).configure_axis(
+                grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+            ).configure_legend(
+                labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+            )
+            st.altair_chart(_sim_chart, use_container_width=True)
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
 FOOTER_STYLE = "background-color:#021C36;padding:32px 40px;margin-top:48px;"
