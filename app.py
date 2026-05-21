@@ -586,10 +586,10 @@ with st.sidebar:
     st.sidebar.markdown("---")
     st.sidebar.markdown(
         '<div style="margin:12px 0 0 0;">'
-        '<div style="background:#021C36;padding:10px 12px;border-left:3px solid #4caf82;">'
-        '<span style="font-family:Inter,sans-serif !important;font-size:9px !important;font-weight:700 !important;'
-        'letter-spacing:0.14em !important;text-transform:uppercase !important;'
-        'color:#4caf82 !important;display:block;">Costo de Tu Inversion por Ticker</span>'
+        '<div style="background:#4caf82;padding:10px 12px;">'
+        '<span style="font-family:Inter,sans-serif;font-size:9px;font-weight:800;'
+        'letter-spacing:0.12em;text-transform:uppercase;color:#021C36;display:block;">'
+        'Costo de Tu Inversion por Ticker</span>'
         '</div>'
         '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #4caf82;">'
         '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:400 !important;'
