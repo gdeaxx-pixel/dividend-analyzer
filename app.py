@@ -296,42 +296,257 @@ st.markdown("""
     /* Ocultar la línea gris debajo del tab list que Streamlit agrega */
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"]    { display: none !important; }
+
+    /* 16. TABLE ROW HOVER — feedback visual en tablas HTML */
+    .da-table tr:hover td {
+        background-color: rgba(0, 100, 151, 0.04) !important;
+        transition: background-color 0.15s ease !important;
+    }
+
+    /* 17. ROC BADGE */
+    .da-roc-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #006497 0%, #004f79 100%);
+        color: #ffffff;
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 0px;
+    }
+
+    /* 18. TICKER SECTION HEADER */
+    .da-ticker-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        background-color: #021C36;
+        margin: 24px 0 0 0;
+        border-left: 4px solid #006497;
+    }
+    .da-ticker-header .da-ticker-name {
+        font-family: 'Inter', sans-serif;
+        font-size: 18px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.01em;
+    }
+    .da-ticker-header .da-mode-badge {
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 0px;
+    }
+    .da-ticker-header .da-mode-income  { background-color: #c8102e; color: #fff; }
+    .da-ticker-header .da-mode-growth  { background-color: #006497; color: #fff; }
+    .da-ticker-header .da-ticker-price {
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: #8899aa;
+        margin-left: auto;
+        letter-spacing: 0.05em;
+    }
+
+    /* 19. ROC CALLOUT */
+    .da-roc-callout {
+        background: linear-gradient(135deg, #010f1c 0%, #021C36 100%);
+        border-left: 4px solid #4caf82;
+        padding: 14px 20px;
+        margin: 8px 0 16px 0;
+    }
+    .da-roc-callout .da-roc-callout-title {
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #4caf82;
+        margin: 0 0 6px 0;
+    }
+    .da-roc-callout .da-roc-callout-values {
+        display: flex;
+        gap: 32px;
+        align-items: baseline;
+    }
+    .da-roc-callout .da-roc-number {
+        font-family: 'Inter', sans-serif;
+        font-size: 24px;
+        font-weight: 800;
+        color: #4caf82;
+        letter-spacing: -0.02em;
+    }
+    .da-roc-callout .da-roc-sub {
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        color: #8899aa;
+        letter-spacing: 0.06em;
+    }
+    .da-roc-callout .da-roc-explain {
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        color: #6699aa;
+        margin: 8px 0 0 0;
+        line-height: 1.5;
+    }
+
+    /* 20. SECTION DIVIDER */
+    .da-section-rule {
+        height: 1px;
+        background: linear-gradient(90deg, #006497 0%, rgba(0,100,151,0.0) 100%);
+        margin: 28px 0 20px 0;
+        border: none;
+    }
+
+    /* 21. STEP GUIDE (empty state) */
+    .da-step-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 2px;
+        margin: 32px 0;
+    }
+    .da-step-card {
+        background-color: #f6f3f2;
+        padding: 24px 20px;
+        position: relative;
+    }
+    .da-step-num {
+        font-family: 'Cinzel', serif;
+        font-size: 36px;
+        font-weight: 700;
+        color: #eae7e7;
+        line-height: 1;
+        margin-bottom: 12px;
+    }
+    .da-step-title {
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+        color: #1a1a1a;
+        margin-bottom: 6px;
+    }
+    .da-step-desc {
+        font-family: 'Inter', sans-serif;
+        font-size: 12px;
+        color: #555555;
+        line-height: 1.6;
+    }
+    .da-step-tag {
+        display: inline-block;
+        background-color: #006497;
+        color: #fff;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        margin-bottom: 10px;
+    }
+
+    /* 22. KPI BAR — resumen global mejorado */
+    .da-kpi-bar {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 2px;
+        margin: 16px 0 24px 0;
+    }
+    .da-kpi-cell {
+        background-color: #f6f3f2;
+        padding: 16px 20px;
+        border-top: 3px solid transparent;
+    }
+    .da-kpi-cell.da-kpi-accent { border-top-color: #006497; }
+    .da-kpi-cell.da-kpi-green  { border-top-color: #4caf82; }
+    .da-kpi-cell.da-kpi-red    { border-top-color: #e05c5c; }
+    .da-kpi-cell.da-kpi-roc    { border-top-color: #4caf82; background-color: #f0faf5; }
+    .da-kpi-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #8899aa;
+        margin: 0 0 4px 0;
+    }
+    .da-kpi-value {
+        font-family: 'Inter', sans-serif;
+        font-size: 20px;
+        font-weight: 800;
+        color: #1a1a1a;
+        letter-spacing: -0.02em;
+        margin: 0;
+    }
+    .da-kpi-delta {
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        margin: 3px 0 0 0;
+    }
+
+    /* 23. SIDEBAR ROC SECTION */
+    .da-sidebar-roc-header {
+        background-color: #021C36;
+        color: #4caf82;
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding: 8px 12px;
+        margin: 12px 0 4px 0;
+        border-left: 3px solid #4caf82;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
 st.markdown("""
 <div style="padding: 40px 0 0 0; background-color: #fcf9f8;">
-    <h1 style="
-        font-family: 'Cinzel', serif;
-        font-size: 2.8rem;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        color: #1a1a1a;
-        margin-bottom: 6px;
-        line-height: 1.1;
-    ">
-        DIVIDEND <span style="color:#006497;">//</span> ANALYZER
+    <div style="display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;">
+        <h1 style="
+            font-family: 'Cinzel', serif;
+            font-size: 2.8rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: #1a1a1a;
+            margin: 0 0 6px 0;
+            line-height: 1.1;
+        ">
+            DIVIDEND <span style="color:#006497;">//</span> ANALYZER
+        </h1>
         <span style="
-            font-size: 0.28em;
-            font-weight: 500;
-            letter-spacing: 0.10em;
+            font-family: 'Inter', sans-serif;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
             text-transform: uppercase;
-            color: #555555;
+            color: #ffffff;
+            background-color: #006497;
+            padding: 3px 10px;
             vertical-align: middle;
-            margin-left: 12px;
-        ">v2.0</span>
-    </h1>
+        ">v2.1</span>
+    </div>
     <p style="
         font-family: 'Inter', sans-serif;
-        font-size: 0.85rem;
-        font-weight: 500;
-        letter-spacing: 0.10em;
+        font-size: 0.82rem;
+        font-weight: 400;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #555555;
-        margin: 0 0 20px 0;
-    ">Auditoría forense de portafolios &amp; simulador de estrategias</p>
-    <div style="width: 48px; height: 2px; background-color: #006497; margin-bottom: 32px;"></div>
+        color: #888888;
+        margin: 4px 0 6px 0;
+    ">Auditoría forense &nbsp;·&nbsp; ROC &nbsp;·&nbsp; IRR &nbsp;·&nbsp; Simulación vs S&P 500</p>
+    <div style="display:flex; gap:2px; margin-bottom:32px; margin-top:10px;">
+        <div style="width:48px; height:2px; background-color:#006497;"></div>
+        <div style="width:12px; height:2px; background-color:#021C36;"></div>
+        <div style="width:6px; height:2px; background-color:#eae7e7;"></div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -360,21 +575,50 @@ with st.sidebar:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin:0 0 4px 0;">Base de Coste IB (ROC)</p>',
+        '<div class="da-sidebar-roc-header">Base de Coste IB — ROC</div>',
         unsafe_allow_html=True
     )
     st.sidebar.markdown(
-        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:0 0 8px 0;">Opcional · IB: Posiciones → Sus participaciones → "Base de coste"</p>',
+        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:4px 0 2px 0;line-height:1.5;">'
+        'Ingresa la base de coste que muestra IB. El ROC es la diferencia entre lo que invertiste y lo que IB registra.'
+        '</p>',
         unsafe_allow_html=True
     )
+    with st.sidebar.expander("Como obtener el valor en IB", expanded=False):
+        st.markdown(
+            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.8;">'
+            '<li>Abre <b>Interactive Brokers</b></li>'
+            '<li>Ve a <b>Portafolio → Posiciones</b></li>'
+            '<li>Activa la columna <b>"Base de coste"</b></li>'
+            '<li>Copia el valor por ticker aquí</li>'
+            '</ol>',
+            unsafe_allow_html=True
+        )
+
     _roc_tickers = ["MSTY", "CONY", "TSLY", "NVDY", "YMAX", "FEPI", "PLTY", "SMCY", "NFLY"]
     ib_cost_basis_map = {}
     for _rt in _roc_tickers:
-        _val = st.sidebar.text_input(_rt, value="", placeholder="ej: 14794.00", key=f"ib_basis_{_rt}", label_visibility="visible")
-        if _val.strip():
-            ib_cost_basis_map[_rt] = _val.strip()
+        _val = st.sidebar.number_input(
+            _rt,
+            min_value=0.0,
+            value=0.0,
+            step=0.01,
+            format="%.2f",
+            key=f"ib_basis_{_rt}",
+            label_visibility="visible"
+        )
+        if _val > 0:
+            ib_cost_basis_map[_rt] = str(_val)
 
-    st.sidebar.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+    _n_roc = sum(1 for v in ib_cost_basis_map.values() if float(v) > 0)
+    if _n_roc > 0:
+        st.sidebar.markdown(
+            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#4caf82;font-weight:600;margin:6px 0 0 0;">'
+            f'{_n_roc} ticker{"s" if _n_roc > 1 else ""} con base IB registrada</p>',
+            unsafe_allow_html=True
+        )
+
+    st.sidebar.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
     if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
@@ -385,6 +629,61 @@ def fmt_ratio(val, decimales=2, sufijo=""):
     return f"{val:.{decimales}f}{sufijo}"
 
 # --- Main Logic ---
+
+if input_method == "Subir CSV/Excel" and uploaded_file is None:
+    st.markdown("""
+<div class="da-step-grid">
+    <div class="da-step-card">
+        <div class="da-step-tag">Paso 1</div>
+        <div class="da-step-num">01</div>
+        <div class="da-step-title">Exporta tu historial</div>
+        <div class="da-step-desc">
+            Descarga el CSV de transacciones desde Interactive Brokers
+            (<b>Informes → Extractos → Transaction History</b>) o Charles Schwab
+            (<b>Historial → Transacciones → Exportar</b>).
+        </div>
+    </div>
+    <div class="da-step-card">
+        <div class="da-step-tag">Paso 2</div>
+        <div class="da-step-num">02</div>
+        <div class="da-step-title">Sube el archivo</div>
+        <div class="da-step-desc">
+            Usa el botón <b>Subir Archivo</b> en el panel izquierdo.
+            Se aceptan <b>.csv</b> y <b>.xlsx</b>. El broker se detecta
+            automáticamente.
+        </div>
+    </div>
+    <div class="da-step-card">
+        <div class="da-step-tag">Paso 3</div>
+        <div class="da-step-num">03</div>
+        <div class="da-step-title">Ejecuta el análisis</div>
+        <div class="da-step-desc">
+            Haz clic en <b>Ejecutar Análisis Forense</b>. Obtén ROI real,
+            IRR, ROC acumulado, comparativa vs S&P 500 y métricas de riesgo
+            ajustado por ticker.
+        </div>
+    </div>
+</div>
+<hr class="da-section-rule">
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2px;margin-bottom:32px;">
+    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #006497;">
+        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">YieldMax Income</div>
+        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">MSTY · CONY · TSLY · NVDY · YMAX · PLTY · SMCY · NFLY · FEPI</div>
+    </div>
+    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #021C36;">
+        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">ETFs de Crecimiento</div>
+        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">VTI · VOO · SCHB · SCHD · QQQ · SPY · XLK · SMH</div>
+    </div>
+    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #8a8a8a;">
+        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">Brokers Soportados</div>
+        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Interactive Brokers · Charles Schwab · Excel genérico</div>
+    </div>
+    <div style="background:#f0faf5;padding:14px 18px;border-top:2px solid #4caf82;">
+        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#4caf82;margin-bottom:4px;">ROC Detectado</div>
+        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Ingresa la base IB en el sidebar para ver el ROC acumulado por ticker</div>
+    </div>
+</div>
+    """, unsafe_allow_html=True)
 
 if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     st.subheader("Análisis de Portafolio Real")
@@ -478,17 +777,52 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                  for s in results.values() if 'error' not in s)) - total_invested
             total_roi      = (total_gain / total_invested * 100) if total_invested else 0
 
-            st.markdown("### RESUMEN GLOBAL DEL PORTAFOLIO")
-            sg1, sg2, sg3, sg4, sg5 = st.columns(5)
-            sg1.metric("Total Invertido",    f"${total_invested:,.2f}")
-            sg2.metric("Valor de Mercado",   f"${total_market:,.2f}")
-            sg3.metric("Ganancia / Pérdida",
-                       f"${total_gain:,.2f}",
-                       delta=f"{total_roi:.2f}%",
-                       delta_color="normal")
-            sg4.metric("Dividendos Totales", f"${total_divs:,.2f}")
-            sg5.metric("Posiciones Activas", f"{len(results)}")
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            # ── KPI Bar — resumen global visual ──────────────────────
+            _total_roc_all   = sum(s.get('roc_accumulated', 0) or 0 for s in results.values() if 'error' not in s)
+            _has_any_roc     = any(s.get('roc_accumulated') is not None for s in results.values() if 'error' not in s)
+            _gain_color      = "#4caf82" if total_gain >= 0 else "#e05c5c"
+            _gain_sign       = "+" if total_gain >= 0 else ""
+            _gain_accent     = "da-kpi-green" if total_gain >= 0 else "da-kpi-red"
+            _roc_cell = (
+                f'<div class="da-kpi-cell da-kpi-roc">'
+                f'<p class="da-kpi-label">ROC Acumulado</p>'
+                f'<p class="da-kpi-value" style="color:#4caf82;">${_total_roc_all:,.0f}</p>'
+                f'<p class="da-kpi-delta" style="color:#4caf82;">'
+                f'{sum(1 for s in results.values() if s.get("roc_accumulated")) } ticker(s)</p>'
+                f'</div>'
+            ) if _has_any_roc else (
+                f'<div class="da-kpi-cell">'
+                f'<p class="da-kpi-label">ROC Acumulado</p>'
+                f'<p class="da-kpi-value" style="color:#cccccc;">—</p>'
+                f'<p class="da-kpi-delta" style="color:#aaaaaa;">Ingresa base IB</p>'
+                f'</div>'
+            )
+            st.markdown(f"""
+<p style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#8899aa;margin:20px 0 0 0;">Resumen global del portafolio</p>
+<div class="da-kpi-bar">
+    <div class="da-kpi-cell da-kpi-accent">
+        <p class="da-kpi-label">Total Invertido</p>
+        <p class="da-kpi-value">${total_invested:,.0f}</p>
+        <p class="da-kpi-delta" style="color:#8899aa;">{len(results)} posiciones</p>
+    </div>
+    <div class="da-kpi-cell">
+        <p class="da-kpi-label">Valor de Mercado</p>
+        <p class="da-kpi-value">${total_market:,.0f}</p>
+        <p class="da-kpi-delta" style="color:#8899aa;">precio actual</p>
+    </div>
+    <div class="da-kpi-cell {_gain_accent}">
+        <p class="da-kpi-label">Ganancia / Pérdida</p>
+        <p class="da-kpi-value" style="color:{_gain_color};">{_gain_sign}${total_gain:,.0f}</p>
+        <p class="da-kpi-delta" style="color:{_gain_color};">{_gain_sign}{total_roi:.2f}%</p>
+    </div>
+    <div class="da-kpi-cell">
+        <p class="da-kpi-label">Dividendos Totales</p>
+        <p class="da-kpi-value">${total_divs:,.0f}</p>
+        <p class="da-kpi-delta" style="color:#8899aa;">efectivo + DRIP</p>
+    </div>
+    {_roc_cell}
+</div>
+            """, unsafe_allow_html=True)
 
             # ── PDF Report Download ───────────────────────────────────
             try:
@@ -530,6 +864,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             # ── Helper: render quant metrics + SPY chart (shared) ──────
             def render_quant_and_chart(stats, ticker=""):
                 import altair as alt
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
                 st.markdown("### MÉTRICAS DE RIESGO AJUSTADO")
                 qr1, qr2, qr3 = st.columns(3)
                 qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
@@ -541,6 +876,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
 
                 if 'daily_trend' in stats and not stats['daily_trend'].empty:
+                    st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
                     st.markdown("### SIMULACIÓN VS S&P 500 (VOO)")
                     port_label = f"{ticker} ($)" if ticker else "Portafolio Real ($)"
                     chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
@@ -600,7 +936,19 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         st.error(f"Error con {ticker}: {stats['error']}")
                         continue
                     shown_a = True
-                    st.markdown(f"### **{ticker}**")
+                    _roi_a = stats.get('roi_percent', 0)
+                    _roi_color_a = "#4caf82" if _roi_a >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div class="da-ticker-header">'
+                        f'<span class="da-ticker-name">{ticker}</span>'
+                        f'<span class="da-mode-badge da-mode-income">Income</span>'
+                        f'<span class="da-ticker-price">'
+                        f'${stats["current_price"]:,.2f} &nbsp;·&nbsp; '
+                        f'<span style="color:{_roi_color_a};font-weight:700;">{_roi_a:+.2f}% ROI</span>'
+                        f'</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
                     _h_buys = stats.get('shares_bought', 0)
                     _h_sells = stats.get('shares_sold', 0)
@@ -635,6 +983,30 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                     if stats.get('history_incomplete'):
                         st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+
+                    # ROC Callout — solo si hay datos de IB
+                    if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
+                        _roc_acc = stats['roc_accumulated']
+                        _roc_pct_v = stats['roc_percent']
+                        _ib_b_v = stats['ib_cost_basis']
+                        _pocket_v = stats['pocket_investment']
+                        st.markdown(
+                            f'<div class="da-roc-callout">'
+                            f'<p class="da-roc-callout-title">Return of Capital detectado</p>'
+                            f'<div class="da-roc-callout-values">'
+                            f'<div><p class="da-roc-number">${_roc_acc:,.2f}</p>'
+                            f'<p class="da-roc-sub">ROC acumulado</p></div>'
+                            f'<div><p class="da-roc-number">{_roc_pct_v:.1f}%</p>'
+                            f'<p class="da-roc-sub">del costo real</p></div>'
+                            f'<div><p class="da-roc-number">${_ib_b_v:,.2f}</p>'
+                            f'<p class="da-roc-sub">base actual IB</p></div>'
+                            f'</div>'
+                            f'<p class="da-roc-explain">IB redujo tu base de ${_pocket_v:,.2f} a ${_ib_b_v:,.2f} '
+                            f'porque {_roc_pct_v:.1f}% de las distribuciones fue clasificado como Return of Capital.'
+                            f' Esto reduce tu ganancia de capital imponible al vender.</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
 
                     # Fase 6: Cobertura del CSV
                     _cov = stats.get('csv_coverage_pct')
@@ -799,7 +1171,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         _total_ib_color = '#ffffff' if _ca_has_roc else '#445566'
                         st.markdown(f"""
 <div style="overflow-x:auto;margin:4px 0 6px 0;">
-<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
   <thead>
     <tr style="border-bottom:2px solid #006497;">
       <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
@@ -843,7 +1215,19 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         st.error(f"Error con {ticker}: {stats['error']}")
                         continue
                     shown_b = True
-                    st.markdown(f"### **{ticker}**")
+                    _roi_b = stats.get('roi_percent', 0)
+                    _roi_color_b = "#4caf82" if _roi_b >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div class="da-ticker-header">'
+                        f'<span class="da-ticker-name">{ticker}</span>'
+                        f'<span class="da-mode-badge da-mode-growth">Growth</span>'
+                        f'<span class="da-ticker-price">'
+                        f'${stats["current_price"]:,.2f} &nbsp;·&nbsp; '
+                        f'<span style="color:{_roi_color_b};font-weight:700;">{_roi_b:+.2f}% ROI</span>'
+                        f'</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
                     _hb_buys = stats.get('shares_bought', 0)
                     _hb_sells = stats.get('shares_sold', 0)
@@ -989,7 +1373,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         _total_cb_ib_color = '#ffffff' if _cb_has_roc else '#445566'
                         st.markdown(f"""
 <div style="overflow-x:auto;margin:4px 0 6px 0;">
-<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
   <thead>
     <tr style="border-bottom:2px solid #006497;">
       <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
