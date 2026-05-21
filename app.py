@@ -774,11 +774,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 if _amt > 0:
                                     _all_buy_rows.append([str(_row['Date'].date()), _amt])
                     if _all_buy_rows:
-                        try:
-                            _strat = logic.simulate_triple_comparison(json.dumps(_all_buy_rows))
-                            st.session_state['_strat_results'] = _strat
-                        except Exception:
-                            st.session_state['_strat_results'] = None
+                        with st.spinner("Calculando comparativa VTI · YMAX · SPY..."):
+                            try:
+                                _strat = logic.simulate_triple_comparison(json.dumps(_all_buy_rows))
+                                st.session_state['_strat_results'] = _strat
+                            except Exception:
+                                st.session_state['_strat_results'] = None
                     else:
                         st.session_state['_strat_results'] = None
 
@@ -924,6 +925,55 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 st.altair_chart(_bar_chart, use_container_width=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
+            # ── Comparativa directa A vs B (solo cuando hay ambos) ────
+            _cmp_a_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_a' and 'error' not in s]
+            _cmp_b_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_b' and 'error' not in s]
+            if _cmp_a_rows and _cmp_b_rows:
+                _cmp_a_inv = sum(s['pocket_investment'] for _, s in _cmp_a_rows)
+                _cmp_a_mv  = sum(s['market_value'] for _, s in _cmp_a_rows)
+                _cmp_a_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_a_rows)
+                _cmp_a_tr  = _cmp_a_mv + _cmp_a_div - _cmp_a_inv
+                _cmp_a_pct = _cmp_a_tr / _cmp_a_inv * 100 if _cmp_a_inv > 0 else 0
+                _cmp_b_inv = sum(s['pocket_investment'] for _, s in _cmp_b_rows)
+                _cmp_b_mv  = sum(s['market_value'] for _, s in _cmp_b_rows)
+                _cmp_b_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_b_rows)
+                _cmp_b_tr  = _cmp_b_mv + _cmp_b_div - _cmp_b_inv
+                _cmp_b_pct = _cmp_b_tr / _cmp_b_inv * 100 if _cmp_b_inv > 0 else 0
+                _cmp_diff  = abs(_cmp_a_pct - _cmp_b_pct)
+                _cmp_winner_label = "Dividendos Income" if _cmp_a_pct >= _cmp_b_pct else "ETFs de Crecimiento"
+                _cmp_winner_color = "#c8102e" if _cmp_a_pct >= _cmp_b_pct else "#006497"
+                _cmp_a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
+                _cmp_b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
+                st.markdown("### INCOME VS CRECIMIENTO")
+                st.markdown(
+                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:0 0 12px 0;">'
+                    f'<div style="background:#f6f3f2;padding:16px 20px;border-left:4px solid #c8102e;">'
+                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#c8102e;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Dividendos Income · {len(_cmp_a_rows)} tickers</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;color:{_cmp_a_ret_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_cmp_a_pct:+.2f}%</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 6px 0;">retorno total (capital + dividendos)</p>'
+                    f'<div style="display:flex;gap:16px;">'
+                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#4caf82;margin:0;">${_cmp_a_div:,.0f}</p></div>'
+                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#ffffff;margin:0;background:#021C36;padding:1px 6px;">${_cmp_a_inv:,.0f}</p></div>'
+                    f'</div></div>'
+                    f'<div style="background:#f6f3f2;padding:16px 20px;border-left:4px solid #006497;">'
+                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">ETFs de Crecimiento · {len(_cmp_b_rows)} tickers</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;color:{_cmp_b_ret_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_cmp_b_pct:+.2f}%</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 6px 0;">retorno total (capital + dividendos)</p>'
+                    f'<div style="display:flex;gap:16px;">'
+                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#4caf82;margin:0;">${_cmp_b_div:,.0f}</p></div>'
+                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#ffffff;margin:0;background:#021C36;padding:1px 6px;">${_cmp_b_inv:,.0f}</p></div>'
+                    f'</div></div>'
+                    f'</div>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 16px 0;">'
+                    f'<b style="color:{_cmp_winner_color};">{_cmp_winner_label}</b> lleva ventaja por '
+                    f'<b>{_cmp_diff:.2f} puntos porcentuales</b> en retorno total.</p>',
+                    unsafe_allow_html=True
+                )
+
             # ── TABS: Dividendos Income / ETFs de Crecimiento ──────────
             tab_a, tab_b = st.tabs([
                 f"Dividendos Income ({len(mode_a_tickers)})",
@@ -1023,8 +1073,18 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                     _h_buys = stats.get('shares_bought', 0)
                     _h_sells = stats.get('shares_sold', 0)
+                    _proj_m = stats.get('monthly_income')
+                    _proj_recent = _proj_m[_proj_m > 0].tail(3) if (_proj_m is not None and not _proj_m.empty) else None
+                    _proj_val = _proj_recent.mean() if (_proj_recent is not None and len(_proj_recent) > 0) else None
+                    _proj_cell = (
+                        f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#4caf82;margin:0 0 2px 0;">${_proj_val:,.2f}</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">prom. últ. 3 meses</p>'
+                    ) if _proj_val else (
+                        '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">sin historial</p>'
+                    )
                     st.markdown(f"""
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:8px 0 14px 0;">
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;margin:8px 0 14px 0;">
                         <div style="background:#021C36;padding:12px 16px;">
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Acciones</p>
                             <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">{stats['shares_owned']:.4f}</p>
@@ -1043,6 +1103,10 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
                             <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['market_value']:,.2f}</p>
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">@ ${stats['current_price']:,.2f} por acción</p>
+                        </div>
+                        <div style="background:#021C36;padding:12px 16px;border-left:2px solid #4caf82;">
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Prox. mes (est.)</p>
+                            {_proj_cell}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
