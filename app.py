@@ -6,7 +6,7 @@ import logic
 import json
 
 
-st.set_page_config(page_title="Dividend Analyzer", layout="wide")
+st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
 
 # --- CUSTOM CSS: THE ARCHITECTURAL AUTHORITY — SURFACE MODE ---
 # Sistema de diseño: Invierte & Gana / tonal layering light
@@ -493,13 +493,13 @@ st.markdown("""
     /* 23. SIDEBAR ROC SECTION */
     .da-sidebar-roc-header {
         background-color: #021C36;
-        color: #4caf82;
-        font-family: 'Inter', sans-serif;
-        font-size: 9px;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        padding: 8px 12px;
+        color: #4caf82 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 9px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.14em !important;
+        text-transform: uppercase !important;
+        padding: 8px 12px !important;
         margin: 12px 0 4px 0;
         border-left: 3px solid #4caf82;
     }
@@ -529,7 +529,7 @@ st.markdown("""
             margin: 0 0 6px 0;
             line-height: 1.1;
         ">
-            DIVIDEND <span style="color:#006497;">//</span> ANALYZER
+            CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
         </h1>
         <span style="
             font-family: 'Inter', sans-serif;
@@ -551,7 +551,7 @@ st.markdown("""
         text-transform: uppercase;
         color: #888888;
         margin: 4px 0 6px 0;
-    ">Auditoría forense &nbsp;·&nbsp; ROC &nbsp;·&nbsp; IRR &nbsp;·&nbsp; Simulación vs S&P 500</p>
+    ">Análisis de Dividendos &nbsp;·&nbsp; ROC &nbsp;·&nbsp; TIR (Retorno Real Anualizado) &nbsp;·&nbsp; Simulación vs S&P 500</p>
     <div style="display:flex; gap:2px; margin-bottom:32px; margin-top:10px;">
         <div style="width:48px; height:2px; background-color:#006497;"></div>
         <div style="width:12px; height:2px; background-color:#021C36;"></div>
@@ -585,22 +585,28 @@ with st.sidebar:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        '<div class="da-sidebar-roc-header">Base de Coste IB — ROC</div>',
+        '<div class="da-sidebar-roc-header">Base de Coste del Broker — ROC</div>',
         unsafe_allow_html=True
     )
     st.sidebar.markdown(
         '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:4px 0 2px 0;line-height:1.5;">'
-        '<b style="color:#4caf82;">ROC (Return of Capital)</b>: cuando IB clasifica parte de tus distribuciones como '
-        'devolución de capital, reduce tu base de coste. La diferencia entre lo que invertiste y la base actual IB = ROC acumulado.'
+        '<b style="color:#4caf82;">ROC (Return of Capital)</b>: cuando tu broker (Interactive Brokers o Charles Schwab) clasifica parte de tus distribuciones como '
+        'devolución de capital, reduce tu base de coste. La diferencia entre lo que invertiste y la base actual = ROC acumulado.'
         '</p>',
         unsafe_allow_html=True
     )
-    with st.sidebar.expander("Como obtener el valor en IB", expanded=False):
+    with st.sidebar.expander("Como obtener tu Base de Coste", expanded=False):
         st.markdown(
-            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.8;">'
-            '<li>Abre <b>Interactive Brokers</b></li>'
+            '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Interactive Brokers</p>'
+            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0 0 10px 0;padding-left:16px;line-height:1.8;">'
             '<li>Ve a <b>Portafolio → Posiciones</b></li>'
             '<li>Activa la columna <b>"Base de coste"</b></li>'
+            '<li>Copia el valor por ticker aquí</li>'
+            '</ol>'
+            '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Charles Schwab</p>'
+            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.8;">'
+            '<li>Ve a <b>Cuentas → Posiciones</b></li>'
+            '<li>Busca la columna <b>"Cost Basis"</b></li>'
             '<li>Copia el valor por ticker aquí</li>'
             '</ol>',
             unsafe_allow_html=True
@@ -625,7 +631,7 @@ with st.sidebar:
     if _n_roc > 0:
         st.sidebar.markdown(
             f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#4caf82;font-weight:600;margin:6px 0 0 0;">'
-            f'{_n_roc} ticker{"s" if _n_roc > 1 else ""} con base IB registrada</p>',
+            f'{_n_roc} ticker{"s" if _n_roc > 1 else ""} con Base de Coste registrada</p>',
             unsafe_allow_html=True
         )
 
@@ -670,8 +676,8 @@ if input_method == "Subir CSV/Excel" and uploaded_file is None:
         <div class="da-step-num">03</div>
         <div class="da-step-title">Ejecuta el análisis</div>
         <div class="da-step-desc">
-            Haz clic en <b>Ejecutar Análisis Forense</b>. Obtén ROI real,
-            IRR, ROC acumulado, comparativa vs S&P 500 y métricas de riesgo
+            Haz clic en <b>Analizar Dividendos</b>. Obtén ROI real,
+            TIR, ROC acumulado, comparativa vs S&P 500 y métricas de riesgo
             ajustado por ticker.
         </div>
     </div>
@@ -756,7 +762,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 '_strat_results': None,
             })
 
-        if st.button("Ejecutar Análisis Forense"):
+        if st.button("Analizar Dividendos"):
             with st.spinner("Analizando transacciones, splits y dividendos..."):
                 try:
                     results = logic.analyze_portfolio(df_clean, version="2.0", ib_cost_basis_map=ib_cost_basis_map or None)
@@ -870,7 +876,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     {_roc_cell}
 </div>
             """, unsafe_allow_html=True)
-            st.caption("ROI = ganancia total desde el inicio · TIR (IRR) = retorno anualizado considerando cuándo compraste — más preciso para compras escalonadas")
+            st.caption("ROI = ganancia total acumulada desde el inicio · TIR (Tasa Interna de Retorno / IRR en inglés) = retorno anualizado considerando exactamente cuándo compraste cada lote — más preciso que el ROI para compras escalonadas")
 
             # ── PDF Report Download ───────────────────────────────────
             try:
@@ -1236,7 +1242,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base broker (con ROC)</p>
                             {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
@@ -1274,9 +1280,9 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             f'<div><p class="da-roc-number">{_roc_pct_v:.1f}%</p>'
                             f'<p class="da-roc-sub">del costo real</p></div>'
                             f'<div><p class="da-roc-number">${_ib_b_v:,.2f}</p>'
-                            f'<p class="da-roc-sub">base actual IB</p></div>'
+                            f'<p class="da-roc-sub">base actual del broker</p></div>'
                             f'</div>'
-                            f'<p class="da-roc-explain">IB redujo tu base de ${_pocket_v:,.2f} a ${_ib_b_v:,.2f} '
+                            f'<p class="da-roc-explain">Tu broker redujo tu base de ${_pocket_v:,.2f} a ${_ib_b_v:,.2f} '
                             f'porque {_roc_pct_v:.1f}% de las distribuciones fue clasificado como Return of Capital.'
                             f' Esto reduce tu ganancia de capital imponible al vender.</p>'
                             f'</div>',
@@ -1545,7 +1551,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
   </tbody>
 </table>
 </div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En IB: Posiciones → Sus participaciones → columna "Base de Coste". En Schwab: Cuentas → Posiciones → Base de coste.</p>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
                         """, unsafe_allow_html=True)
 
                 if not shown_a:
@@ -1621,7 +1627,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base broker (con ROC)</p>
                             {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
@@ -1780,7 +1786,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
   </tbody>
 </table>
 </div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En IB: Posiciones → Sus participaciones → columna "Base de Coste". En Schwab: Cuentas → Posiciones → Base de coste.</p>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
                         """, unsafe_allow_html=True)
 
                 if not shown_b:
