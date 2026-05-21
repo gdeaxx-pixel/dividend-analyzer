@@ -639,7 +639,7 @@ with st.sidebar:
             min_value=0.0,
             value=0.0,
             step=0.01,
-            format="%.2f",
+            format="%g",
             key=f"ib_basis_{_rt}",
             label_visibility="visible"
         )
