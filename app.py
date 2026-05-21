@@ -491,6 +491,9 @@ st.markdown("""
     }
 
     /* 23. SIDEBAR ROC SECTION */
+    section[data-testid="stSidebar"] .da-sidebar-white-text {
+        color: #ffffff !important;
+    }
     .da-sidebar-roc-header {
         background-color: #021C36;
         color: #4caf82 !important;
@@ -587,8 +590,8 @@ with st.sidebar:
     st.sidebar.markdown(
         '<div style="margin:12px 0 0 0;">'
         '<div style="background:#006497;padding:10px 12px;">'
-        '<span style="font-family:Inter,sans-serif;font-size:9px;font-weight:800;'
-        'letter-spacing:0.12em;text-transform:uppercase;color:#ffffff;display:block;">'
+        '<span class="da-sidebar-white-text" style="font-family:Inter,sans-serif;font-size:9px;font-weight:800;'
+        'letter-spacing:0.12em;text-transform:uppercase;display:block;">'
         'Costo de Tu Inversion por Ticker</span>'
         '</div>'
         '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #4caf82;">'
