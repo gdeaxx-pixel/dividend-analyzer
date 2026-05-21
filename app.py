@@ -608,29 +608,6 @@ with st.sidebar:
         '</div>',
         unsafe_allow_html=True
     )
-    with st.sidebar.expander("Donde encuentro este valor", expanded=False):
-        st.markdown(
-            '<div style="padding:4px 0;">'
-            '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:700 !important;'
-            'color:#006497 !important;letter-spacing:0.08em !important;text-transform:uppercase !important;display:block;margin-bottom:6px;">'
-            'Interactive Brokers</span>'
-            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0 0 12px 0;padding-left:16px;line-height:1.9;">'
-            '<li>Ve a <b>Portafolio → Posiciones</b></li>'
-            '<li>Columna <b>"Base de coste"</b></li>'
-            '<li>Copia ese numero aqui</li>'
-            '</ol>'
-            '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:700 !important;'
-            'color:#006497 !important;letter-spacing:0.08em !important;text-transform:uppercase !important;display:block;margin-bottom:6px;">'
-            'Charles Schwab</span>'
-            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.9;">'
-            '<li>Ve a <b>Cuentas → Posiciones</b></li>'
-            '<li>Columna <b>"Cost Basis"</b></li>'
-            '<li>Copia ese numero aqui</li>'
-            '</ol>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
     _roc_tickers = ["MSTY", "CONY", "TSLY", "NVDY", "YMAX", "FEPI", "PLTY", "SMCY", "NFLY"]
     ib_cost_basis_map = {}
     for _rt in _roc_tickers:
