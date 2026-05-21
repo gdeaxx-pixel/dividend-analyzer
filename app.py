@@ -585,29 +585,34 @@ with st.sidebar:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        '<div class="da-sidebar-roc-header">Base de Coste del Broker — ROC</div>',
+        '<div class="da-sidebar-roc-header">Costo de Tu Inversión por Ticker</div>',
         unsafe_allow_html=True
     )
     st.sidebar.markdown(
-        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:4px 0 2px 0;line-height:1.5;">'
-        '<b style="color:#4caf82;">ROC (Return of Capital)</b>: cuando tu broker (Interactive Brokers o Charles Schwab) clasifica parte de tus distribuciones como '
-        'devolución de capital, reduce tu base de coste. La diferencia entre lo que invertiste y la base actual = ROC acumulado.'
+        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:6px 0 4px 0;line-height:1.6;">'
+        'Ingresa el <b style="color:#1a1a1a;">costo de tu inversión</b> tal como aparece en tu broker '
+        'para cada ticker. Este valor puede ser menor a lo que pagaste originalmente si tu broker '
+        'aplicó un ajuste por ROC.'
+        '</p>'
+        '<p style="font-family:Inter,sans-serif;font-size:10px;background:#eae7e7;padding:8px 10px;margin:4px 0 8px 0;line-height:1.6;">'
+        'Ingresa <b>solo el numero</b> sin puntos ni comas de miles.<br>'
+        'Si tiene decimales usa el <b>punto (.)</b> — ejemplo: <b>1250.45</b>'
         '</p>',
         unsafe_allow_html=True
     )
-    with st.sidebar.expander("Como obtener tu Base de Coste", expanded=False):
+    with st.sidebar.expander("Donde encuentro este valor en mi broker", expanded=False):
         st.markdown(
             '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Interactive Brokers</p>'
-            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0 0 10px 0;padding-left:16px;line-height:1.8;">'
-            '<li>Ve a <b>Portafolio → Posiciones</b></li>'
-            '<li>Activa la columna <b>"Base de coste"</b></li>'
-            '<li>Copia el valor por ticker aquí</li>'
+            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0 0 12px 0;padding-left:16px;line-height:1.9;">'
+            '<li>Abre la plataforma y ve a <b>Portafolio → Posiciones</b></li>'
+            '<li>Busca la columna llamada <b>"Base de coste"</b></li>'
+            '<li>Copia ese numero aqui para el ticker correspondiente</li>'
             '</ol>'
             '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Charles Schwab</p>'
-            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.8;">'
+            '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.9;">'
             '<li>Ve a <b>Cuentas → Posiciones</b></li>'
-            '<li>Busca la columna <b>"Cost Basis"</b></li>'
-            '<li>Copia el valor por ticker aquí</li>'
+            '<li>Busca la columna llamada <b>"Cost Basis"</b></li>'
+            '<li>Copia ese numero aqui para el ticker correspondiente</li>'
             '</ol>',
             unsafe_allow_html=True
         )
