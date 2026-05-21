@@ -503,6 +503,16 @@ st.markdown("""
         margin: 12px 0 4px 0;
         border-left: 3px solid #4caf82;
     }
+
+    /* 24. RESPONSIVE */
+    @media (max-width: 768px) {
+        .da-kpi-bar { grid-template-columns: repeat(2, 1fr); }
+        .da-step-grid { grid-template-columns: 1fr; }
+        .da-ticker-header { flex-direction: column; gap: 4px; }
+    }
+    @media (max-width: 480px) {
+        .da-kpi-bar { grid-template-columns: 1fr; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -531,7 +541,7 @@ st.markdown("""
             background-color: #006497;
             padding: 3px 10px;
             vertical-align: middle;
-        ">v2.1</span>
+        ">v2.2</span>
     </div>
     <p style="
         font-family: 'Inter', sans-serif;
@@ -580,7 +590,8 @@ with st.sidebar:
     )
     st.sidebar.markdown(
         '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:4px 0 2px 0;line-height:1.5;">'
-        'Ingresa la base de coste que muestra IB. El ROC es la diferencia entre lo que invertiste y lo que IB registra.'
+        '<b style="color:#4caf82;">ROC (Return of Capital)</b>: cuando IB clasifica parte de tus distribuciones como '
+        'devolución de capital, reduce tu base de coste. La diferencia entre lo que invertiste y la base actual IB = ROC acumulado.'
         '</p>',
         unsafe_allow_html=True
     )
@@ -622,6 +633,7 @@ with st.sidebar:
     if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
+    st.sidebar.caption("v2.2")
 
 # --- Utilidad de formateo para métricas cuantitativas ---
 def fmt_ratio(val, decimales=2, sufijo=""):
@@ -728,6 +740,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             st.session_state.update({
                 '_file_id': _fid, '_results': None,
                 '_classify_map': {}, '_skipped': {},
+                '_strat_results': None,
             })
 
         if st.button("Ejecutar Análisis Forense"):
@@ -750,10 +763,30 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     st.session_state['_classify_map'] = classify_map
                     st.session_state['_skipped']      = skipped_tickers
 
+                    # ── Auto-compute strategy comparison ─────────────────
+                    _all_buy_rows = []
+                    for _t_key, _t_stats in valid_results.items():
+                        _hist = _t_stats.get('history')
+                        if _hist is not None and not _hist.empty:
+                            _buys = _hist[_hist['Action'].str.lower().str.contains('buy|compra', na=False)]
+                            for _, _row in _buys.iterrows():
+                                _amt = abs(float(_row.get('Amount', 0)))
+                                if _amt > 0:
+                                    _all_buy_rows.append([str(_row['Date'].date()), _amt])
+                    if _all_buy_rows:
+                        try:
+                            _strat = logic.simulate_triple_comparison(json.dumps(_all_buy_rows))
+                            st.session_state['_strat_results'] = _strat
+                        except Exception:
+                            st.session_state['_strat_results'] = None
+                    else:
+                        st.session_state['_strat_results'] = None
+
         # ── Render from session_state ─────────────────────────────────────
         results         = st.session_state.get('_results')
         classify_map    = st.session_state.get('_classify_map', {})
         skipped_tickers = st.session_state.get('_skipped', {})
+        strat_results_cached = st.session_state.get('_strat_results')
 
         if skipped_tickers:
             with st.expander(f"⏩ {len(skipped_tickers)} ticker(s) excluidos del análisis"):
@@ -823,6 +856,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     {_roc_cell}
 </div>
             """, unsafe_allow_html=True)
+            st.caption("ROI = ganancia total desde el inicio · TIR (IRR) = retorno anualizado considerando cuándo compraste — más preciso para compras escalonadas")
 
             # ── PDF Report Download ───────────────────────────────────
             try:
@@ -845,20 +879,55 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
             st.markdown("### CLASIFICACIÓN DE PORTAFOLIO")
             b_col1, b_col2 = st.columns(2)
             with b_col1:
-                st.markdown("**MODO A — YieldMax (Income)**")
+                st.markdown("**Dividendos Income — YieldMax**")
                 pills_a = " ".join([f'<span style="display:inline-block;background-color:#c8102e;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_a_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
                 st.markdown(pills_a, unsafe_allow_html=True)
             with b_col2:
-                st.markdown("**MODO B — ETFs de Crecimiento**")
+                st.markdown("**ETFs de Crecimiento**")
                 pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
                 st.markdown(pills_b, unsafe_allow_html=True)
 
             st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
-            # ── TABS: Portafolio A / Portafolio B ──────────────────────
+            # ── Comparativa de estrategias (auto-calculada) ───────────
+            if strat_results_cached:
+                st.markdown("### COMPARATIVA DE ESTRATEGIAS")
+                st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 12px 0;">Si hubieras invertido el mismo capital en VTI, YMAX o SPY con el mismo timing.</p>', unsafe_allow_html=True)
+                _sr_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
+                _sr_value    = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
+                _sr_ret_pct  = (_sr_value - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
+                _all_strats  = {
+                    'real': {'label': 'Tu Portafolio Real', 'total_invested': _sr_invested, 'final_value': _sr_value, 'return_pct': _sr_ret_pct},
+                    **strat_results_cached
+                }
+                _sorted_strats = sorted(_all_strats.items(), key=lambda x: -x[1]['return_pct'])
+                _strat_df = pd.DataFrame([
+                    {'Estrategia': v['label'], 'Invertido': f"${v['total_invested']:,.0f}", 'Valor Final': f"${v['final_value']:,.0f}", 'Retorno': f"{v['return_pct']:+.2f}%"}
+                    for _, v in _sorted_strats
+                ])
+                st.dataframe(_strat_df, hide_index=True, use_container_width=True)
+                import altair as alt
+                _bar_df = pd.DataFrame([{'Estrategia': v['label'], 'Retorno': v['return_pct']} for _, v in _sorted_strats])
+                _bar_chart = alt.Chart(_bar_df).mark_bar().encode(
+                    x=alt.X('Retorno:Q', title='Retorno Total (%)', axis=alt.Axis(format='+.1f')),
+                    y=alt.Y('Estrategia:N', sort='-x', title=None),
+                    color=alt.condition(alt.datum.Retorno > 0, alt.value('#006497'), alt.value('#c8102e')),
+                    tooltip=[alt.Tooltip('Estrategia:N', title='Estrategia'), alt.Tooltip('Retorno:Q', format='+.2f', title='Retorno %')]
+                ).properties(height=180, background=CHART_PALETTE["bg"]).configure_view(
+                    strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                ).configure_axis(
+                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                )
+                st.altair_chart(_bar_chart, use_container_width=True)
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+
+            # ── TABS: Dividendos Income / ETFs de Crecimiento ──────────
             tab_a, tab_b = st.tabs([
-                f"Portafolio A — YieldMax ({len(mode_a_tickers)})",
-                f"Portafolio B — ETFs de Crecimiento ({len(mode_b_tickers)})",
+                f"Dividendos Income ({len(mode_a_tickers)})",
+                f"ETFs de Crecimiento ({len(mode_b_tickers)})",
             ])
 
             # ── Helper: render quant metrics + SPY chart (shared) ──────
@@ -870,10 +939,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                 qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
                 qr2.metric("Sortino Ratio",     fmt_ratio(stats.get('sortino_ratio')))
                 qr3.metric("Max Drawdown",      fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
+                st.caption("Sharpe: retorno ajustado por riesgo (>1 = bueno, >2 = muy bueno) · Sortino: igual pero solo penaliza la volatilidad negativa · Max Drawdown: caída máxima desde el pico")
                 qr4, qr5, qr6 = st.columns(3)
                 qr4.metric("Beta vs VOO",       fmt_ratio(stats.get('beta_vs_voo')))
                 qr5.metric("Alpha Anualizado",  fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
                 qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
+                st.caption("Beta: correlación con el mercado (1 = se mueve igual que el índice) · Alpha: retorno extra sobre el mercado (positivo = supera al índice) · Volatilidad: desviación estándar anualizada")
 
                 if 'daily_trend' in stats and not stats['daily_trend'].empty:
                     st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
@@ -926,7 +997,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     )
                     st.altair_chart(chart, use_container_width=True)
 
-            # ── TAB A — YieldMax (Income) ──────────────────────────────
+            # ── TAB A — Dividendos Income ──────────────────────────────
             with tab_a:
                 shown_a = False
                 for ticker, stats in results.items():
@@ -960,12 +1031,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo Real</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Tu inversión</p>
                             <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Capital de bolsillo</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base IB (con ROC)</p>
                             {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
@@ -1012,9 +1083,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     _cov = stats.get('csv_coverage_pct')
                     _inc_yf = stats.get('csv_inception_yf')
                     if _cov is not None:
-                        _cov_color = "#006497" if _cov >= 80 else ("#e67e22" if _cov >= 50 else "#c0392b")
+                        _cov_color = "#006497" if _cov >= 80 else ("#e67e22" if _cov >= 60 else "#c0392b")
                         _inc_txt = f" (ticker cotiza desde {_inc_yf})" if _inc_yf else ""
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_cov_color};margin:0 0 6px 0;">CSV cubre el <b>{_cov:.0f}%</b> del historial disponible{_inc_txt}</p>', unsafe_allow_html=True)
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_cov:.0f}%</b> del historial disponible{_inc_txt}</p>', unsafe_allow_html=True)
+                        if _cov < 80:
+                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
 
                     # Fase 2: Discrepancias de precio
                     for _disc in stats.get('price_discrepancies', []):
@@ -1176,7 +1249,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     <tr style="border-bottom:2px solid #006497;">
       <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Costo Real</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
@@ -1239,12 +1312,12 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo Real</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Tu inversión</p>
                             <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Capital de bolsillo</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
+                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base IB (con ROC)</p>
                             {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
@@ -1267,9 +1340,11 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                     _b_cov = stats.get('csv_coverage_pct')
                     _b_inc_yf = stats.get('csv_inception_yf')
                     if _b_cov is not None:
-                        _b_cov_color = "#006497" if _b_cov >= 80 else ("#e67e22" if _b_cov >= 50 else "#c0392b")
+                        _b_cov_color = "#006497" if _b_cov >= 80 else ("#e67e22" if _b_cov >= 60 else "#c0392b")
                         _b_inc_txt = f" (ticker cotiza desde {_b_inc_yf})" if _b_inc_yf else ""
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_b_cov_color};margin:0 0 6px 0;">CSV cubre el <b>{_b_cov:.0f}%</b> del historial disponible{_b_inc_txt}</p>', unsafe_allow_html=True)
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_b_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_b_cov:.0f}%</b> del historial disponible{_b_inc_txt}</p>', unsafe_allow_html=True)
+                        if _b_cov < 80:
+                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
 
                     # Fase 2: Discrepancias de precio
                     for _b_disc in stats.get('price_discrepancies', []):
@@ -1378,7 +1453,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
     <tr style="border-bottom:2px solid #006497;">
       <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Costo Real</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
       <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
@@ -1406,73 +1481,6 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
                 if not shown_b:
                     st.info("No hay ETFs de crecimiento activos en este portafolio.")
-
-            # ============================================================
-            # Section E — Triple Strategy Comparison
-            # ============================================================
-            st.markdown("### COMPARATIVA DE ESTRATEGIAS")
-            st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 12px 0;">¿Qué habría pasado si hubieras invertido el mismo dinero en VTI, YMAX o SPY?</p>', unsafe_allow_html=True)
-
-            if st.button("Calcular Comparativa"):
-                all_buy_rows = []
-                for t_key, t_stats in results.items():
-                    if 'error' in t_stats:
-                        continue
-                    hist = t_stats.get('history')
-                    if hist is not None and not hist.empty:
-                        buys = hist[hist['Action'].str.lower().str.contains('buy|compra', na=False)]
-                        for _, row in buys.iterrows():
-                            amt = abs(float(row.get('Amount', 0)))
-                            if amt > 0:
-                                all_buy_rows.append([str(row['Date'].date()), amt])
-
-                if not all_buy_rows:
-                    st.warning("No se encontraron transacciones de compra en el portafolio.")
-                else:
-                    buy_flows_json = json.dumps(all_buy_rows)
-                    real_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
-                    real_value = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
-                    real_return_pct = (real_value - real_invested) / real_invested * 100 if real_invested > 0 else 0
-
-                    with st.spinner("Calculando estrategias alternativas..."):
-                        strat_results = logic.simulate_triple_comparison(buy_flows_json)
-
-                    if strat_results:
-                        all_strategies = {
-                            'real': {'label': 'Tu Portafolio Real', 'total_invested': real_invested, 'final_value': real_value, 'return_pct': real_return_pct},
-                            **strat_results
-                        }
-                        sorted_strats = sorted(all_strategies.items(), key=lambda x: -x[1]['return_pct'])
-                        strat_df = pd.DataFrame([
-                            {
-                                'Estrategia': v['label'],
-                                'Invertido': f"${v['total_invested']:,.0f}",
-                                'Valor Final': f"${v['final_value']:,.0f}",
-                                'Retorno %': f"{v['return_pct']:+.2f}%"
-                            }
-                            for _, v in sorted_strats
-                        ])
-                        st.dataframe(strat_df, hide_index=True, use_container_width=True)
-
-                        import altair as alt
-                        strat_chart_df = pd.DataFrame([
-                            {'Estrategia': v['label'], 'Retorno': v['return_pct']}
-                            for _, v in sorted_strats
-                        ])
-                        bar_chart = alt.Chart(strat_chart_df).mark_bar().encode(
-                            x=alt.X('Retorno:Q', title='Retorno Total (%)', axis=alt.Axis(format='+.1f')),
-                            y=alt.Y('Estrategia:N', sort='-x', title=None),
-                            color=alt.condition(alt.datum.Retorno > 0, alt.value('#006497'), alt.value('#c8102e')),
-                            tooltip=[alt.Tooltip('Estrategia:N', title='Estrategia'), alt.Tooltip('Retorno:Q', format='+.2f', title='Retorno %')]
-                        ).properties(height=180, background=CHART_PALETTE["bg"]).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        ).configure_axis(
-                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
-                        )
-                        st.altair_chart(bar_chart, use_container_width=True)
 
             # ============================================================
             # Section F — Risk Analysis
@@ -1519,6 +1527,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
 
 elif input_method == "Simulación Teórica":
     st.subheader("Simulación de Estrategia DRIP")
+    st.caption("DRIP (Dividend Reinvestment Plan) = los dividendos se reinvierten automáticamente comprando más acciones, en lugar de cobrarlos en efectivo")
 
     col1, col2, col3 = st.columns(3)
     ticker = col1.text_input("Ticker", "TSLY")
@@ -1537,9 +1546,9 @@ elif input_method == "Simulación Teórica":
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Inversión Inicial", f"${amount:,.0f}")
-            m2.metric("Final (DRIP)", f"${sim_results['drip_final_value']:,.2f}",
+            m2.metric("Con DRIP (dividendos reinvertidos)", f"${sim_results['drip_final_value']:,.2f}",
                       delta=f"{sim_results['drip_roi_percent']:.2f}%")
-            m3.metric("Final (NO-DRIP + Cash)", f"${sim_results['nodrip_final_value']:,.2f}",
+            m3.metric("Sin DRIP (dividendos en efectivo)", f"${sim_results['nodrip_final_value']:,.2f}",
                       delta=f"{sim_results['nodrip_roi_percent']:.2f}%")
 
             # Chart
