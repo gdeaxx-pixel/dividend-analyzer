@@ -585,35 +585,53 @@ with st.sidebar:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        '<div class="da-sidebar-roc-header">Costo de Tu Inversión por Ticker</div>',
+        '<div style="margin:12px 0 0 0;">'
+        '<div style="background:#021C36;padding:10px 12px;border-left:3px solid #4caf82;">'
+        '<span style="font-family:Inter,sans-serif !important;font-size:9px !important;font-weight:700 !important;'
+        'letter-spacing:0.14em !important;text-transform:uppercase !important;'
+        'color:#4caf82 !important;display:block;">Costo de Tu Inversion por Ticker</span>'
+        '</div>'
+        '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #4caf82;">'
+        '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:400 !important;'
+        'color:#445566 !important;line-height:1.7 !important;text-transform:none !important;display:block;">'
+        'Ingresa el <b style="color:#1a1a1a !important;">costo de tu inversion</b> tal como aparece '
+        'en tu broker para cada ticker. Este numero puede ser menor a lo que pagaste originalmente.'
+        '</span>'
+        '</div>'
+        '<div style="padding:10px 12px;background:#eae7e7;border-left:3px solid #006497;margin-top:2px;">'
+        '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:700 !important;'
+        'color:#006497 !important;letter-spacing:0.08em !important;text-transform:uppercase !important;display:block;margin-bottom:4px;">'
+        'Formato</span>'
+        '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:400 !important;'
+        'color:#1a1a1a !important;line-height:1.8 !important;text-transform:none !important;display:block;">'
+        'Solo el numero, sin puntos ni comas.<br>'
+        'Si tiene decimales usa el <b style="color:#1a1a1a !important;">punto (.)</b><br>'
+        '<span style="color:#006497 !important;font-weight:600 !important;">Ejemplo: 1250.45</span>'
+        '</span>'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True
     )
-    st.sidebar.markdown(
-        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:6px 0 4px 0;line-height:1.6;">'
-        'Ingresa el <b style="color:#1a1a1a;">costo de tu inversión</b> tal como aparece en tu broker '
-        'para cada ticker. Este valor puede ser menor a lo que pagaste originalmente si tu broker '
-        'aplicó un ajuste por ROC.'
-        '</p>'
-        '<p style="font-family:Inter,sans-serif;font-size:10px;background:#eae7e7;padding:8px 10px;margin:4px 0 8px 0;line-height:1.6;">'
-        'Ingresa <b>solo el numero</b> sin puntos ni comas de miles.<br>'
-        'Si tiene decimales usa el <b>punto (.)</b> — ejemplo: <b>1250.45</b>'
-        '</p>',
-        unsafe_allow_html=True
-    )
-    with st.sidebar.expander("Donde encuentro este valor en mi broker", expanded=False):
+    with st.sidebar.expander("Donde encuentro este valor", expanded=False):
         st.markdown(
-            '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Interactive Brokers</p>'
+            '<div style="padding:4px 0;">'
+            '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:700 !important;'
+            'color:#006497 !important;letter-spacing:0.08em !important;text-transform:uppercase !important;display:block;margin-bottom:6px;">'
+            'Interactive Brokers</span>'
             '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0 0 12px 0;padding-left:16px;line-height:1.9;">'
-            '<li>Abre la plataforma y ve a <b>Portafolio → Posiciones</b></li>'
-            '<li>Busca la columna llamada <b>"Base de coste"</b></li>'
-            '<li>Copia ese numero aqui para el ticker correspondiente</li>'
+            '<li>Ve a <b>Portafolio → Posiciones</b></li>'
+            '<li>Columna <b>"Base de coste"</b></li>'
+            '<li>Copia ese numero aqui</li>'
             '</ol>'
-            '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;color:#006497;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Charles Schwab</p>'
+            '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:700 !important;'
+            'color:#006497 !important;letter-spacing:0.08em !important;text-transform:uppercase !important;display:block;margin-bottom:6px;">'
+            'Charles Schwab</span>'
             '<ol style="font-family:Inter,sans-serif;font-size:10px;color:#555555;margin:0;padding-left:16px;line-height:1.9;">'
             '<li>Ve a <b>Cuentas → Posiciones</b></li>'
-            '<li>Busca la columna llamada <b>"Cost Basis"</b></li>'
-            '<li>Copia ese numero aqui para el ticker correspondiente</li>'
-            '</ol>',
+            '<li>Columna <b>"Cost Basis"</b></li>'
+            '<li>Copia ese numero aqui</li>'
+            '</ol>'
+            '</div>',
             unsafe_allow_html=True
         )
 
