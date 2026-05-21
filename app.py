@@ -589,7 +589,7 @@ with st.sidebar:
     st.sidebar.markdown("---")
     st.sidebar.markdown(
         '<div style="margin:12px 0 0 0;">'
-        '<div style="background:#006497;padding:10px 12px;">'
+        '<div style="background:#021C36;padding:10px 12px;">'
         '<span class="da-sidebar-white-text" style="font-family:Inter,sans-serif;font-size:9px;font-weight:800;'
         'letter-spacing:0.12em;text-transform:uppercase;display:block;">'
         'Costo de Tu Inversion por Ticker</span>'
