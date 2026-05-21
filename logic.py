@@ -274,7 +274,7 @@ def simulate_strategy_cached(ticker, start_date_str, initial_investment):
 
 
 @st.cache_data(show_spinner=False)
-def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
+def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None) -> dict:
     """
     Performs a forensic analysis of a portfolio history to calculate true ROI and dividend performance.
     
@@ -960,6 +960,21 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
         except Exception:
             pass
 
+        # ── ROC: Return of Capital ────────────────────────────────────────
+        _ib_basis = None
+        _roc_accum = None
+        _roc_pct = None
+        if ib_cost_basis_map:
+            _raw_basis = ib_cost_basis_map.get(ticker)
+            if _raw_basis is not None:
+                try:
+                    _ib_basis = float(str(_raw_basis).replace(',', '').replace('$', '').strip())
+                    if pocket_investment > 0 and _ib_basis >= 0:
+                        _roc_accum = round(pocket_investment - _ib_basis, 2)
+                        _roc_pct   = round(_roc_accum / pocket_investment * 100, 2)
+                except (ValueError, TypeError):
+                    pass
+
         results[ticker] = {
             # Métricas existentes (sin cambios)
             "current_price": current_price,
@@ -1000,6 +1015,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1") -> dict:
             "csv_coverage_pct":    csv_coverage_pct,
             "csv_inception_yf":    csv_inception_yf,
             "corporate_actions":   corporate_actions,
+            # ROC
+            "ib_cost_basis":       _ib_basis,
+            "roc_accumulated":     _roc_accum,
+            "roc_percent":         _roc_pct,
         }
         
     return results

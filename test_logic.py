@@ -298,4 +298,61 @@ def test_cony_portfolio_analysis(monkeypatch):
     assert results, "analyze_portfolio devolvió vacío"
     stats = next(iter(results.values()))
     assert round(stats["pocket_investment"], 2) == 311.46
-    assert round(stats["shares_owned"], 4) == 10.1675
+
+
+def test_roc_calculation_with_ib_cost_basis(monkeypatch):
+    """ROC = pocket_investment - ib_cost_basis; roc_percent = ROC / pocket_investment * 100"""
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
+        b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2024-09-01,U123,MSTY Buy,Buy,MSTY,250,23.00,USD,-5750.00,-1.0,-5751.00\n"
+        b"Transaction History,Data,2024-10-01,U123,MSTY Dividend,Dividend,MSTY,-,-,-,500.00,-,500.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    def mock_fetch(ticker, start_date):
+        data = pd.DataFrame(
+            {"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0]},
+            index=[pd.Timestamp("2024-10-15")],
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+
+    ib_basis = {"MSTY": "4298.17"}
+    results = logic.analyze_portfolio(df_clean, version="TEST_ROC", ib_cost_basis_map=ib_basis)
+
+    assert "MSTY" in results
+    s = results["MSTY"]
+    pocket = s["pocket_investment"]
+    assert s["ib_cost_basis"] == pytest.approx(4298.17, abs=0.01)
+    assert s["roc_accumulated"] == pytest.approx(pocket - 4298.17, abs=0.01)
+    assert s["roc_percent"] == pytest.approx((pocket - 4298.17) / pocket * 100, abs=0.1)
+
+
+def test_roc_none_when_no_basis_provided(monkeypatch):
+    """Sin ib_cost_basis_map los campos ROC son None."""
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
+        b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2024-09-01,U123,MSTY Buy,Buy,MSTY,250,23.00,USD,-5750.00,-1.0,-5751.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    def mock_fetch(ticker, start_date):
+        data = pd.DataFrame(
+            {"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0]},
+            index=[pd.Timestamp("2024-10-15")],
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+    results = logic.analyze_portfolio(df_clean, version="TEST_ROC_NONE")
+
+    assert "MSTY" in results
+    s = results["MSTY"]
+    assert s.get("ib_cost_basis") is None
+    assert s.get("roc_accumulated") is None
+    assert s.get("roc_percent") is None

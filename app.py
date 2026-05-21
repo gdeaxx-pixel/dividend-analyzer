@@ -358,7 +358,23 @@ with st.sidebar:
 
 
 
-    st.sidebar.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        '<p style="font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin:0 0 4px 0;">Base de Coste IB (ROC)</p>',
+        unsafe_allow_html=True
+    )
+    st.sidebar.markdown(
+        '<p style="font-family:Inter,sans-serif;font-size:10px;color:#556677;margin:0 0 8px 0;">Opcional · IB: Posiciones → Sus participaciones → "Base de coste"</p>',
+        unsafe_allow_html=True
+    )
+    _roc_tickers = ["MSTY", "CONY", "TSLY", "NVDY", "YMAX", "FEPI", "PLTY", "SMCY", "NFLY"]
+    ib_cost_basis_map = {}
+    for _rt in _roc_tickers:
+        _val = st.sidebar.text_input(_rt, value="", placeholder="ej: 14794.00", key=f"ib_basis_{_rt}", label_visibility="visible")
+        if _val.strip():
+            ib_cost_basis_map[_rt] = _val.strip()
+
+    st.sidebar.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
     if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
@@ -418,7 +434,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
         if st.button("Ejecutar Análisis Forense"):
             with st.spinner("Analizando transacciones, splits y dividendos..."):
                 try:
-                    results = logic.analyze_portfolio(df_clean, version="2.0")
+                    results = logic.analyze_portfolio(df_clean, version="2.0", ib_cost_basis_map=ib_cost_basis_map or None)
                 except TypeError:
                     results = logic.analyze_portfolio(df_clean)
 
@@ -602,8 +618,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ver Base de Coste en IB</p>
+                            {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
@@ -753,9 +768,19 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         _ca_total_tr  = _ca_total_mv + _ca_total_div - _ca_total_inv
                         _ca_total_tr_pct = (_ca_total_tr / _ca_total_inv * 100) if _ca_total_inv > 0 else 0
                         _ca_tbody = ""
+                        _ca_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _ca_rows)
+                        _ca_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _ca_rows if _cs.get('ib_cost_basis') is not None)
+                        _ca_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _ca_rows if _cs.get('roc_accumulated') is not None)
+                        _ca_total_roc_pct = round(_ca_total_roc / _ca_total_inv * 100, 1) if (_ca_has_roc and _ca_total_inv > 0) else None
                         for _ct, _cs in _ca_rows:
                             _cr = _cs['roi_percent']
                             _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _ib_b = _cs.get('ib_cost_basis')
+                            _roc_a = _cs.get('roc_accumulated')
+                            _roc_p = _cs.get('roc_percent')
+                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
+                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
+                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
                             _ca_tbody += (
                                 f'<tr style="border-bottom:1px solid #0d2a42;">'
                                 f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
@@ -763,12 +788,15 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
                                 f'</tr>'
                             )
                         _ca_tr_color = "#4caf82" if _ca_total_tr_pct >= 0 else "#e05c5c"
+                        _total_ib_str  = f'${_ca_total_ib:,.2f}' if _ca_has_roc else 'Ver broker'
+                        _total_roc_str = f'${_ca_total_roc:,.2f} <span style="color:#4caf82;">({_ca_total_roc_pct:.1f}%)</span>' if _ca_has_roc else '—'
+                        _total_ib_color = '#ffffff' if _ca_has_roc else '#445566'
                         st.markdown(f"""
 <div style="overflow-x:auto;margin:4px 0 6px 0;">
 <table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
@@ -792,8 +820,8 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_inv:,.2f}</td>
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_div:,.2f}</td>
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_mv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#445566;">Ver broker</td>
-      <td style="padding:8px 10px;text-align:right;color:#445566;">—</td>
+      <td style="padding:8px 10px;text-align:right;color:{_total_ib_color};">{_total_ib_str}</td>
+      <td style="padding:7px 10px;text-align:right;">{_total_roc_str}</td>
       <td style="padding:8px 10px;text-align:right;color:{_ca_tr_color};">{_ca_total_tr_pct:+.2f}%</td>
     </tr>
   </tbody>
@@ -833,8 +861,7 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Costo IB (con ROC)</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ver Base de Coste en IB</p>
+                            {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
                         </div>
                         <div style="background:#021C36;padding:12px 16px;">
                             <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
@@ -930,10 +957,20 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                         _cb_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cb_rows)
                         _cb_total_tr  = _cb_total_mv + _cb_total_div - _cb_total_inv
                         _cb_total_tr_pct = (_cb_total_tr / _cb_total_inv * 100) if _cb_total_inv > 0 else 0
+                        _cb_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _cb_rows)
+                        _cb_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _cb_rows if _cs.get('ib_cost_basis') is not None)
+                        _cb_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _cb_rows if _cs.get('roc_accumulated') is not None)
+                        _cb_total_roc_pct = round(_cb_total_roc / _cb_total_inv * 100, 1) if (_cb_has_roc and _cb_total_inv > 0) else None
                         _cb_tbody = ""
                         for _ct, _cs in _cb_rows:
                             _cr = _cs['roi_percent']
                             _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _ib_b = _cs.get('ib_cost_basis')
+                            _roc_a = _cs.get('roc_accumulated')
+                            _roc_p = _cs.get('roc_percent')
+                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
+                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
+                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
                             _cb_tbody += (
                                 f'<tr style="border-bottom:1px solid #0d2a42;">'
                                 f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
@@ -941,12 +978,15 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:#445566;">—</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
                                 f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
                                 f'</tr>'
                             )
                         _cb_tr_color = "#4caf82" if _cb_total_tr_pct >= 0 else "#e05c5c"
+                        _total_cb_ib_str  = f'${_cb_total_ib:,.2f}' if _cb_has_roc else 'Ver broker'
+                        _total_cb_roc_str = f'${_cb_total_roc:,.2f} <span style="color:#4caf82;">({_cb_total_roc_pct:.1f}%)</span>' if _cb_has_roc else '—'
+                        _total_cb_ib_color = '#ffffff' if _cb_has_roc else '#445566'
                         st.markdown(f"""
 <div style="overflow-x:auto;margin:4px 0 6px 0;">
 <table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
@@ -970,8 +1010,8 @@ if input_method == "Subir CSV/Excel" and uploaded_file is not None:
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_inv:,.2f}</td>
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_div:,.2f}</td>
       <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_mv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#445566;">Ver broker</td>
-      <td style="padding:8px 10px;text-align:right;color:#445566;">—</td>
+      <td style="padding:8px 10px;text-align:right;color:{_total_cb_ib_color};">{_total_cb_ib_str}</td>
+      <td style="padding:7px 10px;text-align:right;">{_total_cb_roc_str}</td>
       <td style="padding:8px 10px;text-align:right;color:{_cb_tr_color};">{_cb_total_tr_pct:+.2f}%</td>
     </tr>
   </tbody>
