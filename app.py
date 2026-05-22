@@ -736,9 +736,11 @@ if input_method == "Subir CSV/Excel":
                     st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
                     st.session_state['_wizard_broker'] = _broker_w
 
-                    if st.button("Siguiente →"):
-                        st.session_state['_wizard_step'] = 2
-                        st.rerun()
+                    _, _btn_col1 = st.columns([3, 1])
+                    with _btn_col1:
+                        if st.button("Siguiente →", use_container_width=True):
+                            st.session_state['_wizard_step'] = 2
+                            st.rerun()
 
             except Exception as _e1:
                 import traceback as _tb1
@@ -795,13 +797,9 @@ if input_method == "Subir CSV/Excel":
                 _edited_s2 = None
                 st.info("No se detectaron tickers YieldMax Income en este archivo. Puedes continuar al análisis directamente.")
 
-            _col_p, _col_n = st.columns([1, 1])
-            with _col_p:
-                if st.button("← Anterior"):
-                    st.session_state['_wizard_step'] = 1
-                    st.rerun()
-            with _col_n:
-                if st.button("Analizar Dividendos →", type="primary"):
+            _, _btn_col2 = st.columns([3, 1])
+            with _btn_col2:
+                if st.button("Siguiente →", use_container_width=True, type="primary"):
                     _ib_map_s2 = (
                         {row['Ticker']: str(row['Costo de Inversión ($)'])
                          for _, row in _edited_s2.iterrows()
