@@ -612,7 +612,7 @@ with st.sidebar:
     if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
-    st.sidebar.caption("v2.3")
+
 
 def _render_step_indicator(current_step):
     steps = [("01", "Carga el Archivo"), ("02", "Configura Costos"), ("03", "Resultados")]
