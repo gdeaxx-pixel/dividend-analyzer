@@ -606,11 +606,11 @@ for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_tick
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
-# --- Sidebar: Input Method ---
-with st.sidebar:
-    input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"])
-    st.sidebar.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
-    if st.sidebar.button("Limpiar Caché"):
+_col_mode, _col_cache = st.columns([5, 1])
+with _col_mode:
+    input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
+with _col_cache:
+    if st.button("Limpiar Caché", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
