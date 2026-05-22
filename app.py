@@ -544,7 +544,7 @@ st.markdown("""
             background-color: #006497;
             padding: 3px 10px;
             vertical-align: middle;
-        ">v2.2</span>
+        ">v2.3</span>
     </div>
     <p style="
         font-family: 'Inter', sans-serif;
@@ -576,72 +576,43 @@ CHART_PALETTE = {
     "title":     "#1a1a1a",        # on-surface
 }
 
+# Wizard session state defaults
+for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None)]:
+    if _wk not in st.session_state:
+        st.session_state[_wk] = _wv
+
 # --- Sidebar: Input Method ---
 with st.sidebar:
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"])
-
-    uploaded_file = None
-    if input_method == "Subir CSV/Excel":
-        uploaded_file = st.file_uploader("Upload", type=['csv', 'xlsx'], label_visibility="collapsed")
-
-
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(
-        '<div style="margin:12px 0 0 0;">'
-        '<div style="background:#006497;padding:10px 12px;">'
-        '<span class="da-sidebar-white-text" style="font-family:Inter,sans-serif;font-size:9px;font-weight:800;'
-        'letter-spacing:0.12em;text-transform:uppercase;display:block;">'
-        'Costo de Tu Inversion por Ticker</span>'
-        '</div>'
-        '<div style="padding:10px 12px;background:#f6f3f2;border-left:3px solid #006497;">'
-        '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:400 !important;color:#445566 !important;line-height:1.7 !important;text-transform:none !important;display:block;margin-bottom:10px !important;">'
-        'Ingresa el costo de tu inversion tal como aparece en tu broker para cada ticker. '
-        'Escribe <b style="color:#1a1a1a !important;">solo el numero</b>, sin puntos ni comas. Si tiene decimales usa el <b style="color:#1a1a1a !important;">punto (.)</b>'
-        '</span>'
-        '<span style="font-family:Inter,sans-serif !important;font-size:10px !important;font-weight:600 !important;color:#006497 !important;text-transform:none !important;display:block;">'
-        'Ejemplo: 1250.45'
-        '</span>'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True
-    )
-    st.sidebar.markdown(
-        '<div style="height:8px;"></div>'
-        '<div style="background:#021C36;padding:7px 12px;margin-bottom:4px;">'
-        '<span class="da-sidebar-white-text" style="font-family:Inter,sans-serif;font-size:9px;font-weight:700;'
-        'letter-spacing:0.12em;text-transform:uppercase;display:block;">Tus tickers</span>'
-        '</div>',
-        unsafe_allow_html=True
-    )
-    _roc_tickers = ["MSTY", "CONY", "TSLY", "NVDY", "YMAX", "FEPI", "PLTY", "SMCY", "NFLY"]
-    ib_cost_basis_map = {}
-    for _rt in _roc_tickers:
-        _val = st.sidebar.number_input(
-            _rt,
-            min_value=0.0,
-            value=0.0,
-            step=0.01,
-            format="%g",
-            key=f"ib_basis_{_rt}",
-            label_visibility="visible"
-        )
-        if _val > 0:
-            ib_cost_basis_map[_rt] = str(_val)
-
-    _n_roc = sum(1 for v in ib_cost_basis_map.values() if float(v) > 0)
-    if _n_roc > 0:
-        st.sidebar.markdown(
-            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#4caf82;font-weight:600;margin:6px 0 0 0;">'
-            f'{_n_roc} ticker{"s" if _n_roc > 1 else ""} con Base de Coste registrada</p>',
-            unsafe_allow_html=True
-        )
-
     st.sidebar.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
     if st.sidebar.button("Limpiar Caché"):
         st.cache_data.clear()
         st.rerun()
-    st.sidebar.caption("v2.2")
+    st.sidebar.caption("v2.3")
+
+def _render_step_indicator(current_step):
+    steps = [("01", "Carga el Archivo"), ("02", "Configura Costos"), ("03", "Resultados")]
+    pills = []
+    for i, (num, label) in enumerate(steps, 1):
+        if i == current_step:
+            bg, fg = "#006497", "#ffffff"
+        elif i < current_step:
+            bg, fg = "#021C36", "#ffffff"
+        else:
+            bg, fg = "#eae7e7", "#8899aa"
+        pills.append(
+            f'<div style="background:{bg};padding:8px 18px;display:flex;align-items:center;">'
+            f'<span style="font-family:Inter,sans-serif;font-size:9px;font-weight:700;'
+            f'letter-spacing:0.12em;text-transform:uppercase;color:{fg};">{num} · {label}</span>'
+            f'</div>'
+        )
+    sep = '<div style="width:14px;height:2px;background:#eae7e7;align-self:center;flex-shrink:0;"></div>'
+    st.markdown(
+        '<div style="display:flex;align-items:center;gap:0;margin-bottom:32px;">'
+        + sep.join(pills) + '</div>',
+        unsafe_allow_html=True
+    )
+
 
 # --- Utilidad de formateo para métricas cuantitativas ---
 def fmt_ratio(val, decimales=2, sufijo=""):
@@ -650,8 +621,19 @@ def fmt_ratio(val, decimales=2, sufijo=""):
 
 # --- Main Logic ---
 
-if input_method == "Subir CSV/Excel" and uploaded_file is None:
-    st.markdown("""
+if input_method == "Subir CSV/Excel":
+    _wizard_step = st.session_state.get('_wizard_step', 1)
+    _render_step_indicator(_wizard_step)
+
+    # ── PASO 1: Carga el Archivo ──────────────────────────────────────────
+    if _wizard_step == 1:
+        uploaded_file_w = st.file_uploader(
+            "Sube tu archivo de transacciones (CSV o Excel)",
+            type=['csv', 'xlsx'],
+            help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
+        )
+        if uploaded_file_w is None:
+            st.markdown("""
 <div class="da-step-grid">
     <div class="da-step-card">
         <div class="da-step-tag">Paso 1</div>
@@ -666,21 +648,19 @@ if input_method == "Subir CSV/Excel" and uploaded_file is None:
     <div class="da-step-card">
         <div class="da-step-tag">Paso 2</div>
         <div class="da-step-num">02</div>
-        <div class="da-step-title">Sube el archivo</div>
+        <div class="da-step-title">Configura costos</div>
         <div class="da-step-desc">
-            Usa el botón <b>Subir Archivo</b> en el panel izquierdo.
-            Se aceptan <b>.csv</b> y <b>.xlsx</b>. El broker se detecta
-            automáticamente.
+            Ingresa el costo de tu inversión por ticker para calcular
+            el <b>ROC acumulado</b>. Si no tienes este dato, puedes omitirlo.
         </div>
     </div>
     <div class="da-step-card">
         <div class="da-step-tag">Paso 3</div>
         <div class="da-step-num">03</div>
-        <div class="da-step-title">Ejecuta el análisis</div>
+        <div class="da-step-title">Ve tus resultados</div>
         <div class="da-step-desc">
-            Haz clic en <b>Analizar Dividendos</b>. Obtén ROI real,
-            TIR, ROC acumulado, comparativa vs S&P 500 y métricas de riesgo
-            ajustado por ticker.
+            Obtén ROI real, TIR, ROC acumulado, comparativa vs S&amp;P 500
+            y métricas de riesgo ajustado por ticker.
         </div>
     </div>
 </div>
@@ -700,111 +680,191 @@ if input_method == "Subir CSV/Excel" and uploaded_file is None:
     </div>
     <div style="background:#f0faf5;padding:14px 18px;border-top:2px solid #4caf82;">
         <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#4caf82;margin-bottom:4px;">ROC Detectado</div>
-        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Ingresa la base IB en el sidebar para ver el ROC acumulado por ticker</div>
+        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Configura tu costo de inversión en el Paso 2 para ver el ROC acumulado por ticker</div>
     </div>
 </div>
-    """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        else:
+            try:
+                if uploaded_file_w.name.endswith('.xlsx'):
+                    _df_w = pd.read_excel(uploaded_file_w)
+                    _broker_w = 'generic'
+                else:
+                    _df_w, _broker_w = logic.load_and_detect_csv(uploaded_file_w)
+                    if _df_w.empty:
+                        st.error("No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
+                        st.stop()
 
-if input_method == "Subir CSV/Excel" and uploaded_file is not None:
-    st.subheader("Análisis de Portafolio Real")
+                _df_clean_w = logic.normalize_csv(_df_w)
+                _req_cols_w = ['Date', 'Ticker', 'Amount']
+                _miss_cols_w = [c for c in _req_cols_w if c not in _df_clean_w.columns]
+
+                if _miss_cols_w:
+                    st.error(f"Error de Formato: No encontramos las columnas: {', '.join(_miss_cols_w)}")
+                    st.warning(f"Columnas encontradas: {list(_df_clean_w.columns)}")
+                    st.info("Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
+                else:
+                    _mmap_w = logic.classify_tickers(_df_clean_w['Ticker'].dropna().unique().tolist())
+                    _n_inc_w = sum(1 for m in _mmap_w.values() if m == 'mode_a')
+
+                    _csv_td_w = {}
+                    if 'Ticker' in _df_clean_w.columns and 'Action' in _df_clean_w.columns:
+                        for _et_w, _eg_w in _df_clean_w.groupby('Ticker'):
+                            _buys_w = _eg_w[_eg_w['Action'].str.lower().str.contains('buy', na=False)]
+                            _divs_w = _eg_w[_eg_w['Action'].str.lower().str.contains('div', na=False)]
+                            _csv_td_w[_et_w] = {
+                                'shares': float(_buys_w['Quantity'].sum()) if 'Quantity' in _buys_w.columns and not _buys_w.empty else 0.0,
+                                'invested': abs(float(_buys_w['Amount'].sum())) if not _buys_w.empty else 0.0,
+                                'dividends_csv': float(_divs_w['Amount'].sum()) if not _divs_w.empty else 0.0,
+                                'first_date': str(_eg_w['Date'].min())[:10] if not _eg_w.empty else 'N/A',
+                            }
+
+                    _BROKER_LABELS_W = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}
+                    _bl_w = _BROKER_LABELS_W.get(_broker_w, _broker_w.upper())
+                    st.markdown(
+                        f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:12px 16px;margin:16px 0;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
+                        f'Archivo procesado · Broker: {_bl_w} · {_n_inc_w} ETFs de dividendos detectados'
+                        f'</span></div>',
+                        unsafe_allow_html=True
+                    )
+                    with st.expander("Ver datos procesados (Primeras 5 filas)"):
+                        st.dataframe(_df_clean_w.head())
+
+                    st.session_state['_wizard_df_clean'] = _df_clean_w
+                    st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
+                    st.session_state['_wizard_broker'] = _broker_w
+
+                    if st.button("Siguiente →"):
+                        st.session_state['_wizard_step'] = 2
+                        st.rerun()
+
+            except Exception as _e1:
+                import traceback as _tb1
+                st.error(f"Error procesando el archivo: {_e1}")
+                with st.expander("Ver detalles del error"):
+                    st.code(_tb1.format_exc())
+
+    # ── PASO 2: Configura Costos ──────────────────────────────────────────
+    elif _wizard_step == 2:
+        _df2 = st.session_state.get('_wizard_df_clean')
+        if _df2 is None:
+            st.warning("No hay archivo cargado. Regresa al Paso 1.")
+            if st.button("← Volver al inicio"):
+                st.session_state['_wizard_step'] = 1
+                st.rerun()
+        else:
+            _tickers_s2 = _df2['Ticker'].dropna().unique().tolist()
+            _mmap_s2 = logic.classify_tickers(_tickers_s2)
+            _divt_s2 = sorted([t for t, m in _mmap_s2.items() if m == 'mode_a'])
+
+            st.markdown(
+                '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
+                'Ingresa el costo de tu inversión tal como aparece en tu broker para cada ticker YieldMax. '
+                'Si no tienes este dato o no aplica, deja el valor en 0.'
+                '</p>'
+                '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;line-height:1.7;margin:0 0 20px 0;">'
+                'Interactive Brokers: Portafolio → Posiciones → columna "Base de coste" &nbsp;·&nbsp; '
+                'Charles Schwab: Cuentas → Posiciones → columna "Cost Basis"'
+                '</p>',
+                unsafe_allow_html=True
+            )
+
+            if _divt_s2:
+                _tbl_s2 = pd.DataFrame({
+                    'Ticker': _divt_s2,
+                    'Costo de Inversión ($)': [0.0] * len(_divt_s2)
+                })
+                _edited_s2 = st.data_editor(
+                    _tbl_s2,
+                    column_config={
+                        'Ticker': st.column_config.TextColumn(disabled=True),
+                        'Costo de Inversión ($)': st.column_config.NumberColumn(
+                            help="Valor de 'Base de coste' en Interactive Brokers o 'Cost Basis' en Charles Schwab. Deja en 0 si no aplica.",
+                            min_value=0.0,
+                            format="%.2f"
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    num_rows="fixed",
+                    key="_step2_table"
+                )
+            else:
+                _edited_s2 = None
+                st.info("No se detectaron tickers YieldMax Income en este archivo. Puedes continuar al análisis directamente.")
+
+            _col_p, _col_n = st.columns([1, 1])
+            with _col_p:
+                if st.button("← Anterior"):
+                    st.session_state['_wizard_step'] = 1
+                    st.rerun()
+            with _col_n:
+                if st.button("Analizar Dividendos →", type="primary"):
+                    _ib_map_s2 = (
+                        {row['Ticker']: str(row['Costo de Inversión ($)'])
+                         for _, row in _edited_s2.iterrows()
+                         if row['Costo de Inversión ($)'] > 0}
+                        if _edited_s2 is not None else {}
+                    )
+                    st.session_state['_wizard_ib_map'] = _ib_map_s2
+
+                    with st.spinner("Analizando transacciones, splits y dividendos..."):
+                        try:
+                            _res_s2 = logic.analyze_portfolio(_df2, version="2.0", ib_cost_basis_map=_ib_map_s2 or None)
+                        except TypeError:
+                            _res_s2 = logic.analyze_portfolio(_df2)
+
+                    if not _res_s2:
+                        st.error("No se pudieron extraer tickers válidos o datos del archivo.")
+                    else:
+                        _skip_s2  = {t: s for t, s in _res_s2.items() if s.get("skipped")}
+                        _valid_s2 = {t: s for t, s in _res_s2.items() if not s.get("skipped")}
+                        _cmap_s2  = logic.classify_tickers(list(_valid_s2.keys()))
+                        if not _valid_s2:
+                            st.warning("Todos los tickers del archivo fueron descartados.")
+                        else:
+                            st.session_state['_results']      = _valid_s2
+                            st.session_state['_classify_map'] = _cmap_s2
+                            st.session_state['_skipped']      = _skip_s2
+                            _buy_rows_s2 = []
+                            for _tk, _ts in _valid_s2.items():
+                                _h = _ts.get('history')
+                                if _h is not None and not _h.empty:
+                                    for _, _r in _h[_h['Action'].str.lower().str.contains('buy|compra', na=False)].iterrows():
+                                        _a = abs(float(_r.get('Amount', 0)))
+                                        if _a > 0:
+                                            _buy_rows_s2.append([str(_r['Date'].date()), _a])
+                            if _buy_rows_s2:
+                                with st.spinner("Calculando comparativa VTI · YMAX · SPY..."):
+                                    try:
+                                        st.session_state['_strat_results'] = logic.simulate_triple_comparison(json.dumps(_buy_rows_s2))
+                                    except Exception:
+                                        st.session_state['_strat_results'] = None
+                            else:
+                                st.session_state['_strat_results'] = None
+                            st.session_state['_wizard_step'] = 3
+                            st.rerun()
+
+    # ── PASO 3: Resultados — botón de navegación al tope ─────────────────
+    elif _wizard_step == 3:
+        if st.button("← Nueva Consulta"):
+            for _k in ['_wizard_step', '_wizard_df_clean', '_wizard_ib_map', '_wizard_csv_ticker_data',
+                       '_wizard_broker', '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
+                st.session_state.pop(_k, None)
+            st.rerun()
+
+if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1) == 3:
+    ib_cost_basis_map = st.session_state.get('_wizard_ib_map', {})
+    _csv_ticker_data  = st.session_state.get('_wizard_csv_ticker_data', {})
+    broker = st.session_state.get('_wizard_broker', 'generic')
+    BROKER_LABELS = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}
+    BROKER_COLORS = {'schwab': '#006497', 'ibkr': '#c8102e', 'generic': '#555555'}
+    broker_label = BROKER_LABELS.get(broker, broker.upper())
+    broker_color = BROKER_COLORS.get(broker, '#555555')
+    st.markdown(f'<div style="display:inline-block;background-color:{broker_color};color:#ffffff;font-family:Inter,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;padding:4px 12px;margin-bottom:12px;">BROKER DETECTADO: {broker_label}</div>', unsafe_allow_html=True)
 
     try:
-        if uploaded_file.name.endswith('.xlsx'):
-            df = pd.read_excel(uploaded_file)
-            broker = 'generic'
-        else:
-            df, broker = logic.load_and_detect_csv(uploaded_file)
-            if df.empty:
-                st.error("No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
-                st.stop()
-
-        # Section A — Broker badge
-        BROKER_LABELS = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}
-        BROKER_COLORS = {'schwab': '#006497', 'ibkr': '#c8102e', 'generic': '#555555'}
-        broker_label = BROKER_LABELS.get(broker, broker.upper())
-        broker_color = BROKER_COLORS.get(broker, '#555555')
-        st.markdown(f'<div style="display:inline-block;background-color:{broker_color};color:#ffffff;font-family:Inter,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;padding:4px 12px;margin-bottom:12px;">BROKER DETECTADO: {broker_label}</div>', unsafe_allow_html=True)
-
-        # 1. Normalize
-        df_clean = logic.normalize_csv(df)
-
-        # Build lightweight CSV summary for richer error cards
-        _csv_ticker_data = {}
-        if 'Ticker' in df_clean.columns and 'Action' in df_clean.columns:
-            for _et, _eg in df_clean.groupby('Ticker'):
-                _et_buys = _eg[_eg['Action'].str.lower().str.contains('buy', na=False)]
-                _et_divs = _eg[_eg['Action'].str.lower().str.contains('div', na=False)]
-                _csv_ticker_data[_et] = {
-                    'shares': float(_et_buys['Quantity'].sum()) if 'Quantity' in _et_buys.columns and not _et_buys.empty else 0.0,
-                    'invested': abs(float(_et_buys['Amount'].sum())) if not _et_buys.empty else 0.0,
-                    'dividends_csv': float(_et_divs['Amount'].sum()) if not _et_divs.empty else 0.0,
-                    'first_date': str(_eg['Date'].min())[:10] if not _eg.empty else 'N/A',
-                }
-
-        with st.expander("Ver datos procesados (Primeras 5 filas)"):
-            st.dataframe(df_clean.head())
-
-        # 1.5 Validate Columns
-        required_cols = ['Date', 'Ticker', 'Amount']
-        missing_cols = [col for col in required_cols if col not in df_clean.columns]
-
-        if missing_cols:
-            st.error(f"Error de Formato: No encontramos las columnas: {', '.join(missing_cols)}")
-            st.warning(f"Columnas encontradas: {list(df_clean.columns)}")
-            st.info("Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
-            st.stop()
-
-        # 2. Analyze
-        # ── Persist results across reruns via session_state ───────────────
-        _fid = f"{uploaded_file.name}_{uploaded_file.size}"
-        if st.session_state.get('_file_id') != _fid:
-            st.session_state.update({
-                '_file_id': _fid, '_results': None,
-                '_classify_map': {}, '_skipped': {},
-                '_strat_results': None,
-            })
-
-        if st.button("Analizar Dividendos"):
-            with st.spinner("Analizando transacciones, splits y dividendos..."):
-                try:
-                    results = logic.analyze_portfolio(df_clean, version="2.0", ib_cost_basis_map=ib_cost_basis_map or None)
-                except TypeError:
-                    results = logic.analyze_portfolio(df_clean)
-
-            if not results:
-                st.error("No se pudieron extraer tickers válidos o datos del archivo.")
-            else:
-                skipped_tickers = {t: s for t, s in results.items() if s.get("skipped")}
-                valid_results   = {t: s for t, s in results.items() if not s.get("skipped")}
-                classify_map    = logic.classify_tickers(list(valid_results.keys()))
-                if not valid_results:
-                    st.warning("Todos los tickers del archivo fueron descartados. Asegúrate de subir transacciones de ETFs conocidos (VTI, VOO, TSLY, etc.).")
-                else:
-                    st.session_state['_results']      = valid_results
-                    st.session_state['_classify_map'] = classify_map
-                    st.session_state['_skipped']      = skipped_tickers
-
-                    # ── Auto-compute strategy comparison ─────────────────
-                    _all_buy_rows = []
-                    for _t_key, _t_stats in valid_results.items():
-                        _hist = _t_stats.get('history')
-                        if _hist is not None and not _hist.empty:
-                            _buys = _hist[_hist['Action'].str.lower().str.contains('buy|compra', na=False)]
-                            for _, _row in _buys.iterrows():
-                                _amt = abs(float(_row.get('Amount', 0)))
-                                if _amt > 0:
-                                    _all_buy_rows.append([str(_row['Date'].date()), _amt])
-                    if _all_buy_rows:
-                        with st.spinner("Calculando comparativa VTI · YMAX · SPY..."):
-                            try:
-                                _strat = logic.simulate_triple_comparison(json.dumps(_all_buy_rows))
-                                st.session_state['_strat_results'] = _strat
-                            except Exception:
-                                st.session_state['_strat_results'] = None
-                    else:
-                        st.session_state['_strat_results'] = None
-
-        # ── Render from session_state ─────────────────────────────────────
         results         = st.session_state.get('_results')
         classify_map    = st.session_state.get('_classify_map', {})
         skipped_tickers = st.session_state.get('_skipped', {})
