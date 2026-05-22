@@ -8,6 +8,11 @@ import json
 
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
 
+if st.query_params.get("clear"):
+    st.cache_data.clear()
+    st.query_params.clear()
+    st.rerun()
+
 # --- CUSTOM CSS: THE ARCHITECTURAL AUTHORITY — SURFACE MODE ---
 # Sistema de diseño: Invierte & Gana / tonal layering light
 # Paleta: surface #fcf9f8 → surface-low #f6f3f2 → surface-high #eae7e7
@@ -264,6 +269,9 @@ st.markdown("""
     [data-testid="stFileUploaderDropzone"] > div > div > span,
     [data-testid="stFileUploaderDropzone"] > div > div::before,
     [data-testid="stFileUploaderDropzone"] > div > div > small {
+        display: none !important;
+    }
+    [data-testid="stFileUploaderDropzone"] svg {
         display: none !important;
     }
 
@@ -627,11 +635,14 @@ _col_mode, _col_cache = st.columns([6, 1])
 with _col_mode:
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
 with _col_cache:
-    st.markdown('<div class="da-cache-btn">', unsafe_allow_html=True)
-    if st.button("limpiar caché"):
-        st.cache_data.clear()
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<a href="?clear=1" target="_self" style="'
+        'font-size:10px;color:#c0c0c0;text-decoration:none;'
+        'letter-spacing:0.05em;font-family:inherit;'
+        'display:block;text-align:right;padding-top:6px;'
+        '">limpiar caché</a>',
+        unsafe_allow_html=True
+    )
 
 
 def _render_step_indicator(current_step):
