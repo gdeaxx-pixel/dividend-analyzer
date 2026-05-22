@@ -567,6 +567,22 @@ st.markdown("""
     .da-ticker-header {
         animation: da-fadein 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
+    .da-cache-btn button {
+        font-size: 10px !important;
+        padding: 3px 8px !important;
+        height: auto !important;
+        min-height: unset !important;
+        color: #bbbbbb !important;
+        border-color: #dddddd !important;
+        background: transparent !important;
+        letter-spacing: 0.08em !important;
+        font-weight: 400 !important;
+    }
+    .da-cache-btn button:hover {
+        color: #888888 !important;
+        border-color: #bbbbbb !important;
+        background: transparent !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -610,9 +626,11 @@ _col_mode, _col_cache = st.columns([5, 1])
 with _col_mode:
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
 with _col_cache:
+    st.markdown('<div class="da-cache-btn">', unsafe_allow_html=True)
     if st.button("Limpiar Caché", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def _render_step_indicator(current_step):
