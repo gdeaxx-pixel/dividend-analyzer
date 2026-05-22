@@ -572,45 +572,18 @@ st.markdown("""
 
 
 st.markdown("""
-<div style="padding: 40px 0 0 0; background-color: #fcf9f8;">
-    <div style="display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;">
-        <h1 style="
-            font-family: 'Cinzel', serif;
-            font-size: 2.8rem;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-            color: #1a1a1a;
-            margin: 0 0 6px 0;
-            line-height: 1.1;
-        ">
-            CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
-        </h1>
-        <span style="
-            font-family: 'Inter', sans-serif;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
-            color: #ffffff;
-            background-color: #006497;
-            padding: 3px 10px;
-            vertical-align: middle;
-        ">v2.3</span>
-    </div>
-    <p style="
-        font-family: 'Inter', sans-serif;
-        font-size: 0.82rem;
-        font-weight: 400;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #888888;
-        margin: 4px 0 6px 0;
-    ">Análisis de Dividendos &nbsp;·&nbsp; ROC &nbsp;·&nbsp; TIR (Retorno Real Anualizado) &nbsp;·&nbsp; Simulación vs S&P 500</p>
-    <div style="display:flex; gap:2px; margin-bottom:32px; margin-top:10px;">
-        <div style="width:48px; height:2px; background-color:#006497;"></div>
-        <div style="width:12px; height:2px; background-color:#021C36;"></div>
-        <div style="width:6px; height:2px; background-color:#eae7e7;"></div>
-    </div>
+<div style="padding: 40px 0 28px 0; background-color: #fcf9f8;">
+    <h1 style="
+        font-family: 'Cinzel', serif;
+        font-size: 2.8rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #1a1a1a;
+        margin: 0;
+        line-height: 1.1;
+    ">
+        CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
+    </h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -715,25 +688,6 @@ if input_method == "Subir CSV/Excel":
         </div>
     </div>
 </div>
-<hr class="da-section-rule">
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2px;margin-bottom:32px;">
-    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #006497;">
-        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">YieldMax Income</div>
-        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">MSTY · CONY · TSLY · NVDY · YMAX · PLTY · SMCY · NFLY · FEPI</div>
-    </div>
-    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #021C36;">
-        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">ETFs de Crecimiento</div>
-        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">VTI · VOO · SCHB · SCHD · QQQ · SPY · XLK · SMH</div>
-    </div>
-    <div style="background:#f6f3f2;padding:14px 18px;border-top:2px solid #8a8a8a;">
-        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#8899aa;margin-bottom:4px;">Brokers Soportados</div>
-        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Interactive Brokers · Charles Schwab · Excel genérico</div>
-    </div>
-    <div style="background:#f0faf5;padding:14px 18px;border-top:2px solid #4caf82;">
-        <div style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#4caf82;margin-bottom:4px;">ROC Detectado</div>
-        <div style="font-family:'Inter',sans-serif;font-size:12px;color:#1a1a1a;">Configura tu costo de inversión en el Paso 2 para ver el ROC acumulado por ticker</div>
-    </div>
-</div>
             """, unsafe_allow_html=True)
         else:
             try:
@@ -779,9 +733,6 @@ if input_method == "Subir CSV/Excel":
                         f'</span></div>',
                         unsafe_allow_html=True
                     )
-                    with st.expander("Ver datos procesados (Primeras 5 filas)"):
-                        st.dataframe(_df_clean_w.head())
-
                     st.session_state['_wizard_df_clean'] = _df_clean_w
                     st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
                     st.session_state['_wizard_broker'] = _broker_w
