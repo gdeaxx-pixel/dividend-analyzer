@@ -766,10 +766,7 @@ if input_method == "Subir CSV/Excel":
                 'Ingresa el costo de tu inversión tal como aparece en tu broker para cada ticker YieldMax. '
                 'Si no tienes este dato o no aplica, deja el valor en 0.'
                 '</p>'
-                '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;line-height:1.7;margin:0 0 20px 0;">'
-                'Interactive Brokers: Portafolio → Posiciones → columna "Base de coste" &nbsp;·&nbsp; '
-                'Charles Schwab: Cuentas → Posiciones → columna "Cost Basis"'
-                '</p>',
+                '',
                 unsafe_allow_html=True
             )
 
