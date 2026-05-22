@@ -567,21 +567,29 @@ st.markdown("""
     .da-ticker-header {
         animation: da-fadein 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
+    .da-cache-btn > div > button,
+    .da-cache-btn button[kind="secondary"],
     .da-cache-btn button {
-        font-size: 10px !important;
-        padding: 3px 8px !important;
-        height: auto !important;
-        min-height: unset !important;
-        color: #bbbbbb !important;
-        border-color: #dddddd !important;
+        font-size: 9px !important;
+        padding: 2px 6px !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        line-height: 1 !important;
+        color: #cccccc !important;
+        border: 1px solid #e0e0e0 !important;
         background: transparent !important;
-        letter-spacing: 0.08em !important;
+        letter-spacing: 0.06em !important;
         font-weight: 400 !important;
+        box-shadow: none !important;
+        width: auto !important;
     }
+    .da-cache-btn > div > button:hover,
     .da-cache-btn button:hover {
-        color: #888888 !important;
-        border-color: #bbbbbb !important;
+        color: #999999 !important;
+        border-color: #cccccc !important;
         background: transparent !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -622,12 +630,12 @@ for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_tick
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
-_col_mode, _col_cache = st.columns([5, 1])
+_col_mode, _col_cache = st.columns([6, 1])
 with _col_mode:
     input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
 with _col_cache:
     st.markdown('<div class="da-cache-btn">', unsafe_allow_html=True)
-    if st.button("Limpiar Caché", use_container_width=True):
+    if st.button("limpiar caché"):
         st.cache_data.clear()
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
