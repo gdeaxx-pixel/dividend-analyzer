@@ -656,40 +656,7 @@ if input_method == "Subir CSV/Excel":
             type=['csv', 'xlsx'],
             help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
         )
-        if uploaded_file_w is None:
-            st.markdown("""
-<div class="da-step-grid">
-    <div class="da-step-card">
-        <div class="da-step-tag">Paso 1</div>
-        <div class="da-step-num">01</div>
-        <div class="da-step-title">Exporta tu historial</div>
-        <div class="da-step-desc">
-            Descarga el CSV de transacciones desde Interactive Brokers
-            (<b>Informes → Extractos → Transaction History</b>) o Charles Schwab
-            (<b>Historial → Transacciones → Exportar</b>).
-        </div>
-    </div>
-    <div class="da-step-card">
-        <div class="da-step-tag">Paso 2</div>
-        <div class="da-step-num">02</div>
-        <div class="da-step-title">Configura costos</div>
-        <div class="da-step-desc">
-            Ingresa el costo de tu inversión por ticker para calcular
-            el <b>ROC acumulado</b>. Si no tienes este dato, puedes omitirlo.
-        </div>
-    </div>
-    <div class="da-step-card">
-        <div class="da-step-tag">Paso 3</div>
-        <div class="da-step-num">03</div>
-        <div class="da-step-title">Ve tus resultados</div>
-        <div class="da-step-desc">
-            Obtén ROI real, TIR, ROC acumulado, comparativa vs S&amp;P 500
-            y métricas de riesgo ajustado por ticker.
-        </div>
-    </div>
-</div>
-            """, unsafe_allow_html=True)
-        else:
+        if uploaded_file_w is not None:
             try:
                 if uploaded_file_w.name.endswith('.xlsx'):
                     _df_w = pd.read_excel(uploaded_file_w)
@@ -873,7 +840,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
         strat_results_cached = st.session_state.get('_strat_results')
 
         if skipped_tickers:
-            with st.expander(f"⏩ {len(skipped_tickers)} ticker(s) excluidos del análisis"):
+            with st.expander(f"{len(skipped_tickers)} ticker(s) excluidos del análisis"):
                 for t, s in skipped_tickers.items():
                     reason = s.get('reason', '')
                     if reason == 'not_known_etf':
@@ -1135,30 +1102,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 shown_a = False
                 _a_valid = [(t, s) for t, s in results.items()
                             if classify_map.get(t) == 'mode_a' and 'error' not in s]
-
-                # ── NAV PILLS ─────────────────────────────────────────────
-                if _a_valid:
-                    _pill_html = []
-                    for _pt, _ps in _a_valid:
-                        _pr = _ps.get('roi_percent', 0)
-                        _pc = '#4caf82' if _pr >= 0 else '#e05c5c'
-                        _yoc = _ps.get('yield_on_cost') or 0
-                        _pill_html.append(
-                            f'<div style="background:#021C36;padding:8px 14px;display:inline-flex;'
-                            f'flex-direction:column;gap:1px;align-items:center;min-width:64px;">'
-                            f'<span style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
-                            f'color:#ffffff;letter-spacing:0.05em;">{_pt}</span>'
-                            f'<span style="font-family:Inter,sans-serif;font-size:10px;font-weight:600;'
-                            f'color:{_pc};">{_pr:+.1f}%</span>'
-                            f'<span style="font-family:Inter,sans-serif;font-size:9px;color:#556677;'
-                            f'letter-spacing:0.08em;">YoC {_yoc:.1f}%</span>'
-                            f'</div>'
-                        )
-                    st.markdown(
-                        '<div style="display:flex;gap:2px;flex-wrap:wrap;margin:4px 0 16px 0;">'
-                        + ''.join(_pill_html) + '</div>',
-                        unsafe_allow_html=True
-                    )
 
                 # ── DIVIDEND CALENDAR ─────────────────────────────────────
                 if _a_valid:
