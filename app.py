@@ -654,6 +654,7 @@ if input_method == "Subir CSV/Excel":
         uploaded_file_w = st.file_uploader(
             "Sube tu archivo de transacciones (CSV o Excel)",
             type=['csv', 'xlsx'],
+            label_visibility="collapsed",
             help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
         )
         if uploaded_file_w is not None:
@@ -831,8 +832,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     BROKER_COLORS = {'schwab': '#006497', 'ibkr': '#c8102e', 'generic': '#555555'}
     broker_label = BROKER_LABELS.get(broker, broker.upper())
     broker_color = BROKER_COLORS.get(broker, '#555555')
-    st.markdown(f'<div style="display:inline-block;background-color:{broker_color};color:#ffffff;font-family:Inter,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;padding:4px 12px;margin-bottom:12px;">BROKER DETECTADO: {broker_label}</div>', unsafe_allow_html=True)
-
     try:
         results         = st.session_state.get('_results')
         classify_map    = st.session_state.get('_classify_map', {})
@@ -923,22 +922,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             except Exception:
                 pass
 
-            # Section B — Classification pills header
             mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
             mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
-
-            st.markdown("### CLASIFICACIÓN DE PORTAFOLIO")
-            b_col1, b_col2 = st.columns(2)
-            with b_col1:
-                st.markdown("**Dividendos Income — YieldMax**")
-                pills_a = " ".join([f'<span style="display:inline-block;background-color:#c8102e;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_a_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
-                st.markdown(pills_a, unsafe_allow_html=True)
-            with b_col2:
-                st.markdown("**ETFs de Crecimiento**")
-                pills_b = " ".join([f'<span style="display:inline-block;background-color:#006497;color:#fff;font-family:Inter,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;padding:2px 8px;margin:2px;border-radius:0px;">{t}</span>' for t in mode_b_tickers]) or '<span style="color:#888;font-size:12px;">Ninguno</span>'
-                st.markdown(pills_b, unsafe_allow_html=True)
-
-            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
             # ── Comparativa de estrategias (auto-calculada) ───────────
             if strat_results_cached:
