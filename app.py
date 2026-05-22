@@ -1929,11 +1929,11 @@ elif input_method == "Simulación Teórica":
             st.altair_chart(_sim_chart, use_container_width=True)
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
-FOOTER_STYLE = "background-color:#021C36;padding:32px 40px;margin-top:48px;"
-BADGE_STYLE  = "display:inline-block;font-family:'Inter',sans-serif;font-size:10px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#006497;border:1px solid #006497;padding:3px 8px;margin-bottom:14px;"
-TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:13px;font-weight:700;letter-spacing:-0.01em;color:#ffffff;margin:0 0 12px 0;max-width:720px;line-height:1.5;"
-BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.65);line-height:1.7;margin:0 0 8px 0;max-width:720px;"
-BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.40);line-height:1.7;margin:0;max-width:720px;"
+FOOTER_STYLE = "background-color:#f0eeec;border-top:1px solid #e0ddd9;padding:24px 40px;margin-top:48px;"
+BADGE_STYLE  = "display:inline-block;font-family:'Inter',sans-serif;font-size:9px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#aaaaaa;border:1px solid #cccccc;padding:2px 6px;margin-bottom:10px;"
+TITLE_STYLE  = "font-family:'Inter',sans-serif;font-size:12px;font-weight:600;letter-spacing:-0.01em;color:#555555;margin:0 0 8px 0;max-width:720px;line-height:1.5;"
+BODY1_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#888888;line-height:1.7;margin:0 0 4px 0;max-width:720px;"
+BODY2_STYLE  = "font-family:'Inter',sans-serif;font-size:11px;color:#aaaaaa;line-height:1.7;margin:0;max-width:720px;"
 
 st.markdown(
     f'<div style="{FOOTER_STYLE}">'
