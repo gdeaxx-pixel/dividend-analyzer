@@ -110,11 +110,17 @@ st.markdown("""
         letter-spacing: 0.05em !important;
         text-transform: uppercase !important;
         padding: 0.6rem 1.5rem !important;
-        transition: background-color 0.2s ease !important;
+        transition: background-color 0.2s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        will-change: transform;
     }
     div.stButton > button:hover {
         background-color: var(--electric-hover) !important;
         box-shadow: none !important;
+        transform: translateY(-1px) !important;
+    }
+    div.stButton > button:active {
+        transform: scale(0.98) translateY(0px) !important;
+        transition-duration: 0.05s !important;
     }
 
     /* 6b. DOWNLOAD BUTTON */
@@ -129,10 +135,17 @@ st.markdown("""
         letter-spacing: 0.05em !important;
         text-transform: uppercase !important;
         padding: 0.6rem 1.5rem !important;
+        transition: background-color 0.2s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        will-change: transform;
     }
     div[data-testid="stDownloadButton"] > button:hover {
         background-color: #010f1e !important;
         box-shadow: none !important;
+        transform: translateY(-1px) !important;
+    }
+    div[data-testid="stDownloadButton"] > button:active {
+        transform: scale(0.98) translateY(0px) !important;
+        transition-duration: 0.05s !important;
     }
 
     /* 7. MÉTRICAS — surface-high cards */
@@ -197,46 +210,61 @@ st.markdown("""
         outline: none !important;
     }
 
-    /* 11. FILE UPLOADER */
+    /* 11. FILE UPLOADER — Drop Zone grande */
     [data-testid="stFileUploaderDropzone"] {
-        min-height: 0px !important;
-        padding: 0px !important;
-        border: none !important;
-        background-color: transparent !important;
+        min-height: 148px !important;
+        padding: 0 !important;
+        border: 2px dashed var(--electric-blue) !important;
+        background-color: var(--electric-light) !important;
+        position: relative !important;
+        transition: background-color 0.2s ease, border-color 0.2s ease !important;
+        cursor: pointer;
+    }
+    [data-testid="stFileUploaderDropzone"]:hover {
+        background-color: rgba(0, 100, 151, 0.12) !important;
+        border-color: var(--electric-hover) !important;
     }
     [data-testid="stFileUploaderDropzone"] div {
-        padding: 0px !important;
-        margin: 0px !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button {
-        visibility: hidden;
-        position: relative;
-        height: auto !important;
         padding: 0 !important;
         margin: 0 !important;
     }
+    [data-testid="stFileUploaderDropzone"] button {
+        visibility: hidden !important;
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        cursor: pointer !important;
+        background: transparent !important;
+        border: none !important;
+    }
     [data-testid="stFileUploaderDropzone"] button::after {
-        content: "SUBIR ARCHIVO";
-        visibility: visible;
-        position: relative;
-        display: inline-block;
-        background-color: var(--electric-light);
-        border: 1px dashed var(--electric-blue);
-        color: var(--electric-blue);
-        border-radius: 0px;
-        font-weight: 600;
-        font-size: 0.75rem;
-        padding: 0.4rem 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        cursor: pointer;
-        width: 100%;
-        text-align: center;
+        content: "Arrastra tu archivo aquí\A o haz clic para seleccionar\A\A CSV  ·  XLSX";
+        white-space: pre-line;
+        visibility: visible !important;
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        color: var(--electric-blue) !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.03em !important;
+        text-transform: none !important;
+        text-align: center !important;
+        line-height: 1.9 !important;
+        width: auto !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
     }
     [data-testid="stFileUploaderDropzone"] > div > div > span,
     [data-testid="stFileUploaderDropzone"] > div > div::before,
     [data-testid="stFileUploaderDropzone"] > div > div > small {
-        display: none;
+        display: none !important;
     }
 
     /* 12. ALERTS */
@@ -515,6 +543,29 @@ st.markdown("""
     }
     @media (max-width: 480px) {
         .da-kpi-bar { grid-template-columns: 1fr; }
+    }
+
+    /* 25. ANIMACIONES DE ENTRADA — staggered fade-up */
+    @keyframes da-fadein {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .da-step-card {
+        animation: da-fadein 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .da-step-card:nth-child(1) { animation-delay: 0s; }
+    .da-step-card:nth-child(2) { animation-delay: 0.08s; }
+    .da-step-card:nth-child(3) { animation-delay: 0.16s; }
+    .da-kpi-cell {
+        animation: da-fadein 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .da-kpi-cell:nth-child(1) { animation-delay: 0s; }
+    .da-kpi-cell:nth-child(2) { animation-delay: 0.06s; }
+    .da-kpi-cell:nth-child(3) { animation-delay: 0.12s; }
+    .da-kpi-cell:nth-child(4) { animation-delay: 0.18s; }
+    .da-kpi-cell:nth-child(5) { animation-delay: 0.24s; }
+    .da-ticker-header {
+        animation: da-fadein 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
 </style>
 """, unsafe_allow_html=True)
