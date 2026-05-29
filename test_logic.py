@@ -356,3 +356,77 @@ def test_roc_none_when_no_basis_provided(monkeypatch):
     assert s.get("ib_cost_basis") is None
     assert s.get("roc_accumulated") is None
     assert s.get("roc_percent") is None
+
+
+# ── Regresión: parsing numérico US vs Europeo (BUG clean_val) ───────────────
+
+def _norm_amounts(values):
+    df = pd.DataFrame({
+        "Date": ["2025-01-01"] * len(values),
+        "Action": ["Buy"] * len(values),
+        "Ticker": ["X"] * len(values),
+        "Quantity": ["1"] * len(values),
+        "Price": ["1"] * len(values),
+        "Amount": values,
+    })
+    return logic.normalize_csv(df.copy())["Amount"].tolist()
+
+
+def test_clean_val_us_thousands_separator():
+    """Formato US con coma de miles no debe dividirse por ~1000."""
+    assert _norm_amounts(["12,500.00"]) == [12500.0]
+    assert _norm_amounts(["1,234.56"]) == [1234.56]
+    assert _norm_amounts(["1,000,000.00"]) == [1000000.0]
+
+
+def test_clean_val_european_format_preserved():
+    """El formato europeo (coma decimal, como el export de IB) sigue funcionando."""
+    assert _norm_amounts(["12.500,00"]) == [12500.0]
+    assert _norm_amounts(["0,155"]) == [0.155]
+    assert _norm_amounts(["579,314"]) == [579.314]
+
+
+def test_clean_val_plain_formats():
+    assert _norm_amounts(["25.50"]) == [25.5]
+    assert _norm_amounts(["300"]) == [300.0]
+
+
+# ── Regresión: is_held_too_briefly con ventas negativas (IB) ────────────────
+
+def test_held_too_briefly_ib_negative_sell():
+    """IB exporta ventas con Quantity negativa; una posición cerrada en <14d
+    debe detectarse como too_brief (antes net_shares se inflaba y nunca disparaba)."""
+    ib = pd.DataFrame({
+        "Date": pd.to_datetime(["2025-01-01", "2025-01-03"]),
+        "Action": ["Buy", "Sell"],
+        "Ticker": ["XYZ", "XYZ"],
+        "Quantity": [100, -100],
+    })
+    brief, days = logic.is_held_too_briefly(ib)
+    assert brief is True
+    assert days == 2
+
+
+def test_held_too_briefly_schwab_positive_sell_still_works():
+    """Schwab (venta positiva) sigue funcionando igual."""
+    sw = pd.DataFrame({
+        "Date": pd.to_datetime(["2025-01-01", "2025-01-03"]),
+        "Action": ["Buy", "Sell"],
+        "Ticker": ["XYZ", "XYZ"],
+        "Quantity": [100, 100],
+    })
+    brief, days = logic.is_held_too_briefly(sw)
+    assert brief is True
+    assert days == 2
+
+
+def test_held_open_position_not_flagged():
+    """Posición aún abierta (venta parcial) no debe marcarse como too_brief."""
+    ib = pd.DataFrame({
+        "Date": pd.to_datetime(["2025-01-01", "2025-01-03"]),
+        "Action": ["Buy", "Sell"],
+        "Ticker": ["XYZ", "XYZ"],
+        "Quantity": [100, -40],
+    })
+    brief, days = logic.is_held_too_briefly(ib)
+    assert brief is False

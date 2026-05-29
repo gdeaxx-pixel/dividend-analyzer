@@ -333,6 +333,25 @@ st.markdown("""
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"]    { display: none !important; }
 
+    /* 15b. EXPANDER — acordeones de portafolio (detalle navegable) */
+    [data-testid="stExpander"] {
+        border: 1px solid #d8dde3 !important;
+        border-radius: 0 !important;
+        margin-bottom: 6px !important;
+    }
+    [data-testid="stExpander"] summary {
+        font-family: 'Inter', sans-serif !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.07em !important;
+        color: #021C36 !important;
+        padding: 10px 14px !important;
+    }
+    [data-testid="stExpander"] summary:hover {
+        color: #006497 !important;
+        background-color: #f6f3f2 !important;
+    }
+
     /* 16. TABLE ROW HOVER — feedback visual en tablas HTML */
     .da-table tr:hover td {
         background-color: rgba(0, 100, 151, 0.04) !important;
@@ -877,6 +896,26 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:2px 0;">— <b>{t}</b> · <span style="color:#888888;">{reason_label}</span></p>', unsafe_allow_html=True)
 
         if results:
+            # ── Section header helper (jerarquía visual consistente) ──
+            # Numera dinámicamente solo las secciones que sí se renderizan,
+            # así la secuencia (01, 02, 03…) nunca se rompe aunque falte una.
+            _section_no = [0]
+            def _da_section(title, subtitle=""):
+                _section_no[0] += 1
+                _sub = (f'<p style="font-family:Inter,sans-serif;font-size:12px;'
+                        f'color:#8899aa;margin:3px 0 0 0;line-height:1.45;">{subtitle}</p>') if subtitle else ''
+                st.markdown(
+                    f'<div style="display:flex;align-items:baseline;gap:14px;margin:36px 0 16px 0;'
+                    f'padding-bottom:10px;border-bottom:2px solid #021C36;">'
+                    f'<span style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;'
+                    f'color:#006497;letter-spacing:0.04em;font-variant-numeric:tabular-nums;">'
+                    f'{_section_no[0]:02d}</span>'
+                    f'<div style="flex:1;"><p style="font-family:Inter,sans-serif;font-size:17px;'
+                    f'font-weight:800;color:#021C36;letter-spacing:-0.01em;margin:0;">{title}</p>{_sub}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
             # ── Portfolio Global Summary ──────────────────────────────
             total_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
             total_market   = sum(s.get('market_value', 0)      for s in results.values() if 'error' not in s)
@@ -906,8 +945,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 f'<p class="da-kpi-delta" style="color:#aaaaaa;">Ingresa base IB</p>'
                 f'</div>'
             )
+            _da_section("Resumen global del portafolio",
+                        f"{len(results)} posiciones analizadas · datos de {broker_label}")
             st.markdown(f"""
-<p style="font-family:'Inter',sans-serif;font-size:9px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#8899aa;margin:20px 0 0 0;">Resumen global del portafolio</p>
 <div class="da-kpi-bar">
     <div class="da-kpi-cell da-kpi-accent">
         <p class="da-kpi-label">Total Invertido</p>
@@ -953,37 +993,132 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
             # ── Comparativa de estrategias (auto-calculada) ───────────
             if strat_results_cached:
-                st.markdown("### COMPARATIVA DE ESTRATEGIAS")
-                st.markdown('<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 12px 0;">Si hubieras invertido el mismo capital en VTI, YMAX o SPY con el mismo timing.</p>', unsafe_allow_html=True)
+                _da_section("Comparativa de estrategias",
+                            "Si hubieras invertido el mismo capital en SCHB, XLK, YMAX o SMH con el mismo timing")
                 _sr_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
                 _sr_value    = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
                 _sr_ret_pct  = (_sr_value - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
-                _all_strats  = {
-                    'real': {'label': 'Tu Portafolio Real', 'total_invested': _sr_invested, 'final_value': _sr_value, 'return_pct': _sr_ret_pct},
-                    **strat_results_cached
-                }
+                import altair as alt
+                import yfinance as yf
+
+                # ── Serie temporal: Portafolio Real vs Estrategias ────────
+                _ts_key = f"_strat_ts_v4_{st.session_state.get('_file_id', 'x')}"
+                if _ts_key not in st.session_state:
+                    _buy_flows_ts = []
+                    for _t, _s in results.items():
+                        if 'error' not in _s and 'history' in _s:
+                            _h = _s['history']
+                            _buys = _h[_h['Action'].str.lower().str.contains('buy', na=False)]
+                            for _, _row in _buys.iterrows():
+                                try:
+                                    _buy_flows_ts.append((pd.to_datetime(_row['Date']), float(_row['Amount'])))
+                                except Exception:
+                                    pass
+                    _buy_flows_ts.sort(key=lambda x: x[0])
+
+                    _frames_ts = []
+                    _etf_final_vals = {}
+
+                    _real_ts = None
+                    for _t, _s in results.items():
+                        if 'error' not in _s and 'daily_trend' in _s:
+                            _col = _s['daily_trend']['User Total Value']
+                            _real_ts = _col.copy() if _real_ts is None else _real_ts.add(_col, fill_value=0)
+                    if _real_ts is not None:
+                        _r_df = _real_ts.reset_index()
+                        _r_df.columns = ['Fecha', 'Valor']
+                        _r_df['Estrategia'] = 'Tu Portafolio Real'
+                        _frames_ts.append(_r_df)
+
+                    if _buy_flows_ts:
+                        _ts_start = _buy_flows_ts[0][0] - pd.Timedelta(days=10)
+                        _ts_end   = pd.Timestamp.today()
+                        _etf_map  = {'SCHB': 'Todo en SCHB', 'XLK': 'Todo en XLK', 'YMAX': 'Todo en YMAX', 'SMH': 'Todo en SMH'}
+                        for _etf_tk, _etf_lbl in _etf_map.items():
+                            try:
+                                _raw = yf.download(_etf_tk, start=_ts_start, end=_ts_end,
+                                                   auto_adjust=True, progress=False)
+                                _prices_ts = _raw['Close'].squeeze().dropna()
+                                if _prices_ts.empty:
+                                    continue
+                                # Normalize index to tz-naive dates
+                                if getattr(_prices_ts.index, 'tz', None) is not None:
+                                    _prices_ts.index = _prices_ts.index.tz_localize(None)
+                                _prices_ts.index = _prices_ts.index.normalize()
+                                _port_val = pd.Series(0.0, index=_prices_ts.index)
+                                for _bd, _amt in _buy_flows_ts:
+                                    if float(_amt) <= 0:
+                                        continue
+                                    _bd_norm = pd.Timestamp(_bd).normalize()
+                                    # Find first available price on or after buy date
+                                    _future = _prices_ts[_prices_ts.index >= _bd_norm]
+                                    if _future.empty:
+                                        continue
+                                    _buy_p = float(_future.iloc[0])
+                                    if _buy_p <= 0:
+                                        continue
+                                    _shares = float(_amt) / _buy_p
+                                    # Accumulate shares × price for all dates from buy date onward
+                                    _mask = _prices_ts.index >= _bd_norm
+                                    _port_val[_mask] += _shares * _prices_ts[_mask]
+                                _vals = _port_val[_port_val > 0]
+                                if not _vals.empty:
+                                    _etf_final_vals[_etf_lbl] = float(_vals.iloc[-1])
+                                _e_df = _vals.reset_index()
+                                _e_df.columns = ['Fecha', 'Valor']
+                                _e_df['Estrategia'] = _etf_lbl
+                                _frames_ts.append(_e_df)
+                            except Exception:
+                                pass
+
+                    st.session_state[_ts_key] = {
+                        'df': pd.concat(_frames_ts, ignore_index=True) if _frames_ts else pd.DataFrame(),
+                        'etf_final': _etf_final_vals,
+                    }
+
+                _ts_cache    = st.session_state[_ts_key]
+                _line_data   = _ts_cache['df']
+                _etf_finals  = _ts_cache.get('etf_final', {})
+
+                # Tabla derivada de valores finales de la serie temporal
+                _all_strats = {'real': {'label': 'Tu Portafolio Real', 'total_invested': _sr_invested, 'final_value': _sr_value, 'return_pct': _sr_ret_pct}}
+                for _etf_lbl in ['Todo en SCHB', 'Todo en XLK', 'Todo en YMAX', 'Todo en SMH']:
+                    _fv = _etf_finals.get(_etf_lbl, _sr_invested)
+                    _rp = (_fv - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
+                    _all_strats[_etf_lbl] = {'label': _etf_lbl, 'total_invested': _sr_invested, 'final_value': _fv, 'return_pct': _rp}
                 _sorted_strats = sorted(_all_strats.items(), key=lambda x: -x[1]['return_pct'])
                 _strat_df = pd.DataFrame([
                     {'Estrategia': v['label'], 'Invertido': f"${v['total_invested']:,.0f}", 'Valor Final': f"${v['final_value']:,.0f}", 'Retorno': f"{v['return_pct']:+.2f}%"}
                     for _, v in _sorted_strats
                 ])
                 st.dataframe(_strat_df, hide_index=True, use_container_width=True)
-                import altair as alt
-                _bar_df = pd.DataFrame([{'Estrategia': v['label'], 'Retorno': v['return_pct']} for _, v in _sorted_strats])
-                _bar_chart = alt.Chart(_bar_df).mark_bar().encode(
-                    x=alt.X('Retorno:Q', title='Retorno Total (%)', axis=alt.Axis(format='+.1f')),
-                    y=alt.Y('Estrategia:N', sort='-x', title=None),
-                    color=alt.condition(alt.datum.Retorno > 0, alt.value('#006497'), alt.value('#c8102e')),
-                    tooltip=[alt.Tooltip('Estrategia:N', title='Estrategia'), alt.Tooltip('Retorno:Q', format='+.2f', title='Retorno %')]
-                ).properties(height=180, background=CHART_PALETTE["bg"]).configure_view(
-                    strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                ).configure_axis(
-                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
-                )
-                st.altair_chart(_bar_chart, use_container_width=True)
+
+                if not _line_data.empty:
+                    _line_data['Fecha'] = pd.to_datetime(_line_data['Fecha'])
+                    _color_domain = ['Tu Portafolio Real', 'Todo en SCHB', 'Todo en XLK', 'Todo en YMAX', 'Todo en SMH']
+                    _color_range  = ['#021C36', '#006497', '#2e7d5d', '#c8102e', '#e67e22']
+                    _line_chart = alt.Chart(_line_data).mark_line(strokeWidth=2).encode(
+                        x=alt.X('Fecha:T', title=None, axis=alt.Axis(format='%b %Y', labelAngle=-30)),
+                        y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                        color=alt.Color('Estrategia:N',
+                            scale=alt.Scale(domain=_color_domain, range=_color_range),
+                            legend=alt.Legend(orient='bottom', columns=3, labelFontSize=11,
+                                              titleFontSize=0, symbolSize=100)
+                        ),
+                        tooltip=[
+                            alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
+                            alt.Tooltip('Estrategia:N', title='Estrategia'),
+                            alt.Tooltip('Valor:Q', title='Valor', format='$,.0f'),
+                        ]
+                    ).properties(height=480, background=CHART_PALETTE['bg']).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE['bg']
+                    ).configure_axis(
+                        grid=True, gridColor=CHART_PALETTE['grid'], domainColor=CHART_PALETTE['axis'],
+                        tickColor=CHART_PALETTE['axis'], labelColor=CHART_PALETTE['axis'],
+                        titleColor=CHART_PALETTE['title'], labelFont='Inter, system-ui, sans-serif',
+                        titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                    )
+                    st.altair_chart(_line_chart, use_container_width=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Comparativa directa A vs B (solo cuando hay ambos) ────
@@ -1005,41 +1140,169 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _cmp_winner_color = "#c8102e" if _cmp_a_pct >= _cmp_b_pct else "#006497"
                 _cmp_a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
                 _cmp_b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
-                st.markdown("### INCOME VS CRECIMIENTO")
+                # ── Consolidado: Dividendos vs Crecimiento ──────────────
+                import pandas as pd
+
+                _comb_inv  = _cmp_a_inv + _cmp_b_inv
+                _comb_val  = _cmp_a_mv  + _cmp_b_mv
+                _comb_div  = _cmp_a_div + _cmp_b_div
+                _comb_gain = _cmp_a_tr  + _cmp_b_tr
+                _comb_pct  = _comb_gain / _comb_inv * 100 if _comb_inv > 0 else 0
+                _comb_color = "#4caf82" if _comb_pct >= 0 else "#e05c5c"
+
+                _a_share = _cmp_a_inv / _comb_inv * 100 if _comb_inv > 0 else 0
+                _b_share = _cmp_b_inv / _comb_inv * 100 if _comb_inv > 0 else 0
+
+                _a_tickers_detail = [
+                    (t, s['pocket_investment'] / _cmp_a_inv * 100)
+                    for t, s in sorted(_cmp_a_rows, key=lambda x: x[1]['pocket_investment'], reverse=True)
+                ] if _cmp_a_inv > 0 else []
+                _b_tickers_detail = [
+                    (t, s['pocket_investment'] / _cmp_b_inv * 100)
+                    for t, s in sorted(_cmp_b_rows, key=lambda x: x[1]['pocket_investment'], reverse=True)
+                ] if _cmp_b_inv > 0 else []
+
+                def _ticker_rows(tickers_detail):
+                    return ''.join(
+                        f'<div style="display:flex;justify-content:space-between;padding:3px 0;'
+                        f'border-bottom:1px solid rgba(0,0,0,0.06);">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#021C36;">{t}</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;">{pct:.1f}%</span>'
+                        f'</div>'
+                        for t, pct in tickers_detail
+                    )
+
+                _da_section("Distribución del portafolio",
+                            "Cómo se reparte tu capital entre Dividendos y Crecimiento, y el rendimiento de cada bloque")
+
                 st.markdown(
-                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:0 0 12px 0;">'
-                    f'<div style="background:#f6f3f2;padding:16px 20px;border-left:4px solid #c8102e;">'
-                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#c8102e;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Dividendos Income · {len(_cmp_a_rows)} tickers</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;color:{_cmp_a_ret_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_cmp_a_pct:+.2f}%</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 6px 0;">retorno total (capital + dividendos)</p>'
-                    f'<div style="display:flex;gap:16px;">'
-                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#4caf82;margin:0;">${_cmp_a_div:,.0f}</p></div>'
-                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#ffffff;margin:0;background:#021C36;padding:1px 6px;">${_cmp_a_inv:,.0f}</p></div>'
-                    f'</div></div>'
-                    f'<div style="background:#f6f3f2;padding:16px 20px;border-left:4px solid #006497;">'
-                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">ETFs de Crecimiento · {len(_cmp_b_rows)} tickers</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;color:{_cmp_b_ret_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_cmp_b_pct:+.2f}%</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 6px 0;">retorno total (capital + dividendos)</p>'
-                    f'<div style="display:flex;gap:16px;">'
-                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#4caf82;margin:0;">${_cmp_b_div:,.0f}</p></div>'
-                    f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#ffffff;margin:0;background:#021C36;padding:1px 6px;">${_cmp_b_inv:,.0f}</p></div>'
-                    f'</div></div>'
-                    f'</div>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0 0 16px 0;">'
-                    f'<b style="color:{_cmp_winner_color};">{_cmp_winner_label}</b> lleva ventaja por '
-                    f'<b>{_cmp_diff:.2f} puntos porcentuales</b> en retorno total.</p>',
+                    f'<div style="background:#021C36;padding:14px 24px;margin-bottom:12px;">'
+                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;font-weight:700;'
+                    f'letter-spacing:0.14em;text-transform:uppercase;margin:0 0 4px 0;">Rendimiento Combinado Total</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:32px;font-weight:800;'
+                    f'color:{_comb_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_comb_pct:+.2f}%</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;margin:0;">'
+                    f'Capital: <b style="color:#ffffff;">${_comb_inv:,.0f}</b>'
+                    f'&nbsp;&nbsp;·&nbsp;&nbsp;Valor actual: <b style="color:#ffffff;">${_comb_val:,.0f}</b>'
+                    f'&nbsp;&nbsp;·&nbsp;&nbsp;Dividendos cobrados: <b style="color:#4caf82;">${_comb_div:,.0f}</b></p>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
 
-            # ── TABS: Dividendos Income / ETFs de Crecimiento ──────────
-            tab_a, tab_b = st.tabs([
-                f"Dividendos Income ({len(mode_a_tickers)})",
-                f"ETFs de Crecimiento ({len(mode_b_tickers)})",
-            ])
+                _col_a, _col_pie, _col_b = st.columns([3, 2, 3])
+
+                with _col_a:
+                    _a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div style="background:#f6f3f2;padding:18px 20px;border-top:3px solid #006497;">'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;'
+                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                        f'Dividendos · {len(_cmp_a_rows)} tickers</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;'
+                        f'color:{_a_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{_cmp_a_pct:+.2f}%</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 12px 0;">'
+                        f'retorno total (capital + dividendos)</p>'
+                        f'<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Invertido</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_a_inv:,.0f}</span></div>'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Valor actual</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_a_mv:,.0f}</span></div>'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Dividendos</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#4caf82;">${_cmp_a_div:,.0f}</span></div>'
+                        f'</div>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
+                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
+                        f'{_ticker_rows(_a_tickers_detail)}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                with _col_pie:
+                    _pie_df = pd.DataFrame({
+                        'Portafolio': ['Dividendos', 'Crecimiento'],
+                        'Capital':    [_cmp_a_inv, _cmp_b_inv],
+                        'Pct':        [round(_a_share, 1), round(_b_share, 1)],
+                    })
+                    _pie_chart = alt.Chart(_pie_df).mark_arc(
+                        innerRadius=40, outerRadius=78
+                    ).encode(
+                        theta=alt.Theta('Capital:Q'),
+                        color=alt.Color('Portafolio:N',
+                            scale=alt.Scale(
+                                domain=['Dividendos', 'Crecimiento'],
+                                range=['#006497', '#2d3748']
+                            ),
+                            legend=None
+                        ),
+                        tooltip=[
+                            alt.Tooltip('Portafolio:N', title='Portafolio'),
+                            alt.Tooltip('Capital:Q', format='$,.0f', title='Capital'),
+                            alt.Tooltip('Pct:Q', format='.1f', title='%'),
+                        ]
+                    ).properties(
+                        width=160, height=160,
+                        background=CHART_PALETTE['bg']
+                    ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                    st.altair_chart(_pie_chart, use_container_width=False)
+                    st.markdown(
+                        f'<div style="margin-top:8px;">'
+                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
+                        f'<div style="width:10px;height:10px;background:#006497;flex-shrink:0;"></div>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
+                        f'Dividendos <b>{_a_share:.0f}%</b></span></div>'
+                        f'<div style="display:flex;align-items:center;gap:6px;">'
+                        f'<div style="width:10px;height:10px;background:#2d3748;flex-shrink:0;"></div>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
+                        f'Crecimiento <b>{_b_share:.0f}%</b></span></div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                with _col_b:
+                    _b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div style="background:#f6f3f2;padding:18px 20px;border-top:3px solid #2d3748;">'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#2d3748;font-weight:700;'
+                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                        f'Crecimiento · {len(_cmp_b_rows)} tickers</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;'
+                        f'color:{_b_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{_cmp_b_pct:+.2f}%</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 12px 0;">'
+                        f'retorno total (capital + plusvalía)</p>'
+                        f'<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Invertido</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_b_inv:,.0f}</span></div>'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Valor actual</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_b_mv:,.0f}</span></div>'
+                        f'<div style="display:flex;justify-content:space-between;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Dividendos</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#4caf82;">${_cmp_b_div:,.0f}</span></div>'
+                        f'</div>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
+                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
+                        f'{_ticker_rows(_b_tickers_detail)}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+
+            # ── ACORDEÓN: Detalle por portafolio ───────────────────────
+            _da_section("Detalle por portafolio",
+                        "Abre cada portafolio para ver sus posiciones, métricas de riesgo y calendario de dividendos")
+            tab_a = st.expander(
+                f"PORTAFOLIO DE DIVIDENDOS   ·   income mensual   ·   {len(mode_a_tickers)} fondos",
+                expanded=True,
+            )
+            tab_b = st.expander(
+                f"PORTAFOLIO DE CRECIMIENTO   ·   apreciación de capital   ·   {len(mode_b_tickers)} ETFs",
+                expanded=False,
+            )
 
             # ── Helper: render quant metrics + SPY chart (shared) ──────
             def render_quant_and_chart(stats, ticker=""):
@@ -1813,7 +2076,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # ============================================================
             # Section F — Risk Analysis
             # ============================================================
-            st.markdown("### ANÁLISIS DE RIESGO")
+            _da_section("Análisis de riesgo",
+                        "Riesgo por subyacente (YieldMax) y concentración de holdings (ETFs de crecimiento)")
             total_port_value = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
             risk_data = logic.build_risk_analysis(results, classify_map, total_port_value)
 

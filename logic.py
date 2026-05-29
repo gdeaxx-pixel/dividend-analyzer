@@ -145,12 +145,24 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
             # It assumes the file is NOT using commas for thousands (e.g. 1,000.00 would break)
             
             # Helper to clean single value
+            # Disambiguates US (1,234.56) vs European (1.234,56) by the LAST
+            # separator: whichever of '.'/',' appears last is the decimal point;
+            # the other is the thousands separator and gets stripped.
             def clean_val(x):
-                s = str(x)
-                # If it looks like European format (has comma, maybe has dot before)
-                if ',' in s:
-                    s = s.replace('.', '') # remove thousands dot
-                    s = s.replace(',', '.') # comma to decimal point
+                s = str(x).strip()
+                has_comma = ',' in s
+                has_dot = '.' in s
+                if has_comma and has_dot:
+                    if s.rfind(',') > s.rfind('.'):
+                        # European: 12.500,00 -> dot=thousands, comma=decimal
+                        s = s.replace('.', '').replace(',', '.')
+                    else:
+                        # US: 12,500.00 -> comma=thousands, dot=decimal
+                        s = s.replace(',', '')
+                elif has_comma:
+                    # Only a comma present: treat as decimal (European / IB '0,155')
+                    s = s.replace(',', '.')
+                # only a dot or no separator: already valid
                 return s
 
             df[col] = df[col].apply(clean_val)
@@ -1469,8 +1481,10 @@ def is_held_too_briefly(ticker_df: pd.DataFrame, threshold_days: int = 14) -> tu
     if buys.empty or sells.empty:
         return False, None  # Sin ventas → posición abierta → no filtrar
 
-    total_bought = pd.to_numeric(buys['Quantity'], errors='coerce').fillna(0).sum()
-    total_sold = pd.to_numeric(sells['Quantity'], errors='coerce').fillna(0).sum()
+    # abs() en ambos: IB exporta ventas con Quantity negativa; sin abs el neto
+    # se inflaría (bought - (-sold)) y una posición cerrada nunca se detectaría.
+    total_bought = pd.to_numeric(buys['Quantity'], errors='coerce').fillna(0).abs().sum()
+    total_sold = pd.to_numeric(sells['Quantity'], errors='coerce').fillna(0).abs().sum()
     net_shares = total_bought - total_sold
 
     if net_shares > 0.01:
