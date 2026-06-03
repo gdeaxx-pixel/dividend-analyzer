@@ -627,7 +627,7 @@ st.markdown("""
         line-height: 1.1;
     ">
         CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
-        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.4</span>
+        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.5</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -990,6 +990,67 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
             mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
             mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
+
+            # ── Rendimiento en el tiempo: Dividendos vs Crecimiento ───
+            if mode_a_tickers and mode_b_tickers:
+                import altair as alt
+                import pandas as pd
+                _cmp_key = f"_cmp_series_{st.session_state.get('_file_id', 'x')}"
+                if _cmp_key not in st.session_state:
+                    st.session_state[_cmp_key] = logic.build_portfolio_comparison_series(results, classify_map)
+                _cmp_series = st.session_state[_cmp_key]
+                if _cmp_series is not None and not _cmp_series.empty:
+                    _da_section("Rendimiento en el tiempo",
+                                "Evolución de tu portafolio de Dividendos frente al de Crecimiento, lado a lado")
+                    _cmp_metric_key = f"_cmp_metric_{st.session_state.get('_file_id', 'x')}"
+                    if hasattr(st, 'segmented_control'):
+                        _cmp_metric = st.segmented_control(
+                            "Métrica", options=["% de rendimiento", "Valor ($)"],
+                            default="% de rendimiento", key=_cmp_metric_key,
+                            label_visibility="collapsed",
+                        ) or "% de rendimiento"
+                    else:
+                        _cmp_metric = st.radio(
+                            "Métrica", ["% de rendimiento", "Valor ($)"],
+                            horizontal=True, key=_cmp_metric_key,
+                            label_visibility="collapsed",
+                        )
+
+                    _cmp_df = _cmp_series.copy()
+                    _cmp_df['Fecha'] = pd.to_datetime(_cmp_df['Fecha'])
+
+                    if _cmp_metric == "Valor ($)":
+                        _cmp_y = alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f'))
+                        _cmp_plot = _cmp_df
+                    else:
+                        _cmp_y = alt.Y('Rendimiento:Q', title='% Retorno', axis=alt.Axis(format='+.0f'))
+                        _cmp_plot = _cmp_df.dropna(subset=['Rendimiento'])
+
+                    _cmp_chart = alt.Chart(_cmp_plot).mark_line(strokeWidth=2.5).encode(
+                        x=alt.X('Fecha:T', title=None, axis=alt.Axis(format='%b %Y', labelAngle=-30)),
+                        y=_cmp_y,
+                        color=alt.Color('Portafolio:N',
+                            scale=alt.Scale(domain=['Dividendos', 'Crecimiento'],
+                                            range=['#006497', '#2d3748']),
+                            legend=alt.Legend(orient='bottom', columns=2, labelFontSize=12,
+                                              titleFontSize=0, symbolSize=120)
+                        ),
+                        tooltip=[
+                            alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
+                            alt.Tooltip('Portafolio:N', title='Portafolio'),
+                            alt.Tooltip('Rendimiento:Q', title='Rendimiento', format='+.2f'),
+                            alt.Tooltip('Valor:Q', title='Valor', format='$,.0f'),
+                        ]
+                    ).properties(height=420, background=CHART_PALETTE['bg']).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE['bg']
+                    ).configure_axis(
+                        grid=True, gridColor=CHART_PALETTE['grid'], domainColor=CHART_PALETTE['axis'],
+                        tickColor=CHART_PALETTE['axis'], labelColor=CHART_PALETTE['axis'],
+                        titleColor=CHART_PALETTE['title'], labelFont='Inter, system-ui, sans-serif',
+                        titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                    )
+                    st.altair_chart(_cmp_chart, use_container_width=True)
+                    st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Comparativa de estrategias (auto-calculada) ───────────
             if strat_results_cached:
@@ -2118,74 +2179,165 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             st.code(traceback.format_exc())
 
 elif input_method == "Simulación Teórica":
-    st.subheader("Simulación de Estrategia DRIP")
-    st.caption("DRIP (Dividend Reinvestment Plan) = los dividendos se reinvierten automáticamente comprando más acciones, en lugar de cobrarlos en efectivo")
+    st.subheader("Simulación Teórica")
 
-    col1, col2, col3 = st.columns(3)
-    ticker = col1.text_input("Ticker", "TSLY")
-    start_date = col2.date_input("Fecha Inicio", datetime.date(2023, 1, 1))
-    amount = col3.number_input("Inversión Inicial ($)", value=10000)
+    sim_mode = st.radio(
+        "Tipo de simulación:",
+        ["Un activo: DRIP vs No-DRIP", "Dos portafolios: Dividendos vs Crecimiento"],
+        horizontal=True
+    )
 
-    if st.button("Simular"):
-        with st.spinner(f"Simulando {ticker}..."):
-            sim_results, error_msg = logic.simulate_strategy_cached(ticker, start_date.isoformat(), amount)
+    if sim_mode == "Un activo: DRIP vs No-DRIP":
+        st.caption("DRIP (Dividend Reinvestment Plan) = los dividendos se reinvierten automáticamente comprando más acciones, en lugar de cobrarlos en efectivo")
 
-        if sim_results is None:
-            st.error(f"Error: {error_msg}")
-        else:
-            # Metrics
-            st.success("Simulación Completada")
+        col1, col2, col3 = st.columns(3)
+        ticker = col1.text_input("Ticker", "TSLY")
+        start_date = col2.date_input("Fecha Inicio", datetime.date(2023, 1, 1))
+        amount = col3.number_input("Inversión Inicial ($)", value=10000)
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Inversión Inicial", f"${amount:,.0f}")
-            m2.metric("Con DRIP (dividendos reinvertidos)", f"${sim_results['drip_final_value']:,.2f}",
-                      delta=f"{sim_results['drip_roi_percent']:.2f}%")
-            m3.metric("Sin DRIP (dividendos en efectivo)", f"${sim_results['nodrip_final_value']:,.2f}",
-                      delta=f"{sim_results['nodrip_roi_percent']:.2f}%")
+        if st.button("Simular"):
+            with st.spinner(f"Simulando {ticker}..."):
+                sim_results, error_msg = logic.simulate_strategy_cached(ticker, start_date.isoformat(), amount)
 
-            # Chart
-            st.subheader("Evolución de Patrimonio")
-            hist = sim_results['history']
-            import altair as alt
-            _sim_long = hist[['DRIP Wealth', 'No-DRIP Wealth']].reset_index().melt(
-                id_vars='Date', var_name='Estrategia', value_name='Valor'
-            )
-            _sim_long['Estrategia'] = _sim_long['Estrategia'].map({
-                'DRIP Wealth': 'Con DRIP (reinvirtiendo)',
-                'No-DRIP Wealth': 'Sin DRIP (efectivo)'
-            })
-            _sim_area = alt.Chart(_sim_long[_sim_long['Estrategia'] == 'Con DRIP (reinvirtiendo)']).mark_area(
-                opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
-            ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
-            _sim_lines = alt.Chart(_sim_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
-                x=alt.X('Date:T', title='Fecha'),
-                y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
-                color=alt.Color('Estrategia:N', scale=alt.Scale(
-                    domain=['Con DRIP (reinvirtiendo)', 'Sin DRIP (efectivo)'],
-                    range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
-                )),
-                tooltip=[
-                    alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
-                    alt.Tooltip('Estrategia:N', title='Estrategia'),
-                    alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
-                ]
-            )
-            _sim_chart = (_sim_area + _sim_lines).properties(
-                height=320, background=CHART_PALETTE["bg"]
-            ).configure_view(
-                strokeOpacity=0, fill=CHART_PALETTE["bg"]
-            ).configure_axis(
-                grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
-            ).configure_legend(
-                labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
-                labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
-                labelFontSize=12, titleFontSize=10, titleFontWeight=500,
-                strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
-            )
-            st.altair_chart(_sim_chart, use_container_width=True)
+            if sim_results is None:
+                st.error(f"Error: {error_msg}")
+            else:
+                # Metrics
+                st.success("Simulación Completada")
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Inversión Inicial", f"${amount:,.0f}")
+                m2.metric("Con DRIP (dividendos reinvertidos)", f"${sim_results['drip_final_value']:,.2f}",
+                          delta=f"{sim_results['drip_roi_percent']:.2f}%")
+                m3.metric("Sin DRIP (dividendos en efectivo)", f"${sim_results['nodrip_final_value']:,.2f}",
+                          delta=f"{sim_results['nodrip_roi_percent']:.2f}%")
+
+                # Chart
+                st.subheader("Evolución de Patrimonio")
+                hist = sim_results['history']
+                import altair as alt
+                _sim_long = hist[['DRIP Wealth', 'No-DRIP Wealth']].reset_index().melt(
+                    id_vars='Date', var_name='Estrategia', value_name='Valor'
+                )
+                _sim_long['Estrategia'] = _sim_long['Estrategia'].map({
+                    'DRIP Wealth': 'Con DRIP (reinvirtiendo)',
+                    'No-DRIP Wealth': 'Sin DRIP (efectivo)'
+                })
+                _sim_area = alt.Chart(_sim_long[_sim_long['Estrategia'] == 'Con DRIP (reinvirtiendo)']).mark_area(
+                    opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
+                ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
+                _sim_lines = alt.Chart(_sim_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
+                    x=alt.X('Date:T', title='Fecha'),
+                    y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                    color=alt.Color('Estrategia:N', scale=alt.Scale(
+                        domain=['Con DRIP (reinvirtiendo)', 'Sin DRIP (efectivo)'],
+                        range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
+                    )),
+                    tooltip=[
+                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                        alt.Tooltip('Estrategia:N', title='Estrategia'),
+                        alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
+                    ]
+                )
+                _sim_chart = (_sim_area + _sim_lines).properties(
+                    height=320, background=CHART_PALETTE["bg"]
+                ).configure_view(
+                    strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                ).configure_axis(
+                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                ).configure_legend(
+                    labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                    labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                    labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                    strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                )
+                st.altair_chart(_sim_chart, use_container_width=True)
+
+    elif sim_mode == "Dos portafolios: Dividendos vs Crecimiento":
+        st.caption("Compara dos canastas de ETFs con el mismo capital. El monto se reparte equitativamente entre los tickers de cada canasta y los dividendos se reinvierten (DRIP) en ambas. Backtest con precios y dividendos históricos reales.")
+
+        c1, c2 = st.columns(2)
+        div_csv = c1.text_input("Portafolio Dividendos", "TSLY, NVDY, MSTY")
+        growth_csv = c2.text_input("Portafolio Crecimiento", "QQQ, XLK, SMH")
+
+        c3, c4 = st.columns(2)
+        amount_pp = c3.number_input("Inversión por portafolio ($)", value=5000, step=500)
+        years = c4.number_input("Años de backtest", value=2, min_value=1, max_value=10)
+
+        if st.button("Comparar Portafolios"):
+            start_date_pp = (datetime.date.today() - datetime.timedelta(days=int(years) * 365)).isoformat()
+            with st.spinner("Simulando ambos portafolios..."):
+                comp, comp_err = logic.simulate_portfolio_comparison_cached(div_csv, growth_csv, amount_pp, start_date_pp)
+
+            if comp is None:
+                st.error(f"Error: {comp_err}")
+            else:
+                for _w in comp.get('warnings', []):
+                    st.info(_w)
+
+                st.success(f"Comparación completada · backtest desde {comp['common_start']}")
+
+                _ds = comp['dividend_stats']
+                _gs = comp['growth_stats']
+                m1, m2 = st.columns(2)
+                m1.metric(f"Portafolio Dividendos (DRIP) · ${amount_pp:,.0f}",
+                          f"${_ds['final_value']:,.2f}", delta=f"{_ds['roi_percent']:.2f}%")
+                m2.metric(f"Portafolio Crecimiento (DRIP) · ${amount_pp:,.0f}",
+                          f"${_gs['final_value']:,.2f}", delta=f"{_gs['roi_percent']:.2f}%")
+
+                st.subheader("Evolución Comparativa")
+                hist = comp['history']
+                import altair as alt
+                _cmp_long = hist[['Dividendos', 'Crecimiento']].reset_index().melt(
+                    id_vars='Date', var_name='Portafolio', value_name='Valor'
+                )
+                _cmp_scale = alt.Scale(domain=['Dividendos', 'Crecimiento'], range=['#006497', '#021C36'])
+                _cmp_area = alt.Chart(_cmp_long).mark_area(opacity=0.06, interpolate='monotone').encode(
+                    x=alt.X('Date:T'),
+                    y=alt.Y('Valor:Q'),
+                    color=alt.Color('Portafolio:N', scale=_cmp_scale, legend=None)
+                )
+                _cmp_lines = alt.Chart(_cmp_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
+                    x=alt.X('Date:T', title='Fecha'),
+                    y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                    color=alt.Color('Portafolio:N', scale=_cmp_scale, title='Portafolio'),
+                    tooltip=[
+                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                        alt.Tooltip('Portafolio:N', title='Portafolio'),
+                        alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
+                    ]
+                )
+                _cmp_chart = (_cmp_area + _cmp_lines).properties(
+                    height=320, background=CHART_PALETTE["bg"]
+                ).configure_view(
+                    strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                ).configure_axis(
+                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                ).configure_legend(
+                    labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                    labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                    labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                    strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                )
+                st.altair_chart(_cmp_chart, use_container_width=True)
+
+                _rows = []
+                for _grupo in ['Dividendos', 'Crecimiento']:
+                    for _r in comp['per_ticker'][_grupo]:
+                        _rows.append({
+                            'Portafolio': _grupo,
+                            'Ticker': _r['Ticker'],
+                            'Asignación': f"${_r['Asignacion']:,.0f}",
+                            'Valor Final': f"${_r['Valor Final']:,.2f}",
+                            'ROI %': f"{_r['ROI %']:.2f}%",
+                        })
+                st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
 FOOTER_STYLE = "background-color:#f0eeec;border-top:1px solid #e0ddd9;padding:24px 40px;margin-top:48px;"

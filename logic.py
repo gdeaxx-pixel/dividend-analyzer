@@ -1076,16 +1076,11 @@ def simulate_strategy(ticker, start_date, initial_investment):
     for date, row in market_data.iterrows():
         price = row['Close']
         div = row['Dividends'] if 'Dividends' in row else 0.0
-        splits = row['Stock Splits'] if 'Stock Splits' in row else 0.0
-        
-        # --- Handle Splits ---
-        if splits != 0:
-            # yfinance reports splits as ratio. e.g. 2.0 means 2-for-1.
-            # If 0.5 (reverse split 1-for-2).
-            # We must adjust share count.
-            drip_shares = drip_shares * splits
-            nodrip_shares = nodrip_shares * splits
-            
+
+        # NO se ajustan acciones por split: fetch_market_data ya entrega el Close
+        # ajustado por split (continuo), asi que multiplicar las acciones por el
+        # ratio del split contaria doble (bug confirmado con XLK 2:1 y TSLY/MSTY 1:5).
+
         # --- Handle Dividends ---
         if div > 0:
             # DRIP: Buy more shares
@@ -1121,6 +1116,106 @@ def simulate_strategy(ticker, start_date, initial_investment):
     }
 
     return final_stats, None
+
+
+def _normalize_series_index(s):
+    idx = pd.DatetimeIndex(s.index)
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    s = s.copy()
+    s.index = idx.normalize()
+    s.index.name = 'Date'
+    return s
+
+
+def simulate_portfolio_comparison(dividend_tickers, growth_tickers, amount_per_portfolio, start_date):
+    """Backtest de dos canastas equal-weight con DRIP desde start_date.
+
+    Reutiliza simulate_strategy por ticker (capital unitario) y reescala, porque el
+    patrimonio DRIP es lineal en el capital inicial. Ambas canastas arrancan el mismo
+    dia (common_start) con exactamente amount_per_portfolio cada una.
+    """
+    warnings = []
+
+    def _simulate_basket(tickers):
+        series_map = {}
+        for t in tickers:
+            try:
+                stats, err = simulate_strategy(t, start_date, 1.0)
+            except Exception as e:
+                stats, err = None, str(e)
+            if stats is None or stats['history'].empty:
+                warnings.append(f"{t}: sin datos historicos ({err or 'vacio'}), se omitio del portafolio.")
+                continue
+            series_map[t] = _normalize_series_index(stats['history']['DRIP Wealth'])
+        return series_map
+
+    div_series = _simulate_basket(dividend_tickers)
+    grw_series = _simulate_basket(growth_tickers)
+
+    if not div_series:
+        return None, "El portafolio de Dividendos no tiene tickers validos."
+    if not grw_series:
+        return None, "El portafolio de Crecimiento no tiene tickers validos."
+
+    all_firsts = [s.index[0] for s in list(div_series.values()) + list(grw_series.values())]
+    common_start = max(all_firsts)
+    requested_start = pd.to_datetime(start_date)
+    if common_start > requested_start + pd.Timedelta(days=7):
+        warnings.append(
+            f"La ventana se acorto a {common_start.date()}: algun ETF no cotiza desde {requested_start.date()}.")
+
+    def _build_basket(series_map):
+        allocation = amount_per_portfolio / len(series_map)
+        cols = {}
+        for t, s in series_map.items():
+            s = s[s.index >= common_start]
+            if s.empty:
+                continue
+            cols[t] = s / s.iloc[0] * allocation
+        basket_df = pd.concat(cols, axis=1).sort_index().ffill().dropna()
+        total = basket_df.sum(axis=1)
+        per_ticker = [
+            {
+                'Ticker': t,
+                'Asignacion': allocation,
+                'Valor Final': basket_df[t].iloc[-1],
+                'ROI %': (basket_df[t].iloc[-1] / allocation - 1) * 100,
+            }
+            for t in basket_df.columns
+        ]
+        return total, per_ticker
+
+    div_total, div_per = _build_basket(div_series)
+    grw_total, grw_per = _build_basket(grw_series)
+
+    history = pd.concat({'Dividendos': div_total, 'Crecimiento': grw_total}, axis=1).sort_index().ffill().dropna()
+    if history.empty:
+        return None, "No hay datos suficientes en la ventana seleccionada."
+    history.index.name = 'Date'
+
+    div_final = history['Dividendos'].iloc[-1]
+    grw_final = history['Crecimiento'].iloc[-1]
+
+    result = {
+        'history': history,
+        'common_start': common_start.date(),
+        'amount_per_portfolio': amount_per_portfolio,
+        'dividend_stats': {'final_value': div_final, 'roi_percent': (div_final / amount_per_portfolio - 1) * 100},
+        'growth_stats': {'final_value': grw_final, 'roi_percent': (grw_final / amount_per_portfolio - 1) * 100},
+        'per_ticker': {'Dividendos': div_per, 'Crecimiento': grw_per},
+        'warnings': warnings,
+    }
+    return result, None
+
+
+@st.cache_data(show_spinner=False)
+def simulate_portfolio_comparison_cached(div_csv, growth_csv, amount, start_date_str):
+    """Cache wrapper. Recibe tickers como CSV y fecha como ISO string para hashabilidad."""
+    dividend_tickers = [t.strip().upper() for t in div_csv.split(',') if t.strip()]
+    growth_tickers = [t.strip().upper() for t in growth_csv.split(',') if t.strip()]
+    start_date = datetime.date.fromisoformat(start_date_str)
+    return simulate_portfolio_comparison(dividend_tickers, growth_tickers, amount, start_date)
 
 
 # ============================================================
@@ -1656,6 +1751,65 @@ def build_risk_analysis(results: dict, classify_map: dict, total_portfolio_value
         'yieldmax_risk': yieldmax_risk,
         'etf_holdings': etf_holdings_list,
     }
+
+
+# ============================================================
+# v2.5 — SERIE TEMPORAL: DIVIDENDOS vs CRECIMIENTO
+# ============================================================
+
+def build_portfolio_comparison_series(results: dict, classify_map: dict) -> pd.DataFrame:
+    """
+    Aggregates each portfolio block (mode_a = Dividendos, mode_b = Crecimiento)
+    into a single time series, reusing the per-ticker 'daily_trend' frames.
+
+    Returns a long-format DataFrame: Fecha, Portafolio, Rendimiento (%), Valor ($).
+    A block with no valid tickers is omitted. No network calls — pure aggregation.
+    """
+    blocks = {'mode_a': 'Dividendos', 'mode_b': 'Crecimiento'}
+    frames = []
+
+    for mode, label in blocks.items():
+        tickers = [t for t, m in classify_map.items()
+                   if m == mode and t in results and 'error' not in results[t]]
+        trends = []
+        for t in tickers:
+            dt = results[t].get('daily_trend')
+            if dt is None or len(dt) == 0:
+                continue
+            if not {'Invested Capital', 'User Total Value'}.issubset(dt.columns):
+                continue
+            trends.append(dt[['Invested Capital', 'User Total Value']])
+
+        if not trends:
+            continue
+
+        all_dates = trends[0].index
+        for dt in trends[1:]:
+            all_dates = all_dates.union(dt.index)
+        all_dates = all_dates.sort_values()
+
+        port_invested = pd.Series(0.0, index=all_dates)
+        port_value = pd.Series(0.0, index=all_dates)
+        for dt in trends:
+            aligned = dt.reindex(all_dates).ffill().fillna(0)
+            port_invested = port_invested.add(aligned['Invested Capital'], fill_value=0)
+            port_value = port_value.add(aligned['User Total Value'], fill_value=0)
+
+        rendimiento = np.where(port_invested > 0,
+                               (port_value - port_invested) / port_invested * 100,
+                               np.nan)
+
+        frames.append(pd.DataFrame({
+            'Fecha': all_dates,
+            'Portafolio': label,
+            'Rendimiento': rendimiento,
+            'Valor': port_value.values,
+        }))
+
+    if not frames:
+        return pd.DataFrame(columns=['Fecha', 'Portafolio', 'Rendimiento', 'Valor'])
+
+    return pd.concat(frames, ignore_index=True)
 
 
 # ============================================================

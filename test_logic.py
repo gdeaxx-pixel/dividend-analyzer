@@ -430,3 +430,67 @@ def test_held_open_position_not_flagged():
     })
     brief, days = logic.is_held_too_briefly(ib)
     assert brief is False
+
+
+# ── build_portfolio_comparison_series ──────────────────────────────────────────
+
+def _trend(dates, invested, value):
+    return pd.DataFrame(
+        {"Invested Capital": invested, "User Total Value": value},
+        index=pd.to_datetime(dates),
+    )
+
+
+def test_portfolio_comparison_series_aggregates_two_blocks():
+    """Agrega mode_a y mode_b en dos series; el último % cierra con el cálculo estático."""
+    results = {
+        # Dividendos (mode_a) — dos tickers con fechas distintas
+        "TSLY": {"daily_trend": _trend(
+            ["2025-01-01", "2025-01-02", "2025-01-03"], [1000, 1000, 1000], [900, 950, 1100])},
+        "NVDY": {"daily_trend": _trend(
+            ["2025-01-02", "2025-01-03"], [500, 500], [520, 600])},
+        # Crecimiento (mode_b)
+        "XLK": {"daily_trend": _trend(
+            ["2025-01-01", "2025-01-02", "2025-01-03"], [2000, 2000, 2000], [2100, 2200, 2400])},
+        "SCHB": {"daily_trend": _trend(
+            ["2025-01-01", "2025-01-03"], [800, 800], [810, 850])},
+    }
+    classify_map = {"TSLY": "mode_a", "NVDY": "mode_a", "XLK": "mode_b", "SCHB": "mode_b"}
+
+    df = logic.build_portfolio_comparison_series(results, classify_map)
+
+    assert set(df["Portafolio"].unique()) == {"Dividendos", "Crecimiento"}
+
+    for label in ("Dividendos", "Crecimiento"):
+        sub = df[df["Portafolio"] == label]
+        assert sub["Fecha"].is_monotonic_increasing, f"{label}: fechas desordenadas"
+
+    # Último punto Dividendos: invested 1000+500=1500, value 1100+600=1700
+    div_last = df[df["Portafolio"] == "Dividendos"].iloc[-1]
+    assert div_last["Valor"] == pytest.approx(1700.0)
+    assert div_last["Rendimiento"] == pytest.approx((1700 - 1500) / 1500 * 100)
+
+    # Último punto Crecimiento: invested 2000+800=2800, value 2400+850=3250
+    grw_last = df[df["Portafolio"] == "Crecimiento"].iloc[-1]
+    assert grw_last["Valor"] == pytest.approx(3250.0)
+    assert grw_last["Rendimiento"] == pytest.approx((3250 - 2800) / 2800 * 100)
+
+
+def test_portfolio_comparison_series_handles_missing_block():
+    """Si solo hay un bloque, devuelve solo esa serie (no rompe)."""
+    results = {"TSLY": {"daily_trend": _trend(["2025-01-01"], [1000], [1100])}}
+    df = logic.build_portfolio_comparison_series(results, {"TSLY": "mode_a"})
+    assert set(df["Portafolio"].unique()) == {"Dividendos"}
+
+
+def test_portfolio_comparison_series_skips_errored_tickers():
+    """Tickers con error o sin daily_trend se ignoran sin romper."""
+    results = {
+        "TSLY": {"daily_trend": _trend(["2025-01-01"], [1000], [1100])},
+        "BAD":  {"error": "no data"},
+        "XLK":  {"daily_trend": _trend(["2025-01-01"], [2000], [2200])},
+    }
+    classify_map = {"TSLY": "mode_a", "BAD": "mode_a", "XLK": "mode_b"}
+    df = logic.build_portfolio_comparison_series(results, classify_map)
+    div_last = df[df["Portafolio"] == "Dividendos"].iloc[-1]
+    assert div_last["Valor"] == pytest.approx(1100.0)
