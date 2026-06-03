@@ -627,7 +627,7 @@ st.markdown("""
         line-height: 1.1;
     ">
         CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
-        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.5</span>
+        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.6</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
