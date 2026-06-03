@@ -755,11 +755,8 @@ if input_method == "Subir CSV/Excel":
                     st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
                     st.session_state['_wizard_broker'] = _broker_w
 
-                    _, _btn_col1 = st.columns([3, 1])
-                    with _btn_col1:
-                        if st.button("Siguiente →", use_container_width=True):
-                            st.session_state['_wizard_step'] = 2
-                            st.rerun()
+                    st.session_state['_wizard_step'] = 2
+                    st.rerun()
 
             except Exception as _e1:
                 import traceback as _tb1
@@ -776,6 +773,12 @@ if input_method == "Subir CSV/Excel":
                 st.session_state['_wizard_step'] = 1
                 st.rerun()
         else:
+            if st.button("← Cambiar archivo"):
+                for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
+                           '_wizard_ib_map']:
+                    st.session_state.pop(_k, None)
+                st.session_state['_wizard_step'] = 1
+                st.rerun()
             _tickers_s2 = _df2['Ticker'].dropna().unique().tolist()
             _mmap_s2 = logic.classify_tickers(_tickers_s2)
             _divt_s2 = sorted([t for t, m in _mmap_s2.items() if m == 'mode_a'])
@@ -1605,7 +1608,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
 
                     if stats.get('history_incomplete'):
-                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — el conteo de acciones, el valor de mercado, el ROI y las métricas de riesgo pueden ser incorrectos. Exporta un CSV con el historial completo desde el inicio de tu posición para resultados precisos.")
 
                     # ROC Callout — solo si hay datos de IB
                     if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
@@ -1986,7 +1989,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
 
                     if stats.get('history_incomplete'):
-                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — las métricas de riesgo (volatilidad, beta, alpha) pueden estar subestimadas. Exporta un CSV con historial desde el inicio de tu posición para resultados precisos.")
+                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — el conteo de acciones, el valor de mercado, el ROI y las métricas de riesgo pueden ser incorrectos. Exporta un CSV con el historial completo desde el inicio de tu posición para resultados precisos.")
 
                     # Fase 6: Cobertura del CSV
                     _b_cov = stats.get('csv_coverage_pct')
