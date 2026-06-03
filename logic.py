@@ -78,6 +78,26 @@ def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
     return out.drop(index=drop_idx) if drop_idx else df
 
 
+def _sortino_ratio(daily_returns, rf_daily, periods: int = 252):
+    """Sortino anualizado con downside deviation estándar (CFA/GIPS).
+
+    Downside deviation = raíz de la media de (min(r - MAR, 0))^2 sobre TODOS los
+    períodos (no solo los días negativos), con MAR = rf_daily. Esto difiere de usar
+    `std` de los retornos negativos (que excluye los días positivos del denominador
+    y subestima el riesgo a la baja). Devuelve None si no hay datos suficientes o no
+    hay desviación a la baja.
+    """
+    r = daily_returns.dropna() if hasattr(daily_returns, 'dropna') else pd.Series(list(daily_returns))
+    if len(r) < 2:
+        return None
+    downside = np.minimum(r - rf_daily, 0.0)
+    dd = float(np.sqrt((downside ** 2).mean()))
+    if dd <= 1e-9:
+        return None
+    excess = float(r.mean()) - rf_daily
+    return float((excess / dd) * np.sqrt(periods))
+
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -880,13 +900,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         else:
             sharpe_ratio = None
 
-        # 4. Sortino Ratio
-        retornos_neg = daily_returns_q[daily_returns_q < 0]
-        if len(retornos_neg) >= 2 and retornos_neg.std() > 1e-9:
-            exceso_s = daily_returns_q.mean() - rf_diario
-            sortino_ratio = float((exceso_s / retornos_neg.std()) * np.sqrt(252))
-        else:
-            sortino_ratio = None
+        # 4. Sortino Ratio — downside deviation estándar (no std de solo los negativos)
+        sortino_ratio = _sortino_ratio(daily_returns_q, rf_diario)
 
         # 5. Maximum Drawdown
         valor_port = daily_history['User Total Value'].replace(0, np.nan).dropna()

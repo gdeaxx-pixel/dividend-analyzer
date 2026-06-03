@@ -539,3 +539,19 @@ def test_net_transfer_pairs_keeps_unpaired_journal_out():
     out = logic._net_transfer_pairs(df)
     assert len(out) == 2
     assert (out["Action"] == "Journaled Shares").any()
+
+
+# ── Sortino con downside deviation estándar ─────────────────────────────────────
+
+def test_sortino_ratio_downside_deviation():
+    """Sortino usa downside deviation sobre TODOS los períodos (no std de solo los
+    negativos). Caso a mano: returns [0.01,-0.02,0.03,-0.01,0.005], rf=0:
+    mean=0.003, downside=[0,-0.02,0,-0.01,0], dd=sqrt((0.0004+0.0001)/5)=0.01,
+    sortino=(0.003/0.01)*sqrt(252)."""
+    r = pd.Series([0.01, -0.02, 0.03, -0.01, 0.005])
+    assert logic._sortino_ratio(r, 0.0) == pytest.approx(0.3 * (252 ** 0.5), rel=1e-4)
+
+
+def test_sortino_ratio_guards():
+    assert logic._sortino_ratio(pd.Series([0.01, 0.02, 0.03]), 0.0) is None  # sin caídas
+    assert logic._sortino_ratio(pd.Series([0.01]), 0.0) is None              # <2 datos
