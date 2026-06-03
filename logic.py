@@ -44,6 +44,40 @@ def _cumul_split_factor(tx_date, splits_series: pd.Series) -> float:
     except Exception:
         return 1.0
 
+def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
+    """Neutraliza pares de migración entre brokers (p. ej. TD Ameritrade -> Schwab).
+
+    Una transferencia de cuenta aparece como DOS filas el mismo día y mismo ticker:
+    una 'Journaled Shares' de salida (Quantity < 0, descripción "...TRANSFER...OUT")
+    y una 'Internal Transfer' de entrada (Quantity > 0). Son las dos patas del mismo
+    movimiento; si se suman se anulan y la posición transferida cuenta 0. Eliminamos la
+    pata de salida (journaled OUT) cuando existe su entrada gemela, dejando solo la
+    entrada neta. Las 'Journaled Shares' sin gemela (salidas reales) se conservan.
+    """
+    if df is None or df.empty or 'Action' not in df.columns or 'Quantity' not in df.columns:
+        return df
+    if 'Ticker' not in df.columns or 'Date' not in df.columns:
+        return df
+    out = df.copy()
+    act = out['Action'].astype(str).str.lower()
+    qty = pd.to_numeric(out['Quantity'], errors='coerce').fillna(0)
+    journal_out = act.str.contains('journal', na=False) & (qty < 0)
+    transfer_in = act.str.contains('transfer', na=False) & (qty > 0)
+    if not journal_out.any() or not transfer_in.any():
+        return df
+    drop_idx = []
+    in_idx = list(out.index[transfer_in])
+    for i in out.index[journal_out]:
+        t, d, q = out.at[i, 'Ticker'], out.at[i, 'Date'], abs(qty[i])
+        for j in in_idx:
+            if (out.at[j, 'Ticker'] == t and out.at[j, 'Date'] == d
+                    and abs(abs(qty[j]) - q) < 1e-6 and j not in drop_idx):
+                drop_idx.append(i)
+                in_idx.remove(j)  # cada entrada empareja con una sola salida
+                break
+    return out.drop(index=drop_idx) if drop_idx else df
+
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -301,7 +335,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         A dictionary keyed by Ticker containing detailed performance metrics and daily history.
     """
     results = {}
-    
+
+    # Neutralizar pares de migración entre brokers (TDA -> Schwab) antes de contar.
+    df = _net_transfer_pairs(df)
+
     # Group by Ticker
     tickers = df['Ticker'].unique()
     
@@ -1228,7 +1265,11 @@ def detect_broker(raw_text: str) -> str:
     Returns: 'schwab', 'ibkr', or 'generic'
     """
     lines = raw_text[:3000].lower()
-    if 'charles schwab' in lines or 'brokerage account' in lines or 'transactions for account' in lines:
+    # 'fees & comm' es la firma del export actual de Schwab, cuyo header empieza
+    # directo con "Date","Action","Symbol",...,"Fees & Comm","Amount" (sin la
+    # antigua línea "Transactions for account").
+    if ('charles schwab' in lines or 'brokerage account' in lines
+            or 'transactions for account' in lines or 'fees & comm' in lines):
         return 'schwab'
     if 'interactive brokers' in lines or 'brokerid' in lines or ('transaction history' in lines and 'transaction type' in lines) or ('trades' in lines and 'header' in lines and 'symbol' in lines):
         return 'ibkr'

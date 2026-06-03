@@ -494,3 +494,48 @@ def test_portfolio_comparison_series_skips_errored_tickers():
     df = logic.build_portfolio_comparison_series(results, classify_map)
     div_last = df[df["Portafolio"] == "Dividendos"].iloc[-1]
     assert div_last["Valor"] == pytest.approx(1100.0)
+
+
+# ── Schwab: formato actual y migración TDA ──────────────────────────────────────
+
+SCHWAB_NEW_CSV = (
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"05/13/2024","Journaled Shares","SCHB","TDA TRAN - TRANSFER OF SECURITY OR OPTION OUT (SCHB)","-18.933","","",""\n'
+    b'"05/13/2024","Internal Transfer","SCHB","SCHWAB US BROAD MARKET ETF","18.933","","",""\n'
+    b'"05/01/2024","Buy","SCHB","SCHWAB US BROAD MARKET ETF","10","27.50","","-275.00"\n'
+)
+
+
+def test_detect_schwab_new_format_no_metadata():
+    """Export actual de Schwab: empieza con el header (sin 'Transactions for account').
+    Se reconoce por 'Fees & Comm'. Regresión del bug detect_broker -> generic -> crash."""
+    text = SCHWAB_NEW_CSV[:3000].decode("utf-8", errors="replace")
+    assert logic.detect_broker(text) == "schwab"
+
+
+def test_net_transfer_pairs_tda_migration():
+    """Journaled OUT + Internal Transfer IN (mismo ticker/fecha/|qty|) son la misma
+    migración TDA->Schwab; se elimina la pata OUT para no anular la entrada."""
+    df = pd.DataFrame({
+        "Date": pd.to_datetime(["2024-05-13", "2024-05-13", "2024-05-01"]),
+        "Action": ["Journaled Shares", "Internal Transfer", "Buy"],
+        "Ticker": ["SCHB", "SCHB", "SCHB"],
+        "Quantity": [-18.933, 18.933, 10.0],
+    })
+    out = logic._net_transfer_pairs(df)
+    assert len(out) == 2
+    assert "Journaled Shares" not in out["Action"].values
+    assert out[out["Action"] == "Internal Transfer"]["Quantity"].iloc[0] == pytest.approx(18.933)
+
+
+def test_net_transfer_pairs_keeps_unpaired_journal_out():
+    """Una 'Journaled Shares' OUT sin entrada gemela (salida real) se conserva."""
+    df = pd.DataFrame({
+        "Date": pd.to_datetime(["2024-05-13", "2024-05-01"]),
+        "Action": ["Journaled Shares", "Buy"],
+        "Ticker": ["SCHB", "SCHB"],
+        "Quantity": [-5.0, 10.0],
+    })
+    out = logic._net_transfer_pairs(df)
+    assert len(out) == 2
+    assert (out["Action"] == "Journaled Shares").any()
