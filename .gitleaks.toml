@@ -1,0 +1,20 @@
+# gitleaks — config con allowlist de falsos positivos conocidos (AntiGravity)
+# Usado por el escaneo periódico (~/.claude/seguridad-scan-cron.sh) y copiado
+# como .gitleaks.toml a cada repo para el pre-commit hook.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Falsos positivos conocidos del ecosistema"
+paths = [
+  '''\.venv/''',
+  '''node_modules/''',
+  '''site-packages/''',
+  '''\.ipynb$''',          # outputs de notebooks: imágenes base64
+  '''\.map$''',            # source maps minificados
+  '''\.git/''',
+]
+regexes = [
+  '''pk\.eyJ[\w.-]+''',    # Mapbox PUBLIC tokens (frontend, baja sensibilidad)
+]

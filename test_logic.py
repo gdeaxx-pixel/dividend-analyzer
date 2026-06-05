@@ -555,3 +555,55 @@ def test_sortino_ratio_downside_deviation():
 def test_sortino_ratio_guards():
     assert logic._sortino_ratio(pd.Series([0.01, 0.02, 0.03]), 0.0) is None  # sin caídas
     assert logic._sortino_ratio(pd.Series([0.01]), 0.0) is None              # <2 datos
+
+
+# ── Reconciliación desde la captura del broker (límite de export ~3-4 años) ───
+
+_RECON_CSV = (
+    b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+    b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+    # Solo 1 compra en el CSV (el broker no exportó las acciones viejas)
+    b"Transaction History,Data,2025-07-01,U123,Buy SCHB,Buy,SCHB,10,20.00,USD,-200.00,0.0,-200.00\n"
+)
+
+
+def _mock_price_30(ticker, start_date):
+    data = pd.DataFrame(
+        {"Close": [30.0], "Dividends": [0.0], "Stock Splits": [0.0], "VOO Price": [500.0]},
+        index=[pd.Timestamp("2025-08-15")],
+    )
+    return data, None
+
+
+def test_reconciliation_overrides_incomplete_position(monkeypatch):
+    """El CSV solo trae 10 acciones / $200, pero la captura del broker dice 50 acciones / $1000
+    (acciones previas a la ventana de export). El override debe reemplazar shares/cost y recalcular."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_RECON_CSV))
+    df_clean = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _mock_price_30)
+
+    overrides = {"SCHB": {"cost_basis": 1000.0, "shares": 50.0}}
+    res = logic.analyze_portfolio(df_clean, version="TEST_RECON", position_overrides=overrides)
+    assert "SCHB" in res
+    s = res["SCHB"]
+    assert s["reconciled_from_snapshot"] is True
+    assert set(s["reconciled_fields"]) == {"shares", "cost_basis"}
+    assert s["shares_owned"] == pytest.approx(50.0)
+    assert s["pocket_investment"] == pytest.approx(1000.0)
+    assert s["market_value"] == pytest.approx(1500.0)             # 50 × $30
+    assert s["roi_percent"] == pytest.approx(50.0, abs=0.5)        # (1500-1000)/1000
+    assert logic.assess_ticker_quality(res, "SCHB")["level"] == "reconciled"
+
+
+def test_reconciliation_noop_when_matches_csv(monkeypatch):
+    """Si la captura coincide con el CSV (dentro de tolerancia), NO se reconcilia (no-op)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_RECON_CSV))
+    df_clean = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _mock_price_30)
+
+    overrides = {"SCHB": {"cost_basis": 200.0, "shares": 10.0}}  # = CSV
+    res = logic.analyze_portfolio(df_clean, version="TEST_RECON_NOOP", position_overrides=overrides)
+    s = res["SCHB"]
+    assert s["reconciled_from_snapshot"] is False
+    assert s["shares_owned"] == pytest.approx(10.0)
+    assert s["pocket_investment"] == pytest.approx(200.0)

@@ -9,6 +9,135 @@ import re
 import io
 from collections import defaultdict
 
+GEMINI_VISION_MODEL = "gemini-2.5-flash"
+GEMINI_VISION_FALLBACKS = ["gemini-2.5-flash-lite"]
+
+
+def extract_positions_from_images(images, candidate_tickers, api_key):
+    """Lee fotos de la tabla de posiciones de un broker con Gemini Vision.
+
+    Devuelve {TICKER: {'cost_basis': float, 'shares': float|None, 'market_value': float|None}}
+    para los tickers solicitados que aparezcan con costo base > 0.
+    images: lista de (bytes, mime_type). candidate_tickers: simbolos a buscar. api_key: Gemini API.
+    Nunca lanza excepcion: devuelve {} ante cualquier fallo (sin SDK/red/cuota/JSON invalido).
+    """
+    if not images or not candidate_tickers or not api_key:
+        return {}
+    try:
+        from google import genai
+        from google.genai import types
+        import json as _json
+        import time as _time
+    except Exception:
+        return {}
+
+    cand = [str(t).upper().strip() for t in candidate_tickers]
+    cand_set = set(cand)
+
+    prompt = (
+        "Estas son una o varias imagenes de la pantalla de posiciones de un broker: "
+        "Interactive Brokers (seccion 'Sus participaciones', en espanol) o Charles Schwab (en ingles). "
+        "Para cada simbolo solicitado, lee la FILA COMPLETA y devuelve: "
+        "1) 'cost_basis' = la columna cuyo ENCABEZADO es 'BASE DE COSTE' (Interactive Brokers) o "
+        "'Cost Basis' (Charles Schwab) = el COSTO TOTAL invertido en esa posicion; "
+        "2) 'shares' = la cantidad de acciones, columna 'POSICION' (Interactive Brokers) o 'Qty' (Charles Schwab). "
+        "Tambien, para reducir errores, devuelve 'price' (precio por accion: 'ULTIMO'/'Price') y "
+        "'market_value' (valor de mercado: 'VALOR DE MERCADO'/'Mkt Val'). "
+        "NO confundas cost_basis con price, market_value ni gain/loss; identifica cada columna por su ENCABEZADO. "
+        "Como referencia de layout: Interactive Brokers suele ser "
+        "INSTRUMENTO, POSICION, ULTIMO, % VARIACION, BASE DE COSTE, VALOR DE MERCADO, PRECIO MEDIO; "
+        "Charles Schwab suele ser Symbol, Description, Qty, Price, ..., Mkt Val, ..., Cost Basis, Gain/Loss. "
+        "Formatos numericos: Interactive Brokers usa formato europeo ('4.231,32' = 4231.32 ; '14.794' = 14794); "
+        "Charles Schwab usa formato US con simbolo de dolar ('$4,553.06' = 4553.06). "
+        "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
+        "Incluye UNICAMENTE estos simbolos si aparecen: " + ", ".join(cand) +
+        ". Omite cualquier otro simbolo. Si un simbolo de la lista no aparece en las imagenes, no lo incluyas."
+    )
+
+    schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "positions": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "ticker": types.Schema(type=types.Type.STRING),
+                        "shares": types.Schema(type=types.Type.NUMBER),
+                        "price": types.Schema(type=types.Type.NUMBER),
+                        "cost_basis": types.Schema(type=types.Type.NUMBER),
+                        "market_value": types.Schema(type=types.Type.NUMBER),
+                    },
+                    required=["ticker", "cost_basis"],
+                ),
+            )
+        },
+        required=["positions"],
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception:
+        return {}
+
+    def _num(v):
+        try:
+            f = float(v)
+            return f if f > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    # Todas las fotos en UN solo request (las posiciones pueden estar repartidas en varias capturas).
+    contents = [types.Part.from_bytes(data=b, mime_type=(m or "image/jpeg")) for b, m in images]
+    contents.append(prompt)
+
+    cfg = types.GenerateContentConfig(
+        temperature=0,
+        response_mime_type="application/json",
+        response_schema=schema,
+    )
+    # Reintentos + modelo de respaldo: gemini-2.5-flash a veces devuelve 503 (saturado);
+    # se reintenta una vez y luego se cae a un modelo alterno con otra capacidad.
+    for _model in [GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS:
+        for _attempt in range(2):
+            try:
+                resp = client.models.generate_content(model=_model, contents=contents, config=cfg)
+                data = _json.loads(resp.text)
+                out = {}
+                for row in data.get("positions", []):
+                    tk = str(row.get("ticker", "")).upper().strip()
+                    if tk not in cand_set:
+                        continue
+                    cost = _num(row.get("cost_basis"))
+                    if cost is None:
+                        continue
+                    out[tk] = {
+                        "cost_basis": cost,
+                        "shares": _num(row.get("shares")),
+                        "market_value": _num(row.get("market_value")),
+                    }
+                return out  # llamada exitosa (out puede estar vacio si no encontro tickers)
+            except Exception as _e:
+                _msg = str(_e)
+                _transient = any(s in _msg for s in (
+                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
+                if _transient and _attempt == 0:
+                    try:
+                        _time.sleep(2)
+                    except Exception:
+                        pass
+                    continue  # reintentar el mismo modelo
+                break  # error no transitorio o ya reintentado -> probar siguiente modelo
+
+    return {}
+
+
+def extract_cost_basis_from_images(images, candidate_tickers, api_key):
+    """Wrapper de compatibilidad: devuelve solo {TICKER: costo_base_float}."""
+    rich = extract_positions_from_images(images, candidate_tickers, api_key)
+    return {t: v["cost_basis"] for t, v in rich.items() if v.get("cost_basis")}
+
+
 def get_session():
     """
     Creates a curl_cffi session mimicking Chrome to bypass bot detection.
@@ -286,7 +415,21 @@ def fetch_market_data(ticker, start_date):
     # Extend start date back a bit to ensure we cover the first transaction
     start_date_obj = pd.to_datetime(start_date)
     buffer_date = start_date_obj - datetime.timedelta(days=10)
-    
+
+    def _naive_index(_d):
+        # yf.Ticker().history() devuelve indice tz-aware (zona del exchange); yf.download() suele ser
+        # tz-naive. Normalizar SIEMPRE a tz-naive para no romper comparaciones con fechas del CSV.
+        try:
+            if getattr(_d.index, "tz", None) is not None:
+                _d.index = _d.index.tz_localize(None)
+        except (TypeError, AttributeError):
+            try:
+                _d.index = pd.to_datetime(_d.index).tz_localize(None)
+            except Exception:
+                pass
+        return _d
+
+
     # 1. Try yf.download (Standard Bulk API) - 2 Attempts
     try:
         session = get_session()
@@ -303,7 +446,7 @@ def fetch_market_data(ticker, start_date):
                 # Flatten MultiIndex if present
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
-                return data, None
+                return _naive_index(data), None
         except Exception as e:
             print(f"Error downloading {ticker} (Attempt {attempt+1}): {e}")
     
@@ -315,9 +458,8 @@ def fetch_market_data(ticker, start_date):
         data = t.history(start=buffer_date, auto_adjust=False, actions=True)
         
         if not data.empty:
-            # Ensure index is timezone-aware/naive compatible if needed
-            # history() usually returns single header level for single ticker
-            return data, None
+            # history() devuelve indice tz-aware: normalizar a tz-naive antes de retornar.
+            return _naive_index(data), None
             
     except Exception as e:
         print(f"Fallback error for {ticker}: {e}")
@@ -327,6 +469,7 @@ def fetch_market_data(ticker, start_date):
     data = fetch_data_from_html(ticker)
     if not data.empty:
         # Filter by start date if needed
+        data = _naive_index(data)
         data = data[data.index >= pd.to_datetime(buffer_date)]
         return data, None
 
@@ -340,7 +483,8 @@ def simulate_strategy_cached(ticker, start_date_str, initial_investment):
 
 
 @st.cache_data(show_spinner=False)
-def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None) -> dict:
+def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                      position_overrides: dict = None) -> dict:
     """
     Performs a forensic analysis of a portfolio history to calculate true ROI and dividend performance.
     
@@ -564,6 +708,35 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # --- Final High-Level Calculations ---
         market_value = shares_owned * current_price
 
+        # ── Reconciliación desde la captura del broker ───────────────────
+        # Si el broker (snapshot del usuario) reporta acciones/costo que difieren del CSV,
+        # el CSV está incompleto (ventana de export ~3-4 años) -> confiar en el snapshot.
+        # Se aplica ANTES de las métricas derivadas (IRR, ROI, CAGR, yield, ROC) para que se
+        # recalculen solas con los valores corregidos. El daily_history/timeline NO se toca
+        # (se construye aparte desde las transacciones) -> queda parcial a propósito.
+        reconciled_from_snapshot = False
+        reconciled_fields = []
+        _ov = (position_overrides or {}).get(ticker)
+        if _ov:
+            _ov_sh = _ov.get('shares')
+            _ov_co = _ov.get('cost_basis')
+            try:
+                if _ov_sh and abs(float(_ov_sh) - shares_owned) > max(0.02 * shares_owned, 0.01):
+                    shares_owned = float(_ov_sh)
+                    reconciled_from_snapshot = True
+                    reconciled_fields.append('shares')
+            except (TypeError, ValueError):
+                pass
+            try:
+                if _ov_co and abs(float(_ov_co) - pocket_investment) > max(0.02 * pocket_investment, 0.5):
+                    pocket_investment = float(_ov_co)
+                    reconciled_from_snapshot = True
+                    reconciled_fields.append('cost_basis')
+            except (TypeError, ValueError):
+                pass
+            if reconciled_from_snapshot:
+                market_value = shares_owned * current_price
+
         # ── Fase 7: IRR anualizado con timing real de flujos ─────────────
         irr_anual = None
         try:
@@ -763,6 +936,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
 
             if isinstance(spy_data.columns, pd.MultiIndex):
                 spy_data.columns = spy_data.columns.get_level_values(0)
+
+            if getattr(spy_data.index, "tz", None) is not None:
+                spy_data.index = spy_data.index.tz_localize(None)
 
             spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
             voo_divs   = (spy_data['Dividends'].reindex(daily_history.index).fillna(0)
@@ -1083,6 +1259,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
             "roc_percent":         _roc_pct,
+            # Reconciliación desde la captura del broker
+            "reconciled_from_snapshot": reconciled_from_snapshot,
+            "reconciled_fields":        reconciled_fields,
         }
         
     return results
@@ -1813,6 +1992,96 @@ def build_risk_analysis(results: dict, classify_map: dict, total_portfolio_value
 # v2.5 — SERIE TEMPORAL: DIVIDENDOS vs CRECIMIENTO
 # ============================================================
 
+VALUE_WITHOUT_COST_RATIO = 1.3   # primer dia con costo: valor > costo*ratio => acciones sin costo registrado
+LOW_COVERAGE_PCT = 80.0          # cobertura del CSV bajo este % => parcial
+
+
+def assess_ticker_quality(results: dict, ticker: str) -> dict:
+    """Evalua la calidad de datos de UN ticker. Fuente unica de verdad para toda la app.
+
+    Devuelve {'level': 'ok'|'partial'|'reconciled'|'unreliable', 'flags': [...], 'coverage_pct': float|None,
+              'reason': str, 'action': str}.
+    'reconciled' = costo/acciones tomados de la captura del broker (cabecera confiable; timeline parcial).
+    'unreliable' = el costo base esta incompleto y NO se reconcilio -> no confiar en metricas de costo.
+    'partial' = cobertura baja del CSV pero costo coherente. 'ok' = confiable.
+    """
+    s = results.get(ticker, {}) or {}
+    flags = []
+    cov = s.get('csv_coverage_pct')
+
+    if s.get('reconciled_from_snapshot'):
+        _f = s.get('reconciled_fields') or []
+        return {
+            'level': 'reconciled',
+            'flags': ['reconciled_' + x for x in _f] or ['reconciled'],
+            'coverage_pct': cov,
+            'reason': ("Acciones y/o costo tomados de tu captura del broker (el CSV no traía el "
+                       "historial completo). El valor, ROI y ROC de cabecera son correctos; la línea "
+                       "de tiempo histórica de esta posición es parcial."),
+            'action': "",
+        }
+
+    if s.get('history_incomplete'):
+        flags.append('sells_exceed_buys')
+
+    dt = s.get('daily_trend')
+    if dt is not None and len(dt) > 0 and {'Invested Capital', 'User Total Value'}.issubset(dt.columns):
+        costed = dt[dt['Invested Capital'] > 0]
+        if costed.empty:
+            flags.append('no_cost_recorded')
+        else:
+            first = costed.iloc[0]
+            if first['User Total Value'] > first['Invested Capital'] * VALUE_WITHOUT_COST_RATIO:
+                flags.append('value_without_cost')
+
+    if s.get('splits_detected'):
+        flags.append('splits_detected')
+    if cov is not None and cov < LOW_COVERAGE_PCT:
+        flags.append('low_coverage')
+
+    cost_broken = {'sells_exceed_buys', 'value_without_cost', 'no_cost_recorded'} & set(flags)
+    if cost_broken:
+        level = 'unreliable'
+        reason = ("El historial de compras de este ticker en el CSV esta incompleto "
+                  "(tienes acciones sin costo registrado o vendiste mas de lo que figura comprado), "
+                  "por lo que el costo base esta subestimado.")
+        action = (f"Exporta el historial COMPLETO de {ticker} desde la apertura de la posicion "
+                  "y vuelve a subir el archivo. Mientras tanto su ROI/% no es confiable.")
+    elif 'low_coverage' in flags:
+        level = 'partial'
+        reason = (f"El CSV cubre solo ~{cov:.0f}% de la vida de la posicion; las metricas de largo "
+                  "plazo (CAGR, drawdown) pueden quedar incompletas.")
+        action = f"Si quieres precision total, exporta desde la apertura de {ticker}."
+    else:
+        level = 'ok'
+        reason = ""
+        action = ""
+
+    return {'level': level, 'flags': flags, 'coverage_pct': cov, 'reason': reason, 'action': action}
+
+
+def assess_data_quality(results: dict, classify_map: dict = None) -> dict:
+    """Evalua todos los tickers (no skipped). Devuelve {ticker: assess_ticker_quality(...)}.
+
+    Si se pasa classify_map, solo evalua los que esten clasificados (mode_a/mode_b/mode_skip presentes).
+    """
+    out = {}
+    for t, s in results.items():
+        if not isinstance(s, dict) or s.get('skipped') or 'error' in s:
+            continue
+        out[t] = assess_ticker_quality(results, t)
+    return out
+
+
+def _cost_incomplete(results: dict, ticker: str) -> bool:
+    """True si el ticker debe EXCLUIRSE del time-series del comparativo (su línea de tiempo es parcial).
+
+    Aplica a 'unreliable' (costo incompleto sin reconciliar) y a 'reconciled' (cabecera corregida
+    desde la captura pero timeline histórica parcial). Fuente única con el panel de la app.
+    """
+    return assess_ticker_quality(results, ticker)['level'] in ('unreliable', 'reconciled')
+
+
 def build_portfolio_comparison_series(results: dict, classify_map: dict) -> pd.DataFrame:
     """
     Aggregates each portfolio block (mode_a = Dividendos, mode_b = Crecimiento)
@@ -1825,8 +2094,11 @@ def build_portfolio_comparison_series(results: dict, classify_map: dict) -> pd.D
     frames = []
 
     for mode, label in blocks.items():
+        # Excluir tickers con costo base incompleto (sells > buys, o valor sin costo registrado por
+        # acciones previas al CSV): su capital invertido esta subestimado y distorsiona el % del bloque.
         tickers = [t for t, m in classify_map.items()
-                   if m == mode and t in results and 'error' not in results[t]]
+                   if m == mode and t in results and 'error' not in results[t]
+                   and not _cost_incomplete(results, t)]
         trends = []
         for t in tickers:
             dt = results[t].get('daily_trend')

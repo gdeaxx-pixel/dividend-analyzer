@@ -35,3 +35,12 @@ secrets.toml
 # Local App Files
 *.xlsx
 *.csv
+.env
+.env.*
+*credentials*.json
+*service_account*.json
+*.pem
+.venv/
+
+# Datos privados de brokers (fixtures locales del golden harness — NO versionar)
+real_examples/

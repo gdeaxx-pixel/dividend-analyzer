@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import logic
 import json
+import os
 
 
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
@@ -627,7 +628,7 @@ st.markdown("""
         line-height: 1.1;
     ">
         CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
-        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.6</span>
+        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.7</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
@@ -646,7 +647,7 @@ CHART_PALETTE = {
 }
 
 # Wizard session state defaults
-for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None)]:
+for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_prev_step', 1)]:
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
@@ -664,7 +665,20 @@ with _col_cache:
     )
 
 
-def _render_step_indicator(current_step):
+def _render_step_indicator(current_step, prev_step=None):
+    _cur = current_step / 3 * 100
+    _fill = f"width:{_cur}%;background:#006497;height:100%;"
+    _kf = ""
+    if prev_step and prev_step != current_step:
+        _name = f"da-prog{prev_step}{current_step}"
+        _kf = f"@keyframes {_name}{{from{{width:{prev_step / 3 * 100}%}}to{{width:{_cur}%}}}}"
+        _fill += f"animation:{_name} .5s cubic-bezier(.16,1,.3,1) both;"
+    st.markdown(
+        f"<style>{_kf}@media (prefers-reduced-motion:reduce){{[data-da-prog]>div{{animation:none}}}}</style>"
+        f"<div data-da-prog style='height:3px;background:#eae7e7;margin:0 0 14px 0;'>"
+        f"<div style='{_fill}'></div></div>",
+        unsafe_allow_html=True
+    )
     steps = [("01", "Carga el Archivo"), ("02", "Configura Costos"), ("03", "Resultados")]
     pills = []
     for i, (num, label) in enumerate(steps, 1):
@@ -693,11 +707,35 @@ def fmt_ratio(val, decimales=2, sufijo=""):
     if val is None: return "N/A"
     return f"{val:.{decimales}f}{sufijo}"
 
+
+def _get_gemini_key():
+    try:
+        _k = st.secrets.get("GEMINI_API_KEY")
+        if _k:
+            return _k
+    except Exception:
+        pass
+    return os.getenv("GEMINI_API_KEY")
+
 # --- Main Logic ---
 
 if input_method == "Subir CSV/Excel":
     _wizard_step = st.session_state.get('_wizard_step', 1)
-    _render_step_indicator(_wizard_step)
+    _step_changed = st.session_state.get('_prev_step') != _wizard_step
+    if _step_changed:
+        # Anima la entrada del contenido SOLO al cambiar de paso (no al editar dentro del paso)
+        st.markdown(
+            '<style>.block-container{animation:da-step-in .45s cubic-bezier(.16,1,.3,1) both;}'
+            '@keyframes da-step-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}'
+            '@media (prefers-reduced-motion:reduce){.block-container{animation:none}}</style>',
+            unsafe_allow_html=True)
+    _render_step_indicator(_wizard_step, st.session_state.get('_prev_step'))
+    if _step_changed:
+        _labels = {1: "Paso 1 de 3 · Carga el archivo",
+                   2: "Paso 2 de 3 · Configura tus costos",
+                   3: "Paso 3 de 3 · Resultados"}
+        st.toast(_labels.get(_wizard_step, ""), icon=":material/check_circle:")
+        st.session_state['_prev_step'] = _wizard_step
 
     # ── PASO 1: Carga el Archivo ──────────────────────────────────────────
     if _wizard_step == 1:
@@ -775,61 +813,114 @@ if input_method == "Subir CSV/Excel":
         else:
             if st.button("← Cambiar archivo"):
                 for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
-                           '_wizard_ib_map']:
+                           '_wizard_ib_map', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig']:
                     st.session_state.pop(_k, None)
                 st.session_state['_wizard_step'] = 1
                 st.rerun()
             _tickers_s2 = _df2['Ticker'].dropna().unique().tolist()
             _mmap_s2 = logic.classify_tickers(_tickers_s2)
-            _divt_s2 = sorted([t for t, m in _mmap_s2.items() if m == 'mode_a'])
+            _pos_tickers = sorted([t for t, m in _mmap_s2.items() if m in ('mode_a', 'mode_b')])
 
-            st.markdown(
-                '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
-                'Ingresa el costo de tu inversión tal como aparece en tu broker para cada ticker YieldMax. '
-                'Si no tienes este dato o no aplica, deja el valor en 0.'
-                '</p>'
-                '',
-                unsafe_allow_html=True
-            )
+            _gem_key = _get_gemini_key()
+            _positions = st.session_state.get('_wizard_positions', {})
 
-            if _divt_s2:
+            if _pos_tickers and _gem_key:
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
+                    'Sube una o más <b>fotos de tu portafolio</b> (donde se vean “Acciones/Posición” y '
+                    '“Base de coste / Cost Basis”) y rellenamos la tabla por ti. Útil sobre todo si tu broker solo '
+                    'exporta los últimos años: confirmamos tus posiciones completas desde la foto. '
+                    'Pueden estar repartidas en varias capturas; revisa y corrige antes de continuar.'
+                    '</p>',
+                    unsafe_allow_html=True
+                )
+                _imgs_s2 = st.file_uploader(
+                    "Fotos del portafolio",
+                    type=['png', 'jpg', 'jpeg'],
+                    accept_multiple_files=True,
+                    label_visibility="collapsed",
+                    key="_step2_photos"
+                )
+                if _imgs_s2:
+                    _sig = tuple((f.name, f.size) for f in _imgs_s2)
+                    if _sig != st.session_state.get('_wizard_photo_sig'):
+                        with st.spinner("Leyendo tu portafolio…"):
+                            _imgs_payload = [(f.getvalue(), (f.type or 'image/jpeg')) for f in _imgs_s2]
+                            _positions = logic.extract_positions_from_images(_imgs_payload, _pos_tickers, _gem_key)
+                        st.session_state['_wizard_positions'] = _positions
+                        st.session_state['_wizard_photo_sig'] = _sig
+                    else:
+                        _positions = st.session_state.get('_wizard_positions', {})
+                    if _positions:
+                        st.markdown(
+                            f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:10px 14px;margin:8px 0;">'
+                            f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
+                            f'Leídos {len(_positions)} de {len(_pos_tickers)} tickers. Revisa acciones y costo abajo antes de continuar.'
+                            f'</span></div>',
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.warning("No pudimos leer valores de las fotos (el servicio puede estar ocupado, o la imagen no muestra las columnas). Intenta de nuevo en unos segundos o escribe los valores abajo.")
+            elif _pos_tickers:
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
+                    'Confirma las <b>acciones</b> y el <b>costo de inversión</b> de cada posición tal como aparecen en tu broker. '
+                    'Es clave si tu broker solo exporta los últimos años (las acciones viejas no están en el CSV). Deja en 0 lo que no aplique.'
+                    '</p>',
+                    unsafe_allow_html=True
+                )
+
+            if _pos_tickers:
+                _sig_now = st.session_state.get('_wizard_photo_sig')
+                _editor_key = f"_step2_table_{abs(hash(_sig_now)) if _sig_now else 0}"
                 _tbl_s2 = pd.DataFrame({
-                    'Ticker': _divt_s2,
-                    'Costo de Inversión ($)': [0.0] * len(_divt_s2)
+                    'Ticker': _pos_tickers,
+                    'Acciones': [float((_positions.get(t) or {}).get('shares') or 0.0) for t in _pos_tickers],
+                    'Costo de Inversión ($)': [float((_positions.get(t) or {}).get('cost_basis') or 0.0) for t in _pos_tickers],
                 })
                 _edited_s2 = st.data_editor(
                     _tbl_s2,
                     column_config={
                         'Ticker': st.column_config.TextColumn(disabled=True),
+                        'Acciones': st.column_config.NumberColumn(
+                            help="Acciones que tienes hoy según tu broker ('Posición' en IB, 'Qty' en Schwab). Si difiere del CSV, usamos este valor.",
+                            min_value=0.0, format="%.4f"),
                         'Costo de Inversión ($)': st.column_config.NumberColumn(
-                            help="Valor de 'Base de coste' en Interactive Brokers o 'Cost Basis' en Charles Schwab. Deja en 0 si no aplica.",
-                            min_value=0.0,
-                            format="%.2f"
-                        )
+                            help="'Base de coste' (IB) o 'Cost Basis' (Schwab): costo total de la posición. Deja en 0 si no aplica.",
+                            min_value=0.0, format="%.2f"),
                     },
                     hide_index=True,
                     use_container_width=True,
                     num_rows="fixed",
-                    key="_step2_table"
+                    key=_editor_key
                 )
             else:
                 _edited_s2 = None
-                st.info("No se detectaron tickers YieldMax Income en este archivo. Puedes continuar al análisis directamente.")
+                st.info("No se detectaron posiciones de ETF analizables en este archivo. Puedes continuar al análisis directamente.")
 
             _, _btn_col2 = st.columns([3, 1])
             with _btn_col2:
                 if st.button("Siguiente →", use_container_width=True, type="primary"):
-                    _ib_map_s2 = (
-                        {row['Ticker']: str(row['Costo de Inversión ($)'])
-                         for _, row in _edited_s2.iterrows()
-                         if row['Costo de Inversión ($)'] > 0}
-                        if _edited_s2 is not None else {}
-                    )
+                    _ib_map_s2 = {}
+                    _overrides_s2 = {}
+                    if _edited_s2 is not None:
+                        for _, _row in _edited_s2.iterrows():
+                            _t = _row['Ticker']
+                            _co = float(_row.get('Costo de Inversión ($)') or 0)
+                            _sh = float(_row.get('Acciones') or 0)
+                            if _co > 0:
+                                _ib_map_s2[_t] = str(_co)
+                            if _co > 0 or _sh > 0:
+                                _overrides_s2[_t] = {'cost_basis': _co or None, 'shares': _sh or None}
                     st.session_state['_wizard_ib_map'] = _ib_map_s2
+                    st.session_state['_wizard_overrides'] = _overrides_s2
 
                     with st.spinner("Analizando transacciones, splits y dividendos..."):
                         try:
-                            _res_s2 = logic.analyze_portfolio(_df2, version="2.0", ib_cost_basis_map=_ib_map_s2 or None)
+                            _res_s2 = logic.analyze_portfolio(
+                                _df2, version="2.0",
+                                ib_cost_basis_map=_ib_map_s2 or None,
+                                position_overrides=_overrides_s2 or None)
                         except TypeError:
                             _res_s2 = logic.analyze_portfolio(_df2)
 
@@ -868,7 +959,8 @@ if input_method == "Subir CSV/Excel":
     elif _wizard_step == 3:
         if st.button("← Nueva Consulta"):
             for _k in ['_wizard_step', '_wizard_df_clean', '_wizard_ib_map', '_wizard_csv_ticker_data',
-                       '_wizard_broker', '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
+                       '_wizard_broker', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
+                       '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
                 st.session_state.pop(_k, None)
             st.rerun()
 
@@ -916,6 +1008,48 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     f'<div style="flex:1;"><p style="font-family:Inter,sans-serif;font-size:17px;'
                     f'font-weight:800;color:#021C36;letter-spacing:-0.01em;margin:0;">{title}</p>{_sub}</div>'
                     f'</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── Calidad de datos (pre-flight) ─────────────────────────
+            _dq = logic.assess_data_quality(results, classify_map)
+            _dq_unrel = sorted([t for t, q in _dq.items() if q['level'] == 'unreliable'])
+            _dq_recon = sorted([t for t, q in _dq.items() if q['level'] == 'reconciled'])
+            _dq_part  = sorted([t for t, q in _dq.items() if q['level'] == 'partial'])
+            if _dq_unrel or _dq_recon or _dq_part:
+                _rows = []
+                _style = {
+                    'unreliable': ('#e0a23c', 'No confiable', '#fbf7ef'),
+                    'reconciled': ('#006497', 'Reconciliado desde tu captura', '#eef6fb'),
+                    'partial':    ('#8899aa', 'Parcial', '#f6f3f2'),
+                }
+                for t in _dq_unrel + _dq_recon + _dq_part:
+                    q = _dq[t]
+                    _accent, _tag, _bg = _style[q['level']]
+                    _action_html = (f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#006497;'
+                                    f'margin:3px 0 0 0;line-height:1.5;">→ {q["action"]}</p>') if q.get("action") else ''
+                    _rows.append(
+                        f'<div style="border-left:3px solid {_accent};padding:8px 14px;margin:8px 0;background:{_bg};">'
+                        f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
+                        f'{t} · <span style="color:{_accent};font-weight:600;">{_tag}</span></p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">{q["reason"]}</p>'
+                        f'{_action_html}'
+                        f'</div>'
+                    )
+                st.markdown(
+                    '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                    'font-weight:800;color:#021C36;margin:0 0 4px 0;">Calidad de datos</p>'
+                    '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
+                    'Cuando el CSV no trae el historial completo, usamos tu captura del broker (acciones y costo) '
+                    'para reconciliar la posición; los tickers no reconciliados se marcan y se excluyen del % en el tiempo.</p>'
+                    + ''.join(_rows) + '</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:10px 14px;margin:8px 0;">'
+                    f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
+                    f'Datos completos · {len(results)} posiciones verificadas</span></div>',
                     unsafe_allow_html=True
                 )
 
@@ -975,6 +1109,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     {_roc_cell}
 </div>
             """, unsafe_allow_html=True)
+            if _dq_unrel:
+                st.caption("Aviso: " + ", ".join(_dq_unrel) + " tienen historial de compras incompleto en el CSV, "
+                           "así que el Total Invertido y el ROI de arriba los incluyen con un costo subestimado "
+                           "(su % se ve inflado). Revisa el panel 'Calidad de datos' y exporta el historial completo de esos tickers.")
             st.caption("ROI = ganancia total acumulada desde el inicio · TIR (Tasa Interna de Retorno / IRR en inglés) = retorno anualizado considerando exactamente cuándo compraste cada lote — más preciso que el ROI para compras escalonadas")
 
             # ── PDF Report Download ───────────────────────────────────
@@ -1053,6 +1191,17 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
                     )
                     st.altair_chart(_cmp_chart, use_container_width=True)
+                    _excl_cmp = [t for t, m in classify_map.items()
+                                 if m in ('mode_a', 'mode_b') and t in results
+                                 and logic._cost_incomplete(results, t)]
+                    if _excl_cmp:
+                        st.caption(
+                            "Nota: " + ", ".join(sorted(_excl_cmp)) +
+                            " se excluyó de esta gráfica por historial incompleto en el CSV "
+                            "(ventas que superan las compras registradas), lo que distorsionaría el % del bloque. "
+                            "El % es el retorno sobre el capital que aportaste: baja cuando agregas capital nuevo "
+                            "(aún sin ganancia), por eso puede caer mientras el valor en $ sube."
+                        )
                     st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Comparativa de estrategias (auto-calculada) ───────────
@@ -1607,8 +1756,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
                         st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
 
-                    if stats.get('history_incomplete'):
-                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — el conteo de acciones, el valor de mercado, el ROI y las métricas de riesgo pueden ser incorrectos. Exporta un CSV con el historial completo desde el inicio de tu posición para resultados precisos.")
+                    _q = logic.assess_ticker_quality(results, ticker)
+                    if _q['level'] == 'unreliable':
+                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
+                    elif _q['level'] == 'reconciled':
+                        st.info(f"{ticker} · reconciliado desde tu captura: {_q['reason']}")
 
                     # ROC Callout — solo si hay datos de IB
                     if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
@@ -1988,8 +2140,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
                         st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
 
-                    if stats.get('history_incomplete'):
-                        st.warning(f"{ticker}: El CSV no contiene el historial completo de compras. Algunas ventas exceden las compras registradas — el conteo de acciones, el valor de mercado, el ROI y las métricas de riesgo pueden ser incorrectos. Exporta un CSV con el historial completo desde el inicio de tu posición para resultados precisos.")
+                    _q = logic.assess_ticker_quality(results, ticker)
+                    if _q['level'] == 'unreliable':
+                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
+                    elif _q['level'] == 'reconciled':
+                        st.info(f"{ticker} · reconciliado desde tu captura: {_q['reason']}")
 
                     # Fase 6: Cobertura del CSV
                     _b_cov = stats.get('csv_coverage_pct')
