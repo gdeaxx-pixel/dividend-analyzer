@@ -2415,87 +2415,101 @@ elif input_method == "Simulación Teórica":
                 st.altair_chart(_sim_chart, use_container_width=True)
 
     elif sim_mode == "Dos portafolios: Dividendos vs Crecimiento":
-        st.caption("Compara dos canastas de ETFs con el mismo capital. El monto se reparte equitativamente entre los tickers de cada canasta y los dividendos se reinvierten (DRIP) en ambas. Backtest con precios y dividendos históricos reales.")
+        st.caption("Reparte un mismo capital entre dos canastas (Dividendos y Crecimiento) en 5 mezclas distintas y compara la evolución real de cada parte. El monto de cada canasta se reparte equitativamente entre sus tickers y los dividendos se reinvierten (DRIP). Backtest con precios y dividendos históricos reales.")
 
         c1, c2 = st.columns(2)
-        div_csv = c1.text_input("Portafolio Dividendos", "TSLY, NVDY, MSTY")
-        growth_csv = c2.text_input("Portafolio Crecimiento", "QQQ, XLK, SMH")
+        div_csv = c1.text_input("Portafolio Dividendos", "TSLY, NVDY, MSTY, CONY")
+        growth_csv = c2.text_input("Portafolio Crecimiento", "SCHB, XLK, SMH")
 
         c3, c4 = st.columns(2)
-        amount_pp = c3.number_input("Inversión por portafolio ($)", value=5000, step=500)
-        years = c4.number_input("Años de backtest", value=2, min_value=1, max_value=10)
+        capital = c3.select_slider("Capital invertido ($)", options=[0, 1000, 2000, 5000, 10000], value=1000)
+        years = c4.select_slider("Periodo de inversión (años)", options=[0, 1, 2, 3], value=2)
 
-        if st.button("Comparar Portafolios"):
-            start_date_pp = (datetime.date.today() - datetime.timedelta(days=int(years) * 365)).isoformat()
-            with st.spinner("Simulando ambos portafolios..."):
-                comp, comp_err = logic.simulate_portfolio_comparison_cached(div_csv, growth_csv, amount_pp, start_date_pp)
-
-            if comp is None:
-                st.error(f"Error: {comp_err}")
+        if st.button("Comparar mezclas"):
+            if capital <= 0 or years <= 0:
+                st.info("Selecciona un capital y un periodo mayores a 0 para ver la evolución.")
             else:
-                for _w in comp.get('warnings', []):
-                    st.info(_w)
+                start_date_pp = (datetime.date.today() - datetime.timedelta(days=int(years) * 365)).isoformat()
+                with st.spinner("Simulando portafolios..."):
+                    comp, comp_err = logic.simulate_portfolio_comparison_cached(div_csv, growth_csv, 1.0, start_date_pp)
 
-                st.success(f"Comparación completada · backtest desde {comp['common_start']}")
+                if comp is None:
+                    st.error(f"Error: {comp_err}")
+                else:
+                    for _w in comp.get('warnings', []):
+                        st.info(_w)
 
-                _ds = comp['dividend_stats']
-                _gs = comp['growth_stats']
-                m1, m2 = st.columns(2)
-                m1.metric(f"Portafolio Dividendos (DRIP) · ${amount_pp:,.0f}",
-                          f"${_ds['final_value']:,.2f}", delta=f"{_ds['roi_percent']:.2f}%")
-                m2.metric(f"Portafolio Crecimiento (DRIP) · ${amount_pp:,.0f}",
-                          f"${_gs['final_value']:,.2f}", delta=f"{_gs['roi_percent']:.2f}%")
+                    st.success(f"Comparación completada · backtest desde {comp['common_start']}")
 
-                st.subheader("Evolución Comparativa")
-                hist = comp['history']
-                import altair as alt
-                _cmp_long = hist[['Dividendos', 'Crecimiento']].reset_index().melt(
-                    id_vars='Date', var_name='Portafolio', value_name='Valor'
-                )
-                _cmp_scale = alt.Scale(domain=['Dividendos', 'Crecimiento'], range=['#006497', '#021C36'])
-                _cmp_area = alt.Chart(_cmp_long).mark_area(opacity=0.06, interpolate='monotone').encode(
-                    x=alt.X('Date:T'),
-                    y=alt.Y('Valor:Q'),
-                    color=alt.Color('Portafolio:N', scale=_cmp_scale, legend=None)
-                )
-                _cmp_lines = alt.Chart(_cmp_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
-                    x=alt.X('Date:T', title='Fecha'),
-                    y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
-                    color=alt.Color('Portafolio:N', scale=_cmp_scale, title='Portafolio'),
-                    tooltip=[
-                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
-                        alt.Tooltip('Portafolio:N', title='Portafolio'),
-                        alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
-                    ]
-                )
-                _cmp_chart = (_cmp_area + _cmp_lines).properties(
-                    height=320, background=CHART_PALETTE["bg"]
-                ).configure_view(
-                    strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                ).configure_axis(
-                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
-                ).configure_legend(
-                    labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
-                    labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
-                    labelFontSize=12, titleFontSize=10, titleFontWeight=500,
-                    strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
-                )
-                st.altair_chart(_cmp_chart, use_container_width=True)
+                    import altair as alt
+                    hist = comp['history']  # Dividendos / Crecimiento normalizados a $1 por canasta
+                    _r_div = comp['dividend_stats']['roi_percent']
+                    _r_grw = comp['growth_stats']['roi_percent']
 
-                _rows = []
-                for _grupo in ['Dividendos', 'Crecimiento']:
-                    for _r in comp['per_ticker'][_grupo]:
-                        _rows.append({
-                            'Portafolio': _grupo,
-                            'Ticker': _r['Ticker'],
-                            'Asignación': f"${_r['Asignacion']:,.0f}",
-                            'Valor Final': f"${_r['Valor Final']:,.2f}",
-                            'ROI %': f"{_r['ROI %']:.2f}%",
+                    a1, a2 = st.columns(2)
+                    a1.metric("Portafolio Dividendos (DRIP)", f"{_r_div:+.1f}%", help=div_csv)
+                    a2.metric("Portafolio Crecimiento (DRIP)", f"{_r_grw:+.1f}%", help=growth_csv)
+                    st.caption("Rendimiento de cada canasta en el periodo. Es el mismo para las 5 mezclas; lo que cambia es cuánto capital pones en cada una.")
+
+                    _DIV_COLOR, _GRW_COLOR = "#006497", "#021C36"
+                    _scale = alt.Scale(domain=['Dividendos', 'Crecimiento'], range=[_DIV_COLOR, _GRW_COLOR])
+
+                    def _mix_chart(_long):
+                        _area = alt.Chart(_long).mark_area(opacity=0.06, interpolate='monotone').encode(
+                            x=alt.X('Date:T'),
+                            y=alt.Y('Valor:Q'),
+                            color=alt.Color('Parte:N', scale=_scale, legend=None)
+                        )
+                        _lines = alt.Chart(_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
+                            x=alt.X('Date:T', title='Fecha'),
+                            y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                            color=alt.Color('Parte:N', scale=_scale, title='Parte'),
+                            tooltip=[
+                                alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                                alt.Tooltip('Parte:N', title='Parte'),
+                                alt.Tooltip('Valor:Q', format='$,.2f', title='Valor')
+                            ]
+                        )
+                        return (_area + _lines).properties(
+                            height=240, background=CHART_PALETTE["bg"]
+                        ).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                        ).configure_axis(
+                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
+                        ).configure_legend(
+                            labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                            labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                            labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                            strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                        )
+
+                    _MIXES = [(80, 20), (60, 40), (50, 50), (40, 60), (20, 80)]
+                    st.subheader("Evolución por mezcla de asignación")
+                    for _i, (_pd, _pg) in enumerate(_MIXES, 1):
+                        _div_part = hist['Dividendos'] * capital * (_pd / 100.0)
+                        _grw_part = hist['Crecimiento'] * capital * (_pg / 100.0)
+                        _df = pd.DataFrame({
+                            'Date': hist.index,
+                            'Dividendos': _div_part.values,
+                            'Crecimiento': _grw_part.values,
                         })
-                st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
+                        _long = _df.melt(id_vars='Date', var_name='Parte', value_name='Valor')
+                        _div_final = float(_div_part.iloc[-1])
+                        _grw_final = float(_grw_part.iloc[-1])
+                        _total = _div_final + _grw_final
+                        _gain = _total - capital
+
+                        st.markdown(f"**{_pd}% Dividendos · {_pg}% Crecimiento**  ·  Mezcla {_i} de 5")
+                        mc1, mc2, mc3 = st.columns(3)
+                        mc1.metric("Total combinado", f"${_total:,.0f}", delta=f"${_gain:,.0f}")
+                        mc2.metric("En Dividendos", f"${_div_final:,.0f}", help=f"Inicial ${capital * _pd / 100.0:,.0f}")
+                        mc3.metric("En Crecimiento", f"${_grw_final:,.0f}", help=f"Inicial ${capital * _pg / 100.0:,.0f}")
+                        st.altair_chart(_mix_chart(_long), use_container_width=True)
+                        if _i < len(_MIXES):
+                            st.divider()
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
 FOOTER_STYLE = "background-color:#f0eeec;border-top:1px solid #e0ddd9;padding:24px 40px;margin-top:48px;"
