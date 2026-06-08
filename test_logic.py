@@ -607,3 +607,221 @@ def test_reconciliation_noop_when_matches_csv(monkeypatch):
     assert s["reconciled_from_snapshot"] is False
     assert s["shares_owned"] == pytest.approx(10.0)
     assert s["pocket_investment"] == pytest.approx(200.0)
+
+
+# ── Investment Income (segunda fuente de validación) ───────────────────────────
+
+INCOME_CSV = (
+    b'"Investment Income Transactions as of 06/08/2026 08:43:32 ET"\n'
+    b'Transaction Date,Account Number,Account Name,Account Type,Security Description,Symbol,Security Type,Transaction Type,Transaction Amount,Income Type,\n'
+    b'"06/30/2027","...550","Individual","BROKERAGE","Schwab US Broad Market ETF","SCHB","ETFs & Closed End Funds","Dividend","3.74","Estimated",\n'
+    b'"05/01/2026","...550","Individual","BROKERAGE","YIELDMAX MSTR OPT INCM STRTGY ETF","88634T493","ETFs & Closed End Funds","Reinvest Dividend","10.00","Received",\n'
+    b'"04/01/2026","...550","Individual","BROKERAGE","TIDAL TR II YIELDMAX MSTR OPTION INCOME STRATEGY ETF NEW","MSTY","ETFs & Closed End Funds","Reinvest Dividend","5.00","Received",\n'
+    b'"03/01/2026","...550","Individual","BROKERAGE","MICROSOFT CORP","MSFT","Equities","Qualified Dividend","1.82","Received",\n'
+    b'"02/01/2026","...550","Individual","BROKERAGE","Cash & Money Market","NO NUMBER","Cash & Money Market","Credit Interest","0.09","Received",\n'
+    b'"01/01/2026","...550","Individual","BROKERAGE","ORACLE CORP","ORCL","Equities","Qualified Dividend","","Received",\n'
+)
+
+
+def _hist(rows, ticker="X"):
+    """Construye un history DataFrame mínimo [Date, Action, Amount, Ticker] para reconcile."""
+    return pd.DataFrame([
+        {"Date": pd.Timestamp(d), "Action": a, "Amount": amt, "Ticker": ticker}
+        for d, a, amt in rows
+    ])
+
+
+def test_income_parse_and_summarize():
+    df = logic.parse_schwab_income_csv(INCOME_CSV)
+    assert df is not None and len(df) > 0
+    summ = logic.summarize_income(df)
+    assert summ["multi_account"] is False
+    t = summ["tickers"]
+    # MSTY plegado: 10 (CUSIP 88634T493) + 5 (ticker) = 15, folded
+    assert t["MSTY"]["received_total"] == pytest.approx(15.0, abs=0.01)
+    assert t["MSTY"]["folded"] is True
+    assert "88634T493" not in t                       # el CUSIP no es un ticker propio
+    assert t["MSFT"]["received_total"] == pytest.approx(1.82, abs=0.01)
+    assert "received_total" not in t.get("SCHB", {})  # SCHB solo 'Estimated'
+    assert t["SCHB"]["est_per_payment"] == pytest.approx(3.74, abs=0.01)
+    assert "NO NUMBER" not in t                        # interés de cash excluido
+    assert "ORCL" not in t                             # monto malformado -> fila descartada
+
+
+def test_income_reject_non_income():
+    assert logic.parse_schwab_income_csv(b"") is None
+    assert logic.parse_schwab_income_csv(SCHWAB_CSV) is None     # es de transacciones, no income
+
+
+def test_reconcile_none_is_noop_and_pure():
+    results = {"MSTY": {"history": _hist([("2026-05-01", "Reinvest Dividend", 5.0)]),
+                        "history_incomplete": False}}
+    assert logic.reconcile_income(results, None) == {}
+    assert logic.reconcile_income(results, {"tickers": {}}) == {}
+    assert "income_recon" not in results["MSTY"]                 # no muta results
+
+
+def test_reconcile_match_gross():
+    results = {"MSTY": {"history": _hist([("2026-04-01", "Reinvest Dividend", 5.0),
+                                          ("2026-05-01", "Reinvest Dividend", 10.0)]),
+                        "history_incomplete": False}}
+    income = {"tickers": {"MSTY": {"received_total": 15.0, "folded": False,
+                                   "received_window": (pd.Timestamp("2026-04-01"), pd.Timestamp("2026-05-01"))}}}
+    r = logic.reconcile_income(results, income)["MSTY"]
+    assert r["status"] == "match" and r["badge"] == "ok"
+    assert r["csv_total"] == pytest.approx(15.0, abs=0.01)
+
+
+def test_reconcile_cusip_folded_badge():
+    results = {"MSTY": {"history": _hist([("2026-05-01", "Reinvest Dividend", 15.0)]),
+                        "history_incomplete": False}}
+    income = {"tickers": {"MSTY": {"received_total": 15.0, "folded": True,
+                                   "received_window": (pd.Timestamp("2026-05-01"), pd.Timestamp("2026-05-01"))}}}
+    r = logic.reconcile_income(results, income)["MSTY"]
+    assert r["status"] == "cusip_folded" and r["badge"] == "ok"
+
+
+def test_reconcile_csv_window_longer():
+    # El CSV tiene un dividendo de 2024 fuera de la ventana del income.
+    results = {"SCHB": {"history": _hist([("2024-05-01", "Reinvest Dividend", 5.0),
+                                          ("2026-05-01", "Reinvest Dividend", 10.0)]),
+                        "history_incomplete": False}}
+    income = {"tickers": {"SCHB": {"received_total": 10.0, "folded": False,
+                                   "received_window": (pd.Timestamp("2026-01-01"), pd.Timestamp("2026-12-31"))}}}
+    r = logic.reconcile_income(results, income)["SCHB"]
+    assert r["status"] == "csv_window_longer" and r["badge"] == "ok"
+    assert r["csv_total"] == pytest.approx(15.0, abs=0.01)
+    assert r["csv_in_window"] == pytest.approx(10.0, abs=0.01)
+
+
+def test_reconcile_income_higher_regression():
+    """REGRESIÓN: income > CSV en la ventana común debe ser 'income_higher' (alarma real).
+    Protege contra que una tolerancia más amplia enmascare dividendos faltantes."""
+    results = {"MSTY": {"history": _hist([("2026-05-01", "Reinvest Dividend", 5.0)]),
+                        "history_incomplete": False}}
+    income = {"tickers": {"MSTY": {"received_total": 15.0, "folded": False,
+                                   "received_window": (pd.Timestamp("2026-04-01"), pd.Timestamp("2026-06-01"))}}}
+    r = logic.reconcile_income(results, income)["MSTY"]
+    assert r["status"] == "income_higher" and r["badge"] == "warn"
+
+
+def test_reconcile_csv_overcount_when_history_incomplete():
+    results = {"SCHB": {"history": _hist([("2026-05-01", "Reinvest Dividend", 20.0)]),
+                        "history_incomplete": True}}
+    income = {"tickers": {"SCHB": {"received_total": 10.0, "folded": False,
+                                   "received_window": (pd.Timestamp("2026-01-01"), pd.Timestamp("2026-12-31"))}}}
+    r = logic.reconcile_income(results, income)["SCHB"]
+    assert r["status"] == "csv_overcount_suspected" and r["badge"] == "warn"
+
+
+def test_reconcile_missing_in_csv():
+    income = {"tickers": {"ZIM": {"received_total": 8.0, "folded": False,
+                                  "received_window": (pd.Timestamp("2025-01-01"), pd.Timestamp("2025-12-31"))}}}
+    r = logic.reconcile_income({}, income)
+    assert r["ZIM"]["status"] == "missing_in_csv"
+
+
+def test_reconcile_missing_in_income():
+    results = {"MSTY": {"history": _hist([("2026-05-01", "Reinvest Dividend", 5.0)]),
+                        "history_incomplete": False}}
+    income = {"tickers": {"MSTY": {"est_per_payment": 6.5}}}     # solo Estimated, sin received
+    r = logic.reconcile_income(results, income)["MSTY"]
+    assert r["status"] == "missing_in_income"
+
+
+_FIX = os.path.join(os.path.dirname(__file__), "real_examples", "charles_schwab_data", "2")
+
+
+@pytest.mark.skipif(not os.path.isdir(_FIX), reason="sin real_examples/ (data privada)")
+def test_income_real_schwab2_reconciles():
+    """Caso real schwab_2: el income del broker valida el dividendo del CSV. Sin red:
+    se reconstruyen results desde las transacciones normalizadas (history por ticker)."""
+    import glob as _glob
+    import json as _json
+    inc = _glob.glob(os.path.join(_FIX, "*InvestmentIncome*"))
+    tx = _glob.glob(os.path.join(_FIX, "*Transactions*.csv"))
+    if not inc or not tx:
+        pytest.skip("fixtures incompletos")
+    with open(inc[0], "rb") as f:
+        summ = logic.summarize_income(logic.parse_schwab_income_csv(f.read()))
+    with open(tx[0], "rb") as f:
+        df = logic.normalize_csv(logic.parse_schwab_csv(f.read()))
+    results = {}
+    for tk in df["Ticker"].dropna().unique():
+        results[tk] = {"history": df[df["Ticker"] == tk], "history_incomplete": (tk == "SCHB")}
+    recon = logic.reconcile_income(results, summ)
+
+    exp = _json.load(open(os.path.join(_FIX, "expected.json")))["income_expected"]
+    # MSTY plegado del CUSIP y ~346 (tolerancia = constante de la app)
+    assert summ["tickers"]["MSTY"]["folded"] is True
+    assert summ["tickers"]["MSTY"]["received_total"] == pytest.approx(
+        exp["received"]["MSTY"], abs=logic.INCOME_MATCH_TOL_ABS)
+    assert recon["MSTY"]["status"] in ("match", "cusip_folded")
+    assert recon["MSTY"]["badge"] == "ok"
+    # Equities: income exacto y estado 'match'
+    for eq in ("MSFT", "ORCL", "COP", "CHD", "CL"):
+        assert summ["tickers"][eq]["received_total"] == pytest.approx(exp["received"][eq], abs=0.01)
+        assert recon[eq]["status"] == "match"
+    # SCHB/XLK: NUNCA 'income_higher' (es ventana más larga, no error)
+    for w in ("SCHB", "XLK"):
+        assert recon[w]["status"] != "income_higher", (w, recon[w])
+
+
+# ── project_income (proyección broker vs run-rate reciente) ────────────────────
+
+def _income_df(rows):
+    """rows: lista de (date, ticker, income_type, amount) -> df estilo parse_schwab_income_csv."""
+    return pd.DataFrame([
+        {"Date": pd.Timestamp(d), "Ticker": t, "IncomeType": it, "Amount": a, "folded": False}
+        for d, t, it, a in rows
+    ])
+
+
+def _build_proj_income():
+    """MSTY: serie semanal decreciente ($6→$3) + Estimated plano alto ($6). SCHB: trimestral
+    estable ($4) + Estimated estable. Fechas relativas a hoy para que el test no caduque."""
+    today = pd.Timestamp.today().normalize()
+    rows = []
+    for i in range(20):  # 20 pagos semanales recibidos, de $6 a $3
+        rows.append((today - pd.Timedelta(weeks=20 - i), "MSTY", "Received", 6.0 - 3.0 * i / 19))
+    for i in range(1, 53):  # 52 estimados futuros, plano en $6 (ancla alta)
+        rows.append((today + pd.Timedelta(weeks=i), "MSTY", "Estimated", 6.0))
+    for i in range(5):   # SCHB trimestral estable
+        rows.append((today - pd.Timedelta(days=90 * (5 - i)), "SCHB", "Received", 4.0))
+    for i in range(1, 5):
+        rows.append((today + pd.Timedelta(days=90 * i), "SCHB", "Estimated", 4.0))
+    rows.append((today - pd.Timedelta(weeks=2), "AAA", "Received", 1.0))   # solo 2 received -> excluido
+    rows.append((today - pd.Timedelta(weeks=1), "AAA", "Received", 1.0))
+    rows.append((today + pd.Timedelta(weeks=1), "AAA", "Estimated", 1.0))
+    return _income_df(rows)
+
+
+def test_project_income_yieldmax_overstated():
+    proj = logic.project_income(_build_proj_income())
+    assert "AAA" not in proj                       # <4 pagos recibidos -> excluido
+    m = proj["MSTY"]
+    assert m["payments_per_year"] == 52
+    assert m["anchor_per_payment"] == pytest.approx(6.0, abs=0.01)
+    assert m["schwab_proj"] == pytest.approx(312.0, abs=1.0)        # 52 x $6
+    assert m["our_proj"] < m["schwab_proj"]                          # run-rate reciente menor
+    assert m["overstatement_pct"] > logic.INCOME_OVERSTATE_FLAG_PCT  # > 15%
+    assert m["our_received_12m"] is None                             # sin results
+
+
+def test_project_income_stable_etf_matches():
+    proj = logic.project_income(_build_proj_income())
+    s = proj["SCHB"]
+    assert abs(s["overstatement_pct"]) <= 5         # ETF estable: proyecciones ~iguales
+
+
+def test_project_income_empty_and_none():
+    assert logic.project_income(None) == {}
+    assert logic.project_income(_income_df([])) == {}
+
+
+def test_project_income_uses_results_for_csv_12m():
+    today = pd.Timestamp.today().normalize()
+    hist = _hist([(str((today - pd.Timedelta(weeks=k)).date()), "Reinvest Dividend", 5.0) for k in range(1, 6)],
+                 ticker="SCHB")
+    proj = logic.project_income(_build_proj_income(), {"SCHB": {"history": hist}})
+    assert proj["SCHB"]["our_received_12m"] == pytest.approx(25.0, abs=0.01)  # 5 x $5 en 12m
