@@ -7,7 +7,13 @@ import streamlit as st
 from curl_cffi import requests as crequests
 import re
 import io
+import os
 from collections import defaultdict
+
+try:
+    import yaml as _yaml
+except Exception:
+    _yaml = None
 
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 GEMINI_VISION_FALLBACKS = ["gemini-2.5-flash-lite"]
@@ -1886,12 +1892,167 @@ COMPANY_DESCRIPTIONS = {
 }
 
 
+_INSTRUMENTS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'instruments.yaml')
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_instruments() -> dict:
+    """Carga la base de conocimiento editable de instrumentos (knowledge/instruments.yaml).
+
+    Es la fuente de verdad para la sección de riesgo y el bloque de interpretación.
+    Cada entrada del YAML enriquece/sobre-escribe el fallback embebido
+    (YIELDMAX_RISK_PROFILES). Defensivo: ante cualquier error —archivo ausente, YAML
+    inválido o PyYAML no instalado— devuelve el fallback embebido, así nunca queda
+    peor que hoy. Claves por ticker en MAYÚSCULAS.
+    """
+    base = {k.upper(): dict(v) for k, v in YIELDMAX_RISK_PROFILES.items()}
+    if _yaml is None:
+        return base
+    try:
+        with open(_INSTRUMENTS_PATH, 'r', encoding='utf-8') as fh:
+            data = _yaml.safe_load(fh) or {}
+        if not isinstance(data, dict):
+            return base
+        for tk, prof in data.items():
+            if not isinstance(prof, dict):
+                continue
+            merged = dict(base.get(str(tk).upper(), {}))
+            merged.update({k: v for k, v in prof.items() if v is not None})
+            base[str(tk).upper()] = merged
+        return base
+    except Exception:
+        return base
+
+
 def get_yieldmax_risk_profile(ticker: str) -> dict:
-    """Returns risk profile for a YieldMax ETF (static data, no API call)."""
-    return YIELDMAX_RISK_PROFILES.get(ticker.upper(), {
+    """Perfil de riesgo de un ticker desde la base de conocimiento (con fallback). Sin API.
+
+    Devuelve siempre las 4 claves que consume la sección de riesgo
+    (underlying/name/risk/reason); los campos profundos los lee build_interpretation.
+    """
+    prof = load_instruments().get(str(ticker).upper())
+    if prof:
+        return {
+            'underlying': prof.get('underlying', 'N/A'),
+            'name': prof.get('name', ticker),
+            'risk': prof.get('risk', 'UNKNOWN'),
+            'reason': prof.get('reason', ''),
+        }
+    return {
         'underlying': 'N/A', 'name': ticker, 'risk': 'UNKNOWN',
         'reason': 'Perfil de riesgo no disponible para este ticker'
-    })
+    }
+
+
+def build_interpretation(results: dict, ticker: str, mode: str = None) -> dict:
+    """Interpretación EDUCATIVA por ticker: combina el conocimiento curado
+    (instruments.yaml) con los números ya calculados. Nunca recomienda comprar/vender
+    ni inventa conocimiento que no esté en el YAML. Devuelve {'lines': [str, ...]}.
+    """
+    s = results.get(ticker, {}) or {}
+    if not isinstance(s, dict) or 'error' in s:
+        return {'lines': []}
+    info = load_instruments().get(str(ticker).upper(), {})
+
+    pocket = s.get('pocket_investment', 0) or 0
+    market = s.get('market_value', 0) or 0
+    inc = s.get('dividends_collected_cash', 0) or 0
+    total_ret = market + inc - pocket
+    cap = market - pocket
+
+    def _signed(v):
+        return f"{'-' if v < 0 else '+'}${abs(v):,.0f}"
+
+    lines = []
+
+    # (1) Qué es — solo conocimiento curado, jamás inventado
+    if info.get('income_mechanism'):
+        lines.append(info['income_mechanism'])
+    elif info.get('note') and info.get('type') in ('etf', 'leveraged'):
+        lines.append(info['note'])
+
+    # (2) Qué dicen TUS números — derivado de datos reales
+    if pocket > 0:
+        if cap < 0 and inc > 0:
+            if inc + cap >= 0:
+                lines.append(
+                    f"En tu caso el precio cayó ${abs(cap):,.0f} pero cobraste ${inc:,.0f} "
+                    f"en dividendos: el income ya compensó la caída (retorno total "
+                    f"{_signed(total_ret)}). Por eso se evalúa por retorno total, no por el precio."
+                )
+            else:
+                lines.append(
+                    f"En tu caso el precio cayó ${abs(cap):,.0f} y llevas ${inc:,.0f} en "
+                    f"dividendos: el income todavía no cubre la caída (retorno total "
+                    f"{_signed(total_ret)})."
+                )
+        elif total_ret != 0:
+            lines.append(
+                f"Tu retorno total es {_signed(total_ret)} "
+                f"(capital {_signed(cap)} + income ${inc:,.0f})."
+            )
+
+    # (3) Qué considerar — sostenibilidad / nota curada
+    if info.get('income_mechanism') and info.get('sustainability'):
+        lines.append(info['sustainability'])
+    elif info.get('income_mechanism') and info.get('note'):
+        lines.append(info['note'])
+    elif info.get('type') == 'leveraged' and info.get('nav_erosion'):
+        lines.append(info['nav_erosion'])
+
+    seen, out = set(), []
+    for ln in lines:
+        if ln and ln not in seen:
+            seen.add(ln)
+            out.append(ln)
+    return {'lines': out[:4]}
+
+
+def build_portfolio_verdict(results: dict, classify_map: dict = None) -> dict:
+    """Síntesis EDUCATIVA a nivel de portafolio (concentración, peso en income tipo
+    YieldMax, y balance capital-vs-income). Deriva todo de los números ya calculados;
+    no recomienda comprar/vender. Devuelve {'lines': [str, ...]} (puede ir vacío).
+    """
+    valid = {t: s for t, s in results.items()
+             if isinstance(s, dict) and 'error' not in s and not s.get('skipped')}
+    if not valid:
+        return {'lines': []}
+
+    total_market = sum(s.get('market_value', 0) or 0 for s in valid.values())
+    total_inv = sum(s.get('pocket_investment', 0) or 0 for s in valid.values())
+    total_inc = sum(s.get('dividends_collected_cash', 0) or 0 for s in valid.values())
+    lines = []
+
+    # Concentración: mayor posición como % del valor
+    if total_market > 0:
+        top_t, top_v = max(((t, s.get('market_value', 0) or 0) for t, s in valid.items()),
+                           key=lambda x: x[1])
+        top_pct = top_v / total_market * 100
+        nivel = "alta" if top_pct >= 40 else ("moderada" if top_pct >= 25 else "baja")
+        lines.append(
+            f"Tu mayor posición, {top_t}, pesa {top_pct:.0f}% del valor del portafolio "
+            f"— concentración {nivel}.")
+
+    # Peso en ETFs de income tipo YieldMax (mode_a)
+    if classify_map and total_market > 0:
+        ym_val = sum((valid[t].get('market_value', 0) or 0)
+                     for t, m in classify_map.items() if m == 'mode_a' and t in valid)
+        ym_pct = ym_val / total_market * 100
+        if ym_pct >= 1:
+            lines.append(
+                f"El {ym_pct:.0f}% de tu valor está en ETFs de income tipo YieldMax: ahí el "
+                f"retorno depende de que los dividendos compensen la erosión de precio, no de "
+                f"la apreciación. Evalúalos por retorno total, no por el yield titular.")
+
+    # Balance capital vs income a nivel agregado
+    cap = total_market - total_inv
+    if total_inc > 0 and cap < 0 and (total_inc + cap) >= 0:
+        lines.append(
+            f"En conjunto, tus dividendos cobrados (${total_inc:,.0f}) ya cubren la caída de "
+            f"precio (${abs(cap):,.0f}): hoy el income es lo que sostiene tu retorno.")
+
+    return {'lines': lines[:4]}
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -2043,10 +2204,12 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
     if cost_broken:
         level = 'unreliable'
         reason = ("El historial de compras de este ticker en el CSV esta incompleto "
-                  "(tienes acciones sin costo registrado o vendiste mas de lo que figura comprado), "
-                  "por lo que el costo base esta subestimado.")
+                  "(tienes acciones sin costo registrado o vendiste mas de lo que figura comprado). "
+                  "Esto no solo afecta el ROI/%: el numero de acciones y el valor de mercado "
+                  "calculados tambien pueden diferir de los de tu broker.")
         action = (f"Exporta el historial COMPLETO de {ticker} desde la apertura de la posicion "
-                  "y vuelve a subir el archivo. Mientras tanto su ROI/% no es confiable.")
+                  "y vuelve a subir el archivo. Mientras tanto no compares 1:1 con tu broker "
+                  "las acciones, el valor ni el ROI de este ticker.")
     elif 'low_coverage' in flags:
         level = 'partial'
         reason = (f"El CSV cubre solo ~{cov:.0f}% de la vida de la posicion; las metricas de largo "

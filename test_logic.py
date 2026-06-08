@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import sys
 
 import pandas as pd
@@ -607,3 +608,106 @@ def test_reconciliation_noop_when_matches_csv(monkeypatch):
     assert s["reconciled_from_snapshot"] is False
     assert s["shares_owned"] == pytest.approx(10.0)
     assert s["pocket_investment"] == pytest.approx(200.0)
+
+
+# ── Capa de conocimiento de instrumentos + interpretación (2026-06-08) ─────────
+
+def test_load_instruments_merges_yaml_over_fallback():
+    """Carga el YAML sobre el fallback embebido: tickers del fallback + los nuevos del YAML."""
+    logic.load_instruments.clear()
+    inst = logic.load_instruments()
+    # del fallback embebido
+    assert 'MSTY' in inst and inst['MSTY']['risk'] == 'HIGH'
+    # nuevos que solo viven en el YAML (estaban como UNKNOWN antes)
+    assert 'NFLY' in inst and 'PLTY' in inst
+    # el YAML profundiza con campos que el fallback no tenía
+    assert inst['MSTY'].get('income_mechanism')
+    assert inst['MSTY'].get('sustainability')
+
+
+def test_load_instruments_resilient_to_missing_file(monkeypatch):
+    """Si el archivo de conocimiento no existe, cae al fallback embebido sin crashear."""
+    logic.load_instruments.clear()
+    monkeypatch.setattr(logic, '_INSTRUMENTS_PATH', '/no/existe/instruments.yaml')
+    inst = logic.load_instruments()
+    assert 'MSTY' in inst  # fallback intacto
+    logic.load_instruments.clear()  # no contaminar otros tests
+
+
+def test_get_yieldmax_risk_profile_shape_stable():
+    """Back-compat: siempre devuelve las 4 claves que consume la sección de riesgo."""
+    logic.load_instruments.clear()
+    known = logic.get_yieldmax_risk_profile('NVDY')
+    assert set(known) == {'underlying', 'name', 'risk', 'reason'}
+    assert known['underlying'] == 'NVDA' and known['risk'] == 'HIGH'
+    unknown = logic.get_yieldmax_risk_profile('ZZZZ')
+    assert set(unknown) == {'underlying', 'name', 'risk', 'reason'}
+    assert unknown['risk'] == 'UNKNOWN'
+
+
+def test_build_interpretation_compensated_vs_deficit():
+    """YieldMax: el bloque sintetiza COMPENSADO cuando el income supera la caída, y déficit si no."""
+    comp = logic.build_interpretation(
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000}}, 'MSTY')
+    txt = ' '.join(comp['lines'])
+    assert comp['lines']                      # no vacío
+    assert 'income' in txt and 'compensó' in txt
+    assert 'retorno total +$1,000' in txt
+
+    deficit = logic.build_interpretation(
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 1000}}, 'MSTY')
+    assert 'todavía no cubre' in ' '.join(deficit['lines'])
+
+
+def test_build_interpretation_unknown_no_fabrication():
+    """Ticker fuera del YAML: solo sintetiza los números, NO inventa conocimiento."""
+    out = logic.build_interpretation(
+        {'ZZZZ': {'pocket_investment': 1000, 'market_value': 1200, 'dividends_collected_cash': 50}}, 'ZZZZ')
+    assert len(out['lines']) == 1
+    assert 'retorno total' in out['lines'][0].lower()
+
+
+def test_knowledge_and_interpretation_have_no_buy_sell_language():
+    """Principio de diseño: NUNCA recomendación personalizada de compra/venta —
+    ni en el conocimiento curado ni en las líneas generadas."""
+    forbidden = re.compile(r'\b(deber[ií]as|compra|compre|vende|venda|vender|comprar|recomiendo|recomendamos)\b',
+                           re.IGNORECASE)
+    # 1) Conocimiento curado (todos los campos de texto de cada instrumento)
+    for tk, prof in logic.load_instruments().items():
+        for field in ('reason', 'income_mechanism', 'nav_erosion', 'sustainability', 'note'):
+            val = prof.get(field)
+            if val:
+                assert not forbidden.search(val), f"{tk}.{field} contiene lenguaje de compra/venta: {val!r}"
+    # 2) Líneas generadas para varios escenarios
+    scenarios = {
+        'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000},
+        'XLK':  {'pocket_investment': 2000,  'market_value': 3500, 'dividends_collected_cash': 20},
+        'NVDL': {'pocket_investment': 1000,  'market_value': 1100, 'dividends_collected_cash': 0},
+    }
+    for tk, s in scenarios.items():
+        for ln in logic.build_interpretation({tk: s}, tk)['lines']:
+            assert not forbidden.search(ln), f"línea de {tk} contiene compra/venta: {ln!r}"
+
+
+def test_build_portfolio_verdict_concentration_and_income():
+    """Veredicto: detecta concentración alta y peso en YieldMax; sin lenguaje de compra/venta."""
+    results = {
+        'MSTY': {'pocket_investment': 14000, 'market_value': 6000, 'dividends_collected_cash': 9000},
+        'SCHB': {'pocket_investment': 1000,  'market_value': 1200,  'dividends_collected_cash': 20},
+    }
+    classify = {'MSTY': 'mode_a', 'SCHB': 'mode_b'}
+    out = logic.build_portfolio_verdict(results, classify)
+    txt = ' '.join(out['lines'])
+    assert out['lines']
+    assert 'MSTY' in txt and '%' in txt            # concentración nombrada
+    assert 'YieldMax' in txt                        # peso en income
+    forbidden = re.compile(r'\b(deber[ií]as|compra|compre|vende|venda|vender|comprar|recomiendo|recomendamos)\b',
+                           re.IGNORECASE)
+    for ln in out['lines']:
+        assert not forbidden.search(ln), f"veredicto con compra/venta: {ln!r}"
+
+
+def test_build_portfolio_verdict_empty_is_safe():
+    """Sin posiciones válidas no crashea y devuelve vacío."""
+    assert logic.build_portfolio_verdict({}, {}) == {'lines': []}
+    assert logic.build_portfolio_verdict({'X': {'error': 'x'}}, {}) == {'lines': []}

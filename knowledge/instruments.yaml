@@ -1,0 +1,223 @@
+# ============================================================
+# Base de conocimiento de instrumentos — Dividend Analyzer
+# ============================================================
+# Esta es la capa de conocimiento que la app LEE para interpretar cada ticker
+# (sección de riesgo + bloque "Qué significa para ti"). Es editable a mano:
+# cada vez que investigues un ETF para un video o un trade, enriquece su entrada
+# aquí y la app se vuelve más inteligente sin tocar código. (Patrón "second brain".)
+#
+# Campos por ticker:
+#   type             : yieldmax | leveraged | etf | stock   (clasificación)
+#   underlying       : subyacente principal (o "Multi" / "Mercado")
+#   name             : nombre legible del subyacente/estrategia
+#   risk             : HIGH | MEDIUM | LOW            (alimenta la sección de riesgo)
+#   reason           : 1 línea — POR QUÉ ese nivel de riesgo (back-compat, no quitar)
+#   income_mechanism : cómo genera el income (opcional)
+#   nav_erosion      : por qué/cómo erosiona el precio (opcional, sobre todo YieldMax)
+#   sustainability   : qué tan sostenible es la distribución (opcional)
+#   note             : nota cualitativa corta y EDUCATIVA — nunca "compra/vende" (opcional)
+#
+# Reglas: contenido educativo y verificable. Nada de recomendaciones personalizadas
+# de compra/venta. Si no sabes un campo, omítelo (la app degrada con elegancia).
+# ============================================================
+
+# ── YieldMax — covered call sintético sobre UN subyacente ──────────────────
+TSLY:
+  type: yieldmax
+  underlying: TSLA
+  name: Tesla
+  risk: HIGH
+  reason: "Stock EV único, alta volatilidad, dependiente de Elon Musk y ciclos de demanda"
+  income_mechanism: "Genera income vendiendo opciones call cubiertas sintéticas sobre TSLA; tu income son las primas de esas opciones, no dividendos de Tesla (Tesla no paga dividendos)."
+  nav_erosion: "Estructural: la estrategia capa la subida de TSLA y financia parte de la distribución con retorno de capital (ROC). En un rally fuerte de TSLA, el ETF se queda atrás y su precio tiende a erosionarse."
+  sustainability: "La distribución NO es fija: sube cuando la volatilidad de TSLA es alta (primas más caras) y baja cuando se calma. Un yield anunciado de tres dígitos rara vez se sostiene."
+  note: "Holdear TSLY es apostar a TSLA lateral con alta volatilidad. Si crees que TSLA subirá fuerte, holdear TSLA directo captura esa subida; TSLY la cambia por income mensual."
+
+NVDY:
+  type: yieldmax
+  underlying: NVDA
+  name: NVIDIA
+  risk: HIGH
+  reason: "Semiconductor único, ciclo de demanda IA, valuación elevada"
+  income_mechanism: "Genera income vendiendo calls cubiertas sintéticas sobre NVDA; el income son las primas de opciones, no dividendos de NVIDIA."
+  nav_erosion: "La estrategia capa la subida de NVDA. En el ciclo alcista de IA, NVDA directo ha superado ampliamente a NVDY en retorno total; el ETF cambia esa apreciación por flujo mensual."
+  sustainability: "Depende de la volatilidad implícita de NVDA. Si NVDA se estabiliza, las primas (y la distribución) bajan."
+  note: "Bueno para income; débil para capturar la apreciación de NVDA. Compara siempre su Retorno Total (precio + dividendos) contra holdear NVDA."
+
+CONY:
+  type: yieldmax
+  underlying: COIN
+  name: Coinbase
+  risk: HIGH
+  reason: "Exchange cripto, riesgo regulatorio intenso, correlacionado con BTC"
+  income_mechanism: "Calls cubiertas sintéticas sobre COIN; income vía primas de opciones."
+  nav_erosion: "Erosión pronunciada: COIN es muy volátil y la estrategia devuelve mucho capital. CONY ha tenido reverse splits (1:10 en dic-2025), señal de erosión severa del precio."
+  sustainability: "Distribución muy variable, atada a la volatilidad de COIN y del cripto. Períodos de calma reducen el income con fuerza."
+  note: "De los YieldMax más erosivos. El precio puede caer >50% del ATH; el income debe evaluarse contra esa pérdida de capital (mira el callout de NAV erosion)."
+
+MSTY:
+  type: yieldmax
+  underlying: MSTR
+  name: MicroStrategy
+  risk: HIGH
+  reason: "Proxy de Bitcoin con apalancamiento, volatilidad extrema"
+  income_mechanism: "Calls cubiertas sintéticas sobre MSTR (que a su vez es un proxy apalancado de Bitcoin); income vía primas, amplificadas por la altísima volatilidad de MSTR."
+  nav_erosion: "Erosión extrema: MSTY ha caído >50% desde su ATH y tuvo reverse split. La volatilidad genera primas enormes (yield alto) pero el precio del ETF sufre tanto como sube el income."
+  sustainability: "El yield titular es de los más altos del mercado precisamente porque el riesgo de erosión es de los mayores. No confundir yield alto con retorno alto."
+  note: "Caso de libro de 'yield alto ≠ ganancia'. Evalúa MSTY por Retorno Total (precio hoy + dividendos cobrados − inversión), nunca solo por el yield mensual."
+
+NFLY:
+  type: yieldmax
+  underlying: NFLX
+  name: Netflix
+  risk: HIGH
+  reason: "Streaming de mega-cap; menos volátil que TSLA/MSTR pero aún single-name"
+  income_mechanism: "Calls cubiertas sintéticas sobre NFLX; income vía primas de opciones."
+  nav_erosion: "Como todo YieldMax, capa la subida de NFLX y devuelve capital. NFLX es menos volátil que MSTR/TSLA, así que la erosión suele ser más moderada (pero existe)."
+  sustainability: "Distribución variable con la volatilidad de NFLX; más estable que los YieldMax cripto, menos jugosa."
+  note: "Perfil intermedio dentro de YieldMax. Posición pequeña en tu portafolio; su impacto agregado es limitado."
+
+PLTY:
+  type: yieldmax
+  underlying: PLTR
+  name: Palantir
+  risk: HIGH
+  reason: "Software de datos/IA, valuación muy elevada, alta volatilidad"
+  income_mechanism: "Calls cubiertas sintéticas sobre PLTR; income vía primas de opciones."
+  nav_erosion: "PLTR es muy volátil y caro por múltiplos; la estrategia capa subidas fuertes y devuelve capital, con erosión asociada."
+  sustainability: "Income atado a la alta volatilidad de PLTR; si el múltiplo se enfría, la distribución también."
+  note: "Single-name de alto crecimiento convertido en income. En rallies fuertes de PLTR, holdear PLTR directo habría rendido más."
+
+AMZY:
+  type: yieldmax
+  underlying: AMZN
+  name: Amazon
+  risk: MEDIUM
+  reason: "Mega-cap e-commerce + AWS, volatilidad moderada"
+  income_mechanism: "Calls cubiertas sintéticas sobre AMZN; income vía primas."
+  nav_erosion: "AMZN es mega-cap diversificada y menos volátil, así que la erosión tiende a ser más contenida que en los YieldMax single-name volátiles."
+  sustainability: "Distribución más estable pero menor (menos volatilidad = primas más baratas)."
+  note: "De los YieldMax más 'tranquilos'. Aun así cambia la apreciación de AMZN por income mensual."
+
+GOOGY:
+  type: yieldmax
+  underlying: GOOGL
+  name: Alphabet
+  risk: MEDIUM
+  reason: "Mega-cap búsqueda + ads + cloud, negocio diversificado"
+  income_mechanism: "Calls cubiertas sintéticas sobre GOOGL; income vía primas."
+  nav_erosion: "Erosión contenida por la menor volatilidad de GOOGL frente a single-names más especulativos."
+  sustainability: "Distribución moderada y relativamente estable."
+  note: "Perfil de riesgo medio dentro de YieldMax; income a cambio de capar la subida de Alphabet."
+
+MSFO:
+  type: yieldmax
+  underlying: MSFT
+  name: Microsoft
+  risk: MEDIUM
+  reason: "Mega-cap diversificado, flujos de caja estables, menor volatilidad"
+  income_mechanism: "Calls cubiertas sintéticas sobre MSFT; income vía primas."
+  nav_erosion: "De los más estables: MSFT es poco volátil para estándares tech, así que la erosión suele ser baja, pero el yield también es más modesto."
+  sustainability: "Distribución de las más predecibles dentro de YieldMax."
+  note: "El YieldMax 'conservador'. Recuerda que MSFT sí paga dividendo propio; MSFO no te da ese dividendo, te da primas de opciones."
+
+JPMO:
+  type: yieldmax
+  underlying: JPM
+  name: JPMorgan
+  risk: MEDIUM
+  reason: "Banco más grande de EE.UU., servicios financieros diversificados"
+  income_mechanism: "Calls cubiertas sintéticas sobre JPM; income vía primas."
+  nav_erosion: "JPM es relativamente estable; erosión moderada."
+  sustainability: "Distribución moderada atada a la volatilidad de JPM."
+  note: "Exposición a banca con income; JPM también paga dividendo propio que JPMO no te traslada directamente."
+
+DISO:
+  type: yieldmax
+  underlying: DIS
+  name: Disney
+  risk: MEDIUM
+  reason: "Media + streaming + parques, en proceso de reestructuración"
+  income_mechanism: "Calls cubiertas sintéticas sobre DIS; income vía primas."
+  nav_erosion: "Volatilidad media; erosión asociada a la estrategia de opciones."
+  sustainability: "Distribución variable según la volatilidad de DIS."
+  note: "Single-name en reestructuración convertido en income mensual."
+
+AMDY:
+  type: yieldmax
+  underlying: AMD
+  name: AMD
+  risk: HIGH
+  reason: "Semiconductor, compite con NVIDIA en IA, ciclos de demanda"
+  income_mechanism: "Calls cubiertas sintéticas sobre AMD; income vía primas."
+  nav_erosion: "AMD es muy volátil; la estrategia capa subidas y devuelve capital, con erosión notable en rallies."
+  sustainability: "Income atado a la volatilidad de AMD; alto cuando AMD se mueve fuerte."
+  note: "Semiconductor volátil convertido en income; en ciclos alcistas de chips, AMD directo captura más subida."
+
+# ── YieldMax baskets — diversifican el single-name, COMPONEN la erosión ─────
+YMAX:
+  type: yieldmax
+  underlying: Multi
+  name: YieldMax Universe
+  risk: HIGH
+  reason: "Basket de covered-call ETFs, erosión de NAV compuesta"
+  income_mechanism: "Fondo de fondos: tiene un basket de ETFs YieldMax. Su income es la suma de las distribuciones de los YieldMax que contiene."
+  nav_erosion: "Diversifica el riesgo de un solo subyacente, pero SUMA la erosión de NAV de todos sus componentes. El precio tiende a la baja de forma compuesta."
+  sustainability: "Distribución más diversificada (menos dependiente de un solo nombre) pero igual de estructuralmente erosiva."
+  note: "Menos riesgo idiosincrático que un YieldMax single-name, pero no escapa de la erosión de NAV — la promedia."
+
+YMAG:
+  type: yieldmax
+  underlying: Mag-7
+  name: YieldMax Mag7
+  risk: HIGH
+  reason: "Basket Mag-7 covered-call, beta alto a FAANG"
+  income_mechanism: "Basket de YieldMax sobre los 'Magnificent 7' (AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA)."
+  nav_erosion: "Erosión compuesta de los componentes; más estable que YMAX por la calidad mega-cap del basket."
+  sustainability: "Distribución diversificada entre 7 mega-caps; más predecible que single-names especulativos."
+  note: "Versión 'mega-cap' del basket YieldMax: beta alto a las 7 grandes, con income mensual a costa de capar su subida."
+
+# ── Leveraged — NO es income ETF, es tracker apalancado ─────────────────────
+NVDL:
+  type: leveraged
+  underlying: NVDA
+  name: NVIDIA 2x (GraniteShares)
+  risk: HIGH
+  reason: "NVIDIA con apalancamiento 2x — riesgo amplificado"
+  income_mechanism: null
+  nav_erosion: "Decaimiento por volatilidad (volatility decay): al reajustar la exposición 2x a diario, en mercados laterales/volátiles pierde valor aunque NVDA termine plano. NO es un instrumento de income."
+  sustainability: "No reparte income relevante; cualquier distribución es marginal."
+  note: "Esto NO es un YieldMax ni un ETF de dividendos: es un tracker apalancado 2x de NVDA pensado para trading de corto plazo, no para holdear por income."
+
+# ── ETFs de mercado/sector (crecimiento) — para contexto del bloque ─────────
+XLK:
+  type: etf
+  underlying: Tecnología EE.UU.
+  name: Technology Select Sector SPDR
+  risk: MEDIUM
+  reason: "ETF del sector tecnología del S&P 500; concentrado en mega-caps tech"
+  note: "Tu retorno aquí viene de la apreciación del sector tech, no de dividendos. Muy concentrado en las mayores tecnológicas (mira la sección de holdings)."
+
+SMH:
+  type: etf
+  underlying: Semiconductores
+  name: VanEck Semiconductor ETF
+  risk: MEDIUM
+  reason: "ETF de semiconductores; alta concentración en NVDA, TSMC y pares"
+  note: "Apuesta sectorial a chips/IA. Retorno por apreciación; muy concentrado en pocos nombres líderes."
+
+SCHB:
+  type: etf
+  underlying: Mercado total EE.UU.
+  name: Schwab US Broad Market ETF
+  risk: LOW
+  reason: "ETF de mercado amplio de EE.UU. (miles de empresas), muy diversificado"
+  note: "Núcleo diversificado de bajo costo. Retorno por apreciación + un dividendo pequeño; la pieza más 'aburrida' y estable del portafolio."
+
+GLD:
+  type: etf
+  underlying: Oro
+  name: SPDR Gold Shares
+  risk: MEDIUM
+  reason: "ETF respaldado por oro físico; no genera income, cobertura/refugio"
+  note: "El oro no paga dividendos ni cupones: tu único retorno es el cambio de precio. Suele actuar como cobertura frente a inflación y estrés de mercado."

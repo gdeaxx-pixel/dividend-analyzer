@@ -1011,6 +1011,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     unsafe_allow_html=True
                 )
 
+            # ── Interpretación educativa por ticker (lee knowledge/instruments.yaml) ──
+            def _render_interpretation(_t):
+                _interp = logic.build_interpretation(results, _t)
+                if not _interp.get('lines'):
+                    return
+                _items = ''.join(
+                    f'<li style="margin:0 0 6px 0;">{_ln}</li>' for _ln in _interp['lines'])
+                st.markdown(
+                    '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;margin:0 0 12px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;'
+                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Qué significa para ti</p>'
+                    '<ul style="font-family:Inter,sans-serif;font-size:12px;color:#333333;line-height:1.55;'
+                    'margin:0;padding-left:18px;">'
+                    + _items + '</ul></div>',
+                    unsafe_allow_html=True
+                )
+
             # ── Calidad de datos (pre-flight) ─────────────────────────
             _dq = logic.assess_data_quality(results, classify_map)
             _dq_unrel = sorted([t for t, q in _dq.items() if q['level'] == 'unreliable'])
@@ -1114,6 +1131,24 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                            "así que el Total Invertido y el ROI de arriba los incluyen con un costo subestimado "
                            "(su % se ve inflado). Revisa el panel 'Calidad de datos' y exporta el historial completo de esos tickers.")
             st.caption("ROI = ganancia total acumulada desde el inicio · TIR (Tasa Interna de Retorno / IRR en inglés) = retorno anualizado considerando exactamente cuándo compraste cada lote — más preciso que el ROI para compras escalonadas")
+
+            # ── Lectura del portafolio (síntesis educativa) ───────────
+            _verdict = logic.build_portfolio_verdict(results, classify_map)
+            if _verdict.get('lines'):
+                _v_items = ''.join(
+                    f'<li style="margin:0 0 6px 0;">{_vl}</li>' for _vl in _verdict['lines'])
+                st.markdown(
+                    '<div style="border-left:4px solid #021C36;background:#f6f8fa;padding:14px 18px;margin:10px 0 4px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#021C36;font-weight:800;'
+                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Lectura de tu portafolio</p>'
+                    '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#333333;line-height:1.55;'
+                    'margin:0;padding-left:18px;">'
+                    + _v_items + '</ul>'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
+                    'Lectura educativa de tus números — no es recomendación de compra o venta.</p>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
 
             # ── PDF Report Download ───────────────────────────────────
             try:
@@ -1866,6 +1901,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             unsafe_allow_html=True
                         )
 
+                    _render_interpretation(ticker)
+
                     # Fase 7: IRR + ROI + Yield on Cost + Break-even
                     _irr_val = stats.get('irr_anual')
                     _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
@@ -2184,6 +2221,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:{_b_bench_color};margin:0 0 12px 0;">vs VOO (mismo timing): <b>{_b_bench_roi:+.2f}%</b> · Tu ventaja: <b>{_b_diff:+.2f}%</b></p>', unsafe_allow_html=True)
                     else:
                         st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
+
+                    _render_interpretation(ticker)
 
                     # Mode B dividends (VTI, SCHB, SCHD pay quarterly cash dividends)
                     b_monthly = stats.get('monthly_income')
