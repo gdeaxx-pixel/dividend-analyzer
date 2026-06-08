@@ -3,6 +3,7 @@ import pandas as pd
 
 import datetime
 import logic
+import storage
 import json
 import os
 
@@ -647,7 +648,7 @@ CHART_PALETTE = {
 }
 
 # Wizard session state defaults
-for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_prev_step', 1)]:
+for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_prev_step', 1)]:
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
@@ -813,7 +814,8 @@ if input_method == "Subir CSV/Excel":
         else:
             if st.button("← Cambiar archivo"):
                 for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
-                           '_wizard_ib_map', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig']:
+                           '_wizard_ib_map', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
+                           '_wizard_income_summary', '_wizard_income_df']:
                     st.session_state.pop(_k, None)
                 st.session_state['_wizard_step'] = 1
                 st.rerun()
@@ -823,6 +825,35 @@ if input_method == "Subir CSV/Excel":
 
             _gem_key = _get_gemini_key()
             _positions = st.session_state.get('_wizard_positions', {})
+            _broker_s2 = st.session_state.get('_wizard_broker')
+
+            # ── Triangulación Charles Schwab: pedir CSV + foto + ingresos ──
+            if _broker_s2 == 'schwab':
+                _has_csv = True
+                _has_photo = bool(_positions)
+                _has_income = bool(st.session_state.get('_wizard_income_summary'))
+
+                def _tri_row(ok, title, desc):
+                    _c = '#4caf82' if ok else '#c9a227'
+                    _mark = '✓' if ok else '○'
+                    return (f'<div style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;">'
+                            f'<span style="color:{_c};font-weight:800;line-height:1.5;">{_mark}</span>'
+                            f'<span style="font-family:Inter,sans-serif;font-size:12.5px;color:#334;line-height:1.5;">'
+                            f'<b>{title}</b> — {desc}</span></div>')
+
+                st.markdown(
+                    '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;margin:4px 0 14px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 6px 0;">'
+                    'Charles Schwab · triangula con 3 fuentes para máxima certeza</p>'
+                    '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:0 0 8px 0;line-height:1.6;">'
+                    'Cada fuente confirma algo distinto. Con las tres validamos por triple vía: '
+                    'historia, posición real y dividendos recibidos.</p>'
+                    + _tri_row(_has_csv, 'CSV de transacciones', 'compras, ventas y dividendos (ya cargado).')
+                    + _tri_row(_has_photo, 'Foto de posiciones', 'acciones y costo reales de hoy — corrige el historial incompleto.')
+                    + _tri_row(_has_income, 'Archivo de ingresos (Investment Income)', 'dividendos realmente recibidos — valida el ingreso.')
+                    + '</div>',
+                    unsafe_allow_html=True
+                )
 
             if _pos_tickers and _gem_key:
                 st.markdown(
@@ -898,6 +929,59 @@ if input_method == "Subir CSV/Excel":
                 _edited_s2 = None
                 st.info("No se detectaron posiciones de ETF analizables en este archivo. Puedes continuar al análisis directamente.")
 
+            # ── Validación con el archivo de ingresos (formato Charles Schwab) ───
+            # Para Schwab se muestra prominente (expandido) como tercera fuente de la
+            # triangulación; para otros brokers queda colapsado (el formato es Schwab-only).
+            _inc_is_schwab = (_broker_s2 == 'schwab')
+            _inc_title = ("Tercera fuente · Archivo de ingresos (Investment Income)"
+                          if _inc_is_schwab else
+                          "Validar con tu archivo de ingresos del broker (opcional)")
+            with st.expander(_inc_title, expanded=_inc_is_schwab):
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
+                    'Exporta tu reporte de <b>Investment Income</b> de Charles Schwab '
+                    '(Cuenta → Historial → <i>Investment Income</i> → Exportar) y súbelo aquí. Lo usamos como '
+                    '<b>tercera fuente</b> para confirmar que los dividendos del CSV cuadran con lo realmente '
+                    'recibido. Es opcional y no cambia tus métricas; solo agrega una verificación. '
+                    'Las proyecciones (“Estimated”) del broker se ignoran porque sobreestiman en ETFs tipo YieldMax.'
+                    '</p>',
+                    unsafe_allow_html=True
+                )
+                _inc_file = st.file_uploader(
+                    "Archivo de ingresos (Investment Income)",
+                    type=['csv'], key="_step2_income", label_visibility="collapsed"
+                )
+                if _inc_file is not None:
+                    try:
+                        _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
+                        if _inc_df is None or len(_inc_df) == 0:
+                            st.session_state['_wizard_income_summary'] = None
+                            st.session_state['_wizard_income_df'] = None
+                            st.warning(
+                                "No reconocimos este archivo como un “Investment Income” de Charles Schwab. "
+                                "Asegúrate de exportar el reporte de ingresos (no el de transacciones)."
+                            )
+                        else:
+                            _inc_summ = logic.summarize_income(_inc_df)
+                            st.session_state['_wizard_income_summary'] = _inc_summ
+                            st.session_state['_wizard_income_df'] = _inc_df
+                            _nrec = sum(1 for d in _inc_summ['tickers'].values() if d.get('received_total'))
+                            st.success(f"Ingresos leídos: {_nrec} tickers con dividendos recibidos. "
+                                       "Verás la validación cruzada en los resultados.")
+                            if _inc_summ.get('multi_account'):
+                                st.warning("El archivo incluye más de una cuenta; los totales podrían mezclarse. "
+                                           "Exporta el income de una sola cuenta para una validación exacta.")
+                    except Exception as _ie:
+                        st.session_state['_wizard_income_summary'] = None
+                        st.session_state['_wizard_income_df'] = None
+                        st.warning(f"No pudimos leer el archivo de ingresos: {_ie}")
+
+            if storage.is_enabled():
+                st.checkbox(
+                    "Permito guardar una versión anónima de estos datos para mejorar la herramienta.",
+                    value=False, key="_consent_capture")
+                st.caption("Solo se guardan fechas, tickers, montos y las posiciones que confirmaste — nunca tu nombre, número de cuenta ni imágenes. Puedes pedir el borrado en cualquier momento. Ver PRIVACY.md.")
+
             _, _btn_col2 = st.columns([3, 1])
             with _btn_col2:
                 if st.button("Siguiente →", use_container_width=True, type="primary"):
@@ -952,6 +1036,19 @@ if input_method == "Subir CSV/Excel":
                                         st.session_state['_strat_results'] = None
                             else:
                                 st.session_state['_strat_results'] = None
+                            if st.session_state.get('_consent_capture'):
+                                try:
+                                    _q_cap = logic.assess_data_quality(_valid_s2)
+                                    _ok_cap, _ = logic.is_capture_worthy(_q_cap, _overrides_s2)
+                                    if _ok_cap:
+                                        _bundle_cap = logic.build_capture_bundle(
+                                            _df2, st.session_state.get('_wizard_broker', 'generic'),
+                                            _overrides_s2, _q_cap,
+                                            st.session_state.get('_wizard_positions', {}),
+                                            app_version="2.8")
+                                        storage.upload_case(_bundle_cap)
+                                except Exception:
+                                    pass
                             st.session_state['_wizard_step'] = 3
                             st.rerun()
 
@@ -960,6 +1057,7 @@ if input_method == "Subir CSV/Excel":
         if st.button("← Nueva Consulta"):
             for _k in ['_wizard_step', '_wizard_df_clean', '_wizard_ib_map', '_wizard_csv_ticker_data',
                        '_wizard_broker', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
+                       '_wizard_income_summary', '_wizard_income_df',
                        '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
                 st.session_state.pop(_k, None)
             st.rerun()
@@ -1069,6 +1167,133 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     f'Datos completos · {len(results)} posiciones verificadas</span></div>',
                     unsafe_allow_html=True
                 )
+
+            # ── Validación cruzada de ingresos (segunda fuente) ───────
+            _inc_summary = st.session_state.get('_wizard_income_summary')
+            if _inc_summary and _inc_summary.get('tickers'):
+                _recon = logic.reconcile_income(results, _inc_summary)
+                if _recon:
+                    _badge_style = {
+                        'ok':   ('#4caf82', '#f0faf5'),
+                        'warn': ('#e0a23c', '#fbf7ef'),
+                        'info': ('#8899aa', '#f6f3f2'),
+                    }
+                    _status_label = {
+                        'match': 'Validado', 'cusip_folded': 'Validado (identidad CUSIP plegada)',
+                        'csv_window_longer': 'Validado en ventana común',
+                        'income_higher': 'Faltan dividendos en el CSV',
+                        'csv_overcount_suspected': 'Posible sobre-conteo del CSV',
+                        'csv_higher': 'El CSV reporta de más',
+                        'missing_in_income': 'Sin cobertura en el income',
+                        'missing_in_csv': 'Solo en el income (vendido)',
+                    }
+                    _order = {'warn': 0, 'ok': 1, 'info': 2}
+                    _n_ok = sum(1 for r in _recon.values() if r['badge'] == 'ok')
+                    _n_warn = sum(1 for r in _recon.values() if r['badge'] == 'warn')
+                    _inc_rows = []
+                    for t, r in sorted(_recon.items(), key=lambda x: (_order.get(x[1]['badge'], 3), x[0])):
+                        _accent, _bg = _badge_style.get(r['badge'], _badge_style['info'])
+                        _csv_v = f"${r['csv_total']:,.2f}" if r.get('csv_total') is not None else "—"
+                        _inc_v = f"${r['income_total']:,.2f}" if r.get('income_total') is not None else "—"
+                        _win_v = ""
+                        if r.get('csv_in_window') is not None and r.get('csv_total') is not None and abs(r['csv_in_window'] - r['csv_total']) > 0.01:
+                            _win_v = f' <span style="color:#8899aa;">(en ventana común: ${r["csv_in_window"]:,.2f})</span>'
+                        _inc_rows.append(
+                            f'<div style="border-left:3px solid {_accent};padding:8px 14px;margin:8px 0;background:{_bg};">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
+                            f'{t} · <span style="color:{_accent};font-weight:600;">{_status_label.get(r["status"], r["status"])}</span></p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">'
+                            f'Dividendo bruto — CSV: <b>{_csv_v}</b>{_win_v} · Broker recibido: <b>{_inc_v}</b></p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#777;margin:3px 0 0 0;line-height:1.5;">{r["note"]}</p>'
+                            f'</div>'
+                        )
+                    st.markdown(
+                        '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                        'font-weight:800;color:#021C36;margin:0 0 4px 0;">Validación cruzada de ingresos</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
+                        f'Comparamos el dividendo bruto del CSV contra tu reporte de ingresos del broker (segunda fuente). '
+                        f'{_n_ok} validado(s), {_n_warn} con alerta. Las proyecciones “Estimated” del broker no se usan.</p>'
+                        + ''.join(_inc_rows) + '</div>',
+                        unsafe_allow_html=True
+                    )
+
+            # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
+            _income_df_s3 = st.session_state.get('_wizard_income_df')
+            if _income_df_s3 is not None and len(_income_df_s3) > 0:
+                _proj = logic.project_income(_income_df_s3, results)
+                if _proj:
+                    import altair as alt
+                    _SER = ['Tu cálculo (recibido 12m)', 'Schwab (recibido 12m)',
+                            'Schwab (proyección 12m)', 'Tu proyección (12m)']
+                    _rows_chart = []
+                    for _t, _d in _proj.items():
+                        if _d.get('our_received_12m') is not None:
+                            _rows_chart.append({'Ticker': _t, 'Serie': _SER[0], 'Monto': _d['our_received_12m']})
+                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[1], 'Monto': _d['schwab_received_12m']})
+                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[2], 'Monto': _d['schwab_proj']})
+                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[3], 'Monto': _d['our_proj']})
+                    _chart_df = pd.DataFrame(_rows_chart)
+
+                    st.markdown(
+                        '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingresos: Schwab vs tu cálculo, y proyección</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
+                        'Las dos barras de la izquierda (verde) son lo <b>recibido</b> en 12 meses según Schwab y según tu '
+                        'cálculo — deben coincidir. Las dos de la derecha son la <b>proyección</b> a 12 meses: la de Schwab '
+                        '(ámbar) frente a la nuestra por run-rate reciente (azul).</p></div>',
+                        unsafe_allow_html=True
+                    )
+                    _bars = alt.Chart(_chart_df).mark_bar().encode(
+                        x=alt.X('Ticker:N', title=None, axis=alt.Axis(labelAngle=0, labelFontSize=12)),
+                        xOffset=alt.XOffset('Serie:N', sort=_SER),
+                        y=alt.Y('Monto:Q', title='USD / 12 meses', axis=alt.Axis(format='$,.0f')),
+                        color=alt.Color('Serie:N', sort=_SER,
+                                        scale=alt.Scale(domain=_SER, range=['#4caf82', '#2e7d5b', '#e0a23c', '#006497']),
+                                        legend=alt.Legend(title=None, orient='top', columns=2, labelFontSize=11)),
+                        tooltip=[alt.Tooltip('Ticker:N'), alt.Tooltip('Serie:N', title='Serie'),
+                                 alt.Tooltip('Monto:Q', format='$,.2f', title='Monto')],
+                    ).properties(height=300, background=CHART_PALETTE["bg"]).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                    ).configure_axis(
+                        grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                        tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                        titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                        titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
+                    ).configure_legend(labelColor=CHART_PALETTE["axis"])
+                    st.altair_chart(_bars, use_container_width=True)
+
+                    # Justificación auto-generada: por qué la proyección de Schwab está inflada.
+                    _flagged = sorted(
+                        [(t, d) for t, d in _proj.items() if (d.get('overstatement_pct') or 0) > logic.INCOME_OVERSTATE_FLAG_PCT],
+                        key=lambda x: -(x[1]['overstatement_pct'] or 0))
+                    _stable = [t for t, d in _proj.items() if abs(d.get('overstatement_pct') or 0) <= 5]
+                    if _flagged:
+                        _just_li = ''.join(
+                            f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab proyecta '
+                            f'<b>${d["schwab_proj"]:,.0f}</b>/año asumiendo <b>${d["anchor_per_payment"]:,.2f}</b> por pago, '
+                            f'pero tu pago real reciente promedia <b>${d["recent_per_payment"]:,.2f}</b> — un ancla '
+                            f'<b style="color:#c9821f;">{d["overstatement_pct"]:.0f}% por encima</b> del nivel actual. '
+                            f'Proyectando tu run-rate real: <b style="color:#006497;">${d["our_proj"]:,.0f}</b>/año. '
+                            f'(Recibido últimos 12m: ${d["schwab_received_12m"]:,.0f}.)</li>'
+                            for t, d in _flagged
+                        )
+                        _stable_html = ''
+                        if _stable:
+                            _stable_html = (
+                                '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:8px 0 0 0;line-height:1.6;">'
+                                f'En cambio, en ETFs de dividendo estable ({", ".join(_stable)}) la proyección de Schwab y la '
+                                'nuestra coinciden (±5%). El sesgo es específico de los ETFs de opción-ingreso tipo YieldMax: '
+                                'su distribución por acción cae con el tiempo, pero Schwab proyecta plano desde un pago-ancla '
+                                'más alto, ignorando la caída.</p>'
+                            )
+                        st.markdown(
+                            '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;margin:6px 0 4px 0;">'
+                            '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 4px 0;">'
+                            'Por qué la proyección de Schwab está inflada</p>'
+                            '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#444;margin:4px 0 0 0;padding-left:18px;">'
+                            + _just_li + '</ul>' + _stable_html + '</div>',
+                            unsafe_allow_html=True
+                        )
 
             # ── Portfolio Global Summary ──────────────────────────────
             total_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)

@@ -1514,6 +1514,171 @@ def parse_schwab_csv(raw_bytes: bytes) -> pd.DataFrame:
     return pd.read_csv(io.StringIO('\n'.join(clean_lines)), engine='python')
 
 
+# ============================================================
+# v2.9 — INVESTMENT INCOME (segunda fuente de validación)
+# ============================================================
+# Charles Schwab exporta un archivo "Investment Income" aparte del de transacciones.
+# Sirve como SEGUNDA fuente independiente para validar el ingreso por dividendos que
+# hoy se calcula 100% desde el CSV de transacciones. Las filas 'Estimated' son la
+# proyección del broker (históricamente sobreestima en YieldMax) y NO se usan para
+# cálculo; solo las 'Received' (histórico real).
+
+# CUSIP→ticker: el income file reporta la historia previa a una reorganización del
+# fondo bajo el CUSIP en vez del ticker. IMPORTANTE: este mapa se usa EXCLUSIVAMENTE
+# al parsear el income file. Nunca debe aplicarse al CSV de transacciones (ese sí
+# trae el CUSIP en filas de reverse split y hoy se descarta a propósito como mode_skip).
+CUSIP_ALIAS = {
+    "88634T493": "MSTY",   # YieldMax MSTR — migró de trust (reverse split 12/2025)
+}
+
+# Respaldo por descripción cuando el símbolo es un CUSIP/no reconocido.
+_INCOME_DESC_HINTS = [
+    ("YIELDMAX MSTR", "MSTY"),
+]
+
+
+def _clean_money(raw) -> float:
+    """Convierte un monto del broker ('$1,234.56', '6.57', '') a float; nan si no se puede."""
+    try:
+        if pd.isna(raw):
+            return float('nan')
+    except (TypeError, ValueError):
+        pass
+    s = str(raw).replace('$', '').replace(',', '').strip()
+    if s in ('', '-', 'nan', 'N/A', 'None'):
+        return float('nan')
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return float('nan')
+
+
+def _resolve_income_ticker(symbol, description):
+    """Resuelve la identidad de una fila del income file -> (ticker, folded_bool).
+
+    folded=True cuando hubo que plegar un CUSIP/descripción al ticker real.
+    Solo aplica al income file; nunca al CSV de transacciones.
+    """
+    sym = str(symbol).upper().strip()
+    if sym in CUSIP_ALIAS:
+        return CUSIP_ALIAS[sym], True
+    if sym in YIELDMAX_WHITELIST or sym in ETF_WHITELIST:
+        return sym, False
+    looks_like_cusip = len(sym) == 9 and any(c.isdigit() for c in sym)
+    if looks_like_cusip:
+        desc = str(description).upper()
+        for hint, tk in _INCOME_DESC_HINTS:
+            if hint in desc:
+                return tk, True
+    return sym, False
+
+
+def parse_schwab_income_csv(raw_bytes: bytes):
+    """Parsea el export 'Investment Income' de Charles Schwab.
+
+    Devuelve un DataFrame [Date, Symbol, Ticker, Description, SecurityType, TxnType,
+    IncomeType, Account, Amount, folded] o None si el archivo NO es un income file de
+    Schwab (rechazo suave — p.ej. si suben por error el CSV de transacciones o uno de
+    IBKR, que no exporta este formato). Filtra interés/cash y resuelve CUSIP->ticker.
+    Filtra por la columna 'Income Type', nunca por posición (el archivo abre con filas
+    'Estimated' antes de las 'Received').
+    """
+    for encoding in ('utf-8', 'latin1', 'cp1252'):
+        try:
+            text = raw_bytes.decode(encoding)
+            break
+        except Exception:
+            continue
+    else:
+        text = raw_bytes.decode('utf-8', errors='replace')
+
+    if 'investment income transactions' not in text[:3000].lower():
+        return None  # no es este formato
+
+    lines = text.splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        ll = line.lower()
+        if 'transaction date' in ll and 'symbol' in ll and 'income type' in ll:
+            header_idx = i
+            break
+    if header_idx is None:
+        return None
+
+    try:
+        df = pd.read_csv(io.StringIO('\n'.join(lines[header_idx:])), engine='python')
+    except Exception:
+        return None
+    df.columns = [str(c).strip() for c in df.columns]
+
+    def _col(name):
+        for c in df.columns:
+            if c.lower() == name:
+                return c
+        return None
+
+    c_date = _col('transaction date'); c_sym = _col('symbol'); c_desc = _col('security description')
+    c_sectype = _col('security type'); c_txn = _col('transaction type')
+    c_amt = _col('transaction amount'); c_inc = _col('income type'); c_acct = _col('account number')
+    if not (c_date and c_amt and c_inc):
+        return None
+
+    out = pd.DataFrame()
+    out['Date'] = pd.to_datetime(df[c_date], errors='coerce')
+    out['Symbol'] = df[c_sym].astype(str).str.strip() if c_sym else ''
+    out['Description'] = df[c_desc].astype(str) if c_desc else ''
+    out['SecurityType'] = df[c_sectype].astype(str) if c_sectype else ''
+    out['TxnType'] = df[c_txn].astype(str) if c_txn else ''
+    out['IncomeType'] = df[c_inc].astype(str).str.strip()
+    out['Account'] = df[c_acct].astype(str).str.strip() if c_acct else ''
+    out['Amount'] = df[c_amt].apply(_clean_money)
+
+    # Excluir interés de cash (no es de un ticker) y montos/fechas malformados.
+    mask_cash = (out['SecurityType'].str.contains('cash', case=False, na=False)
+                 | out['Symbol'].str.upper().isin(['NO NUMBER', 'NAN', '']))
+    out = out[~mask_cash].copy()
+    out = out.dropna(subset=['Date', 'Amount'])
+
+    resolved = [_resolve_income_ticker(s, d) for s, d in zip(out['Symbol'], out['Description'])]
+    out['Ticker'] = [r[0] for r in resolved]
+    out['folded'] = [r[1] for r in resolved]
+    return out.reset_index(drop=True)
+
+
+def summarize_income(df) -> dict:
+    """Resume el income file por ticker. Solo filas 'Received' (histórico real) para
+    cálculo; las 'Estimated' (proyección del broker) se guardan aparte y NO se usan.
+
+    Devuelve {'tickers': {ticker: {...}}, 'multi_account': bool, 'accounts': [...]}.
+    """
+    empty = {'tickers': {}, 'multi_account': False, 'accounts': []}
+    if df is None or len(df) == 0:
+        return empty
+
+    accounts = sorted({a for a in df['Account'].astype(str) if a and a.lower() != 'nan'})
+    rec = df[df['IncomeType'].str.lower() == 'received'].copy()
+    est = df[df['IncomeType'].str.lower() == 'estimated'].copy()
+
+    tickers = {}
+    for tk, g in rec.groupby('Ticker'):
+        amt = g['Amount'].dropna()
+        by_year = g.assign(_Y=g['Date'].dt.year).groupby('_Y')['Amount'].sum()
+        tickers[tk] = {
+            'received_total': float(amt.sum()),
+            'received_by_year': {int(k): round(float(v), 2) for k, v in by_year.items()},
+            'received_window': (g['Date'].min(), g['Date'].max()),
+            'folded': bool(g['folded'].any()),
+            'n_payments': int(len(g)),
+        }
+    for tk, g in est.groupby('Ticker'):
+        amt = g['Amount'].dropna()
+        slot = tickers.setdefault(tk, {})
+        slot['est_per_payment'] = float(amt.iloc[-1]) if len(amt) else None
+        slot['est_n'] = int(len(g))
+
+    return {'tickers': tickers, 'multi_account': len(accounts) > 1, 'accounts': accounts}
+
+
 def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     """
     Parses an Interactive Brokers Activity Statement CSV.
@@ -2156,6 +2321,11 @@ def build_risk_analysis(results: dict, classify_map: dict, total_portfolio_value
 VALUE_WITHOUT_COST_RATIO = 1.3   # primer dia con costo: valor > costo*ratio => acciones sin costo registrado
 LOW_COVERAGE_PCT = 80.0          # cobertura del CSV bajo este % => parcial
 
+# v2.9 — Tolerancias de reconciliación con el income file (segunda fuente).
+INCOME_MATCH_TOL_REL = 0.02      # ±2% del mayor de los dos totales
+INCOME_MATCH_TOL_ABS = 1.0       # ±$1 (para posiciones pequeñas); se usa max(rel, abs)
+INCOME_WINDOW_BUFFER_DAYS = 5    # colchón por desfase ex-div/record/payment (YieldMax semanal)
+
 
 def assess_ticker_quality(results: dict, ticker: str) -> dict:
     """Evalua la calidad de datos de UN ticker. Fuente unica de verdad para toda la app.
@@ -2243,6 +2413,326 @@ def _cost_incomplete(results: dict, ticker: str) -> bool:
     desde la captura pero timeline histórica parcial). Fuente única con el panel de la app.
     """
     return assess_ticker_quality(results, ticker)['level'] in ('unreliable', 'reconciled')
+
+
+def _csv_dividends_in_window(history_df, start=None, end=None) -> float:
+    """Suma el dividendo BRUTO declarado en el CSV, opcionalmente restringido a una ventana.
+
+    Misma base que el income file del broker (que reporta dividendo bruto, antes de la
+    retención NRA que va en filas aparte): suma las filas 'Reinvest Dividend' (monto
+    bruto reinvertido) y los dividendos en efectivo ('Qualified/Cash Dividend'). NO suma
+    las filas 'Reinvest Shares' (esas son la COMPRA neta de acciones tras impuesto, que
+    subestima el bruto) ni las 'NRA Tax Adj'. Los dividendos son dólares, no se ajustan
+    por split.
+    """
+    if history_df is None or len(history_df) == 0:
+        return 0.0
+    df = history_df
+    if 'Date' in df.columns and (start is not None or end is not None):
+        d = pd.to_datetime(df['Date'], errors='coerce')
+        if start is not None:
+            df = df[d >= start]
+            d = pd.to_datetime(df['Date'], errors='coerce')
+        if end is not None:
+            df = df[d <= end]
+    total = 0.0
+    for _, row in df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        amount = _clean_money(row.get('Amount', 0))
+        if pd.isna(amount):
+            amount = 0.0
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        # 'Reinvest Shares' = compra de acciones (monto neto post-tax) -> omitir.
+        if is_drip and ('share' in action or 'acciones' in action):
+            continue
+        # 'Reinvest Dividend' (bruto) o dividendo en efectivo -> contar.
+        if 'dividend' in action or 'dividendo' in action:
+            total += amount
+    return total
+
+
+def reconcile_income(results: dict, income_summary: dict) -> dict:
+    """Cruza el ingreso por dividendos del CSV (cash+drip) contra el income file del
+    broker, por ventana solapada. Es PURAMENTE INFORMATIVO: no muta `results` ni
+    altera assess_ticker_quality / _cost_incomplete (el nivel de calidad no cambia).
+
+    Devuelve {ticker: {status, csv_total, csv_in_window, income_total, folded,
+    history_incomplete, badge, note, est_per_payment}}.
+
+    status ∈ {match, cusip_folded, csv_window_longer, income_higher,
+              csv_overcount_suspected, missing_in_income, missing_in_csv}.
+    """
+    out = {}
+    if not income_summary or not income_summary.get('tickers'):
+        return out
+    inc = income_summary['tickers']
+    csv_tickers = {t: s for t, s in results.items()
+                   if isinstance(s, dict) and not s.get('skipped') and 'error' not in s}
+
+    for tk in sorted(set(list(inc.keys()) + list(csv_tickers.keys()))):
+        s = csv_tickers.get(tk)
+        i = inc.get(tk) or {}
+        income_total = i.get('received_total')
+        folded = bool(i.get('folded'))
+        est_pp = i.get('est_per_payment')
+
+        # Ticker en el income que el CSV no analizó (vendido / no-whitelist / mode_skip).
+        if s is None:
+            if income_total:
+                out[tk] = {'status': 'missing_in_csv', 'csv_total': None,
+                           'csv_in_window': None, 'income_total': round(income_total, 2),
+                           'folded': folded, 'history_incomplete': False,
+                           'badge': 'info', 'est_per_payment': est_pp,
+                           'note': 'Aparece en el income del broker pero no en el análisis del CSV '
+                                   '(posición vendida o no es un ETF de largo plazo).'}
+            continue
+
+        # Dividendo BRUTO del CSV (misma base que el income file). Se reconstruye desde el
+        # historial, NO desde dividends_collected_drip (que es neto post-NRA-tax).
+        csv_total = _csv_dividends_in_window(s.get('history'))
+        hist_inc = bool(s.get('history_incomplete'))
+
+        # Ticker en el CSV sin ingreso 'Received' en el income (fuera de ventana / solo Estimated).
+        if not income_total:
+            out[tk] = {'status': 'missing_in_income', 'csv_total': round(csv_total, 2),
+                       'csv_in_window': None, 'income_total': None, 'folded': folded,
+                       'history_incomplete': hist_inc, 'badge': 'info', 'est_per_payment': est_pp,
+                       'note': 'El CSV registra dividendos pero el income del broker no los cubre '
+                               '(distinta ventana de fechas).'}
+            continue
+
+        # Comparación por ventana solapada: restringir el CSV a la ventana del income (+buffer).
+        win = i.get('received_window')
+        if win and win[0] is not None and win[1] is not None:
+            buf = pd.Timedelta(days=INCOME_WINDOW_BUFFER_DAYS)
+            csv_in_window = _csv_dividends_in_window(s.get('history'), win[0] - buf, win[1] + buf)
+        else:
+            csv_in_window = csv_total
+
+        tol = max(INCOME_MATCH_TOL_ABS, INCOME_MATCH_TOL_REL * max(income_total, csv_in_window))
+        diff = csv_in_window - income_total
+
+        if abs(diff) <= tol:
+            if folded:
+                status, badge = 'cusip_folded', 'ok'
+                note = 'Validado contra el ingreso del broker (se plegó la identidad CUSIP→ticker).'
+            elif csv_total > income_total + tol:
+                status, badge = 'csv_window_longer', 'ok'
+                note = ('Validado en la ventana común. El CSV reporta más en total porque cubre '
+                        'fechas previas al income (historia más larga), no es un error.')
+            else:
+                status, badge = 'match', 'ok'
+                note = 'Validado contra el ingreso del broker.'
+        elif diff > tol:  # CSV reporta MÁS que el income dentro de la misma ventana
+            if hist_inc:
+                status, badge = 'csv_overcount_suspected', 'warn'
+                note = ('El CSV reporta más dividendos que el broker en la misma ventana y su '
+                        'historial está incompleto (ventas > compras): posible sobre-conteo de '
+                        'acciones. Revisa con tu captura del broker.')
+            else:
+                status, badge = 'csv_higher', 'warn'
+                note = ('El CSV reporta más dividendos que el broker en la misma ventana '
+                        '(posible desfase de fechas o fila duplicada).')
+        else:  # income > CSV dentro de la ventana → al CSV le faltan dividendos
+            status, badge = 'income_higher', 'warn'
+            note = ('El broker reporta más ingreso que el CSV en la misma ventana: al CSV le '
+                    'faltan dividendos (historial de transacciones incompleto).')
+
+        out[tk] = {
+            'status': status, 'badge': badge, 'note': note,
+            'csv_total': round(csv_total, 2), 'csv_in_window': round(csv_in_window, 2),
+            'income_total': round(income_total, 2), 'folded': folded,
+            'history_incomplete': hist_inc, 'est_per_payment': est_pp,
+        }
+    return out
+
+
+# v2.9 — proyección de ingresos: broker (Estimated) vs nuestra (run-rate reciente).
+INCOME_PROJ_MIN_PAYMENTS = 4     # mínimo de pagos 'Received' para proyectar con sentido
+INCOME_OVERSTATE_FLAG_PCT = 15.0 # sobre este % de sobreestimación, marcar en la justificación
+
+
+def project_income(income_df, results: dict = None) -> dict:
+    """Proyección de ingresos por dividendos a 12 meses: la del broker (filas `Estimated`) vs la
+    nuestra (run-rate reciente: promedio de los últimos ~3 meses de pagos × frecuencia anual).
+    Todo en base anual/12m para que las barras sean comparables con lo recibido en 12 meses.
+
+    Solo incluye tickers con ≥`INCOME_PROJ_MIN_PAYMENTS` pagos `Received` Y filas `Estimated`
+    (la proyección solo aplica donde el broker proyecta y nosotros tenemos historia suficiente
+    para el run-rate). Las `Estimated` se usan SOLO aquí, para contraste; nunca en el cálculo.
+
+    Devuelve {ticker: {schwab_received_12m, our_received_12m, schwab_proj, our_proj,
+    anchor_per_payment, recent_per_payment, payments_per_year, decline_pct, overstatement_pct}}.
+    """
+    out = {}
+    if income_df is None or len(income_df) == 0:
+        return out
+    today = pd.Timestamp.today().normalize()
+    yr_ago = today - pd.Timedelta(days=365)
+
+    for tk, g in income_df.groupby('Ticker'):
+        rec = g[g['IncomeType'].str.lower() == 'received'].dropna(subset=['Amount', 'Date']).sort_values('Date')
+        est = g[g['IncomeType'].str.lower() == 'estimated'].dropna(subset=['Amount'])
+        if len(rec) < INCOME_PROJ_MIN_PAYMENTS or est.empty:
+            continue
+
+        # Cadencia: mediana de días entre los últimos ~12 pagos recibidos.
+        dates = list(rec['Date'].tail(12))
+        gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates)) if (dates[i] - dates[i - 1]).days > 0]
+        median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 30
+        ppy = max(1, round(365 / median_gap)) if median_gap > 0 else 12
+
+        # Proyección del broker (próx. 365 días) y su pago-ancla.
+        est_future = est[(est['Date'] >= today) & (est['Date'] <= today + pd.Timedelta(days=365))]
+        schwab_proj = float(est_future['Amount'].sum()) if not est_future.empty else float(est['Amount'].iloc[-1]) * ppy
+        anchor_pp = float(est['Amount'].iloc[-1])
+
+        # Run-rate reciente: promedio de ~3 meses de pagos (nivel actual, ya caído).
+        n_recent = max(2, round(ppy / 4))
+        recent_pp = float(rec['Amount'].tail(n_recent).mean())
+        our_proj = recent_pp * ppy
+
+        # Recibido 12m: Schwab (income) y nuestro (reconstruido del CSV).
+        schwab_recv_12m = float(rec[rec['Date'] >= yr_ago]['Amount'].sum())
+        our_recv_12m = None
+        if results and isinstance(results.get(tk), dict):
+            our_recv_12m = round(_csv_dividends_in_window(results[tk].get('history'), yr_ago, today), 2)
+
+        # Caída: promedio por pago del tercio reciente vs el más antiguo dentro de 12m.
+        last_yr = rec[rec['Date'] >= yr_ago]
+        decline_pct = None
+        if len(last_yr) >= 4:
+            k = max(1, len(last_yr) // 3)
+            old_avg = last_yr['Amount'].head(k).mean()
+            if old_avg > 0:
+                decline_pct = round((last_yr['Amount'].tail(k).mean() / old_avg - 1) * 100, 1)
+
+        out[tk] = {
+            'schwab_received_12m': round(schwab_recv_12m, 2),
+            'our_received_12m': our_recv_12m,
+            'schwab_proj': round(schwab_proj, 2),
+            'our_proj': round(our_proj, 2),
+            'anchor_per_payment': round(anchor_pp, 4),
+            'recent_per_payment': round(recent_pp, 4),
+            'payments_per_year': int(ppy),
+            'decline_pct': decline_pct,
+            'overstatement_pct': round((schwab_proj / our_proj - 1) * 100, 1) if our_proj > 0 else None,
+        }
+    return out
+
+
+# ── Captura de casos de estudio (golden harness) ─────────────────────────────
+# Diseño: anonimización por construcción. Solo se conservan las columnas que el
+# pipeline consume; cualquier columna del broker con cuenta/nombre/dirección se
+# descarta. Nunca se guardan imágenes, ni IP, ni geo. Ver PRIVACY.md.
+
+CAPTURE_MIN_COLUMNS = ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount']
+CAPTURE_MIN_OK_TICKERS = 2          # mínimo de tickers nivel 'ok' para considerar el caso "sólido"
+CAPTURE_SCHEMA_VERSION = '1.0'
+
+
+def _safe_round(v, nd: int = 4):
+    try:
+        if v is None:
+            return None
+        return round(float(v), nd)
+    except (TypeError, ValueError):
+        return None
+
+
+def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
+    """Reduce un DataFrame normalizado a SOLO las columnas del pipeline.
+
+    Whitelist estricta: descarta por construcción cualquier columna del broker
+    (número de cuenta, titular, dirección, descripción libre). La fecha se trunca
+    a YYYY-MM-DD para no arrastrar timestamps/zona horaria identificables.
+    """
+    cols = [c for c in CAPTURE_MIN_COLUMNS if c in df_clean.columns]
+    out = df_clean[cols].copy()
+    if 'Date' in out.columns:
+        out['Date'] = pd.to_datetime(out['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+        out = out.dropna(subset=['Date'])
+    if 'Ticker' in out.columns:
+        out['Ticker'] = out['Ticker'].astype(str).str.strip().str.upper()
+        out = out[out['Ticker'].ne('') & out['Ticker'].ne('NAN')]
+    if 'Action' in out.columns:
+        out['Action'] = out['Action'].astype(str).str.strip()
+    return out.reset_index(drop=True)
+
+
+def is_capture_worthy(quality_map: dict, overrides: dict) -> tuple:
+    """Decide si un caso es lo bastante sólido/completo para capturar.
+
+    Devuelve (bool, motivo). Regla: posiciones confirmadas por el usuario +
+    al menos CAPTURE_MIN_OK_TICKERS tickers con calidad 'ok'.
+    """
+    if not overrides:
+        return False, 'sin posiciones confirmadas'
+    n_ok = sum(1 for q in (quality_map or {}).values() if isinstance(q, dict) and q.get('level') == 'ok')
+    if n_ok < CAPTURE_MIN_OK_TICKERS:
+        return False, f'solo {n_ok} ticker(s) con datos completos (se requieren {CAPTURE_MIN_OK_TICKERS})'
+    has_confirmed = any(
+        _safe_round((v or {}).get('cost_basis')) and _safe_round((v or {}).get('shares'))
+        for v in overrides.values()
+    )
+    if not has_confirmed:
+        return False, 'ninguna posición con acciones y costo confirmados'
+    return True, 'ok'
+
+
+def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
+                         quality_map: dict, gemini_raw: dict = None,
+                         app_version: str = '2.8') -> dict:
+    """Construye el bundle anónimo de un caso de estudio (sin red, testeable).
+
+    Todos los payloads son números/enums/texto genérico: cero PII por construcción.
+    """
+    import uuid
+    min_df = anonymize_to_min_rows(df_clean)
+    case_id = uuid.uuid4().hex[:12]
+
+    ground_truth = {}
+    for t, v in (overrides or {}).items():
+        v = v or {}
+        ground_truth[str(t).strip().upper()] = {
+            'cost_basis': _safe_round(v.get('cost_basis'), 2),
+            'shares': _safe_round(v.get('shares'), 4),
+        }
+
+    quality = {}
+    for t, q in (quality_map or {}).items():
+        if not isinstance(q, dict):
+            continue
+        quality[str(t)] = {
+            'level': q.get('level'),
+            'flags': list(q.get('flags') or []),
+            'coverage_pct': q.get('coverage_pct'),
+        }
+
+    raw = {}
+    for t, v in (gemini_raw or {}).items():
+        v = v or {}
+        raw[str(t)] = {k: v.get(k) for k in ('cost_basis', 'shares', 'market_value', 'price') if k in v}
+
+    meta = {
+        'case_id': case_id,
+        'broker': broker or 'generic',
+        'app_version': app_version,
+        'schema_version': CAPTURE_SCHEMA_VERSION,
+        'captured_at': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+        'n_rows': int(len(min_df)),
+        'tickers': sorted(ground_truth.keys()),
+    }
+
+    return {
+        'case_id': case_id,
+        'broker': meta['broker'],
+        'transactions_min_csv': min_df.to_csv(index=False),
+        'ground_truth': ground_truth,
+        'quality': quality,
+        'gemini_raw': raw,
+        'meta': meta,
+    }
 
 
 def build_portfolio_comparison_series(results: dict, classify_map: dict) -> pd.DataFrame:
