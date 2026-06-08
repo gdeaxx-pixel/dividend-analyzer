@@ -45,6 +45,9 @@ secrets.toml
 # Datos privados de brokers (fixtures locales del golden harness — NO versionar)
 real_examples/
 
+# Roster del portafolio del usuario (posiciones privadas — local, NO versionar)
+knowledge/portfolio.yaml
+
 # Captura de casos de estudio (generados, privados — NO versionar)
 captured_cases.py
 .capture_local/
