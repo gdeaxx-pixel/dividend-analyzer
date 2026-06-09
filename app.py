@@ -1126,96 +1126,100 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     unsafe_allow_html=True
                 )
 
-            # ── Calidad de datos (pre-flight) ─────────────────────────
+            # ── Calidad de datos: se calcula aquí (lo usa el aviso de abajo) y se
+            #    renderiza al final dentro de un expander vía _render_data_quality_panel. ──
             _dq = logic.assess_data_quality(results, classify_map)
             _dq_unrel = sorted([t for t, q in _dq.items() if q['level'] == 'unreliable'])
             _dq_recon = sorted([t for t, q in _dq.items() if q['level'] == 'reconciled'])
             _dq_part  = sorted([t for t, q in _dq.items() if q['level'] == 'partial'])
-            if _dq_unrel or _dq_recon or _dq_part:
-                _rows = []
-                _style = {
-                    'unreliable': ('#e0a23c', 'No confiable', '#fbf7ef'),
-                    'reconciled': ('#006497', 'Reconciliado desde tu captura', '#eef6fb'),
-                    'partial':    ('#8899aa', 'Parcial', '#f6f3f2'),
-                }
-                for t in _dq_unrel + _dq_recon + _dq_part:
-                    q = _dq[t]
-                    _accent, _tag, _bg = _style[q['level']]
-                    _action_html = (f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#006497;'
-                                    f'margin:3px 0 0 0;line-height:1.5;">→ {q["action"]}</p>') if q.get("action") else ''
-                    _rows.append(
-                        f'<div style="border-left:3px solid {_accent};padding:8px 14px;margin:8px 0;background:{_bg};">'
-                        f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
-                        f'{t} · <span style="color:{_accent};font-weight:600;">{_tag}</span></p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">{q["reason"]}</p>'
-                        f'{_action_html}'
-                        f'</div>'
-                    )
-                st.markdown(
-                    '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                    'font-weight:800;color:#021C36;margin:0 0 4px 0;">Calidad de datos</p>'
-                    '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
-                    'Cuando el CSV no trae el historial completo, usamos tu captura del broker (acciones y costo) '
-                    'para reconciliar la posición; los tickers no reconciliados se marcan y se excluyen del % en el tiempo.</p>'
-                    + ''.join(_rows) + '</div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:10px 14px;margin:8px 0;">'
-                    f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
-                    f'Datos completos · {len(results)} posiciones verificadas</span></div>',
-                    unsafe_allow_html=True
-                )
 
-            # ── Validación cruzada de ingresos (segunda fuente) ───────
-            _inc_summary = st.session_state.get('_wizard_income_summary')
-            if _inc_summary and _inc_summary.get('tickers'):
-                _recon = logic.reconcile_income(results, _inc_summary)
-                if _recon:
-                    _badge_style = {
-                        'ok':   ('#4caf82', '#f0faf5'),
-                        'warn': ('#e0a23c', '#fbf7ef'),
-                        'info': ('#8899aa', '#f6f3f2'),
+            def _render_data_quality_panel():
+                # ── Calidad de datos (pre-flight) ─────────────────────────
+                if _dq_unrel or _dq_recon or _dq_part:
+                    _rows = []
+                    _style = {
+                        'unreliable': ('#e0a23c', 'No confiable', '#fbf7ef'),
+                        'reconciled': ('#006497', 'Reconciliado desde tu captura', '#eef6fb'),
+                        'partial':    ('#8899aa', 'Parcial', '#f6f3f2'),
                     }
-                    _status_label = {
-                        'match': 'Validado', 'cusip_folded': 'Validado (identidad CUSIP plegada)',
-                        'csv_window_longer': 'Validado en ventana común',
-                        'income_higher': 'Faltan dividendos en el CSV',
-                        'csv_overcount_suspected': 'Posible sobre-conteo del CSV',
-                        'csv_higher': 'El CSV reporta de más',
-                        'missing_in_income': 'Sin cobertura en el income',
-                        'missing_in_csv': 'Solo en el income (vendido)',
-                    }
-                    _order = {'warn': 0, 'ok': 1, 'info': 2}
-                    _n_ok = sum(1 for r in _recon.values() if r['badge'] == 'ok')
-                    _n_warn = sum(1 for r in _recon.values() if r['badge'] == 'warn')
-                    _inc_rows = []
-                    for t, r in sorted(_recon.items(), key=lambda x: (_order.get(x[1]['badge'], 3), x[0])):
-                        _accent, _bg = _badge_style.get(r['badge'], _badge_style['info'])
-                        _csv_v = f"${r['csv_total']:,.2f}" if r.get('csv_total') is not None else "—"
-                        _inc_v = f"${r['income_total']:,.2f}" if r.get('income_total') is not None else "—"
-                        _win_v = ""
-                        if r.get('csv_in_window') is not None and r.get('csv_total') is not None and abs(r['csv_in_window'] - r['csv_total']) > 0.01:
-                            _win_v = f' <span style="color:#8899aa;">(en ventana común: ${r["csv_in_window"]:,.2f})</span>'
-                        _inc_rows.append(
+                    for t in _dq_unrel + _dq_recon + _dq_part:
+                        q = _dq[t]
+                        _accent, _tag, _bg = _style[q['level']]
+                        _action_html = (f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#006497;'
+                                        f'margin:3px 0 0 0;line-height:1.5;">→ {q["action"]}</p>') if q.get("action") else ''
+                        _rows.append(
                             f'<div style="border-left:3px solid {_accent};padding:8px 14px;margin:8px 0;background:{_bg};">'
                             f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
-                            f'{t} · <span style="color:{_accent};font-weight:600;">{_status_label.get(r["status"], r["status"])}</span></p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">'
-                            f'Dividendo bruto — CSV: <b>{_csv_v}</b>{_win_v} · Broker recibido: <b>{_inc_v}</b></p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#777;margin:3px 0 0 0;line-height:1.5;">{r["note"]}</p>'
+                            f'{t} · <span style="color:{_accent};font-weight:600;">{_tag}</span></p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">{q["reason"]}</p>'
+                            f'{_action_html}'
                             f'</div>'
                         )
                     st.markdown(
                         '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                        'font-weight:800;color:#021C36;margin:0 0 4px 0;">Validación cruzada de ingresos</p>'
+                        'font-weight:800;color:#021C36;margin:0 0 4px 0;">Calidad de datos</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
-                        f'Comparamos el dividendo bruto del CSV contra tu reporte de ingresos del broker (segunda fuente). '
-                        f'{_n_ok} validado(s), {_n_warn} con alerta. Las proyecciones “Estimated” del broker no se usan.</p>'
-                        + ''.join(_inc_rows) + '</div>',
+                        'Cuando el CSV no trae el historial completo, usamos tu captura del broker (acciones y costo) '
+                        'para reconciliar la posición; los tickers no reconciliados se marcan y se excluyen del % en el tiempo.</p>'
+                        + ''.join(_rows) + '</div>',
                         unsafe_allow_html=True
                     )
+                else:
+                    st.markdown(
+                        f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:10px 14px;margin:8px 0;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
+                        f'Datos completos · {len(results)} posiciones verificadas</span></div>',
+                        unsafe_allow_html=True
+                    )
+
+                # ── Validación cruzada de ingresos (segunda fuente) ───────
+                _inc_summary = st.session_state.get('_wizard_income_summary')
+                if _inc_summary and _inc_summary.get('tickers'):
+                    _recon = logic.reconcile_income(results, _inc_summary)
+                    if _recon:
+                        _badge_style = {
+                            'ok':   ('#4caf82', '#f0faf5'),
+                            'warn': ('#e0a23c', '#fbf7ef'),
+                            'info': ('#8899aa', '#f6f3f2'),
+                        }
+                        _status_label = {
+                            'match': 'Validado', 'cusip_folded': 'Validado (identidad CUSIP plegada)',
+                            'csv_window_longer': 'Validado en ventana común',
+                            'income_higher': 'Faltan dividendos en el CSV',
+                            'csv_overcount_suspected': 'Posible sobre-conteo del CSV',
+                            'csv_higher': 'El CSV reporta de más',
+                            'missing_in_income': 'Sin cobertura en el income',
+                            'missing_in_csv': 'Solo en el income (vendido)',
+                        }
+                        _order = {'warn': 0, 'ok': 1, 'info': 2}
+                        _n_ok = sum(1 for r in _recon.values() if r['badge'] == 'ok')
+                        _n_warn = sum(1 for r in _recon.values() if r['badge'] == 'warn')
+                        _inc_rows = []
+                        for t, r in sorted(_recon.items(), key=lambda x: (_order.get(x[1]['badge'], 3), x[0])):
+                            _accent, _bg = _badge_style.get(r['badge'], _badge_style['info'])
+                            _csv_v = f"${r['csv_total']:,.2f}" if r.get('csv_total') is not None else "—"
+                            _inc_v = f"${r['income_total']:,.2f}" if r.get('income_total') is not None else "—"
+                            _win_v = ""
+                            if r.get('csv_in_window') is not None and r.get('csv_total') is not None and abs(r['csv_in_window'] - r['csv_total']) > 0.01:
+                                _win_v = f' <span style="color:#8899aa;">(en ventana común: ${r["csv_in_window"]:,.2f})</span>'
+                            _inc_rows.append(
+                                f'<div style="border-left:3px solid {_accent};padding:8px 14px;margin:8px 0;background:{_bg};">'
+                                f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
+                                f'{t} · <span style="color:{_accent};font-weight:600;">{_status_label.get(r["status"], r["status"])}</span></p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">'
+                                f'Dividendo bruto — CSV: <b>{_csv_v}</b>{_win_v} · Broker recibido: <b>{_inc_v}</b></p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#777;margin:3px 0 0 0;line-height:1.5;">{r["note"]}</p>'
+                                f'</div>'
+                            )
+                        st.markdown(
+                            '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                            'font-weight:800;color:#021C36;margin:0 0 4px 0;">Validación cruzada de ingresos</p>'
+                            '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
+                            f'Comparamos el dividendo bruto del CSV contra tu reporte de ingresos del broker (segunda fuente). '
+                            f'{_n_ok} validado(s), {_n_warn} con alerta. Las proyecciones “Estimated” del broker no se usan.</p>'
+                            + ''.join(_inc_rows) + '</div>',
+                            unsafe_allow_html=True
+                        )
 
             # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
             _income_df_s3 = st.session_state.get('_wizard_income_df')
@@ -1475,19 +1479,57 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 import yfinance as yf
 
                 # ── Serie temporal: Portafolio Real vs Estrategias ────────
-                _ts_key = f"_strat_ts_v4_{st.session_state.get('_file_id', 'x')}"
+                _ts_key = f"_strat_ts_v5_{st.session_state.get('_file_id', 'x')}"
                 if _ts_key not in st.session_state:
-                    _buy_flows_ts = []
+                    # Timing de aportes reconstruido desde la curva 'Invested Capital'
+                    # (daily_trend) de cada posición: robusto a CSV incompletos y a
+                    # transferencias que las filas "Buy" crudas no capturan. Es la misma
+                    # curva de capital que dibuja la línea del portafolio real.
+                    _flow_by_date = {}
                     for _t, _s in results.items():
-                        if 'error' not in _s and 'history' in _s:
-                            _h = _s['history']
-                            _buys = _h[_h['Action'].str.lower().str.contains('buy', na=False)]
-                            for _, _row in _buys.iterrows():
-                                try:
-                                    _buy_flows_ts.append((pd.to_datetime(_row['Date']), float(_row['Amount'])))
-                                except Exception:
-                                    pass
-                    _buy_flows_ts.sort(key=lambda x: x[0])
+                        if 'error' in _s or 'daily_trend' not in _s:
+                            continue
+                        _ic = _s['daily_trend'].get('Invested Capital')
+                        if _ic is None or len(_ic) == 0:
+                            continue
+                        _inc = _ic.diff()
+                        if len(_inc) > 0:
+                            _inc.iloc[0] = _ic.iloc[0]   # día 0 = despliegue inicial
+                        for _d, _amt in _inc[_inc > 0].items():
+                            _key = pd.Timestamp(_d).normalize()
+                            _flow_by_date[_key] = _flow_by_date.get(_key, 0.0) + float(_amt)
+                    _buy_flows_ts = sorted(_flow_by_date.items(), key=lambda x: x[0])
+
+                    # Respaldo: filas "buy" crudas si no hubo curva utilizable.
+                    if not _buy_flows_ts:
+                        for _t, _s in results.items():
+                            if 'error' not in _s and 'history' in _s:
+                                _h = _s['history']
+                                _buys = _h[_h['Action'].str.lower().str.contains('buy', na=False)]
+                                for _, _row in _buys.iterrows():
+                                    try:
+                                        _buy_flows_ts.append(
+                                            (pd.to_datetime(_row['Date']).normalize(), abs(float(_row['Amount']))))
+                                    except Exception:
+                                        pass
+                        _buy_flows_ts.sort(key=lambda x: x[0])
+
+                    # Respaldo final: todo el capital desplegado en la fecha más temprana.
+                    if not _buy_flows_ts and _sr_invested > 0:
+                        _earliest = None
+                        for _t, _s in results.items():
+                            if 'error' not in _s and 'daily_trend' in _s and len(_s['daily_trend']) > 0:
+                                _d0 = pd.Timestamp(_s['daily_trend'].index[0]).normalize()
+                                _earliest = _d0 if _earliest is None else min(_earliest, _d0)
+                        if _earliest is not None:
+                            _buy_flows_ts = [(_earliest, _sr_invested)]
+
+                    # Normaliza el capital total a "Invertido" (pocket_investment) para
+                    # comparar 1:1 (mismo capital, mismo timing) en todas las filas.
+                    _flow_total = sum(a for _, a in _buy_flows_ts)
+                    if _flow_total > 0 and _sr_invested > 0:
+                        _scale = _sr_invested / _flow_total
+                        _buy_flows_ts = [(d, a * _scale) for d, a in _buy_flows_ts]
 
                     _frames_ts = []
                     _etf_final_vals = {}
@@ -1511,7 +1553,14 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             try:
                                 _raw = yf.download(_etf_tk, start=_ts_start, end=_ts_end,
                                                    auto_adjust=True, progress=False)
-                                _prices_ts = _raw['Close'].squeeze().dropna()
+                                if _raw is None or _raw.empty:
+                                    continue
+                                if isinstance(_raw.columns, pd.MultiIndex):
+                                    _raw.columns = _raw.columns.get_level_values(0)
+                                _prices_ts = _raw['Close']
+                                if isinstance(_prices_ts, pd.DataFrame):
+                                    _prices_ts = _prices_ts.iloc[:, 0]
+                                _prices_ts = _prices_ts.dropna()
                                 if _prices_ts.empty:
                                     continue
                                 # Normalize index to tz-naive dates
@@ -1554,17 +1603,35 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _etf_finals  = _ts_cache.get('etf_final', {})
 
                 # Tabla derivada de valores finales de la serie temporal
-                _all_strats = {'real': {'label': 'Tu Portafolio Real', 'total_invested': _sr_invested, 'final_value': _sr_value, 'return_pct': _sr_ret_pct}}
+                _all_strats = {'real': {'label': 'Tu Portafolio Real', 'total_invested': _sr_invested,
+                                        'final_value': _sr_value, 'return_pct': _sr_ret_pct, 'ok': True}}
                 for _etf_lbl in ['Todo en SCHB', 'Todo en XLK', 'Todo en YMAX', 'Todo en SMH']:
-                    _fv = _etf_finals.get(_etf_lbl, _sr_invested)
-                    _rp = (_fv - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
-                    _all_strats[_etf_lbl] = {'label': _etf_lbl, 'total_invested': _sr_invested, 'final_value': _fv, 'return_pct': _rp}
-                _sorted_strats = sorted(_all_strats.items(), key=lambda x: -x[1]['return_pct'])
+                    if _etf_lbl in _etf_finals:
+                        _fv = _etf_finals[_etf_lbl]
+                        _rp = (_fv - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
+                        _all_strats[_etf_lbl] = {'label': _etf_lbl, 'total_invested': _sr_invested,
+                                                 'final_value': _fv, 'return_pct': _rp, 'ok': True}
+                    else:
+                        _all_strats[_etf_lbl] = {'label': _etf_lbl, 'total_invested': _sr_invested,
+                                                 'final_value': None, 'return_pct': None, 'ok': False}
+                _sorted_strats = sorted(
+                    _all_strats.items(),
+                    key=lambda x: (0, -x[1]['return_pct']) if x[1]['ok'] else (1, 0.0)
+                )
                 _strat_df = pd.DataFrame([
-                    {'Estrategia': v['label'], 'Invertido': f"${v['total_invested']:,.0f}", 'Valor Final': f"${v['final_value']:,.0f}", 'Retorno': f"{v['return_pct']:+.2f}%"}
+                    {
+                        'Estrategia': v['label'],
+                        'Invertido': f"${v['total_invested']:,.0f}",
+                        'Valor Final': f"${v['final_value']:,.0f}" if v['ok'] else "—",
+                        'Retorno': f"{v['return_pct']:+.2f}%" if v['ok'] else "sin datos",
+                    }
                     for _, v in _sorted_strats
                 ])
                 st.dataframe(_strat_df, hide_index=True, use_container_width=True)
+                _missing_etfs = [v['label'].replace('Todo en ', '') for _, v in _sorted_strats if not v['ok']]
+                if _missing_etfs:
+                    st.caption(f"No se pudieron descargar precios de: {', '.join(_missing_etfs)} (yfinance). "
+                               "Vuelve a intentar en unos segundos.")
 
                 if not _line_data.empty:
                     _line_data['Fecha'] = pd.to_datetime(_line_data['Fecha'])
@@ -2593,6 +2660,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             for h in etf_item['top_holdings']
                         ])
                         st.dataframe(holdings_df, hide_index=True, use_container_width=True)
+
+            # ── Calidad de datos y validación cruzada (al final, expandible) ──
+            st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+            with st.expander("Calidad de datos y validación cruzada de ingresos", expanded=False):
+                st.caption("Detalle técnico: cómo se reconciliaron tus posiciones y la verificación "
+                           "del dividendo bruto contra el reporte de ingresos del broker.")
+                _render_data_quality_panel()
 
     except Exception as e:
         import traceback
