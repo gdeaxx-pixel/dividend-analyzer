@@ -2214,6 +2214,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
+            # Eventos técnicos consolidados → acordeón al pie (se llenan en los loops de detalle)
+            _tech_events = []
+
             # ── ACORDEÓN: Detalle por portafolio ───────────────────────
             _da_section("Detalle por portafolio",
                         "Abre cada portafolio para ver sus posiciones, métricas de riesgo y calendario de dividendos")
@@ -2397,13 +2400,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     for _sp in stats.get('splits_detected', []):
                         _ratio = _sp['ratio']
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
-                        st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
+                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
 
                     _q = logic.assess_ticker_quality(results, ticker)
                     if _q['level'] == 'unreliable':
                         st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
                     elif _q['level'] == 'reconciled':
-                        st.info(f"{ticker} · reconciliado desde tu captura: {_q['reason']}")
+                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
 
                     # ROC Callout — solo si hay datos de IB
                     if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
@@ -2446,7 +2449,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     # Fase 3: Eventos corporativos (dividendos especiales)
                     for _ca in stats.get('corporate_actions', []):
                         if _ca['type'] == 'Dividendo especial':
-                            st.info(f"Dividendo especial detectado en {ticker} el {_ca['date']}: ${_ca.get('amount', 0):.4f} por acción")
+                            _tech_events.append({'date': _ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_ca.get('amount', 0):.4f} por acción"})
 
                     # Fase 9: Total Return primero — Capital + Income desglosados
                     _total_ret = stats['market_value'] + stats['dividends_collected_cash'] - stats['pocket_investment']
@@ -2783,13 +2786,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     for _sp in stats.get('splits_detected', []):
                         _ratio = _sp['ratio']
                         _kind = "Split" if _ratio > 1 else "Reverse Split"
-                        st.info(f"{_kind} detectado: {ticker} {_ratio:.0f}:1 el {_sp['date']} — las cantidades de acciones han sido ajustadas automáticamente.")
+                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
 
                     _q = logic.assess_ticker_quality(results, ticker)
                     if _q['level'] == 'unreliable':
                         st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
                     elif _q['level'] == 'reconciled':
-                        st.info(f"{ticker} · reconciliado desde tu captura: {_q['reason']}")
+                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
 
                     # Fase 6: Cobertura del CSV
                     _b_cov = stats.get('csv_coverage_pct')
@@ -2808,7 +2811,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     # Fase 3: Eventos corporativos (dividendos especiales)
                     for _b_ca in stats.get('corporate_actions', []):
                         if _b_ca['type'] == 'Dividendo especial':
-                            st.info(f"Dividendo especial detectado en {ticker} el {_b_ca['date']}: ${_b_ca.get('amount', 0):.4f} por acción")
+                            _tech_events.append({'date': _b_ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_b_ca.get('amount', 0):.4f} por acción"})
 
                     # Fase 4: Retorno total incluye dividendos cobrados (no solo apreciación de precio)
                     _b_divs = stats.get('dividends_collected_cash', 0)
@@ -2983,6 +2986,36 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 st.caption("Detalle técnico: cómo se reconciliaron tus posiciones y la verificación "
                            "del dividendo bruto contra el reporte de ingresos del broker.")
                 _render_data_quality_panel()
+
+            # ── Notas técnicas y eventos corporativos (consolidado, al pie) ──
+            if _tech_events:
+                _ev_sorted = sorted(_tech_events, key=lambda e: (e.get('date') or '9999-99', e.get('ticker', '')))
+                _ev_rows = ""
+                for _ev in _ev_sorted:
+                    _ed = _ev.get('date') or '—'
+                    _ev_rows += (
+                        '<tr style="border-bottom:1px solid #eef2f5;">'
+                        f'<td style="padding:7px 14px;font-family:SFMono-Regular,ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#64748B;white-space:nowrap;">{_ed}</td>'
+                        f'<td style="padding:7px 14px;font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#021C36;">{_ev["ticker"]}</td>'
+                        f'<td style="padding:7px 14px;font-family:Inter,sans-serif;font-size:11px;font-weight:600;color:#006497;white-space:nowrap;">{_ev["tipo"]}</td>'
+                        f'<td style="padding:7px 14px;font-family:Inter,sans-serif;font-size:11.5px;color:#445566;line-height:1.45;">{_ev["desc"]}</td>'
+                        '</tr>'
+                    )
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+                with st.expander(f"⚙️  Notas Técnicas y Eventos Corporativos Detectados · {len(_tech_events)} evento(s)", expanded=False):
+                    st.markdown(
+                        '<table style="width:100%;border-collapse:collapse;margin-top:2px;">'
+                        '<thead><tr style="border-bottom:2px solid #021C36;">'
+                        '<th style="padding:7px 14px;text-align:left;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;color:#8899aa;">Fecha</th>'
+                        '<th style="padding:7px 14px;text-align:left;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;color:#8899aa;">Ticker</th>'
+                        '<th style="padding:7px 14px;text-align:left;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;color:#8899aa;">Evento</th>'
+                        '<th style="padding:7px 14px;text-align:left;font-family:Inter,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.11em;text-transform:uppercase;color:#8899aa;">Detalle</th>'
+                        '</tr></thead><tbody>'
+                        + _ev_rows +
+                        '</tbody></table>',
+                        unsafe_allow_html=True
+                    )
+                    st.caption("Eventos detectados automáticamente al procesar tu archivo (splits, reconciliaciones desde captura y dividendos especiales). Las cantidades y métricas ya están ajustadas.")
 
     except Exception as e:
         import traceback
