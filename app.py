@@ -574,15 +574,15 @@ st.markdown("""
         font-weight: 600;
         letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: #8899aa;
+        color: #64748B;
         margin: 0 0 4px 0;
     }
     .da-kpi-value {
-        font-family: 'Inter', sans-serif;
-        font-size: 20px;
-        font-weight: 800;
-        color: #1a1a1a;
-        letter-spacing: -0.02em;
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 22px;
+        font-weight: 700;
+        color: #0F172A;
+        letter-spacing: -0.01em;
         margin: 0;
     }
     .da-kpi-delta {
@@ -686,11 +686,40 @@ st.markdown("""
 CHART_PALETTE = {
     "portfolio": "#006497",        # Electric Blue
     "sp500":     "#8a8a8a",        # Gris neutro referencia
-    "axis":      "#555555",        # on-surface-muted
-    "grid":      "rgba(26,26,26,0.08)",
+    "axis":      "#64748B",        # ejes (gris editorial)
+    "grid":      "#e8edf2",        # grid tenue editorial
     "bg":        "#fcf9f8",        # surface
-    "title":     "#1a1a1a",        # on-surface
+    "title":     "#475569",        # títulos de eje
 }
+
+# ── Tokens editoriales (design-system unificado) ──────────────────────
+_MONO_FONT = "'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+_INK      = "#0F172A"   # tinta de valores numéricos
+_LABEL    = "#64748B"   # labels / ejes
+_HAIRLINE = "#e2e8f0"   # divisores
+_SURFACE  = "#F8FAFC"   # superficie tenue
+_POS      = "#16A34A"   # verde positivo
+_NEG      = "#DC2626"   # rojo negativo
+
+
+def _ed_axis(kind="x", fmt=None, title=None, label_angle=None, year_ticks=False, tick_count=None):
+    """Eje Altair editorial: label mono gris, sin dominio/ticks; grid horizontal punteado tenue solo en Y."""
+    import altair as alt
+    grid = (kind == "y")
+    kw = dict(
+        labelFont=_MONO_FONT, labelFontSize=10, labelColor=_LABEL,
+        titleFont="Inter, system-ui, sans-serif", titleFontSize=11, titleColor=_LABEL,
+        title=title, grid=grid, domain=False, ticks=False,
+    )
+    if grid:
+        kw.update(gridColor=_HAIRLINE, gridDash=[3, 3], gridOpacity=0.7, tickCount=tick_count or 5)
+    if fmt:
+        kw["format"] = fmt
+    if label_angle is not None:
+        kw["labelAngle"] = label_angle
+    if year_ticks:
+        kw["tickCount"] = {"interval": "year", "step": 1}
+    return alt.Axis(**kw)
 
 # Wizard session state defaults
 for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_prev_step', 1), ('_wizard_csv_name', None), ('_wizard_pos_confirmed', False), ('_prev_active_pill', 1)]:
@@ -1794,14 +1823,14 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _cmp_df['Fecha'] = pd.to_datetime(_cmp_df['Fecha'])
 
                     if _cmp_metric == "Valor ($)":
-                        _cmp_y = alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f'))
+                        _cmp_y = alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)'))
                         _cmp_plot = _cmp_df
                     else:
-                        _cmp_y = alt.Y('Rendimiento:Q', title='% Retorno', axis=alt.Axis(format='+.0f'))
+                        _cmp_y = alt.Y('Rendimiento:Q', axis=_ed_axis('y', fmt='+.0f', title='% Retorno'))
                         _cmp_plot = _cmp_df.dropna(subset=['Rendimiento'])
 
                     _cmp_chart = alt.Chart(_cmp_plot).mark_line(strokeWidth=2.5).encode(
-                        x=alt.X('Fecha:T', title=None, axis=alt.Axis(format='%b %Y', labelAngle=-30)),
+                        x=alt.X('Fecha:T', title=None, axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
                         y=_cmp_y,
                         color=alt.Color('Portafolio:N',
                             scale=alt.Scale(domain=['Dividendos', 'Crecimiento'],
@@ -1817,11 +1846,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         ]
                     ).properties(height=420, background=CHART_PALETTE['bg']).configure_view(
                         strokeOpacity=0, fill=CHART_PALETTE['bg']
-                    ).configure_axis(
-                        grid=True, gridColor=CHART_PALETTE['grid'], domainColor=CHART_PALETTE['axis'],
-                        tickColor=CHART_PALETTE['axis'], labelColor=CHART_PALETTE['axis'],
-                        titleColor=CHART_PALETTE['title'], labelFont='Inter, system-ui, sans-serif',
-                        titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
                     )
                     st.altair_chart(_cmp_chart, use_container_width=True)
                     _excl_cmp = [t for t, m in classify_map.items()
@@ -2307,8 +2331,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         var_name='Estrategia', value_name='Valor'
                     )
                     base = alt.Chart(chart_data_long).encode(
-                        x=alt.X('Date:T', title='Fecha'),
-                        y=alt.Y('Valor:Q', title='Valor Acumulado ($)', axis=alt.Axis(format='$,.0f')),
+                        x=alt.X('Date:T', axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                        y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)')),
                         color=alt.Color('Estrategia:N', scale=alt.Scale(
                             domain=[port_label, 'S&P 500 Simulado ($)'],
                             range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
@@ -2327,11 +2351,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         height=400, background=CHART_PALETTE["bg"]
                     ).configure_view(
                         strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                    ).configure_axis(
-                        grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                        tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                        titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                        titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
                     ).configure_legend(
                         labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
                         labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
@@ -2870,16 +2889,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         b_income_df = b_monthly.reset_index()
                         b_income_df.columns = ['Mes', 'Dividendo']
                         b_income_chart = alt.Chart(b_income_df).mark_bar(color='#006497', opacity=0.85).encode(
-                            x=alt.X('Mes:O', title='Mes', sort=None),
-                            y=alt.Y('Dividendo:Q', title='Dividendo ($)', axis=alt.Axis(format='$,.2f')),
+                            x=alt.X('Mes:O', sort=None, axis=_ed_axis('x', label_angle=0, title='Mes')),
+                            y=alt.Y('Dividendo:Q', axis=_ed_axis('y', fmt='$,.2f', title='Dividendo ($)')),
                             tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
                         ).properties(height=160, background=CHART_PALETTE["bg"]).configure_view(
                             strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        ).configure_axis(
-                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif', labelFontSize=10, titleFontSize=11, titleFontWeight=500
                         )
                         st.altair_chart(b_income_chart, use_container_width=True)
 
