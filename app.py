@@ -2598,28 +2598,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f"{stats['pocket_investment']:,.2f}"
                     ))
 
-                    # Section D — Monthly income calendar
-                    monthly_income = stats.get('monthly_income')
-                    if monthly_income is not None and not monthly_income.empty:
-                        import altair as alt
-                        st.markdown("### CALENDARIO DE INCOME MENSUAL")
-                        yoc = stats.get('yield_on_cost', 0)
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:0 0 8px 0;">Yield on Cost: <b style="color:#006497;">{yoc:.2f}%</b> anual sobre tu capital invertido</p>', unsafe_allow_html=True)
-                        income_df = monthly_income.reset_index()
-                        income_df.columns = ['Mes', 'Dividendo']
-                        income_chart = alt.Chart(income_df).mark_bar(color='#c8102e', opacity=0.85).encode(
-                            x=alt.X('Mes:O', title='Mes', sort=None),
-                            y=alt.Y('Dividendo:Q', title='Dividendo ($)', axis=alt.Axis(format='$,.2f')),
-                            tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
-                        ).properties(height=200, background=CHART_PALETTE["bg"]).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        ).configure_axis(
-                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif', labelFontSize=10, titleFontSize=11, titleFontWeight=500
-                        )
-                        st.altair_chart(income_chart, use_container_width=True)
 
                     render_quant_and_chart(stats, ticker)
                     st.divider()
