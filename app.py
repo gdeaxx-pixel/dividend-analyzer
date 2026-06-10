@@ -1796,10 +1796,19 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # ── Comparativa de estrategias (auto-calculada) ───────────
             if strat_results_cached:
                 _da_section("Comparativa de estrategias",
-                            "Si hubieras invertido el mismo capital en SCHB, XLK, YMAX o SMH con el mismo timing")
+                            "Tu portafolio completo vs. poner ese mismo dinero, en las mismas fechas, todo en un solo ETF")
                 _sr_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
                 _sr_value    = sum(s.get('market_value', 0) for s in results.values() if 'error' not in s)
                 _sr_ret_pct  = (_sr_value - _sr_invested) / _sr_invested * 100 if _sr_invested > 0 else 0
+                st.markdown(
+                    f'<div style="font-family:Inter,sans-serif;font-size:12.5px;color:#5a6b7a;line-height:1.65;'
+                    f'margin:0 0 16px 0;">Tomamos el <b>mismo dinero</b> que aportaste '
+                    f'(<b>${_sr_invested:,.0f}</b> en total) en las <b>mismas fechas</b>, y lo invertimos 100% en cada ETF. '
+                    f'La línea oscura es <b>tu portafolio real completo</b> — dividendos + crecimiento juntos; '
+                    f'las demás responden: “¿y si ese mismo dinero hubiera ido todo a un solo fondo?”. '
+                    f'Mismo capital, mismo timing: solo cambia el destino.</div>',
+                    unsafe_allow_html=True
+                )
                 import altair as alt
                 import yfinance as yf
 
@@ -1943,16 +1952,44 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _all_strats.items(),
                     key=lambda x: (0, -x[1]['return_pct']) if x[1]['ok'] else (1, 0.0)
                 )
-                _strat_df = pd.DataFrame([
-                    {
-                        'Estrategia': v['label'],
-                        'Invertido': f"${v['total_invested']:,.0f}",
-                        'Valor Final': f"${v['final_value']:,.0f}" if v['ok'] else "—",
-                        'Retorno': f"{v['return_pct']:+.2f}%" if v['ok'] else "sin datos",
-                    }
-                    for _, v in _sorted_strats
-                ])
-                st.dataframe(_strat_df, hide_index=True, use_container_width=True)
+                _color_domain = ['Tu Portafolio Real', 'Todo en SCHB', 'Todo en XLK', 'Todo en YMAX', 'Todo en SMH']
+                _color_range  = ['#021C36', '#006497', '#2e7d5d', '#c8102e', '#e67e22']
+                _short = {'Tu Portafolio Real': 'TU PORTAFOLIO', 'Todo en SCHB': 'SCHB',
+                          'Todo en XLK': 'XLK', 'Todo en YMAX': 'YMAX', 'Todo en SMH': 'SMH'}
+                _cmap = dict(zip(_color_domain, _color_range))
+                _MONO = "'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+
+                # ── Cuadro de rendimiento integrado (monoespaciado; sirve también de leyenda) ──
+                _rows_html = ""
+                for _, v in _sorted_strats:
+                    _c = _cmap.get(v['label'], '#64748B')
+                    _is_real = v['label'] == 'Tu Portafolio Real'
+                    _nm = _short.get(v['label'], v['label'])
+                    _fin = f"${v['final_value']:,.0f}" if v['ok'] else "—"
+                    _ret = f"{v['return_pct']:+.2f}%" if v['ok'] else "sin datos"
+                    _bg = '#eef4f8' if _is_real else 'transparent'
+                    _wt = '800' if _is_real else '500'
+                    _rows_html += (
+                        f'<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;background:{_bg};'
+                        f'border-bottom:1px solid #eef2f5;">'
+                        f'<span style="width:9px;height:9px;background:{_c};flex-shrink:0;"></span>'
+                        f'<span style="font-family:{_MONO};font-size:12px;font-weight:{_wt};color:#021C36;'
+                        f'flex:1;letter-spacing:0.02em;">{_nm}</span>'
+                        f'<span style="font-family:{_MONO};font-size:11.5px;color:#64748B;width:92px;text-align:right;">{_fin}</span>'
+                        f'<span style="font-family:{_MONO};font-size:12px;font-weight:{_wt};color:{_c};width:92px;text-align:right;">{_ret}</span>'
+                        f'</div>'
+                    )
+                st.markdown(
+                    '<div style="border:1px solid #e2e8f0;margin:2px 0 12px 0;">'
+                    '<div style="display:flex;align-items:center;gap:10px;padding:6px 12px;background:#021C36;">'
+                    '<span style="width:9px;flex-shrink:0;"></span>'
+                    f'<span style="font-family:{_MONO};font-size:9.5px;font-weight:700;color:#9fb3c8;flex:1;letter-spacing:0.12em;">ESTRATEGIA</span>'
+                    f'<span style="font-family:{_MONO};font-size:9.5px;font-weight:700;color:#9fb3c8;width:92px;text-align:right;letter-spacing:0.08em;">VALOR HOY</span>'
+                    f'<span style="font-family:{_MONO};font-size:9.5px;font-weight:700;color:#9fb3c8;width:92px;text-align:right;letter-spacing:0.08em;">RETORNO</span>'
+                    '</div>'
+                    + _rows_html + '</div>',
+                    unsafe_allow_html=True
+                )
                 _missing_etfs = [v['label'].replace('Todo en ', '') for _, v in _sorted_strats if not v['ok']]
                 if _missing_etfs:
                     st.caption(f"No se pudieron descargar precios de: {', '.join(_missing_etfs)} (yfinance). "
@@ -1960,30 +1997,50 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                 if not _line_data.empty:
                     _line_data['Fecha'] = pd.to_datetime(_line_data['Fecha'])
-                    _color_domain = ['Tu Portafolio Real', 'Todo en SCHB', 'Todo en XLK', 'Todo en YMAX', 'Todo en SMH']
-                    _color_range  = ['#021C36', '#006497', '#2e7d5d', '#c8102e', '#e67e22']
-                    _line_chart = alt.Chart(_line_data).mark_line(strokeWidth=2).encode(
-                        x=alt.X('Fecha:T', title=None, axis=alt.Axis(format='%b %Y', labelAngle=-30)),
-                        y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
-                        color=alt.Color('Estrategia:N',
-                            scale=alt.Scale(domain=_color_domain, range=_color_range),
-                            legend=alt.Legend(orient='bottom', columns=3, labelFontSize=11,
-                                              titleFontSize=0, symbolSize=100)
-                        ),
-                        tooltip=[
-                            alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
+                    _AXIS_GRAY = '#64748B'
+                    _color = alt.Color('Estrategia:N',
+                        scale=alt.Scale(domain=_color_domain, range=_color_range), legend=None)
+                    _xaxis = alt.Axis(format='%b %Y', labelAngle=0,
+                        tickCount={'interval': 'year', 'step': 1}, grid=False, domain=False, ticks=False,
+                        labelFont=_MONO, labelFontSize=10, labelColor=_AXIS_GRAY, labelPadding=8, title=None)
+                    _yaxis = alt.Axis(format='$,.0f', tickCount=5, grid=True, gridColor='#e2e8f0',
+                        gridDash=[3, 3], gridOpacity=0.7, domain=False, ticks=False,
+                        labelFont=_MONO, labelFontSize=10, labelColor=_AXIS_GRAY, title=None)
+                    _tip = [alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
                             alt.Tooltip('Estrategia:N', title='Estrategia'),
-                            alt.Tooltip('Valor:Q', title='Valor', format='$,.0f'),
-                        ]
-                    ).properties(height=480, background=CHART_PALETTE['bg']).configure_view(
-                        strokeOpacity=0, fill=CHART_PALETTE['bg']
-                    ).configure_axis(
-                        grid=True, gridColor=CHART_PALETTE['grid'], domainColor=CHART_PALETTE['axis'],
-                        tickColor=CHART_PALETTE['axis'], labelColor=CHART_PALETTE['axis'],
-                        titleColor=CHART_PALETTE['title'], labelFont='Inter, system-ui, sans-serif',
-                        titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
-                    )
-                    st.altair_chart(_line_chart, use_container_width=True)
+                            alt.Tooltip('Valor:Q', title='Valor', format='$,.0f')]
+                    _bench = _line_data[_line_data['Estrategia'] != 'Tu Portafolio Real']
+                    _real  = _line_data[_line_data['Estrategia'] == 'Tu Portafolio Real']
+                    _l_bench = alt.Chart(_bench).mark_line(strokeWidth=1.5, opacity=0.6).encode(
+                        x=alt.X('Fecha:T', axis=_xaxis), y=alt.Y('Valor:Q', axis=_yaxis), color=_color, tooltip=_tip)
+                    _l_real = alt.Chart(_real).mark_line(strokeWidth=3, opacity=1.0).encode(
+                        x=alt.X('Fecha:T', axis=_xaxis), y=alt.Y('Valor:Q', axis=_yaxis), color=_color, tooltip=_tip)
+                    _last = _line_data.loc[_line_data.groupby('Estrategia')['Fecha'].idxmax()].copy()
+                    _last['lbl'] = _last['Estrategia'].map(_short)
+                    # De-colisión vertical de las etiquetas finales + leader cuando dos
+                    # estrategias terminan con valores casi iguales (evita que se encimen).
+                    _yspan = max(float(_line_data['Valor'].max()), 1.0)
+                    _gap = _yspan * (22.0 / 440.0)   # ~22px mínimos entre etiquetas
+                    _last = _last.sort_values('Valor', ascending=False).reset_index(drop=True)
+                    _ly, _prev = [], None
+                    for _v in _last['Valor']:
+                        _y = float(_v)
+                        if _prev is not None and (_prev - _y) < _gap:
+                            _y = _prev - _gap
+                        _ly.append(_y); _prev = _y
+                    _last['lbl_y'] = _ly
+                    _last['moved'] = (_last['lbl_y'] - _last['Valor']).abs() > (_yspan * 3.0 / 440.0)
+                    _leader = alt.Chart(_last[_last['moved']]).mark_rule(
+                        strokeWidth=0.8, opacity=0.5, clip=False).encode(
+                        x=alt.X('Fecha:T'), y=alt.Y('Valor:Q'), y2=alt.Y2('lbl_y'), color=_color)
+                    _lab = alt.Chart(_last).mark_text(align='left', dx=8, fontSize=10, font=_MONO,
+                        fontWeight='bold', clip=False).encode(
+                        x=alt.X('Fecha:T'), y=alt.Y('lbl_y:Q'), text='lbl:N', color=_color)
+                    _chart = (_l_bench + _l_real + _leader + _lab).properties(
+                        height=440, background=CHART_PALETTE['bg'],
+                        padding={'left': 4, 'top': 8, 'right': 96, 'bottom': 4}
+                    ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                    st.altair_chart(_chart, use_container_width=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Comparativa directa A vs B (solo cuando hay ambos) ────
