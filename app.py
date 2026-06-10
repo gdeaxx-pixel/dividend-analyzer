@@ -2503,10 +2503,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _tr_color = "#4caf82" if _total_ret >= 0 else "#e05c5c"
                     _cap_color = "#4caf82" if _cap_comp >= 0 else "#e05c5c"
                     st.markdown(f"""
-                    <div style="background-color:#021C36;padding:16px 20px;margin:8px 0 12px 0;border-left:4px solid #006497;">
-                        <p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 4px 0;letter-spacing:0.12em;text-transform:uppercase;">Retorno Total</p>
-                        <p style="font-family:Inter,sans-serif;font-size:26px;font-weight:800;color:{_tr_color};margin:0 0 8px 0;">${_total_ret:+,.2f} &nbsp;<span style="font-size:16px;font-weight:600;">({_total_ret_pct:+.2f}%)</span></p>
-                        <p style="font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;margin:0;">Capital: <b style="color:{_cap_color};">${_cap_comp:+,.2f}</b> &nbsp;&nbsp;·&nbsp;&nbsp; Income: <b style="color:#4caf82;">${_inc_comp:,.2f}</b></p>
+                    <div style="background:#F8FAFC;border-left:3px solid {_tr_color};padding:13px 18px;margin:8px 0 12px 0;">
+                        <p style="font-family:Inter,sans-serif;font-size:10px;color:#64748B;font-weight:400;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Retorno Total</p>
+                        <p style="font-family:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;font-size:26px;font-weight:700;color:{_tr_color};margin:0 0 6px 0;letter-spacing:-0.01em;">${_total_ret:+,.2f} <span style="font-size:15px;font-weight:600;">({_total_ret_pct:+.2f}%)</span></p>
+                        <p style="font-family:Inter,sans-serif;font-size:11.5px;color:#334155;margin:0;">Capital: <b style="color:{_cap_color};">${_cap_comp:+,.2f}</b> &nbsp;·&nbsp; Income: <b style="color:#16a34a;">${_inc_comp:,.2f}</b></p>
                     </div>
                     """, unsafe_allow_html=True)
 
