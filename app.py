@@ -1328,8 +1328,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 f'<p class="da-kpi-delta" style="color:#aaaaaa;">Ingresa base IB</p>'
                 f'</div>'
             )
+            _n_div_all = sum(1 for t in results if classify_map.get(t) == 'mode_a' and 'error' not in results[t])
+            _n_cre_all = sum(1 for t in results if classify_map.get(t) == 'mode_b' and 'error' not in results[t])
             _da_section("Resumen global del portafolio",
-                        f"{len(results)} posiciones analizadas · datos de {broker_label}")
+                        f"Todo tu portafolio combinado · {_n_cre_all} de crecimiento + {_n_div_all} de dividendos · datos de {broker_label}")
             st.markdown(f"""
 <div class="da-kpi-bar">
     <div class="da-kpi-cell da-kpi-accent">
@@ -1355,6 +1357,38 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     {_roc_cell}
 </div>
             """, unsafe_allow_html=True)
+
+            # ── Composición: las posiciones concretas que forman este portafolio global ──
+            _pos_rows = sorted(
+                [(t, s) for t, s in results.items() if 'error' not in s],
+                key=lambda x: -(x[1].get('market_value', 0) or 0)
+            )
+            _chips = ''
+            for _t, _s in _pos_rows:
+                _mv = _s.get('market_value', 0) or 0
+                _w  = (_mv / total_market * 100) if total_market else 0
+                _is_div = classify_map.get(_t) == 'mode_a'
+                _tipo   = 'Dividendos' if _is_div else 'Crecimiento'
+                _c      = '#4caf82' if _is_div else '#006497'
+                _chips += (
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:9px 13px;'
+                    f'background:#f6f8fa;border-left:3px solid {_c};">'
+                    f'<span style="font-family:Inter,sans-serif;font-size:14px;font-weight:800;color:#021C36;">{_t}</span>'
+                    f'<span style="font-family:Inter,sans-serif;font-size:9.5px;font-weight:700;color:{_c};'
+                    f'text-transform:uppercase;letter-spacing:0.07em;">{_tipo}</span>'
+                    f'<span style="flex:1;"></span>'
+                    f'<span style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;'
+                    f'font-variant-numeric:tabular-nums;">${_mv:,.0f} · {_w:.0f}%</span></div>'
+                )
+            st.markdown(
+                '<p style="font-family:Inter,sans-serif;font-size:13px;color:#021C36;margin:14px 0 9px 0;line-height:1.55;">'
+                f'<b>Es tu portafolio completo, no solo crecimiento.</b> Lo forman estas {len(_pos_rows)} posiciones '
+                f'({_n_cre_all} de crecimiento + {_n_div_all} de dividendos); los totales de arriba las suman todas.</p>'
+                '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin:0 0 6px 0;">'
+                + _chips + '</div>',
+                unsafe_allow_html=True
+            )
+
             if _dq_unrel:
                 st.caption("Aviso: " + ", ".join(_dq_unrel) + " tienen historial de compras incompleto en el CSV, "
                            "así que el Total Invertido y el ROI de arriba los incluyen con un costo subestimado "
