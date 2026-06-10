@@ -961,6 +961,19 @@ if input_method == "Subir CSV/Excel":
                 label_visibility="collapsed",
                 help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
             )
+            with st.expander("¿No sabes cómo exportar tu archivo?"):
+                st.markdown(
+                    '<div style="font-family:Inter,sans-serif;font-size:12.5px;color:#445566;line-height:1.7;">'
+                    '<p style="margin:0 0 8px 0;"><b style="color:#021C36;">Interactive Brokers</b> — '
+                    'Informes → Extractos → <i>Transaction History</i> → elige el rango de fechas → exporta en CSV.</p>'
+                    '<p style="margin:0 0 8px 0;"><b style="color:#021C36;">Charles Schwab</b> — '
+                    'Historial → Transacciones → <i>Exportar</i> (CSV).</p>'
+                    '<p style="margin:0;"><b style="color:#021C36;">Ingresos (opcional, solo Schwab)</b> — '
+                    'Cuenta → Historial → <i>Investment Income</i> → Exportar; se sube luego en el Bloque 3.</p>'
+                    '<p style="font-size:11px;color:#8899aa;margin:9px 0 0 0;">¿Otro broker? Sube un Excel (.xlsx) con columnas Fecha, Ticker, Cantidad y Monto y lo intentamos detectar.</p>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
             if uploaded_file_w is not None:
                 try:
                     _parseo(["Leyendo el archivo…", "Detectando broker y analizando columnas…"])
@@ -1271,7 +1284,8 @@ if input_method == "Subir CSV/Excel":
                          disabled=not _pos_done, key="_go_results"):
                 _ib_map_s2 = st.session_state.get('_wizard_ib_map', {}) or {}
                 _overrides_s2 = st.session_state.get('_wizard_overrides', {}) or {}
-                with st.spinner("Analizando transacciones, splits y dividendos..."):
+                with st.status("Analizando tu portafolio…", expanded=True) as _an_st:
+                    st.write("Leyendo transacciones y ajustando splits…")
                     try:
                         _res_s2 = logic.analyze_portfolio(
                             _df2, version="2.0",
@@ -1279,6 +1293,8 @@ if input_method == "Subir CSV/Excel":
                             position_overrides=_overrides_s2 or None)
                     except TypeError:
                         _res_s2 = logic.analyze_portfolio(_df2)
+                    st.write("Calculando dividendos, ROI y métricas de riesgo…")
+                    _an_st.update(label="Análisis completo", state="complete", expanded=False)
 
                 if not _res_s2:
                     st.error("No se pudieron extraer tickers válidos o datos del archivo.")
@@ -2300,7 +2316,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
             # ── ACORDEÓN: Detalle por portafolio ───────────────────────
             _da_section("Detalle por portafolio",
-                        "Abre cada portafolio para ver sus posiciones, métricas de riesgo y calendario de dividendos")
+                        "Abre cada portafolio para ver sus posiciones y métricas de riesgo")
             tab_a = st.expander(
                 f"PORTAFOLIO DE DIVIDENDOS   ·   income mensual   ·   {len(mode_a_tickers)} fondos",
                 expanded=True,
@@ -2459,7 +2475,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Ingresa base IB en el sidebar</p>'}
+                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>'}
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Valor de Mercado</p>
@@ -2827,7 +2843,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Ingresa base IB en el sidebar</p>'}
+                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>'}
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Valor de Mercado</p>
@@ -3073,7 +3089,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             st.code(traceback.format_exc())
 
 elif input_method == "Simulación Teórica":
-    st.subheader("Simulación Teórica")
+    st.markdown(
+        '<div style="display:flex;align-items:baseline;gap:14px;margin:8px 0 18px 0;padding-bottom:10px;border-bottom:2px solid #021C36;">'
+        '<span style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#006497;letter-spacing:0.06em;">SIM</span>'
+        '<div><p style="font-family:Inter,sans-serif;font-size:17px;font-weight:800;color:#021C36;letter-spacing:-0.01em;margin:0;">Simulación Teórica</p>'
+        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:3px 0 0 0;">Backtests hipotéticos con precios y dividendos históricos reales — no usa tu portafolio.</p></div></div>',
+        unsafe_allow_html=True
+    )
 
     sim_mode = st.radio(
         "Tipo de simulación:",
@@ -3121,8 +3143,8 @@ elif input_method == "Simulación Teórica":
                     opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
                 ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
                 _sim_lines = alt.Chart(_sim_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
-                    x=alt.X('Date:T', title='Fecha'),
-                    y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                    x=alt.X('Date:T', axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                    y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)')),
                     color=alt.Color('Estrategia:N', scale=alt.Scale(
                         domain=['Con DRIP (reinvirtiendo)', 'Sin DRIP (efectivo)'],
                         range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
@@ -3137,11 +3159,6 @@ elif input_method == "Simulación Teórica":
                     height=320, background=CHART_PALETTE["bg"]
                 ).configure_view(
                     strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                ).configure_axis(
-                    grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                    tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                    titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                    titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
                 ).configure_legend(
                     labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
                     labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
@@ -3197,8 +3214,8 @@ elif input_method == "Simulación Teórica":
                             color=alt.Color('Parte:N', scale=_scale, legend=None)
                         )
                         _lines = alt.Chart(_long).mark_line(strokeWidth=2.5, interpolate='monotone').encode(
-                            x=alt.X('Date:T', title='Fecha'),
-                            y=alt.Y('Valor:Q', title='Valor ($)', axis=alt.Axis(format='$,.0f')),
+                            x=alt.X('Date:T', axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                            y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)')),
                             color=alt.Color('Parte:N', scale=_scale, title='Parte'),
                             tooltip=[
                                 alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
@@ -3210,11 +3227,6 @@ elif input_method == "Simulación Teórica":
                             height=240, background=CHART_PALETTE["bg"]
                         ).configure_view(
                             strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        ).configure_axis(
-                            grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                            tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                            titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                            titleFont='Inter, system-ui, sans-serif', labelFontSize=11, titleFontSize=12, titleFontWeight=500
                         ).configure_legend(
                             labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
                             labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
