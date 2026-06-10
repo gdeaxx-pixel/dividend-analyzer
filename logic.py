@@ -2621,6 +2621,66 @@ def project_income(income_df, results: dict = None) -> dict:
     return out
 
 
+# ── Filtro de "portafolio de ingresos": qué activos pertenecen a la gráfica ───
+# La gráfica de Schwab vs proyección solo tiene sentido para activos cuya estrategia
+# es la distribución recurrente de income alto (YieldMax/opción-ingreso, o ETFs/acciones
+# de dividendo alto). Los índices/crecimiento con dividendo marginal (SCHB, XLK) aplastan
+# la escala y distorsionan el propósito. Clasificación híbrida: type curado + yield real.
+INCOME_ASSET_MIN_YIELD_PCT = 4.0   # yield anualizado mínimo para clasificar "activo de dividendos"
+
+
+def is_income_strategy_asset(ticker, proj_entry, results=None,
+                             min_yield_pct=INCOME_ASSET_MIN_YIELD_PCT):
+    """¿Pertenece `ticker` al portafolio de generación de ingresos? (income/dividendo alto).
+
+    Híbrido, sobre la base de conocimiento curada (instruments.yaml) + yield real:
+      1. type == 'yieldmax'  -> SIEMPRE income (estrategia de opción-ingreso por definición).
+      2. type == 'leveraged' -> NUNCA income (apalancado de crecimiento, p.ej. NVDL).
+      3. resto (etf/stock/desconocido) -> yield anualizado = dividendos 12m / valor de mercado;
+         income si yield >= `min_yield_pct`.
+    Degradación elegante: si no hay valor de mercado o dividendos para calcular el yield, cae al
+    type (yieldmax->True, leveraged->False, otro/desconocido->True: no oculta sin prueba).
+    Devuelve (bool, {'reason': str, 'yield_pct': float|None}).
+    """
+    info = load_instruments().get(str(ticker).upper(), {})
+    typ = (info.get('type') or '').lower()
+    if typ == 'yieldmax':
+        return True, {'reason': 'type:yieldmax', 'yield_pct': None}
+    if typ == 'leveraged':
+        return False, {'reason': 'type:leveraged', 'yield_pct': None}
+
+    proj_entry = proj_entry or {}
+    recv = proj_entry.get('our_received_12m')
+    if recv is None:
+        recv = proj_entry.get('schwab_received_12m')
+    mkt = None
+    if results and isinstance(results.get(ticker), dict):
+        mkt = results[ticker].get('market_value')
+
+    if recv is not None and mkt and mkt > 0:
+        y = recv / mkt * 100
+        return (y >= min_yield_pct), {'reason': f'yield {y:.1f}%', 'yield_pct': round(y, 2)}
+
+    # Sin datos para el yield -> degradar por type (no ocultar sin prueba).
+    return (typ != 'leveraged'), {'reason': 'sin yield calculable', 'yield_pct': None}
+
+
+def filter_income_assets(proj, results=None, min_yield_pct=INCOME_ASSET_MIN_YIELD_PCT):
+    """Filtra el dict de `project_income` a SOLO los activos de generación de ingresos.
+
+    Devuelve (kept_dict, dropped_list[(ticker, reason)]). A cada entrada conservada le
+    anexa `_yield_pct` (para tooltips/depuración). No muta el dict de entrada.
+    """
+    kept, dropped = {}, []
+    for t, d in (proj or {}).items():
+        ok, meta = is_income_strategy_asset(t, d, results, min_yield_pct)
+        if ok:
+            kept[t] = {**d, '_yield_pct': meta.get('yield_pct')}
+        else:
+            dropped.append((t, meta.get('reason')))
+    return kept, dropped
+
+
 # ── Captura de casos de estudio (golden harness) ─────────────────────────────
 # Diseño: anonimización por construcción. Solo se conservan las columnas que el
 # pipeline consume; cualquier columna del broker con cuenta/nombre/dirección se

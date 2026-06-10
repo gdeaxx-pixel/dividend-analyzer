@@ -929,3 +929,38 @@ def test_project_income_uses_results_for_csv_12m():
                  ticker="SCHB")
     proj = logic.project_income(_build_proj_income(), {"SCHB": {"history": hist}})
     assert proj["SCHB"]["our_received_12m"] == pytest.approx(25.0, abs=0.01)  # 5 x $5 en 12m
+
+
+# ── filter_income_assets / is_income_strategy_asset (filtro del portafolio de ingresos) ─────
+
+def test_filter_income_assets_excludes_index_etf():
+    """MSTY (yieldmax) entra siempre; SCHB (etf) con yield <4% (dividendo marginal) se excluye."""
+    proj = logic.project_income(_build_proj_income())     # SCHB recibido 12m = $16
+    kept, dropped = logic.filter_income_assets(proj, {"SCHB": {"market_value": 1000.0}})  # $16/$1000 = 1.6%
+    assert "MSTY" in kept
+    assert "SCHB" not in kept
+    assert any(t == "SCHB" for t, _ in dropped)
+
+
+def test_filter_income_assets_keeps_yieldmax_without_results():
+    """Sin market_value, el yieldmax se conserva por su type (degradación elegante)."""
+    proj = logic.project_income(_build_proj_income())
+    kept, _ = logic.filter_income_assets(proj, None)
+    assert "MSTY" in kept
+
+
+def test_filter_income_assets_high_yield_etf_kept():
+    """Un etf con yield alto (caso SCHD-like) entra por el umbral de yield, no por su type."""
+    proj = logic.project_income(_build_proj_income())     # SCHB recibido 12m = $16
+    kept, _ = logic.filter_income_assets(proj, {"SCHB": {"market_value": 200.0}})  # $16/$200 = 8% >= 4%
+    assert "SCHB" in kept
+    assert kept["SCHB"]["_yield_pct"] == pytest.approx(8.0, abs=0.1)
+
+
+def test_is_income_strategy_asset_leveraged_excluded():
+    """type:leveraged (NVDL) nunca es activo de ingresos, aunque el yield calculado sea altísimo."""
+    ok, meta = logic.is_income_strategy_asset(
+        "NVDL", {"schwab_received_12m": 50.0, "our_received_12m": 50.0},
+        {"NVDL": {"market_value": 100.0}})   # yield 50% pero es apalancado de crecimiento
+    assert ok is False
+    assert meta["reason"] == "type:leveraged"

@@ -6,6 +6,7 @@ import logic
 import storage
 import json
 import os
+import time
 
 
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
@@ -648,7 +649,7 @@ CHART_PALETTE = {
 }
 
 # Wizard session state defaults
-for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_prev_step', 1)]:
+for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_prev_step', 1), ('_wizard_csv_name', None), ('_wizard_pos_confirmed', False), ('_prev_active_pill', 1)]:
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
@@ -718,116 +719,259 @@ def _get_gemini_key():
         pass
     return os.getenv("GEMINI_API_KEY")
 
+# --- Helpers de la carga consolidada (Paso 01) ---
+_PARSEO_STYLE = (
+    '<style>.da-ind{position:relative;height:3px;background:#e8eef3;overflow:hidden;}'
+    '.da-ind::after{content:"";position:absolute;left:0;top:0;height:100%;width:35%;'
+    'background:#006497;animation:da-ind 1s ease-in-out infinite;}'
+    '@keyframes da-ind{0%{left:-35%}100%{left:100%}}'
+    '@media (prefers-reduced-motion:reduce){.da-ind::after{animation:none;left:0;width:100%}}</style>'
+)
+
+
+def _parseo(messages, step=0.6):
+    """Micro-animación de 'parseo': barra indeterminada + texto rotativo (~1-2s)."""
+    _ph = st.empty()
+    for _m in messages:
+        _ph.markdown(
+            _PARSEO_STYLE +
+            '<div style="padding:8px 0 4px 0;">'
+            f'<div style="font-family:Inter,sans-serif;font-size:12.5px;color:#5a6b7a;'
+            f'font-style:italic;margin-bottom:7px;">{_m}</div>'
+            '<div class="da-ind"></div></div>',
+            unsafe_allow_html=True)
+        time.sleep(step)
+    _ph.empty()
+
+
+def _da_block_header(num, title, state, subtitle=""):
+    """Encabezado numerado de un bloque. state: 'active' | 'done' | 'locked'."""
+    if state == 'done':
+        _bg, _fg, _mark, _tc = '#4caf82', '#ffffff', '✓', '#1a1a1a'
+    elif state == 'locked':
+        _bg, _fg, _mark, _tc = '#eae7e7', '#b9c2cc', str(num), '#aab4be'
+    else:
+        _bg, _fg, _mark, _tc = '#006497', '#ffffff', str(num), '#021C36'
+    _sub = (f'<div style="font-family:Inter,sans-serif;font-size:11px;color:#8a96a3;'
+            f'margin-top:1px;">{subtitle}</div>') if subtitle else ''
+    return (
+        '<div class="da-reveal" style="display:flex;align-items:center;gap:11px;margin:2px 0 10px 0;">'
+        f'<div style="flex-shrink:0;width:26px;height:26px;background:{_bg};color:{_fg};'
+        'display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;'
+        f'font-size:12px;font-weight:800;">{_mark}</div>'
+        '<div>'
+        f'<div style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;letter-spacing:0.02em;'
+        f'color:{_tc};text-transform:uppercase;">{title}</div>{_sub}</div></div>'
+    )
+
+
+def _da_summary(title, detail):
+    """Resumen contraído de un bloque completado."""
+    return (
+        '<div class="da-reveal" style="display:flex;align-items:center;gap:11px;'
+        'background:#f7faf8;border-left:4px solid #4caf82;padding:10px 14px;margin:2px 0 4px 0;">'
+        '<div style="flex-shrink:0;width:22px;height:22px;background:#4caf82;color:#fff;'
+        'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">✓</div>'
+        '<div style="line-height:1.35;">'
+        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:800;color:#1a1a1a;'
+        f'text-transform:uppercase;letter-spacing:0.04em;">{title}</span>'
+        f'<span style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;"> · {detail}</span>'
+        '</div></div>'
+    )
+
+
+def _da_block3_locked():
+    """Placeholder atenuado del Bloque 3 (visible desde el inicio, desactivado)."""
+    return (
+        '<div class="da-reveal" style="opacity:.55;border:1px dashed #d8dde2;padding:12px 14px;margin:4px 0;">'
+        + _da_block_header(
+            3, "Archivo de ingresos · opcional", "locked",
+            "Validación extra · se desbloquea al confirmar tus posiciones.")
+        + '</div>'
+    )
+
+
+_LOAD_PROGRESS_STYLE = (
+    '<style>'
+    '.da-reveal{animation:da-rev .42s cubic-bezier(.16,1,.3,1) both;}'
+    '@keyframes da-rev{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}'
+    '.da-seg-fill{animation:da-fill .55s cubic-bezier(.16,1,.3,1) both;transform-origin:left center;}'
+    '@keyframes da-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}'
+    '@media (prefers-reduced-motion:reduce){.da-reveal,.da-seg-fill{animation:none}}'
+    '</style>'
+)
+
+
+def _render_load_progress(csv_done, pos_done, income_done):
+    """Barra de progreso interna de 3 segmentos (CSV / Posiciones / Ingresos)."""
+    _pct = 100 if income_done else 66 if pos_done else 33 if csv_done else 0
+    _segs = [("Transacciones", csv_done), ("Posiciones", pos_done), ("Ingresos · opc", income_done)]
+    _cells = ""
+    for _label, _done in _segs:
+        _fill = ('<div class="da-seg-fill" style="height:100%;background:#006497;"></div>'
+                 if _done else '')
+        _lc = '#021C36' if _done else '#aab4be'
+        _cells += (
+            '<div style="flex:1;">'
+            f'<div style="height:6px;background:#eae7e7;overflow:hidden;">{_fill}</div>'
+            '<div style="font-family:Inter,sans-serif;font-size:9.5px;font-weight:700;'
+            f'letter-spacing:0.06em;text-transform:uppercase;color:{_lc};margin-top:6px;">{_label}</div>'
+            '</div>'
+        )
+    st.markdown(
+        _LOAD_PROGRESS_STYLE +
+        '<div style="display:flex;align-items:flex-end;justify-content:space-between;margin:2px 0 7px 0;">'
+        '<span style="font-family:Inter,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.1em;'
+        'text-transform:uppercase;color:#8a96a3;">Progreso de carga</span>'
+        f'<span style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#006497;">{_pct}%</span>'
+        '</div>'
+        f'<div style="display:flex;gap:6px;">{_cells}</div>'
+        '<div style="font-family:Inter,sans-serif;font-size:10.5px;color:#8a96a3;margin:9px 0 18px 0;">'
+        'Mínimo requerido: <b style="color:#5a6b7a;">Posiciones (66%)</b> · Ingresos es validación extra opcional.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+
 # --- Main Logic ---
 
 if input_method == "Subir CSV/Excel":
     _wizard_step = st.session_state.get('_wizard_step', 1)
+
+    # Estado de los micro-pasos de la carga consolidada (Paso 01)
+    _csv_done    = st.session_state.get('_wizard_df_clean') is not None
+    _pos_done    = bool(st.session_state.get('_wizard_pos_confirmed'))
+    _income_done = st.session_state.get('_wizard_income_summary') is not None
+
+    # Píldora activa: dentro del Paso 01, la 02 ("Configura Costos") se ilumina
+    # al entrar a la fase de Posiciones (CSV ya cargado); 03 en Resultados.
+    if _wizard_step >= 3:
+        _active_pill = 3
+    elif _csv_done:
+        _active_pill = 2
+    else:
+        _active_pill = 1
+    _prev_pill = st.session_state.get('_prev_active_pill', _active_pill)
+
     _step_changed = st.session_state.get('_prev_step') != _wizard_step
     if _step_changed:
-        # Anima la entrada del contenido SOLO al cambiar de paso (no al editar dentro del paso)
+        # Anima la entrada del contenido SOLO al cambiar de paso mayor (1 ↔ 3)
         st.markdown(
             '<style>.block-container{animation:da-step-in .45s cubic-bezier(.16,1,.3,1) both;}'
             '@keyframes da-step-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}'
             '@media (prefers-reduced-motion:reduce){.block-container{animation:none}}</style>',
             unsafe_allow_html=True)
-    _render_step_indicator(_wizard_step, st.session_state.get('_prev_step'))
-    if _step_changed:
-        _labels = {1: "Paso 1 de 3 · Carga el archivo",
-                   2: "Paso 2 de 3 · Configura tus costos",
-                   3: "Paso 3 de 3 · Resultados"}
-        st.toast(_labels.get(_wizard_step, ""), icon=":material/check_circle:")
-        st.session_state['_prev_step'] = _wizard_step
 
-    # ── PASO 1: Carga el Archivo ──────────────────────────────────────────
+    _render_step_indicator(_active_pill, _prev_pill)
+
+    if _prev_pill != _active_pill:
+        _ptoast = {2: "Configura tus costos", 3: "Paso 3 de 3 · Resultados"}
+        if _active_pill in _ptoast:
+            st.toast(_ptoast[_active_pill], icon=":material/check_circle:")
+    st.session_state['_prev_active_pill'] = _active_pill
+    st.session_state['_prev_step'] = _wizard_step
+
+    # ══════════════════════════════════════════════════════════════════
+    #  PASO 01 · CARGA EL ARCHIVO — vista única, revelación progresiva
+    # ══════════════════════════════════════════════════════════════════
     if _wizard_step == 1:
-        uploaded_file_w = st.file_uploader(
-            "Sube tu archivo de transacciones (CSV o Excel)",
-            type=['csv', 'xlsx'],
-            label_visibility="collapsed",
-            help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
-        )
-        if uploaded_file_w is not None:
-            try:
-                if uploaded_file_w.name.endswith('.xlsx'):
-                    _df_w = pd.read_excel(uploaded_file_w)
-                    _broker_w = 'generic'
-                else:
-                    _df_w, _broker_w = logic.load_and_detect_csv(uploaded_file_w)
-                    if _df_w.empty:
-                        st.error("No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
-                        st.stop()
+        _render_load_progress(_csv_done, _pos_done, _income_done)
 
-                _df_clean_w = logic.normalize_csv(_df_w)
-                _req_cols_w = ['Date', 'Ticker', 'Amount']
-                _miss_cols_w = [c for c in _req_cols_w if c not in _df_clean_w.columns]
+        # ───────── BLOQUE 1 · Transacciones (CSV / Excel) ─────────
+        if not _csv_done:
+            st.markdown(_da_block_header(
+                1, "Transacciones · CSV / Excel", "active",
+                "Sube el export de tu broker para comenzar."), unsafe_allow_html=True)
+            uploaded_file_w = st.file_uploader(
+                "Sube tu archivo de transacciones (CSV o Excel)",
+                type=['csv', 'xlsx'],
+                label_visibility="collapsed",
+                help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
+            )
+            if uploaded_file_w is not None:
+                try:
+                    _parseo(["Leyendo el archivo…", "Detectando broker y analizando columnas…"])
+                    if uploaded_file_w.name.endswith('.xlsx'):
+                        _df_w = pd.read_excel(uploaded_file_w)
+                        _broker_w = 'generic'
+                    else:
+                        _df_w, _broker_w = logic.load_and_detect_csv(uploaded_file_w)
+                        if _df_w.empty:
+                            st.error("No pudimos leer el formato del CSV. Intenta guardarlo como 'CSV UTF-8' o usa Excel (.xlsx).")
+                            st.stop()
 
-                if _miss_cols_w:
-                    st.error(f"Error de Formato: No encontramos las columnas: {', '.join(_miss_cols_w)}")
-                    st.warning(f"Columnas encontradas: {list(_df_clean_w.columns)}")
-                    st.info("Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
-                else:
-                    _mmap_w = logic.classify_tickers(_df_clean_w['Ticker'].dropna().unique().tolist())
-                    _n_inc_w = sum(1 for m in _mmap_w.values() if m == 'mode_a')
+                    _df_clean_w = logic.normalize_csv(_df_w)
+                    _req_cols_w = ['Date', 'Ticker', 'Amount']
+                    _miss_cols_w = [c for c in _req_cols_w if c not in _df_clean_w.columns]
 
-                    _csv_td_w = {}
-                    if 'Ticker' in _df_clean_w.columns and 'Action' in _df_clean_w.columns:
-                        for _et_w, _eg_w in _df_clean_w.groupby('Ticker'):
-                            _buys_w = _eg_w[_eg_w['Action'].str.lower().str.contains('buy', na=False)]
-                            _divs_w = _eg_w[_eg_w['Action'].str.lower().str.contains('div', na=False)]
-                            _csv_td_w[_et_w] = {
-                                'shares': float(_buys_w['Quantity'].sum()) if 'Quantity' in _buys_w.columns and not _buys_w.empty else 0.0,
-                                'invested': abs(float(_buys_w['Amount'].sum())) if not _buys_w.empty else 0.0,
-                                'dividends_csv': float(_divs_w['Amount'].sum()) if not _divs_w.empty else 0.0,
-                                'first_date': str(_eg_w['Date'].min())[:10] if not _eg_w.empty else 'N/A',
-                            }
+                    if _miss_cols_w:
+                        st.error(f"Error de Formato: No encontramos las columnas: {', '.join(_miss_cols_w)}")
+                        st.warning(f"Columnas encontradas: {list(_df_clean_w.columns)}")
+                        st.info("Consejo: Asegúrate de que tu autodetector de cabecera funcionó. Si tu archivo tiene muchas filas vacías al inicio, intenta borrarlas.")
+                    else:
+                        _csv_td_w = {}
+                        if 'Ticker' in _df_clean_w.columns and 'Action' in _df_clean_w.columns:
+                            for _et_w, _eg_w in _df_clean_w.groupby('Ticker'):
+                                _buys_w = _eg_w[_eg_w['Action'].str.lower().str.contains('buy', na=False)]
+                                _divs_w = _eg_w[_eg_w['Action'].str.lower().str.contains('div', na=False)]
+                                _csv_td_w[_et_w] = {
+                                    'shares': float(_buys_w['Quantity'].sum()) if 'Quantity' in _buys_w.columns and not _buys_w.empty else 0.0,
+                                    'invested': abs(float(_buys_w['Amount'].sum())) if not _buys_w.empty else 0.0,
+                                    'dividends_csv': float(_divs_w['Amount'].sum()) if not _divs_w.empty else 0.0,
+                                    'first_date': str(_eg_w['Date'].min())[:10] if not _eg_w.empty else 'N/A',
+                                }
+                        st.session_state['_wizard_df_clean'] = _df_clean_w
+                        st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
+                        st.session_state['_wizard_broker'] = _broker_w
+                        st.session_state['_wizard_csv_name'] = uploaded_file_w.name
+                        st.rerun()
 
-                    _BROKER_LABELS_W = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}
-                    _bl_w = _BROKER_LABELS_W.get(_broker_w, _broker_w.upper())
-                    st.markdown(
-                        f'<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:12px 16px;margin:16px 0;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:600;color:#1a1a1a;">'
-                        f'Archivo procesado · Broker: {_bl_w} · {_n_inc_w} ETFs de dividendos detectados'
-                        f'</span></div>',
-                        unsafe_allow_html=True
-                    )
-                    st.session_state['_wizard_df_clean'] = _df_clean_w
-                    st.session_state['_wizard_csv_ticker_data'] = _csv_td_w
-                    st.session_state['_wizard_broker'] = _broker_w
-
-                    st.session_state['_wizard_step'] = 2
+                except Exception as _e1:
+                    import traceback as _tb1
+                    st.error(f"Error procesando el archivo: {_e1}")
+                    with st.expander("Ver detalles del error"):
+                        st.code(_tb1.format_exc())
+        else:
+            # Bloque 1 contraído (modo resumen) + enlace para editar
+            _bln = {'schwab': 'Charles Schwab', 'ibkr': 'Interactive Brokers', 'generic': 'Formato Genérico'}.get(
+                st.session_state.get('_wizard_broker'), 'Archivo')
+            _csvname = st.session_state.get('_wizard_csv_name') or 'transacciones.csv'
+            _csvtd = st.session_state.get('_wizard_csv_ticker_data') or {}
+            st.markdown(_da_summary("CSV cargado", f"{_csvname} · {_bln} · {len(_csvtd)} tickers"),
+                        unsafe_allow_html=True)
+            _ec1, _ec2 = st.columns([5, 1])
+            with _ec2:
+                if st.button("editar", key="_edit_csv", type="tertiary", use_container_width=True):
+                    for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
+                               '_wizard_csv_name', '_wizard_ib_map', '_wizard_positions',
+                               '_wizard_overrides', '_wizard_photo_sig',
+                               '_wizard_income_summary', '_wizard_income_df']:
+                        st.session_state.pop(_k, None)
+                    st.session_state['_wizard_pos_confirmed'] = False
                     st.rerun()
 
-            except Exception as _e1:
-                import traceback as _tb1
-                st.error(f"Error procesando el archivo: {_e1}")
-                with st.expander("Ver detalles del error"):
-                    st.code(_tb1.format_exc())
+        # Bloque 3 visible (atenuado) desde el inicio, aun antes de cargar el CSV
+        if not _csv_done:
+            st.markdown(_da_block3_locked(), unsafe_allow_html=True)
 
-    # ── PASO 2: Configura Costos ──────────────────────────────────────────
-    elif _wizard_step == 2:
+    # ══════════════════════════════════════════════════════════════════
+    #  Bloques 2 y 3 + acción SIGUIENTE — se revelan tras cargar el CSV
+    # ══════════════════════════════════════════════════════════════════
+    if _wizard_step == 1 and _csv_done:
         _df2 = st.session_state.get('_wizard_df_clean')
-        if _df2 is None:
-            st.warning("No hay archivo cargado. Regresa al Paso 1.")
-            if st.button("← Volver al inicio"):
-                st.session_state['_wizard_step'] = 1
-                st.rerun()
-        else:
-            if st.button("← Cambiar archivo"):
-                for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
-                           '_wizard_ib_map', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
-                           '_wizard_income_summary', '_wizard_income_df']:
-                    st.session_state.pop(_k, None)
-                st.session_state['_wizard_step'] = 1
-                st.rerun()
-            _tickers_s2 = _df2['Ticker'].dropna().unique().tolist()
-            _mmap_s2 = logic.classify_tickers(_tickers_s2)
-            _pos_tickers = sorted([t for t, m in _mmap_s2.items() if m in ('mode_a', 'mode_b')])
+        _tickers_s2 = _df2['Ticker'].dropna().unique().tolist()
+        _mmap_s2 = logic.classify_tickers(_tickers_s2)
+        _pos_tickers = sorted([t for t, m in _mmap_s2.items() if m in ('mode_a', 'mode_b')])
+        _gem_key = _get_gemini_key()
+        _positions = st.session_state.get('_wizard_positions', {})
+        _broker_s2 = st.session_state.get('_wizard_broker')
 
-            _gem_key = _get_gemini_key()
-            _positions = st.session_state.get('_wizard_positions', {})
-            _broker_s2 = st.session_state.get('_wizard_broker')
+        # ───────── BLOQUE 2 · Posiciones del portafolio ─────────
+        if not _pos_done:
+            st.markdown(_da_block_header(
+                2, "Posiciones del portafolio", "active",
+                "Confirma acciones y costo real de cada ETF."), unsafe_allow_html=True)
 
-            # ── Triangulación Charles Schwab: pedir CSV + foto + ingresos ──
             if _broker_s2 == 'schwab':
                 _has_csv = True
                 _has_photo = bool(_positions)
@@ -875,6 +1019,7 @@ if input_method == "Subir CSV/Excel":
                 if _imgs_s2:
                     _sig = tuple((f.name, f.size) for f in _imgs_s2)
                     if _sig != st.session_state.get('_wizard_photo_sig'):
+                        _parseo(["Leyendo tus capturas…", "Cruzando posiciones y costos…"])
                         with st.spinner("Leyendo tu portafolio…"):
                             _imgs_payload = [(f.getvalue(), (f.type or 'image/jpeg')) for f in _imgs_s2]
                             _positions = logic.extract_positions_from_images(_imgs_payload, _pos_tickers, _gem_key)
@@ -925,69 +1070,11 @@ if input_method == "Subir CSV/Excel":
                     num_rows="fixed",
                     key=_editor_key
                 )
-            else:
-                _edited_s2 = None
-                st.info("No se detectaron posiciones de ETF analizables en este archivo. Puedes continuar al análisis directamente.")
-
-            # ── Validación con el archivo de ingresos (formato Charles Schwab) ───
-            # Para Schwab se muestra prominente (expandido) como tercera fuente de la
-            # triangulación; para otros brokers queda colapsado (el formato es Schwab-only).
-            _inc_is_schwab = (_broker_s2 == 'schwab')
-            _inc_title = ("Tercera fuente · Archivo de ingresos (Investment Income)"
-                          if _inc_is_schwab else
-                          "Validar con tu archivo de ingresos del broker (opcional)")
-            with st.expander(_inc_title, expanded=_inc_is_schwab):
-                st.markdown(
-                    '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
-                    'Exporta tu reporte de <b>Investment Income</b> de Charles Schwab '
-                    '(Cuenta → Historial → <i>Investment Income</i> → Exportar) y súbelo aquí. Lo usamos como '
-                    '<b>tercera fuente</b> para confirmar que los dividendos del CSV cuadran con lo realmente '
-                    'recibido. Es opcional y no cambia tus métricas; solo agrega una verificación. '
-                    'Las proyecciones (“Estimated”) del broker se ignoran porque sobreestiman en ETFs tipo YieldMax.'
-                    '</p>',
-                    unsafe_allow_html=True
-                )
-                _inc_file = st.file_uploader(
-                    "Archivo de ingresos (Investment Income)",
-                    type=['csv'], key="_step2_income", label_visibility="collapsed"
-                )
-                if _inc_file is not None:
-                    try:
-                        _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
-                        if _inc_df is None or len(_inc_df) == 0:
-                            st.session_state['_wizard_income_summary'] = None
-                            st.session_state['_wizard_income_df'] = None
-                            st.warning(
-                                "No reconocimos este archivo como un “Investment Income” de Charles Schwab. "
-                                "Asegúrate de exportar el reporte de ingresos (no el de transacciones)."
-                            )
-                        else:
-                            _inc_summ = logic.summarize_income(_inc_df)
-                            st.session_state['_wizard_income_summary'] = _inc_summ
-                            st.session_state['_wizard_income_df'] = _inc_df
-                            _nrec = sum(1 for d in _inc_summ['tickers'].values() if d.get('received_total'))
-                            st.success(f"Ingresos leídos: {_nrec} tickers con dividendos recibidos. "
-                                       "Verás la validación cruzada en los resultados.")
-                            if _inc_summ.get('multi_account'):
-                                st.warning("El archivo incluye más de una cuenta; los totales podrían mezclarse. "
-                                           "Exporta el income de una sola cuenta para una validación exacta.")
-                    except Exception as _ie:
-                        st.session_state['_wizard_income_summary'] = None
-                        st.session_state['_wizard_income_df'] = None
-                        st.warning(f"No pudimos leer el archivo de ingresos: {_ie}")
-
-            if storage.is_enabled():
-                st.checkbox(
-                    "Permito guardar una versión anónima de estos datos para mejorar la herramienta.",
-                    value=False, key="_consent_capture")
-                st.caption("Solo se guardan fechas, tickers, montos y las posiciones que confirmaste — nunca tu nombre, número de cuenta ni imágenes. Puedes pedir el borrado en cualquier momento. Ver PRIVACY.md.")
-
-            _, _btn_col2 = st.columns([3, 1])
-            with _btn_col2:
-                if st.button("Siguiente →", use_container_width=True, type="primary"):
-                    _ib_map_s2 = {}
-                    _overrides_s2 = {}
-                    if _edited_s2 is not None:
+                _cc1, _cc2 = st.columns([3, 1])
+                with _cc2:
+                    if st.button("Confirmar posiciones →", type="primary", use_container_width=True, key="_confirm_pos"):
+                        _ib_map_s2 = {}
+                        _overrides_s2 = {}
                         for _, _row in _edited_s2.iterrows():
                             _t = _row['Ticker']
                             _co = float(_row.get('Costo de Inversión ($)') or 0)
@@ -996,67 +1083,180 @@ if input_method == "Subir CSV/Excel":
                                 _ib_map_s2[_t] = str(_co)
                             if _co > 0 or _sh > 0:
                                 _overrides_s2[_t] = {'cost_basis': _co or None, 'shares': _sh or None}
-                    st.session_state['_wizard_ib_map'] = _ib_map_s2
-                    st.session_state['_wizard_overrides'] = _overrides_s2
+                        st.session_state['_wizard_ib_map'] = _ib_map_s2
+                        st.session_state['_wizard_overrides'] = _overrides_s2
+                        st.session_state['_wizard_pos_confirmed'] = True
+                        st.rerun()
+            else:
+                st.info("No se detectaron posiciones de ETF analizables en este archivo. Puedes continuar al análisis directamente.")
+                _nc1, _nc2 = st.columns([3, 1])
+                with _nc2:
+                    if st.button("Continuar →", type="primary", use_container_width=True, key="_confirm_nopos"):
+                        st.session_state['_wizard_ib_map'] = {}
+                        st.session_state['_wizard_overrides'] = {}
+                        st.session_state['_wizard_pos_confirmed'] = True
+                        st.rerun()
+        else:
+            # Bloque 2 contraído (modo resumen) + enlace para editar
+            _ov = st.session_state.get('_wizard_overrides', {}) or {}
+            _ncnt = len([t for t, v in _ov.items() if (v.get('shares') or v.get('cost_basis'))])
+            _possum = f"{_ncnt} posiciones confirmadas" if _ncnt else "Sin posiciones para confirmar"
+            st.markdown(_da_summary("Posiciones", _possum), unsafe_allow_html=True)
+            _pc1, _pc2 = st.columns([5, 1])
+            with _pc2:
+                if st.button("editar", key="_edit_pos", type="tertiary", use_container_width=True):
+                    st.session_state['_wizard_pos_confirmed'] = False
+                    st.rerun()
 
-                    with st.spinner("Analizando transacciones, splits y dividendos..."):
-                        try:
-                            _res_s2 = logic.analyze_portfolio(
-                                _df2, version="2.0",
-                                ib_cost_basis_map=_ib_map_s2 or None,
-                                position_overrides=_overrides_s2 or None)
-                        except TypeError:
-                            _res_s2 = logic.analyze_portfolio(_df2)
-
-                    if not _res_s2:
-                        st.error("No se pudieron extraer tickers válidos o datos del archivo.")
+        # ───────── BLOQUE 3 · Archivo de ingresos (opcional) ─────────
+        if _income_done:
+            _inc_sum = st.session_state.get('_wizard_income_summary') or {}
+            _nrec = sum(1 for d in (_inc_sum.get('tickers') or {}).values() if d.get('received_total'))
+            st.markdown(_da_summary("Ingresos validados", f"{_nrec} tickers con dividendos recibidos"),
+                        unsafe_allow_html=True)
+            _icc1, _icc2 = st.columns([5, 1])
+            with _icc2:
+                if st.button("editar", key="_edit_inc", type="tertiary", use_container_width=True):
+                    st.session_state.pop('_wizard_income_summary', None)
+                    st.session_state.pop('_wizard_income_df', None)
+                    st.rerun()
+        elif _pos_done:
+            st.markdown(_da_block_header(
+                3, "Archivo de ingresos · opcional", "active",
+                "Validación extra: confirma los dividendos recibidos."), unsafe_allow_html=True)
+            st.markdown(
+                '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
+                'Exporta tu reporte de <b>Investment Income</b> de Charles Schwab '
+                '(Cuenta → Historial → <i>Investment Income</i> → Exportar) y súbelo aquí. Lo usamos como '
+                '<b>tercera fuente</b> para confirmar que los dividendos del CSV cuadran con lo realmente '
+                'recibido. Es opcional y no cambia tus métricas; solo agrega una verificación. '
+                'Las proyecciones (“Estimated”) del broker se ignoran porque sobreestiman en ETFs tipo YieldMax.'
+                '</p>',
+                unsafe_allow_html=True
+            )
+            _inc_file = st.file_uploader(
+                "Archivo de ingresos (Investment Income)",
+                type=['csv'], key="_step2_income", label_visibility="collapsed"
+            )
+            if _inc_file is not None:
+                try:
+                    _parseo(["Leyendo ingresos…", "Conciliando dividendos recibidos…"])
+                    _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
+                    if _inc_df is None or len(_inc_df) == 0:
+                        st.session_state['_wizard_income_summary'] = None
+                        st.session_state['_wizard_income_df'] = None
+                        st.warning(
+                            "No reconocimos este archivo como un “Investment Income” de Charles Schwab. "
+                            "Asegúrate de exportar el reporte de ingresos (no el de transacciones)."
+                        )
                     else:
-                        _skip_s2  = {t: s for t, s in _res_s2.items() if s.get("skipped")}
-                        _valid_s2 = {t: s for t, s in _res_s2.items() if not s.get("skipped")}
-                        _cmap_s2  = logic.classify_tickers(list(_valid_s2.keys()))
-                        if not _valid_s2:
-                            st.warning("Todos los tickers del archivo fueron descartados.")
-                        else:
-                            st.session_state['_results']      = _valid_s2
-                            st.session_state['_classify_map'] = _cmap_s2
-                            st.session_state['_skipped']      = _skip_s2
-                            _buy_rows_s2 = []
-                            for _tk, _ts in _valid_s2.items():
-                                _h = _ts.get('history')
-                                if _h is not None and not _h.empty:
-                                    for _, _r in _h[_h['Action'].str.lower().str.contains('buy|compra', na=False)].iterrows():
-                                        _a = abs(float(_r.get('Amount', 0)))
-                                        if _a > 0:
-                                            _buy_rows_s2.append([str(_r['Date'].date()), _a])
-                            if _buy_rows_s2:
-                                with st.spinner("Calculando comparativa VTI · YMAX · SPY..."):
-                                    try:
-                                        st.session_state['_strat_results'] = logic.simulate_triple_comparison(json.dumps(_buy_rows_s2))
-                                    except Exception:
-                                        st.session_state['_strat_results'] = None
-                            else:
-                                st.session_state['_strat_results'] = None
-                            if st.session_state.get('_consent_capture'):
+                        _inc_summ = logic.summarize_income(_inc_df)
+                        st.session_state['_wizard_income_summary'] = _inc_summ
+                        st.session_state['_wizard_income_df'] = _inc_df
+                        if _inc_summ.get('multi_account'):
+                            st.warning("El archivo incluye más de una cuenta; los totales podrían mezclarse. "
+                                       "Exporta el income de una sola cuenta para una validación exacta.")
+                        st.rerun()
+                except Exception as _ie:
+                    st.session_state['_wizard_income_summary'] = None
+                    st.session_state['_wizard_income_df'] = None
+                    st.warning(f"No pudimos leer el archivo de ingresos: {_ie}")
+        else:
+            # Visible desde el inicio pero desactivado (se activa tras Posiciones)
+            st.markdown(_da_block3_locked(), unsafe_allow_html=True)
+
+        # ───────── Consentimiento de captura anónima ─────────
+        if storage.is_enabled():
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            st.checkbox(
+                "Permito guardar una versión anónima de estos datos para mejorar la herramienta.",
+                value=False, key="_consent_capture")
+            st.caption("Solo se guardan fechas, tickers, montos y las posiciones que confirmaste — nunca tu nombre, número de cuenta ni imágenes. Puedes pedir el borrado en cualquier momento. Ver PRIVACY.md.")
+
+        # ───────── Resumen "Carga Completa" al 100% ─────────
+        if _income_done:
+            st.markdown(
+                '<div class="da-reveal" style="border-left:4px solid #4caf82;background:#f0faf5;padding:14px 18px;margin:14px 0 4px 0;">'
+                '<div style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
+                'text-transform:uppercase;letter-spacing:0.04em;">✓ Carga completa</div>'
+                '<div style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin-top:3px;">'
+                'Validaste por triple vía: transacciones, posiciones e ingresos. Listo para analizar.</div>'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+        # ───────── Acción principal: SIGUIENTE → (habilitada a ≥66%) ─────────
+        st.markdown("<div style='height:10px;border-top:1px solid #eae7e7;margin-top:18px;'></div>", unsafe_allow_html=True)
+        _nx1, _nx2 = st.columns([3, 1])
+        with _nx1:
+            if not _pos_done:
+                st.caption("Confirma tus posiciones (66%) para habilitar el análisis. Los ingresos son opcionales.")
+            else:
+                st.caption("Puedes continuar ahora o añadir el archivo de ingresos para una validación extra.")
+        with _nx2:
+            if st.button("SIGUIENTE →", use_container_width=True, type="primary",
+                         disabled=not _pos_done, key="_go_results"):
+                _ib_map_s2 = st.session_state.get('_wizard_ib_map', {}) or {}
+                _overrides_s2 = st.session_state.get('_wizard_overrides', {}) or {}
+                with st.spinner("Analizando transacciones, splits y dividendos..."):
+                    try:
+                        _res_s2 = logic.analyze_portfolio(
+                            _df2, version="2.0",
+                            ib_cost_basis_map=_ib_map_s2 or None,
+                            position_overrides=_overrides_s2 or None)
+                    except TypeError:
+                        _res_s2 = logic.analyze_portfolio(_df2)
+
+                if not _res_s2:
+                    st.error("No se pudieron extraer tickers válidos o datos del archivo.")
+                else:
+                    _skip_s2  = {t: s for t, s in _res_s2.items() if s.get("skipped")}
+                    _valid_s2 = {t: s for t, s in _res_s2.items() if not s.get("skipped")}
+                    _cmap_s2  = logic.classify_tickers(list(_valid_s2.keys()))
+                    if not _valid_s2:
+                        st.warning("Todos los tickers del archivo fueron descartados.")
+                    else:
+                        st.session_state['_results']      = _valid_s2
+                        st.session_state['_classify_map'] = _cmap_s2
+                        st.session_state['_skipped']      = _skip_s2
+                        _buy_rows_s2 = []
+                        for _tk, _ts in _valid_s2.items():
+                            _h = _ts.get('history')
+                            if _h is not None and not _h.empty:
+                                for _, _r in _h[_h['Action'].str.lower().str.contains('buy|compra', na=False)].iterrows():
+                                    _a = abs(float(_r.get('Amount', 0)))
+                                    if _a > 0:
+                                        _buy_rows_s2.append([str(_r['Date'].date()), _a])
+                        if _buy_rows_s2:
+                            with st.spinner("Calculando comparativa VTI · YMAX · SPY..."):
                                 try:
-                                    _q_cap = logic.assess_data_quality(_valid_s2)
-                                    _ok_cap, _ = logic.is_capture_worthy(_q_cap, _overrides_s2)
-                                    if _ok_cap:
-                                        _bundle_cap = logic.build_capture_bundle(
-                                            _df2, st.session_state.get('_wizard_broker', 'generic'),
-                                            _overrides_s2, _q_cap,
-                                            st.session_state.get('_wizard_positions', {}),
-                                            app_version="2.8")
-                                        storage.upload_case(_bundle_cap)
+                                    st.session_state['_strat_results'] = logic.simulate_triple_comparison(json.dumps(_buy_rows_s2))
                                 except Exception:
-                                    pass
-                            st.session_state['_wizard_step'] = 3
-                            st.rerun()
+                                    st.session_state['_strat_results'] = None
+                        else:
+                            st.session_state['_strat_results'] = None
+                        if st.session_state.get('_consent_capture'):
+                            try:
+                                _q_cap = logic.assess_data_quality(_valid_s2)
+                                _ok_cap, _ = logic.is_capture_worthy(_q_cap, _overrides_s2)
+                                if _ok_cap:
+                                    _bundle_cap = logic.build_capture_bundle(
+                                        _df2, st.session_state.get('_wizard_broker', 'generic'),
+                                        _overrides_s2, _q_cap,
+                                        st.session_state.get('_wizard_positions', {}),
+                                        app_version="2.8")
+                                    storage.upload_case(_bundle_cap)
+                            except Exception:
+                                pass
+                        st.session_state['_wizard_step'] = 3
+                        st.rerun()
 
     # ── PASO 3: Resultados — botón de navegación al tope ─────────────────
     elif _wizard_step == 3:
         if st.button("← Nueva Consulta"):
             for _k in ['_wizard_step', '_wizard_df_clean', '_wizard_ib_map', '_wizard_csv_ticker_data',
-                       '_wizard_broker', '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
+                       '_wizard_broker', '_wizard_csv_name', '_wizard_pos_confirmed', '_prev_active_pill',
+                       '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
                        '_wizard_income_summary', '_wizard_income_df',
                        '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
                 st.session_state.pop(_k, None)
@@ -1224,39 +1424,127 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
             _income_df_s3 = st.session_state.get('_wizard_income_df')
             if _income_df_s3 is not None and len(_income_df_s3) > 0:
-                _proj = logic.project_income(_income_df_s3, results)
+                _proj_all = logic.project_income(_income_df_s3, results)
+                # Filtro inteligente: solo activos de generación de ingresos (income/dividendo alto).
+                # Los índices/crecimiento de dividendo marginal (SCHB, XLK) se ocultan para no aplastar la escala.
+                _proj, _dropped = logic.filter_income_assets(_proj_all, results)
                 if _proj:
                     import altair as alt
-                    _SER = ['Tu cálculo (recibido 12m)', 'Schwab (recibido 12m)',
+                    _SER = ['Schwab (recibido 12m)', 'Tu cálculo (recibido 12m)',
                             'Schwab (proyección 12m)', 'Tu proyección (12m)']
+                    _COLORS = ['#166534', '#86EFAC', '#1E40AF', '#60A5FA']   # verde osc/claro · azul osc/claro
+                    _METODO = {
+                        _SER[0]: 'Dividendos efectivamente pagados por el broker en los últimos 12 meses.',
+                        _SER[1]: 'Mismo recibido, reconstruido desde tu CSV — debe coincidir con Schwab.',
+                        _SER[2]: 'Proyección del broker: pago-ancla más reciente × frecuencia anual (asume el pago plano).',
+                        _SER[3]: 'Run-Rate: promedio de tus pagos recientes (~3 meses) × frecuencia anual; refleja la caída real.',
+                    }
+
+                    def _mkt_of(_t):
+                        _r = results.get(_t) if results else None
+                        return _r.get('market_value') if isinstance(_r, dict) else None
+
                     _rows_chart = []
+                    def _push(_t, _serie, _monto, _mkt):
+                        if _monto is None:
+                            return
+                        _yld = (_monto / _mkt * 100) if (_mkt and _mkt > 0) else None
+                        _rows_chart.append({'Ticker': _t, 'Serie': _serie, 'Monto': _monto,
+                                            'Yield': _yld, 'Metodo': _METODO[_serie]})
                     for _t, _d in _proj.items():
+                        _mkt = _mkt_of(_t)
+                        _push(_t, _SER[0], _d.get('schwab_received_12m'), _mkt)
                         if _d.get('our_received_12m') is not None:
-                            _rows_chart.append({'Ticker': _t, 'Serie': _SER[0], 'Monto': _d['our_received_12m']})
-                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[1], 'Monto': _d['schwab_received_12m']})
-                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[2], 'Monto': _d['schwab_proj']})
-                        _rows_chart.append({'Ticker': _t, 'Serie': _SER[3], 'Monto': _d['our_proj']})
+                            _push(_t, _SER[1], _d.get('our_received_12m'), _mkt)
+                        _push(_t, _SER[2], _d.get('schwab_proj'), _mkt)
+                        _push(_t, _SER[3], _d.get('our_proj'), _mkt)
                     _chart_df = pd.DataFrame(_rows_chart)
 
+                    # ── Fila de KPIs ──
+                    _n_assets   = len(_proj)
+                    _sum_recv   = sum((_d.get('schwab_received_12m') or 0) for _d in _proj.values())
+                    _sum_sproj  = sum((_d.get('schwab_proj') or 0) for _d in _proj.values())
+                    _sum_oproj  = sum((_d.get('our_proj') or 0) for _d in _proj.values())
+                    _diverg     = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else 0
+                    _runrate_m  = _sum_oproj / 12
+                    _div_color  = '#e0a23c' if _diverg > 5 else ('#4caf82' if abs(_diverg) <= 5 else '#006497')
                     st.markdown(
-                        '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingresos: Schwab vs tu cálculo, y proyección</p>'
-                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'Las dos barras de la izquierda (verde) son lo <b>recibido</b> en 12 meses según Schwab y según tu '
-                        'cálculo — deben coincidir. Las dos de la derecha son la <b>proyección</b> a 12 meses: la de Schwab '
-                        '(ámbar) frente a la nuestra por run-rate reciente (azul).</p></div>',
+                        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin:14px 0 10px 0;">'
+                        '<div class="da-kpi-cell da-kpi-accent">'
+                        '<p class="da-kpi-label">Ingreso Validado</p>'
+                        f'<p class="da-kpi-value">${_sum_recv:,.0f}</p>'
+                        f'<p class="da-kpi-delta" style="color:#8899aa;">{_n_assets} activo(s) · últimos 12m</p></div>'
+                        f'<div class="da-kpi-cell" style="border-top-color:{_div_color};">'
+                        '<p class="da-kpi-label">Divergencia de Proyección</p>'
+                        f'<p class="da-kpi-value" style="color:{_div_color};">{_diverg:+.0f}%</p>'
+                        '<p class="da-kpi-delta" style="color:#8899aa;">Schwab vs tu run-rate</p></div>'
+                        '<div class="da-kpi-cell da-kpi-green">'
+                        '<p class="da-kpi-label">Run-Rate Mensual</p>'
+                        f'<p class="da-kpi-value" style="color:#4caf82;">${_runrate_m:,.0f}</p>'
+                        '<p class="da-kpi-delta" style="color:#8899aa;">tu proyección ÷ 12</p></div></div>',
                         unsafe_allow_html=True
                     )
+
+                    st.markdown(
+                        '<div style="margin:8px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingresos: Schwab vs tu cálculo, y proyección</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
+                        'Solo se muestran tus <b>activos de generación de ingresos</b> (los índices/crecimiento de dividendo '
+                        'marginal se ocultan para no aplastar la escala). Las dos barras <b>verdes</b> son lo <b>recibido</b> '
+                        'en 12 meses (Schwab vs tu cálculo — deben coincidir); las dos <b>azules</b> son la <b>proyección</b> '
+                        'a 12 meses: la de Schwab (azul oscuro) frente a la nuestra por run-rate reciente (azul claro). '
+                        'La etiqueta Δ sobre cada activo es cuánto infla Schwab su proyección.</p></div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # Toggle de métrica del eje: Dólares vs Yield anualizado.
+                    _use_yield = st.radio(
+                        'Métrica del eje', ['Dólares ($)', 'Yield (%)'],
+                        horizontal=True, label_visibility='collapsed', key='_income_metric'
+                    ).startswith('Yield')
+                    _has_yield = _chart_df['Yield'].notna().any()
+                    if _use_yield and not _has_yield:
+                        st.caption('Sin valor de mercado para calcular el yield; mostrando dólares.')
+                        _use_yield = False
+                    _yfield, _yfmt, _ytitle = (
+                        ('Yield:Q', '.1f', 'Yield anualizado (%)') if _use_yield
+                        else ('Monto:Q', '$,.0f', 'USD / 12 meses')
+                    )
+
                     _bars = alt.Chart(_chart_df).mark_bar().encode(
                         x=alt.X('Ticker:N', title=None, axis=alt.Axis(labelAngle=0, labelFontSize=12)),
                         xOffset=alt.XOffset('Serie:N', sort=_SER),
-                        y=alt.Y('Monto:Q', title='USD / 12 meses', axis=alt.Axis(format='$,.0f')),
+                        y=alt.Y(_yfield, title=_ytitle, axis=alt.Axis(format=_yfmt)),
                         color=alt.Color('Serie:N', sort=_SER,
-                                        scale=alt.Scale(domain=_SER, range=['#4caf82', '#2e7d5b', '#e0a23c', '#006497']),
+                                        scale=alt.Scale(domain=_SER, range=_COLORS),
                                         legend=alt.Legend(title=None, orient='top', columns=2, labelFontSize=11)),
                         tooltip=[alt.Tooltip('Ticker:N'), alt.Tooltip('Serie:N', title='Serie'),
-                                 alt.Tooltip('Monto:Q', format='$,.2f', title='Monto')],
-                    ).properties(height=300, background=CHART_PALETTE["bg"]).configure_view(
+                                 alt.Tooltip('Monto:Q', format='$,.2f', title='Monto (USD/12m)'),
+                                 alt.Tooltip('Yield:Q', format='.2f', title='Yield anualizado (%)'),
+                                 alt.Tooltip('Metodo:N', title='Cómo se calcula')],
+                    )
+
+                    # Etiqueta Δ sobre cada activo: % que Schwab sobre-proyecta frente a nuestro run-rate.
+                    _delta_rows = []
+                    for _t, _d in _proj.items():
+                        _ov = _d.get('overstatement_pct')
+                        if _ov is None:
+                            continue
+                        _top = max(_d.get('schwab_proj') or 0, _d.get('our_proj') or 0)
+                        _mkt = _mkt_of(_t)
+                        _top_y = (_top / _mkt * 100) if (_use_yield and _mkt and _mkt > 0) else _top
+                        _delta_rows.append({'Ticker': _t, 'Top': _top_y, 'Label': f'Δ {_ov:+.0f}%'})
+                    _layers = [_bars]
+                    if _delta_rows:
+                        _text = alt.Chart(pd.DataFrame(_delta_rows)).mark_text(
+                            baseline='bottom', dy=-4, fontSize=11, fontWeight='bold',
+                            color='#c9821f', font='Inter, system-ui, sans-serif'
+                        ).encode(x=alt.X('Ticker:N'), y=alt.Y('Top:Q'), text=alt.Text('Label:N'))
+                        _layers.append(_text)
+
+                    _chart = alt.layer(*_layers).properties(
+                        height=320, background=CHART_PALETTE["bg"]
+                    ).configure_view(
                         strokeOpacity=0, fill=CHART_PALETTE["bg"]
                     ).configure_axis(
                         grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
@@ -1264,7 +1552,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
                         titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
                     ).configure_legend(labelColor=CHART_PALETTE["axis"])
-                    st.altair_chart(_bars, use_container_width=True)
+                    st.altair_chart(_chart, use_container_width=True)
+                    if _dropped:
+                        _drop_txt = ', '.join(t for t, _ in _dropped)
+                        st.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
 
                     # Justificación auto-generada: por qué la proyección de Schwab está inflada.
                     _flagged = sorted(
