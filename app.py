@@ -1696,6 +1696,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             _n_cre_all = sum(1 for t in results if classify_map.get(t) == 'mode_b' and 'error' not in results[t])
             _da_section("Resumen global del portafolio",
                         f"Todo tu portafolio combinado · {_n_cre_all} de crecimiento + {_n_div_all} de dividendos · datos de {broker_label}")
+            # ── TL;DR: veredicto de una línea en lenguaje natural ──
+            st.markdown(
+                f'<div style="border-left:4px solid {_gain_color};background:#F8FAFC;padding:14px 20px;margin:6px 0 16px 0;">'
+                f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#64748B;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En resumen</p>'
+                f'<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.5;margin:0;">'
+                f'Hoy tu portafolio vale <b style="font-family:{_MONO_FONT};">${total_market:,.0f}</b> sobre '
+                f'<b style="font-family:{_MONO_FONT};">${total_invested:,.0f}</b> invertidos — retorno total '
+                f'<b style="font-family:{_MONO_FONT};color:{_gain_color};">{_gain_sign}{total_roi:.1f}%</b>'
+                f' (incluye <b style="font-family:{_MONO_FONT};color:#16A34A;">${total_divs:,.0f}</b> en dividendos cobrados).</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
             st.markdown(f"""
 <div class="da-kpi-bar">
     <div class="da-kpi-cell da-kpi-accent">
