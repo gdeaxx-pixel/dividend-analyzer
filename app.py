@@ -2084,6 +2084,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     for t, s in sorted(_cmp_b_rows, key=lambda x: x[1]['pocket_investment'], reverse=True)
                 ] if _cmp_b_inv > 0 else []
 
+                # Alturas idénticas: la zona de tickers reserva el alto del bloque con MÁS tickers,
+                # así ambas tarjetas terminan en la misma línea base aunque tengan distinto nº de tickers.
+                _tk_minh = max(len(_a_tickers_detail), len(_b_tickers_detail), 1) * 23
+
                 def _ticker_rows(tickers_detail):
                     return ''.join(
                         f'<div style="display:flex;justify-content:space-between;padding:3px 0;'
@@ -2164,7 +2168,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f'${_have_today:,.0f} <span style="font-size:11px;font-weight:700;">({pct:+.1f}%)</span></span></div>'
                         f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
                         f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
-                        f'{_ticker_rows(tickers_detail)}'
+                        f'<div style="min-height:{_tk_minh}px;">{_ticker_rows(tickers_detail)}</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
