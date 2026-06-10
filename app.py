@@ -592,6 +592,120 @@ st.markdown("""
         margin: 3px 0 0 0;
     }
 
+    /* 22b. KPI DOBLE FUENTE (Schwab vs Calculadora) + TOOLTIP */
+    .da-kpi-dual {
+        display: flex;
+        gap: 20px;
+        margin: 4px 0 2px 0;
+    }
+    .da-kpi-src {
+        display: block;
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+        margin: 0 0 1px 0;
+    }
+    .da-kpi-num {
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 19px;
+        font-weight: 700;
+        color: #0F172A;
+        letter-spacing: -0.01em;
+        line-height: 1.1;
+    }
+    .da-tip { position: relative; cursor: help; }
+    .da-tip-i {
+        display: inline-block;
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        color: #ffffff;
+        background: #94a3b8;
+        width: 12px; height: 12px;
+        line-height: 12px;
+        text-align: center;
+        margin-left: 5px;
+        vertical-align: middle;
+    }
+    .da-tip-box {
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        z-index: 2000;
+        bottom: 100%;
+        left: 0;
+        width: 300px;
+        max-width: 90vw;
+        max-height: 56vh;
+        overflow-y: auto;
+        background: #021C36;
+        color: #d8e2ee;
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.55;
+        letter-spacing: 0;
+        text-transform: none;
+        text-align: left;
+        padding: 12px 14px;
+        box-shadow: 0 8px 24px rgba(2, 28, 54, 0.28);
+        transition: opacity 0.15s ease;
+        pointer-events: auto;
+    }
+    .da-tip-box.r { left: auto; right: 0; }
+    .da-tip-box b { color: #ffffff; font-weight: 700; }
+    .da-tip:hover .da-tip-box { visibility: visible; opacity: 1; }
+
+    /* 22c. MINI-TABLA POR ETF dentro de cada tarjeta KPI */
+    .da-mini { margin: 8px 0 2px 0; }
+    .da-mini-row {
+        display: grid;
+        grid-template-columns: minmax(38px, 1fr) 1fr 1fr 0.85fr;
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+    }
+    .da-mini-head span {
+        font-family: 'Inter', sans-serif;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+    }
+    .da-mini-row .tk {
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        color: #021C36;
+        letter-spacing: 0.02em;
+    }
+    .da-mini-row .num {
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 700;
+        color: #0F172A;
+        text-align: right;
+        letter-spacing: -0.01em;
+    }
+    .da-mini-row .pct {
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: right;
+    }
+    .da-mini-head .num, .da-mini-head .pct { color: #8899aa; }
+    .da-mini-total {
+        border-top: 1px solid #d8d2cf;
+        margin-top: 3px;
+        padding-top: 5px;
+    }
+    .da-mini-total .tk { color: #021C36; }
+    .da-mini-total .num { color: #021C36; font-size: 13px; }
+
     /* 23. SIDEBAR ROC SECTION */
     section[data-testid="stSidebar"] .da-sidebar-white-text {
         color: #ffffff !important;
@@ -1549,28 +1663,148 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _push(_t, _SER[3], _d.get('our_proj'), _mkt)
                     _chart_df = pd.DataFrame(_rows_chart)
 
-                    # ── Fila de KPIs ──
-                    _n_assets   = len(_proj)
-                    _sum_recv   = sum((_d.get('schwab_received_12m') or 0) for _d in _proj.values())
-                    _sum_sproj  = sum((_d.get('schwab_proj') or 0) for _d in _proj.values())
-                    _sum_oproj  = sum((_d.get('our_proj') or 0) for _d in _proj.values())
-                    _diverg     = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else 0
-                    _runrate_m  = _sum_oproj / 12
-                    _div_color  = '#e0a23c' if _diverg > 5 else ('#4caf82' if abs(_diverg) <= 5 else '#006497')
+                    # ── Fila de KPIs: una fila por ETF de ingreso + TOTAL ──
+                    _sum_sproj = sum((_d.get('schwab_proj') or 0) for _d in _proj.values())
+                    _sum_oproj = sum((_d.get('our_proj') or 0) for _d in _proj.values())
+                    _diverg    = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else 0
+                    _div_color = '#e0a23c' if _diverg > 5 else ('#4caf82' if abs(_diverg) <= 5 else '#006497')
+
+                    def _tip_for(kind, tot_s, tot_c):
+                        # Tooltip adaptativo: intro fija + interpretación del Δ% TOTAL real.
+                        pct = ((tot_s / tot_c - 1) * 100) if tot_c else None
+                        v = f'{pct:+.0f}%' if pct is not None else None
+                        if kind == 'recv':
+                            intro = ('<b>¿Qué es?</b> Los dividendos que ya cobraste en los últimos 12 meses, '
+                                     'ETF por ETF. La columna <b>Schwab</b> es lo que tu broker reporta haberte '
+                                     'pagado; la columna <b>Calc</b> es lo mismo, pero reconstruido por la '
+                                     'calculadora desde tu archivo CSV. <b>Δ%</b> es la diferencia entre ambas.')
+                            if pct is None:
+                                interp = ('<b>Tu Δ% aún no está disponible.</b> La calculadora todavía no puede '
+                                          'leer tus pagos desde el CSV. Sube el archivo con el historial de '
+                                          'dividendos para poder comparar las dos fuentes.')
+                            elif abs(pct) <= 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>, prácticamente cero, que es justo lo ideal. '
+                                          'Quiere decir que tu archivo CSV está <b>completo</b> y coincide con lo '
+                                          'que Schwab te pagó de verdad: <b>puedes confiar en estas cifras</b>.')
+                            elif pct > 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>, que es alto. Significa que a tu CSV le '
+                                          '<b>faltan pagos</b>: la calculadora está viendo menos dividendos de los '
+                                          'que Schwab sí registró. Revisa que tu archivo incluya <b>todas</b> las '
+                                          'transacciones del último año para que cuadren.')
+                            else:
+                                interp = (f'<b>Tu Δ% es {v}</b>: tu CSV muestra <b>más</b> de lo que Schwab '
+                                          'reporta. Puede haber pagos duplicados o con fecha equivocada en el '
+                                          'archivo; conviene revisarlo.')
+                        elif kind == 'ann':
+                            intro = ('<b>¿Qué es?</b> Una estimación de cuánto vas a cobrar en dividendos durante '
+                                     'los próximos 12 meses, ETF por ETF. Se puede calcular de dos formas '
+                                     'distintas:<br><br>'
+                                     '<b>· Método Schwab (optimista):</b> toma tu <b>último pago de dividendos</b> '
+                                     '(el más reciente que te depositaron) y supone que ese mismo monto se '
+                                     'repetirá, igual, en cada pago durante todo el año.<br><br>'
+                                     '<b>· Método calculadora (realista):</b> en vez de fiarse de un solo pago, '
+                                     '<b>promedia tus pagos más recientes</b> (los de los últimos ~3 meses) y '
+                                     'proyecta el año con ese promedio.<br><br>'
+                                     '<b>¿Por qué la calculadora no cree que ese último pago se mantenga?</b> '
+                                     'Porque muchos de estos ETF de dividendos altos suelen pagar <b>cada vez un '
+                                     'poco menos</b>: si miras tus pagos anteriores, el monto de cada uno tiende '
+                                     'a ir <b>bajando</b> con el tiempo. Por eso, dar por hecho que el último '
+                                     'pago se repite igual casi siempre infla la cifra; promediar los pagos '
+                                     'recientes capta esa caída y se acerca más a lo que de verdad vas a '
+                                     'recibir.<br><br>'
+                                     '<b>Δ%</b> es cuánto más alto proyecta Schwab frente a la calculadora.')
+                            if pct is None:
+                                interp = '<b>Δ% no disponible</b> por falta de datos para proyectar.'
+                            elif abs(pct) <= 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>, casi sin diferencia. Tus pagos vienen '
+                                          '<b>estables</b> y la proyección es confiable: puedes contar con ese '
+                                          'ingreso anual.')
+                            elif pct > 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>: Schwab proyecta bastante más que la calculadora. '
+                                          'Como tus pagos recientes vienen <b>cayendo</b>, esa cifra optimista de '
+                                          'Schwab difícilmente se cumpla. <b>Guíate por el número de la '
+                                          'calculadora</b> (el menor), que es el realista.')
+                            else:
+                                interp = (f'<b>Tu Δ% es {v}</b>: la calculadora proyecta más que Schwab porque '
+                                          'tus pagos recientes vienen <b>subiendo</b>. Aun así, planifica con '
+                                          'prudencia.')
+                        else:  # mon
+                            intro = ('<b>¿Qué es?</b> Lo mismo que el proyectado anual pero <b>dividido entre '
+                                     '12</b>: lo que te entraría cada mes, ETF por ETF.<br><br>'
+                                     'Recuerda las dos formas de proyectar: <b>Schwab</b> repite tu <b>último '
+                                     'pago de dividendos</b> como si nunca cambiara (optimista), y la '
+                                     '<b>calculadora</b> promedia tus pagos recientes para reflejar que, en estos '
+                                     'ETF, el pago suele ir <b>bajando</b> con el tiempo (realista).<br><br>'
+                                     '<b>Δ%</b> es cuánto más alto pinta Schwab el mes.')
+                            if pct is None:
+                                interp = '<b>Δ% no disponible</b> por falta de datos para proyectar.'
+                            elif abs(pct) <= 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>, casi sin diferencia: puedes presupuestar ese '
+                                          'ingreso mensual con tranquilidad.')
+                            elif pct > 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>: Schwab pinta un mes más alto del que '
+                                          'probablemente recibas. <b>Presupuesta con el número de la '
+                                          'calculadora</b>, no con el de Schwab, para no quedarte corto.')
+                            else:
+                                interp = (f'<b>Tu Δ% es {v}</b>: la calculadora ve un poco más que Schwab; '
+                                          'planifica con prudencia.')
+                        return intro + '<br><br>' + interp
+
+                    def _fmt_money(v):
+                        return f'${v:,.0f}' if v is not None else 'n/d'
+
+                    def _pct_html(schwab, calc):
+                        if schwab is None or not calc:
+                            return '<span class="pct" style="color:#b8c2cc;">—</span>'
+                        p = (schwab / calc - 1) * 100
+                        c = '#e0a23c' if p > 5 else ('#4caf82' if abs(p) <= 5 else '#006497')
+                        return f'<span class="pct" style="color:{c};">{p:+.0f}%</span>'
+
+                    def _kpi_card(title, kind, accent_cls, tip_r, rows, border_color=None):
+                        # rows: lista de (ticker, schwab, calc)
+                        head = ('<div class="da-mini-row da-mini-head"><span>ETF</span>'
+                                '<span class="num">Schwab</span><span class="num">Calc</span>'
+                                '<span class="pct">Δ%</span></div>')
+                        body = ''
+                        tot_s, tot_c, tot_c_has = 0.0, 0.0, False
+                        for _tk, _s, _c in rows:
+                            body += (f'<div class="da-mini-row"><span class="tk">{_tk}</span>'
+                                     f'<span class="num">{_fmt_money(_s)}</span>'
+                                     f'<span class="num">{_fmt_money(_c)}</span>'
+                                     f'{_pct_html(_s, _c)}</div>')
+                            tot_s += (_s or 0)
+                            if _c is not None:
+                                tot_c += _c
+                                tot_c_has = True
+                        _tot_c = tot_c if tot_c_has else None
+                        total = ('<div class="da-mini-row da-mini-total"><span class="tk">TOTAL</span>'
+                                 f'<span class="num">{_fmt_money(tot_s)}</span>'
+                                 f'<span class="num">{_fmt_money(_tot_c)}</span>'
+                                 f'{_pct_html(tot_s, _tot_c)}</div>')
+                        tip = _tip_for(kind, tot_s, _tot_c)
+                        style = f' style="border-top-color:{border_color};"' if border_color else ''
+                        box_cls = 'da-tip-box r' if tip_r else 'da-tip-box'
+                        return (f'<div class="da-kpi-cell {accent_cls} da-tip"{style}>'
+                                f'<p class="da-kpi-label">{title}<span class="da-tip-i">i</span></p>'
+                                f'<div class="da-mini">{head}{body}{total}</div>'
+                                f'<span class="{box_cls}">{tip}</span></div>')
+
+                    _items = sorted(_proj.items(),
+                                    key=lambda kv: (kv[1].get('schwab_received_12m') or 0), reverse=True)
+                    _rows_recv = [(_tk, _d.get('schwab_received_12m'), _d.get('our_received_12m'))
+                                  for _tk, _d in _items]
+                    _rows_ann  = [(_tk, _d.get('schwab_proj'), _d.get('our_proj')) for _tk, _d in _items]
+                    _rows_mon  = [(_tk,
+                                   (_d.get('schwab_proj') or 0) / 12,
+                                   (_d.get('our_proj') / 12 if _d.get('our_proj') is not None else None))
+                                  for _tk, _d in _items]
+
                     st.markdown(
                         '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin:14px 0 10px 0;">'
-                        '<div class="da-kpi-cell da-kpi-accent">'
-                        '<p class="da-kpi-label">Ingreso Validado</p>'
-                        f'<p class="da-kpi-value">${_sum_recv:,.0f}</p>'
-                        f'<p class="da-kpi-delta" style="color:#8899aa;">{_n_assets} activo(s) · últimos 12m</p></div>'
-                        f'<div class="da-kpi-cell" style="border-top-color:{_div_color};">'
-                        '<p class="da-kpi-label">Divergencia de Proyección</p>'
-                        f'<p class="da-kpi-value" style="color:{_div_color};">{_diverg:+.0f}%</p>'
-                        '<p class="da-kpi-delta" style="color:#8899aa;">Schwab vs tu run-rate</p></div>'
-                        '<div class="da-kpi-cell da-kpi-green">'
-                        '<p class="da-kpi-label">Run-Rate Mensual</p>'
-                        f'<p class="da-kpi-value" style="color:#4caf82;">${_runrate_m:,.0f}</p>'
-                        '<p class="da-kpi-delta" style="color:#8899aa;">tu proyección ÷ 12</p></div></div>',
+                        + _kpi_card('Últimos 12 meses', 'recv', 'da-kpi-accent', False, _rows_recv)
+                        + _kpi_card('Proyectado anual', 'ann', '', False, _rows_ann, border_color=_div_color)
+                        + _kpi_card('Proyectado mensual', 'mon', 'da-kpi-green', True, _rows_mon)
+                        + '</div>',
                         unsafe_allow_html=True
                     )
 
