@@ -380,77 +380,121 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 14px 20px;
-        background-color: #021C36;
-        margin: 24px 0 0 0;
-        border-left: 4px solid #006497;
+        padding: 10px 4px 10px 14px;
+        background-color: transparent;
+        margin: 26px 0 0 0;
+        border-left: 3px solid #006497;
+        border-bottom: 1px solid #e2e8f0;
     }
     .da-ticker-header .da-ticker-name {
         font-family: 'Inter', sans-serif;
         font-size: 18px;
         font-weight: 800;
-        color: #ffffff;
+        color: #0F172A;
         letter-spacing: -0.01em;
     }
     .da-ticker-header .da-mode-badge {
         font-family: 'Inter', sans-serif;
         font-size: 9px;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         padding: 3px 8px;
         border-radius: 0px;
     }
-    .da-ticker-header .da-mode-income  { background-color: #c8102e; color: #fff; }
-    .da-ticker-header .da-mode-growth  { background-color: #006497; color: #fff; }
+    .da-ticker-header .da-mode-income  { background-color: #fdecea; color: #c8102e; }
+    .da-ticker-header .da-mode-growth  { background-color: #e7f0f6; color: #006497; }
     .da-ticker-header .da-ticker-price {
-        font-family: 'Inter', sans-serif;
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
         font-size: 12px;
-        color: #8899aa;
+        color: #64748B;
         margin-left: auto;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.02em;
     }
 
     /* 19. ROC CALLOUT */
     .da-roc-callout {
-        background: linear-gradient(135deg, #010f1c 0%, #021C36 100%);
-        border-left: 4px solid #4caf82;
-        padding: 14px 20px;
-        margin: 8px 0 16px 0;
+        background: #F8FAFC;
+        border-left: 3px solid #16A34A;
+        padding: 12px 18px;
+        margin: 6px 0 16px 0;
     }
     .da-roc-callout .da-roc-callout-title {
         font-family: 'Inter', sans-serif;
         font-size: 9px;
-        font-weight: 600;
+        font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
-        color: #4caf82;
+        color: #16A34A;
         margin: 0 0 6px 0;
     }
     .da-roc-callout .da-roc-callout-values {
         display: flex;
-        gap: 32px;
+        gap: 28px;
         align-items: baseline;
+        flex-wrap: wrap;
     }
     .da-roc-callout .da-roc-number {
-        font-family: 'Inter', sans-serif;
-        font-size: 24px;
-        font-weight: 800;
-        color: #4caf82;
-        letter-spacing: -0.02em;
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 19px;
+        font-weight: 700;
+        color: #0F172A;
+        letter-spacing: -0.01em;
     }
     .da-roc-callout .da-roc-sub {
         font-family: 'Inter', sans-serif;
         font-size: 10px;
-        color: #8899aa;
-        letter-spacing: 0.06em;
+        color: #64748B;
+        letter-spacing: 0.04em;
     }
     .da-roc-callout .da-roc-explain {
         font-family: 'Inter', sans-serif;
-        font-size: 10px;
-        color: #6699aa;
+        font-size: 10.5px;
+        color: #334155;
         margin: 8px 0 0 0;
         line-height: 1.5;
+    }
+
+    /* 19b. KPI GRID EDITORIAL — detalle por activo */
+    .da-tkpi {
+        display: flex;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        margin: 8px 0 14px 0;
+    }
+    .da-tkpi .da-tkpi-cell {
+        flex: 1;
+        padding: 13px 18px;
+        border-right: 1px solid #e2e8f0;
+    }
+    .da-tkpi .da-tkpi-cell:last-child { border-right: none; }
+    .da-tkpi-label {
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        font-weight: 400;
+        color: #64748B;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 0 0 6px 0;
+    }
+    .da-tkpi-value {
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 25px;
+        font-weight: 700;
+        color: #0F172A;
+        letter-spacing: -0.01em;
+        margin: 0 0 4px 0;
+    }
+    .da-tkpi-sub {
+        font-family: 'Inter', sans-serif;
+        font-size: 10px;
+        color: #94a3b8;
+        margin: 0;
+    }
+    @media (max-width: 640px) {
+        .da-tkpi { flex-direction: column; }
+        .da-tkpi .da-tkpi-cell { border-right: none; border-bottom: 1px solid #e2e8f0; }
+        .da-tkpi .da-tkpi-cell:last-child { border-bottom: none; }
     }
 
     /* 20. SECTION DIVIDER */
@@ -2363,35 +2407,35 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _proj_recent = _proj_m[_proj_m > 0].tail(3) if (_proj_m is not None and not _proj_m.empty) else None
                     _proj_val = _proj_recent.mean() if (_proj_recent is not None and len(_proj_recent) > 0) else None
                     _proj_cell = (
-                        f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#4caf82;margin:0 0 2px 0;">${_proj_val:,.2f}</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">prom. últ. 3 meses</p>'
+                        f'<p class="da-tkpi-value" style="color:#16a34a;">${_proj_val:,.2f}</p>'
+                        f'<p class="da-tkpi-sub">prom. últ. 3 meses</p>'
                     ) if _proj_val else (
-                        '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p>'
-                        '<p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">sin historial</p>'
+                        '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p>'
+                        '<p class="da-tkpi-sub">sin historial</p>'
                     )
                     st.markdown(f"""
-                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;margin:8px 0 14px 0;">
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Acciones</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">{stats['shares_owned']:.4f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
+                    <div class="da-tkpi">
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Acciones</p>
+                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
+                            <p class="da-tkpi-sub">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Tu inversión</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Tu inversión</p>
+                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
+                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base broker (con ROC)</p>
-                            {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Base broker (con ROC)</p>
+                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Ingresa base IB en el sidebar</p>'}
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['market_value']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">@ ${stats['current_price']:,.2f} por acción</p>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Valor de Mercado</p>
+                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
+                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;border-left:2px solid #4caf82;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Prox. mes (est.)</p>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label" style="color:#16a34a;">Próx. mes (est.)</p>
                             {_proj_cell}
                         </div>
                     </div>
@@ -2738,25 +2782,25 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _hb_buys = stats.get('shares_bought', 0)
                     _hb_sells = stats.get('shares_sold', 0)
                     st.markdown(f"""
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin:8px 0 14px 0;">
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Acciones</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">{stats['shares_owned']:.4f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
+                    <div class="da-tkpi">
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Acciones</p>
+                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
+                            <p class="da-tkpi-sub">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Tu inversión</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['pocket_investment']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">lo que pusiste de tu bolsillo</p>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Tu inversión</p>
+                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
+                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Base broker (con ROC)</p>
-                            {f'<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats["ib_cost_basis"]:,.2f}</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#4caf82;margin:0;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#445566;margin:0 0 2px 0;">—</p><p style="font-family:Inter,sans-serif;font-size:9px;color:#445566;margin:0;">Ingresa base IB en el sidebar</p>'}
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Base broker (con ROC)</p>
+                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Ingresa base IB en el sidebar</p>'}
                         </div>
-                        <div style="background:#021C36;padding:12px 16px;">
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;letter-spacing:0.12em;text-transform:uppercase;">Valor de Mercado</p>
-                            <p style="font-family:Inter,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin:0 0 2px 0;">${stats['market_value']:,.2f}</p>
-                            <p style="font-family:Inter,sans-serif;font-size:9px;color:#556677;margin:0;">@ ${stats['current_price']:,.2f} por acción</p>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Valor de Mercado</p>
+                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
+                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
