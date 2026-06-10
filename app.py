@@ -1712,123 +1712,119 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         for t, pct in tickers_detail
                     )
 
-                _da_section("Distribución del portafolio",
-                            "Cómo se reparte tu capital entre Dividendos y Crecimiento, y el rendimiento de cada bloque")
+                _da_section("Distribución y rendimiento de tu portafolio",
+                            "Cómo se reparte tu capital y cómo rindió cada bloque")
 
+                # ── Banner: rendimiento combinado ─────────────────────────
                 st.markdown(
-                    f'<div style="background:#021C36;padding:14px 24px;margin-bottom:12px;">'
+                    f'<div style="background:#021C36;padding:16px 24px;margin-bottom:14px;">'
                     f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;font-weight:700;'
                     f'letter-spacing:0.14em;text-transform:uppercase;margin:0 0 4px 0;">Rendimiento Combinado Total</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:32px;font-weight:800;'
+                    f'<p style="font-family:Inter,sans-serif;font-size:34px;font-weight:800;'
                     f'color:{_comb_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_comb_pct:+.2f}%</p>'
                     f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;margin:0;">'
                     f'Capital: <b style="color:#ffffff;">${_comb_inv:,.0f}</b>'
-                    f'&nbsp;&nbsp;·&nbsp;&nbsp;Valor actual: <b style="color:#ffffff;">${_comb_val:,.0f}</b>'
+                    f'&nbsp;&nbsp;→&nbsp;&nbsp;Valor actual: <b style="color:#ffffff;">${_comb_val:,.0f}</b>'
                     f'&nbsp;&nbsp;·&nbsp;&nbsp;Dividendos cobrados: <b style="color:#4caf82;">${_comb_div:,.0f}</b></p>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
 
-                _col_a, _col_pie, _col_b = st.columns([3, 2, 3])
+                # ── Barra de asignación del capital (reemplaza la dona) ────
+                st.markdown(
+                    f'<div style="margin:0 0 18px 0;">'
+                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;font-weight:700;'
+                    f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">Reparto del capital</p>'
+                    f'<div style="display:flex;height:18px;width:100%;overflow:hidden;">'
+                    f'<div style="width:{_a_share}%;background:#006497;" title="Dividendos"></div>'
+                    f'<div style="width:{_b_share}%;background:#2d3748;" title="Crecimiento"></div>'
+                    f'</div>'
+                    f'<div style="display:flex;justify-content:space-between;margin-top:7px;">'
+                    f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
+                    f'<span style="display:inline-block;width:9px;height:9px;background:#006497;margin-right:6px;vertical-align:middle;"></span>'
+                    f'Dividendos <b>{_a_share:.0f}%</b> · ${_cmp_a_inv:,.0f}</span>'
+                    f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
+                    f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_inv:,.0f}'
+                    f'<span style="display:inline-block;width:9px;height:9px;background:#2d3748;margin-left:6px;vertical-align:middle;"></span></span>'
+                    f'</div></div>',
+                    unsafe_allow_html=True
+                )
 
+                # ── Tarjeta de bloque (Dividendos / Crecimiento) ──────────
+                def _render_block_card(name, accent, share, n_tickers, inv, mv, div, pct, tickers_detail):
+                    _ret_color = "#4caf82" if pct >= 0 else "#e05c5c"
+                    _have_today = mv + div
+                    _money_row = (
+                        '<div style="display:flex;justify-content:space-between;">'
+                        '<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
+                        'text-transform:uppercase;letter-spacing:0.07em;">{label}</span>'
+                        '<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:{c};">{val}</span></div>'
+                    )
+                    st.markdown(
+                        f'<div style="background:#f6f3f2;padding:20px 22px;border-top:3px solid {accent};height:100%;">'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:{accent};font-weight:700;'
+                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 10px 0;">'
+                        f'<span style="display:inline-block;width:9px;height:9px;background:{accent};margin-right:7px;vertical-align:middle;"></span>'
+                        f'{name} · {share:.0f}% del capital · {n_tickers} ticker(s)</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:34px;font-weight:800;'
+                        f'color:{_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{pct:+.2f}%</p>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 14px 0;">'
+                        f'retorno total (precio + dividendos)</p>'
+                        f'<div style="display:flex;flex-direction:column;gap:5px;">'
+                        + _money_row.format(label='Invertido', c='#021C36', val=f'${inv:,.0f}')
+                        + _money_row.format(label='Valor de mercado', c='#021C36', val=f'${mv:,.0f}')
+                        + _money_row.format(label='Dividendos cobrados', c='#4caf82', val=f'+${div:,.0f}')
+                        + f'</div>'
+                        f'<div style="border-top:1px solid #d8d2cf;margin:10px 0;"></div>'
+                        f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">'
+                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">Tienes hoy</span>'
+                        f'<span style="font-family:Inter,sans-serif;font-size:15px;font-weight:800;color:{_ret_color};">'
+                        f'${_have_today:,.0f} <span style="font-size:11px;font-weight:700;">({pct:+.1f}%)</span></span></div>'
+                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
+                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
+                        f'{_ticker_rows(tickers_detail)}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                _col_a, _col_b = st.columns([1, 1])
                 with _col_a:
-                    _a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
-                    st.markdown(
-                        f'<div style="background:#f6f3f2;padding:18px 20px;border-top:3px solid #006497;">'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;'
-                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
-                        f'Dividendos · {len(_cmp_a_rows)} tickers</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;'
-                        f'color:{_a_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{_cmp_a_pct:+.2f}%</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 12px 0;">'
-                        f'retorno total (capital + dividendos)</p>'
-                        f'<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Invertido</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_a_inv:,.0f}</span></div>'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Valor actual</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_a_mv:,.0f}</span></div>'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Dividendos</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#4caf82;">${_cmp_a_div:,.0f}</span></div>'
-                        f'</div>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
-                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
-                        f'{_ticker_rows(_a_tickers_detail)}'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
-                with _col_pie:
-                    _pie_df = pd.DataFrame({
-                        'Portafolio': ['Dividendos', 'Crecimiento'],
-                        'Capital':    [_cmp_a_inv, _cmp_b_inv],
-                        'Pct':        [round(_a_share, 1), round(_b_share, 1)],
-                    })
-                    _pie_chart = alt.Chart(_pie_df).mark_arc(
-                        innerRadius=40, outerRadius=78
-                    ).encode(
-                        theta=alt.Theta('Capital:Q'),
-                        color=alt.Color('Portafolio:N',
-                            scale=alt.Scale(
-                                domain=['Dividendos', 'Crecimiento'],
-                                range=['#006497', '#2d3748']
-                            ),
-                            legend=None
-                        ),
-                        tooltip=[
-                            alt.Tooltip('Portafolio:N', title='Portafolio'),
-                            alt.Tooltip('Capital:Q', format='$,.0f', title='Capital'),
-                            alt.Tooltip('Pct:Q', format='.1f', title='%'),
-                        ]
-                    ).properties(
-                        width=160, height=160,
-                        background=CHART_PALETTE['bg']
-                    ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
-                    st.altair_chart(_pie_chart, use_container_width=False)
-                    st.markdown(
-                        f'<div style="margin-top:8px;">'
-                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">'
-                        f'<div style="width:10px;height:10px;background:#006497;flex-shrink:0;"></div>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
-                        f'Dividendos <b>{_a_share:.0f}%</b></span></div>'
-                        f'<div style="display:flex;align-items:center;gap:6px;">'
-                        f'<div style="width:10px;height:10px;background:#2d3748;flex-shrink:0;"></div>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
-                        f'Crecimiento <b>{_b_share:.0f}%</b></span></div>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
+                    _render_block_card('Dividendos', '#006497', _a_share, len(_cmp_a_rows),
+                                       _cmp_a_inv, _cmp_a_mv, _cmp_a_div, _cmp_a_pct, _a_tickers_detail)
                 with _col_b:
-                    _b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
-                    st.markdown(
-                        f'<div style="background:#f6f3f2;padding:18px 20px;border-top:3px solid #2d3748;">'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#2d3748;font-weight:700;'
-                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
-                        f'Crecimiento · {len(_cmp_b_rows)} tickers</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:28px;font-weight:800;'
-                        f'color:{_b_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{_cmp_b_pct:+.2f}%</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 12px 0;">'
-                        f'retorno total (capital + plusvalía)</p>'
-                        f'<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px;">'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Invertido</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_b_inv:,.0f}</span></div>'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Valor actual</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">${_cmp_b_mv:,.0f}</span></div>'
-                        f'<div style="display:flex;justify-content:space-between;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;text-transform:uppercase;letter-spacing:0.08em;">Dividendos</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#4caf82;">${_cmp_b_div:,.0f}</span></div>'
-                        f'</div>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
-                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
-                        f'{_ticker_rows(_b_tickers_detail)}'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
+                    _render_block_card('Crecimiento', '#2d3748', _b_share, len(_cmp_b_rows),
+                                       _cmp_b_inv, _cmp_b_mv, _cmp_b_div, _cmp_b_pct, _b_tickers_detail)
+
+                # ── Lectura en lenguaje natural ───────────────────────────
+                if _b_share >= _a_share:
+                    _lead_name, _lead_share, _lead_pct = 'Crecimiento', _b_share, _cmp_b_pct
+                    _oth_name, _oth_share, _oth_pct, _oth_div = 'Dividendos', _a_share, _cmp_a_pct, _cmp_a_div
+                else:
+                    _lead_name, _lead_share, _lead_pct = 'Dividendos', _a_share, _cmp_a_pct
+                    _oth_name, _oth_share, _oth_pct, _oth_div = 'Crecimiento', _b_share, _cmp_b_pct, _cmp_b_div
+                _lead_role = 'sostiene' if _lead_pct >= 0 else 'arrastra'
+                if _oth_pct < 0 and _oth_div > 0:
+                    _oth_clause = f' (su precio cayó, aunque devolvió ${_oth_div:,.0f} en efectivo)'
+                elif _oth_div > 0:
+                    _oth_clause = f' (incluye ${_oth_div:,.0f} en dividendos cobrados)'
+                else:
+                    _oth_clause = ''
+                _lectura = (
+                    f'El <b>{_lead_share:.0f}%</b> de tu capital ({_lead_name}) rinde '
+                    f'<b>{_lead_pct:+.0f}%</b> y {_lead_role} el portafolio; el <b>{_oth_share:.0f}%</b> '
+                    f'en {_oth_name} rinde <b>{_oth_pct:+.0f}%</b>{_oth_clause}. '
+                    f'En conjunto: <b>{_comb_pct:+.0f}%</b>.'
+                )
+                st.markdown(
+                    '<div style="border-left:4px solid #021C36;background:#f6f8fa;padding:14px 18px;margin:16px 0 4px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#021C36;font-weight:800;'
+                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Lectura</p>'
+                    f'<p style="font-family:Inter,sans-serif;font-size:12.5px;color:#333333;line-height:1.55;margin:0;">{_lectura}</p>'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
+                    'Lectura educativa de tus números — no es recomendación de compra o venta.</p>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
 
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
