@@ -988,3 +988,54 @@ def test_is_income_strategy_asset_leveraged_excluded():
         {"NVDL": {"market_value": 100.0}})   # yield 50% pero es apalancado de crecimiento
     assert ok is False
     assert meta["reason"] == "type:leveraged"
+
+
+# ── is_growth_asset / filter_growth_assets (portafolio de crecimiento) ──────────
+
+def test_is_growth_asset_type_rules():
+    """yieldmax nunca es crecimiento (aunque yield_on_cost sea 0); leveraged siempre lo es."""
+    assert logic.is_growth_asset("MSTY", {"MSTY": {"yield_on_cost": 0.0}})[0] is False
+    assert logic.is_growth_asset("NVDL", {"NVDL": {"yield_on_cost": 0.0}})[0] is True
+
+
+def test_is_growth_asset_low_yield_etf_is_growth():
+    """ETF de dividendo marginal (yield_on_cost < 4%) → crecimiento, vía fallback solo-CSV."""
+    ok, meta = logic.is_growth_asset("SCHB", {"SCHB": {"market_value": 1000.0, "yield_on_cost": 1.5}})
+    assert ok is True
+    assert meta["yield_pct"] == pytest.approx(1.5, abs=0.1)
+
+
+def test_is_growth_asset_high_yield_etf_is_income():
+    """ETF de yield alto (>=4%) NO es crecimiento (es income), aunque no sea yieldmax."""
+    ok, _ = logic.is_growth_asset("SCHB", {"SCHB": {"market_value": 200.0, "yield_on_cost": 8.0}})
+    assert ok is False
+
+
+def test_is_growth_asset_prefers_income_file_yield():
+    """Si hay dato del income file, usa yield-on-market (16/1000=1.6%) sobre yield_on_cost."""
+    ok, meta = logic.is_growth_asset(
+        "SCHB", {"SCHB": {"market_value": 1000.0, "yield_on_cost": 99.0}},
+        {"our_received_12m": 16.0})
+    assert ok is True
+    assert meta["yield_pct"] == pytest.approx(1.6, abs=0.1)
+
+
+def test_filter_growth_assets_complement_of_income():
+    """Crecimiento = posiciones válidas no-income; excluye yieldmax, skipped y error."""
+    results = {
+        "SCHB": {"market_value": 7000.0, "pocket_investment": 5000.0,
+                 "dividends_collected_cash": 20.0, "roi_percent": 40.4,
+                 "benchmark_value": 6000.0, "benchmark_roi": 20.0, "yield_on_cost": 0.5},
+        "MSTY": {"market_value": 1000.0, "pocket_investment": 1200.0,
+                 "dividends_collected_cash": 300.0, "roi_percent": 8.3,
+                 "benchmark_value": 1300.0, "benchmark_roi": 8.3, "yield_on_cost": 60.0},
+        "NVDL": {"skipped": True, "reason": "not_known_etf"},
+        "BAD":  {"error": "no market data"},
+    }
+    growth = logic.filter_growth_assets(results)
+    assert "SCHB" in growth          # etf bajo yield → crecimiento
+    assert "MSTY" not in growth      # yieldmax → income
+    assert "NVDL" not in growth      # skipped (sin métricas) → excluido
+    assert "BAD" not in growth       # error → excluido
+    assert growth["SCHB"]["roi_percent"] == 40.4
+    assert growth["SCHB"]["benchmark_roi"] == 20.0

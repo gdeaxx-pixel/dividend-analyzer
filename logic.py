@@ -2690,6 +2690,72 @@ def filter_income_assets(proj, results=None, min_yield_pct=INCOME_ASSET_MIN_YIEL
     return kept, dropped
 
 
+def is_growth_asset(ticker, results=None, proj_entry=None, min_yield_pct=INCOME_ASSET_MIN_YIELD_PCT):
+    """¿Pertenece `ticker` al portafolio de crecimiento (apreciación de precio, no income)?
+
+    Complemento de `is_income_strategy_asset` pero SIN depender del income file:
+      1. type == 'yieldmax'  -> NUNCA crecimiento (estrategia de income por definición).
+      2. type == 'leveraged' -> SIEMPRE crecimiento (apalancado de crecimiento, p.ej. NVDL).
+      3. resto -> yield anualizado. Si hay dato del income file (`proj_entry`) usa
+         dividendos 12m / valor de mercado; si no, cae a `yield_on_cost` del CSV.
+         Es crecimiento si el yield < `min_yield_pct`.
+    Degradación: sin yield calculable, solo es crecimiento si el type es de crecimiento
+    explícito (no clasifica como crecimiento sin prueba).
+    Devuelve (bool, {'reason': str, 'yield_pct': float|None}).
+    """
+    info = load_instruments().get(str(ticker).upper(), {})
+    typ = (info.get('type') or '').lower()
+    if typ == 'yieldmax':
+        return False, {'reason': 'type:yieldmax', 'yield_pct': None}
+    if typ == 'leveraged':
+        return True, {'reason': 'type:leveraged', 'yield_pct': None}
+
+    proj_entry = proj_entry or {}
+    recv = proj_entry.get('our_received_12m')
+    if recv is None:
+        recv = proj_entry.get('schwab_received_12m')
+    r = results.get(ticker) if (results and isinstance(results.get(ticker), dict)) else None
+    mkt = r.get('market_value') if r else None
+
+    # Yield-on-market desde el income file (preferido, mismo criterio que income).
+    if recv is not None and mkt and mkt > 0:
+        y = recv / mkt * 100
+        return (y < min_yield_pct), {'reason': f'yield {y:.1f}%', 'yield_pct': round(y, 2)}
+
+    # Fallback solo-CSV: yield sobre costo (presente en results aunque no haya income file).
+    if r is not None and r.get('yield_on_cost') is not None:
+        y = float(r.get('yield_on_cost') or 0)
+        return (y < min_yield_pct), {'reason': f'yield_on_cost {y:.1f}%', 'yield_pct': round(y, 2)}
+
+    return (typ == 'leveraged'), {'reason': 'sin yield calculable', 'yield_pct': None}
+
+
+def filter_growth_assets(results, proj=None, min_yield_pct=INCOME_ASSET_MIN_YIELD_PCT):
+    """Selecciona del análisis (`results`) SOLO los activos de crecimiento (no-income).
+
+    Cubre TODAS las posiciones válidas (no solo las del income file). Excluye skipped/error.
+    Devuelve {ticker: {market_value, pocket_investment, dividends_collected_cash, roi_percent,
+    benchmark_value, benchmark_roi, _yield_pct}}.
+    """
+    out = {}
+    for t, s in (results or {}).items():
+        if not isinstance(s, dict) or s.get('skipped') or 'error' in s:
+            continue
+        is_g, meta = is_growth_asset(t, results, (proj or {}).get(t), min_yield_pct)
+        if not is_g:
+            continue
+        out[t] = {
+            'market_value': s.get('market_value'),
+            'pocket_investment': s.get('pocket_investment'),
+            'dividends_collected_cash': s.get('dividends_collected_cash'),
+            'roi_percent': s.get('roi_percent'),
+            'benchmark_value': s.get('benchmark_value'),
+            'benchmark_roi': s.get('benchmark_roi'),
+            '_yield_pct': meta.get('yield_pct'),
+        }
+    return out
+
+
 # ── Captura de casos de estudio (golden harness) ─────────────────────────────
 # Diseño: anonimización por construcción. Solo se conservan las columnas que el
 # pipeline consume; cualquier columna del broker con cuenta/nombre/dirección se

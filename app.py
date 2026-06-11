@@ -1949,6 +1949,69 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             unsafe_allow_html=True
                         )
 
+            # ── Portafolio de crecimiento — rendimiento de precio ──────
+            _growth = logic.filter_growth_assets(results)
+            if _growth:
+                def _gfmt_money(v):
+                    return f'${v:,.0f}' if v is not None else 'n/d'
+
+                def _gret_html(pct, suffix='%'):
+                    if pct is None:
+                        return '<span class="pct" style="color:#b8c2cc;">n/d</span>'
+                    c = '#4caf82' if pct >= 0 else '#e05c5c'
+                    return f'<span class="pct" style="color:{c};">{pct:+.0f}{suffix}</span>'
+
+                _g_items = sorted(_growth.items(),
+                                  key=lambda kv: (kv[1].get('market_value') or 0), reverse=True)
+                _g_head = ('<div class="da-mini-row da-mini-head"><span>ETF</span>'
+                           '<span class="num">Valor</span><span class="num">Rendim.</span>'
+                           '<span class="pct">vs SPY</span></div>')
+                _g_body = ''
+                _g_mv = _g_pocket = _g_div = _g_bench = 0.0
+                _g_bench_has = False
+                for _tk, _d in _g_items:
+                    _mv  = _d.get('market_value');             _pk = _d.get('pocket_investment')
+                    _dv  = _d.get('dividends_collected_cash'); _roi = _d.get('roi_percent')
+                    _broi = _d.get('benchmark_roi');           _bv = _d.get('benchmark_value')
+                    _vs = (_roi - _broi) if (_roi is not None and _broi is not None) else None
+                    _g_body += (f'<div class="da-mini-row"><span class="tk">{_tk}</span>'
+                                f'<span class="num">{_gfmt_money(_mv)}</span>'
+                                f'{_gret_html(_roi)}{_gret_html(_vs, " pts")}</div>')
+                    _g_mv += (_mv or 0); _g_pocket += (_pk or 0); _g_div += (_dv or 0)
+                    if _bv is not None:
+                        _g_bench += _bv; _g_bench_has = True
+                _g_troi = ((_g_mv + _g_div - _g_pocket) / _g_pocket * 100) if _g_pocket > 0 else None
+                _g_tspy = ((_g_bench - _g_pocket) / _g_pocket * 100) if (_g_bench_has and _g_pocket > 0) else None
+                _g_tvs  = (_g_troi - _g_tspy) if (_g_troi is not None and _g_tspy is not None) else None
+                _g_total = ('<div class="da-mini-row da-mini-total"><span class="tk">TOTAL</span>'
+                            f'<span class="num">{_gfmt_money(_g_mv)}</span>'
+                            f'{_gret_html(_g_troi)}{_gret_html(_g_tvs, " pts")}</div>')
+                _g_tip = ('<b>¿Qué es?</b> El rendimiento de precio de tus activos de '
+                          '<b>crecimiento</b> (posiciones de baja distribución: índices, ETFs y '
+                          'acciones de apreciación), activo por activo.<br><br>'
+                          '<b>Valor</b>: lo que vale hoy la posición a precio de mercado.<br>'
+                          '<b>Rendim.</b>: tu rendimiento <b>total acumulado</b> desde tu primera '
+                          'compra: (valor + dividendos en efectivo − invertido) / invertido. En '
+                          'crecimiento los dividendos son marginales, así que es prácticamente la '
+                          'apreciación del precio. Verde = ganas, rojo = pierdes.<br>'
+                          '<b>vs SPY</b>: cuántos <b>puntos</b> le ganas (verde) o le pierdes (rojo) '
+                          'a haber invertido lo mismo en el S&amp;P 500 con tu mismo timing de '
+                          'aportes — es tu <b>alfa</b> contra el índice.<br><br>'
+                          '<b>Ojo</b>: el rendimiento es <b>acumulado, no anual</b>, así que una '
+                          'posición con más tiempo de tenencia tiene ventaja natural; para comparar '
+                          'por año, mira el CAGR en el detalle de cada activo más abajo.')
+                _g_card = (f'<div class="da-kpi-cell da-kpi-navy da-tip">'
+                           f'<p class="da-kpi-label">Crecimiento · rendimiento de precio'
+                           f'<span class="da-tip-i">i</span></p>'
+                           f'<div class="da-mini">{_g_head}{_g_body}{_g_total}</div>'
+                           f'<span class="da-tip-box">{_g_tip}</span></div>')
+                _da_section("Portafolio de crecimiento — rendimiento de precio",
+                            "Tus posiciones de apreciación (no-income): cuánto valen, cuánto han rendido y si le ganan al S&P 500.")
+                st.markdown(
+                    f'<div style="max-width:520px;margin:6px 0 4px 0;">{_g_card}</div>',
+                    unsafe_allow_html=True
+                )
+
             # ── Portfolio Global Summary ──────────────────────────────
             total_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
             total_market   = sum(s.get('market_value', 0)      for s in results.values() if 'error' not in s)
