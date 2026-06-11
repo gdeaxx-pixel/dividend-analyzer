@@ -1950,7 +1950,33 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         )
 
             # ── Portafolio de crecimiento — rendimiento de precio ──────
-            _growth = logic.filter_growth_assets(results)
+            # Robustez en Streamlit Cloud: tras un deploy, el watcher puede reejecutar app.py
+            # pero conservar en memoria un `logic` viejo (sin la función nueva). Preferimos la
+            # función del módulo (canónica, testeada) y, si no existe (módulo stale), caemos a
+            # una clasificación equivalente local usando solo API antigua de logic — app.py
+            # siempre se reejecuta fresco, así que esto nunca falla por el cacheo del módulo.
+            _filter_growth = getattr(logic, 'filter_growth_assets', None)
+            if _filter_growth is not None:
+                _growth = _filter_growth(results)
+            else:
+                _instr_g = logic.load_instruments()
+                _min_yg = getattr(logic, 'INCOME_ASSET_MIN_YIELD_PCT', 4.0)
+                _growth = {}
+                for _gt, _gs in (results or {}).items():
+                    if not isinstance(_gs, dict) or _gs.get('skipped') or 'error' in _gs:
+                        continue
+                    _gtyp = (_instr_g.get(str(_gt).upper(), {}).get('type') or '').lower()
+                    if _gtyp == 'yieldmax':
+                        _is_g = False
+                    elif _gtyp == 'leveraged':
+                        _is_g = True
+                    else:
+                        _gy = _gs.get('yield_on_cost')
+                        _is_g = (float(_gy or 0) < _min_yg) if _gy is not None else False
+                    if _is_g:
+                        _growth[_gt] = {_k: _gs.get(_k) for _k in (
+                            'market_value', 'pocket_investment', 'dividends_collected_cash',
+                            'roi_percent', 'benchmark_value', 'benchmark_roi')}
             if _growth:
                 def _gfmt_money(v):
                     return f'${v:,.0f}' if v is not None else 'n/d'
