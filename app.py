@@ -713,6 +713,45 @@ st.markdown("""
     .da-mini-total .tk { color: #021C36; }
     .da-mini-total .num { color: #021C36; font-size: 13px; }
 
+    /* 22d. TABLA DE CRECIMIENTO — 6 columnas full-width */
+    .da-growth-wrap { overflow-x: auto; margin: 8px 0 2px 0; }
+    .da-growth-row {
+        display: grid;
+        grid-template-columns: minmax(46px, 1.2fr) repeat(5, 1fr);
+        gap: 10px;
+        align-items: baseline;
+        padding: 4px 0;
+        min-width: 560px;
+    }
+    .da-growth-row > span {
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 700;
+        color: #0F172A;
+        text-align: right;
+        letter-spacing: -0.01em;
+    }
+    .da-growth-row > span:first-child {
+        font-family: 'Inter', sans-serif;
+        text-align: left;
+        color: #021C36;
+        letter-spacing: 0.02em;
+    }
+    .da-growth-head > span {
+        font-family: 'Inter', sans-serif;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+    }
+    .da-growth-total {
+        border-top: 1px solid #d8d2cf;
+        margin-top: 3px;
+        padding-top: 6px;
+    }
+    .da-growth-total > span { color: #021C36; font-size: 13px; }
+
     /* 23. SIDEBAR ROC SECTION */
     section[data-testid="stSidebar"] .da-sidebar-white-text {
         color: #ffffff !important;
@@ -1981,17 +2020,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 def _gfmt_money(v):
                     return f'${v:,.0f}' if v is not None else 'n/d'
 
+                def _gmoney_ret(v):
+                    if v is None:
+                        return '<span style="color:#b8c2cc;">n/d</span>'
+                    c = '#4caf82' if v >= 0 else '#e05c5c'
+                    return f'<span style="color:{c};">{"+" if v >= 0 else "−"}${abs(v):,.0f}</span>'
+
                 def _gret_html(pct, suffix='%'):
                     if pct is None:
-                        return '<span class="pct" style="color:#b8c2cc;">n/d</span>'
+                        return '<span style="color:#b8c2cc;">n/d</span>'
                     c = '#4caf82' if pct >= 0 else '#e05c5c'
-                    return f'<span class="pct" style="color:{c};">{pct:+.0f}{suffix}</span>'
+                    return f'<span style="color:{c};">{pct:+.0f}{suffix}</span>'
 
                 _g_items = sorted(_growth.items(),
                                   key=lambda kv: (kv[1].get('market_value') or 0), reverse=True)
-                _g_head = ('<div class="da-mini-row da-mini-head"><span>ETF</span>'
-                           '<span class="num">Valor</span><span class="num">Rendim.</span>'
-                           '<span class="pct">vs SPY</span></div>')
+                _g_head = ('<div class="da-growth-row da-growth-head"><span>ETF</span>'
+                           '<span>Invertido</span><span>Valor</span><span>Rendim. $</span>'
+                           '<span>Rendim. %</span><span>vs SPY</span></div>')
                 _g_body = ''
                 _g_mv = _g_pocket = _g_div = _g_bench = 0.0
                 _g_bench_has = False
@@ -1999,27 +2044,39 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _mv  = _d.get('market_value');             _pk = _d.get('pocket_investment')
                     _dv  = _d.get('dividends_collected_cash'); _roi = _d.get('roi_percent')
                     _broi = _d.get('benchmark_roi');           _bv = _d.get('benchmark_value')
+                    _gain = ((_mv or 0) + (_dv or 0) - _pk) if _pk is not None else None
                     _vs = (_roi - _broi) if (_roi is not None and _broi is not None) else None
-                    _g_body += (f'<div class="da-mini-row"><span class="tk">{_tk}</span>'
-                                f'<span class="num">{_gfmt_money(_mv)}</span>'
-                                f'{_gret_html(_roi)}{_gret_html(_vs, " pts")}</div>')
+                    _g_body += (f'<div class="da-growth-row"><span>{_tk}</span>'
+                                f'<span>{_gfmt_money(_pk)}</span>'
+                                f'<span>{_gfmt_money(_mv)}</span>'
+                                f'<span>{_gmoney_ret(_gain)}</span>'
+                                f'<span>{_gret_html(_roi)}</span>'
+                                f'<span>{_gret_html(_vs, " pts")}</span></div>')
                     _g_mv += (_mv or 0); _g_pocket += (_pk or 0); _g_div += (_dv or 0)
                     if _bv is not None:
                         _g_bench += _bv; _g_bench_has = True
+                _g_tgain = (_g_mv + _g_div - _g_pocket) if _g_pocket > 0 else None
                 _g_troi = ((_g_mv + _g_div - _g_pocket) / _g_pocket * 100) if _g_pocket > 0 else None
                 _g_tspy = ((_g_bench - _g_pocket) / _g_pocket * 100) if (_g_bench_has and _g_pocket > 0) else None
                 _g_tvs  = (_g_troi - _g_tspy) if (_g_troi is not None and _g_tspy is not None) else None
-                _g_total = ('<div class="da-mini-row da-mini-total"><span class="tk">TOTAL</span>'
-                            f'<span class="num">{_gfmt_money(_g_mv)}</span>'
-                            f'{_gret_html(_g_troi)}{_gret_html(_g_tvs, " pts")}</div>')
+                _g_total = ('<div class="da-growth-row da-growth-total"><span>TOTAL</span>'
+                            f'<span>{_gfmt_money(_g_pocket)}</span>'
+                            f'<span>{_gfmt_money(_g_mv)}</span>'
+                            f'<span>{_gmoney_ret(_g_tgain)}</span>'
+                            f'<span>{_gret_html(_g_troi)}</span>'
+                            f'<span>{_gret_html(_g_tvs, " pts")}</span></div>')
                 _g_tip = ('<b>¿Qué es?</b> El rendimiento de precio de tus activos de '
                           '<b>crecimiento</b> (posiciones de baja distribución: índices, ETFs y '
                           'acciones de apreciación), activo por activo.<br><br>'
-                          '<b>Valor</b>: lo que vale hoy la posición a precio de mercado.<br>'
-                          '<b>Rendim.</b>: tu rendimiento <b>total acumulado</b> desde tu primera '
-                          'compra: (valor + dividendos en efectivo − invertido) / invertido. En '
-                          'crecimiento los dividendos son marginales, así que es prácticamente la '
-                          'apreciación del precio. Verde = ganas, rojo = pierdes.<br>'
+                          '<b>Invertido</b>: lo que pusiste de tu bolsillo (costo base) en cada '
+                          'posición.<br>'
+                          '<b>Valor</b>: lo que vale hoy a precio de mercado.<br>'
+                          '<b>Rendim. $</b>: tu ganancia en dólares = valor + dividendos en '
+                          'efectivo − invertido.<br>'
+                          '<b>Rendim. %</b>: lo mismo en porcentaje (Rendim. $ ÷ invertido). Es tu '
+                          'rendimiento <b>total acumulado</b> desde tu primera compra; en '
+                          'crecimiento los dividendos son marginales, así que ≈ apreciación del '
+                          'precio. Verde = ganas, rojo = pierdes.<br>'
                           '<b>vs SPY</b>: cuántos <b>puntos</b> le ganas (verde) o le pierdes (rojo) '
                           'a haber invertido lo mismo en el S&amp;P 500 con tu mismo timing de '
                           'aportes — es tu <b>alfa</b> contra el índice.<br><br>'
@@ -2029,12 +2086,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _g_card = (f'<div class="da-kpi-cell da-kpi-navy da-tip">'
                            f'<p class="da-kpi-label">Crecimiento · rendimiento de precio'
                            f'<span class="da-tip-i">i</span></p>'
-                           f'<div class="da-mini">{_g_head}{_g_body}{_g_total}</div>'
+                           f'<div class="da-growth-wrap">{_g_head}{_g_body}{_g_total}</div>'
                            f'<span class="da-tip-box">{_g_tip}</span></div>')
                 _da_section("Portafolio de crecimiento — rendimiento de precio",
-                            "Tus posiciones de apreciación (no-income): cuánto valen, cuánto han rendido y si le ganan al S&P 500.")
+                            "Tus posiciones de apreciación (no-income): cuánto pusiste, cuánto valen, cuánto han rendido y si le ganan al S&P 500.")
                 st.markdown(
-                    f'<div style="max-width:520px;margin:6px 0 4px 0;">{_g_card}</div>',
+                    f'<div style="margin:6px 0 4px 0;">{_g_card}</div>',
                     unsafe_allow_html=True
                 )
 
