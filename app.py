@@ -683,14 +683,14 @@ st.markdown("""
         text-transform: uppercase;
         color: #8899aa;
     }
-    .da-mini-row .tk, .da-kpiwide-row .tk {
+    .da-mini-row .tk, .da-kpiwide-row .tk, .da-roc-row .tk {
         font-family: 'Inter', sans-serif;
         font-size: 11px;
         font-weight: 700;
         color: #021C36;
         letter-spacing: 0.02em;
     }
-    .da-mini-row .num, .da-kpiwide-row .num {
+    .da-mini-row .num, .da-kpiwide-row .num, .da-roc-row .num {
         font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
         font-size: 12px;
         font-weight: 700;
@@ -791,6 +791,33 @@ st.markdown("""
     }
     .da-kpiwide-total .tk, .da-kpiwide-total .num { color: #021C36; }
     .da-kpiwide-total .num { font-size: 13px; }
+
+    /* 22f. TABLA ROC — desglose de Retorno de Capital por ETF (7 columnas) */
+    .da-roc-row, .da-roc-subhead {
+        display: grid;
+        grid-template-columns: minmax(48px, 1.1fr) repeat(6, 1fr);
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+        min-width: 640px;
+    }
+    .da-roc-subhead span {
+        font-family: 'Inter', sans-serif;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+        text-align: right;
+    }
+    .da-roc-subhead span.lbl { text-align: left; }
+    .da-roc-total {
+        border-top: 1px solid #d8d2cf;
+        margin-top: 3px;
+        padding-top: 6px;
+    }
+    .da-roc-total .tk, .da-roc-total .num { color: #021C36; }
+    .da-roc-total .num { font-size: 13px; }
 
     /* 23. SIDEBAR ROC SECTION */
     section[data-testid="stSidebar"] .da-sidebar-white-text {
@@ -1942,6 +1969,74 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         ]),
                         unsafe_allow_html=True
                     )
+
+                    # ── Tabla ROC: derivación del Retorno de Capital por ETF ──
+                    def _roc_html(roc_acc, roc_pct):
+                        if roc_acc is None:
+                            return '<span class="num" style="color:#b8c2cc;">n/d</span>'
+                        c = '#4caf82' if roc_acc > 0 else ('#e05c5c' if roc_acc < 0 else '#8899aa')
+                        _pct = f' ({roc_pct:.0f}%)' if roc_pct is not None else ''
+                        return (f'<span class="num" style="color:{c};">'
+                                f'{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}</span>')
+
+                    _roc_sub = ('<div class="da-roc-subhead"><span class="lbl">ETF</span>'
+                                '<span>Div. pagados</span><span>Reinvertidos</span>'
+                                '<span>En efectivo</span><span>Invertido</span>'
+                                '<span>Costo bróker</span><span>ROC</span></div>')
+                    _roc_body = ''
+                    _r_paid = _r_drip = _r_cash = _r_pkt = 0.0
+                    _r_basis = _r_roc = 0.0
+                    _r_basis_has = False
+                    _r_pkt_with_basis = 0.0
+                    for _tk, _ in _items:
+                        _rs = results.get(_tk, {})
+                        _paid = _rs.get('total_dividends')
+                        _drip = _rs.get('dividends_collected_drip')
+                        _cash = _rs.get('dividends_collected_cash')
+                        _pkt  = _rs.get('pocket_investment')
+                        _basis = _rs.get('ib_cost_basis')
+                        _roc_a = _rs.get('roc_accumulated')
+                        _roc_p = _rs.get('roc_percent')
+                        _roc_body += (f'<div class="da-roc-row"><span class="tk">{_tk}</span>'
+                                      f'<span class="num">{_fmt_money(_paid)}</span>'
+                                      f'<span class="num">{_fmt_money(_drip)}</span>'
+                                      f'<span class="num">{_fmt_money(_cash)}</span>'
+                                      f'<span class="num">{_fmt_money(_pkt)}</span>'
+                                      f'<span class="num">{_fmt_money(_basis)}</span>'
+                                      f'{_roc_html(_roc_a, _roc_p)}</div>')
+                        _r_paid += (_paid or 0); _r_drip += (_drip or 0); _r_cash += (_cash or 0)
+                        _r_pkt += (_pkt or 0)
+                        if _basis is not None:
+                            _r_basis += _basis; _r_basis_has = True
+                        if _roc_a is not None:
+                            _r_roc += _roc_a; _r_pkt_with_basis += (_pkt or 0)
+                    _r_basis_disp = _r_basis if _r_basis_has else None
+                    _r_roc_disp = _r_roc if _r_basis_has else None
+                    _r_roc_pct = (_r_roc / _r_pkt_with_basis * 100) if _r_pkt_with_basis > 0 else None
+                    _roc_total = ('<div class="da-roc-row da-roc-total"><span class="tk">TOTAL</span>'
+                                  f'<span class="num">{_fmt_money(_r_paid)}</span>'
+                                  f'<span class="num">{_fmt_money(_r_drip)}</span>'
+                                  f'<span class="num">{_fmt_money(_r_cash)}</span>'
+                                  f'<span class="num">{_fmt_money(_r_pkt)}</span>'
+                                  f'<span class="num">{_fmt_money(_r_basis_disp)}</span>'
+                                  f'{_roc_html(_r_roc_disp, _r_roc_pct)}</div>')
+                    st.markdown(
+                        '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Retorno de Capital (ROC) por activo</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
+                        'El <b>ROC</b> es la parte de tus distribuciones que en realidad es <b>devolución de tu propio '
+                        'capital</b> (no rendimiento): se detecta cuando el <b>costo base que reporta tu bróker</b> es '
+                        'menor a lo que <b>invertiste</b>. ROC = Invertido − Costo bróker. Un ROC alto significa que buena '
+                        'parte de lo que cobraste era tu mismo dinero de vuelta.</p></div>',
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f'<div class="da-kpi-cell"><div class="da-growth-wrap">'
+                        f'{_roc_sub}{_roc_body}{_roc_total}</div></div>',
+                        unsafe_allow_html=True
+                    )
+                    if not _r_basis_has:
+                        st.caption('Sube el costo base de tu bróker en el paso de captura para calcular el ROC.')
 
                     st.markdown(
                         '<div style="margin:8px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
