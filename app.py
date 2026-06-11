@@ -683,14 +683,14 @@ st.markdown("""
         text-transform: uppercase;
         color: #8899aa;
     }
-    .da-mini-row .tk {
+    .da-mini-row .tk, .da-kpiwide-row .tk {
         font-family: 'Inter', sans-serif;
         font-size: 11px;
         font-weight: 700;
         color: #021C36;
         letter-spacing: 0.02em;
     }
-    .da-mini-row .num {
+    .da-mini-row .num, .da-kpiwide-row .num {
         font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
         font-size: 12px;
         font-weight: 700;
@@ -698,7 +698,7 @@ st.markdown("""
         text-align: right;
         letter-spacing: -0.01em;
     }
-    .da-mini-row .pct {
+    .da-mini-row .pct, .da-kpiwide-row .pct {
         font-family: 'Inter', sans-serif;
         font-size: 11px;
         font-weight: 700;
@@ -751,6 +751,46 @@ st.markdown("""
         padding-top: 6px;
     }
     .da-growth-total > span { color: #021C36; font-size: 13px; }
+
+    /* 22e. TABLA KPI INGRESOS — consolidada (ETF una sola vez, 4 grupos a lo ancho) */
+    .da-kpiwide-row, .da-kpiwide-grouphead, .da-kpiwide-subhead {
+        display: grid;
+        grid-template-columns: minmax(48px, 1.1fr) repeat(12, 1fr);
+        gap: 8px;
+        align-items: baseline;
+        padding: 3px 0;
+    }
+    .da-kpiwide-grouphead { padding: 2px 0 0 0; }
+    .da-kpiwide-grouphead .grp {
+        grid-column: span 3;
+        font-family: 'Inter', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #64748B;
+        border-bottom: 2px solid transparent;
+        padding-bottom: 4px;
+        margin: 0;
+    }
+    .da-kpiwide-subhead { padding-top: 2px; }
+    .da-kpiwide-subhead span {
+        font-family: 'Inter', sans-serif;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+        text-align: right;
+    }
+    .da-kpiwide-subhead span.lbl { text-align: left; }
+    .da-kpiwide-total {
+        border-top: 1px solid #d8d2cf;
+        margin-top: 3px;
+        padding-top: 6px;
+    }
+    .da-kpiwide-total .tk, .da-kpiwide-total .num { color: #021C36; }
+    .da-kpiwide-total .num { font-size: 13px; }
 
     /* 23. SIDEBAR ROC SECTION */
     section[data-testid="stSidebar"] .da-sidebar-white-text {
@@ -1832,34 +1872,54 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         c = '#e0a23c' if p > 5 else ('#4caf82' if abs(p) <= 5 else '#006497')
                         return f'<span class="pct" style="color:{c};">{p:+.0f}%</span>'
 
-                    def _kpi_card(title, kind, accent_cls, tip_r, rows, border_color=None):
-                        # rows: lista de (ticker, schwab, calc)
-                        head = ('<div class="da-mini-row da-mini-head"><span>ETF</span>'
-                                '<span class="num">Schwab</span><span class="num">Calc</span>'
-                                '<span class="pct">Δ%</span></div>')
-                        body = ''
-                        tot_s, tot_c, tot_c_has = 0.0, 0.0, False
+                    def _group_total(rows):
+                        ts, tc, tc_has = 0.0, 0.0, False
                         for _tk, _s, _c in rows:
-                            body += (f'<div class="da-mini-row"><span class="tk">{_tk}</span>'
-                                     f'<span class="num">{_fmt_money(_s)}</span>'
-                                     f'<span class="num">{_fmt_money(_c)}</span>'
-                                     f'{_pct_html(_s, _c)}</div>')
-                            tot_s += (_s or 0)
+                            ts += (_s or 0)
                             if _c is not None:
-                                tot_c += _c
-                                tot_c_has = True
-                        _tot_c = tot_c if tot_c_has else None
-                        total = ('<div class="da-mini-row da-mini-total"><span class="tk">TOTAL</span>'
-                                 f'<span class="num">{_fmt_money(tot_s)}</span>'
-                                 f'<span class="num">{_fmt_money(_tot_c)}</span>'
-                                 f'{_pct_html(tot_s, _tot_c)}</div>')
-                        tip = _tip_for(kind, tot_s, _tot_c)
-                        style = f' style="border-top-color:{border_color};"' if border_color else ''
-                        box_cls = 'da-tip-box r' if tip_r else 'da-tip-box'
-                        return (f'<div class="da-kpi-cell {accent_cls} da-tip"{style}>'
-                                f'<p class="da-kpi-label">{title}<span class="da-tip-i">i</span></p>'
-                                f'<div class="da-mini">{head}{body}{total}</div>'
-                                f'<span class="{box_cls}">{tip}</span></div>')
+                                tc += _c
+                                tc_has = True
+                        return ts, (tc if tc_has else None)
+
+                    def _kpi_wide(groups):
+                        # groups: [(title, kind, accent_color, tip_r, rows), ...]
+                        # rows alineadas por índice al mismo orden de tickers (_items)
+                        totals = [_group_total(g[4]) for g in groups]
+
+                        ghead = '<div class="da-kpiwide-grouphead"><span></span>'
+                        for i, (_title, _kind, _color, _tipr, _rows) in enumerate(groups):
+                            ts, tcv = totals[i]
+                            tip = _tip_for(_kind, ts, tcv)
+                            box_cls = 'da-tip-box r' if _tipr else 'da-tip-box'
+                            ghead += (f'<span class="grp da-tip" style="border-bottom-color:{_color};">'
+                                      f'{_title}<span class="da-tip-i">i</span>'
+                                      f'<span class="{box_cls}">{tip}</span></span>')
+                        ghead += '</div>'
+
+                        sub = '<div class="da-kpiwide-subhead"><span class="lbl">ETF</span>'
+                        for _ in groups:
+                            sub += '<span>Schwab</span><span>Calc</span><span>Δ%</span>'
+                        sub += '</div>'
+
+                        body = ''
+                        for r in range(len(groups[0][4])):
+                            cells = f'<span class="tk">{groups[0][4][r][0]}</span>'
+                            for _g in groups:
+                                _tk, _s, _c = _g[4][r]
+                                cells += (f'<span class="num">{_fmt_money(_s)}</span>'
+                                          f'<span class="num">{_fmt_money(_c)}</span>'
+                                          f'{_pct_html(_s, _c)}')
+                            body += f'<div class="da-kpiwide-row">{cells}</div>'
+
+                        trow = '<span class="tk">TOTAL</span>'
+                        for i in range(len(groups)):
+                            ts, tcv = totals[i]
+                            trow += (f'<span class="num">{_fmt_money(ts)}</span>'
+                                     f'<span class="num">{_fmt_money(tcv)}</span>'
+                                     f'{_pct_html(ts, tcv)}')
+                        total = f'<div class="da-kpiwide-row da-kpiwide-total">{trow}</div>'
+
+                        return f'<div class="da-kpi-cell">{ghead}{sub}{body}{total}</div>'
 
                     _items = sorted(_proj.items(),
                                     key=lambda kv: (kv[1].get('schwab_received_12m') or 0), reverse=True)
@@ -1874,12 +1934,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   for _tk, _d in _items]
 
                     st.markdown(
-                        '<div class="da-income-kpi-grid">'
-                        + _kpi_card('Total histórico', 'hist', 'da-kpi-navy', False, _rows_hist)
-                        + _kpi_card('Últimos 12 meses', 'recv', 'da-kpi-accent', False, _rows_recv)
-                        + _kpi_card('Proyectado anual', 'ann', '', False, _rows_ann, border_color=_div_color)
-                        + _kpi_card('Proyectado mensual', 'mon', 'da-kpi-green', True, _rows_mon)
-                        + '</div>',
+                        _kpi_wide([
+                            ('Total histórico',    'hist', '#021C36',   False, _rows_hist),
+                            ('Últimos 12 meses',   'recv', '#006497',   False, _rows_recv),
+                            ('Proyectado anual',   'ann',  _div_color,  True,  _rows_ann),
+                            ('Proyectado mensual', 'mon',  '#4caf82',   True,  _rows_mon),
+                        ]),
                         unsafe_allow_html=True
                     )
 
