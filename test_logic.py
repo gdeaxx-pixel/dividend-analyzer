@@ -931,6 +931,30 @@ def test_project_income_uses_results_for_csv_12m():
     assert proj["SCHB"]["our_received_12m"] == pytest.approx(25.0, abs=0.01)  # 5 x $5 en 12m
 
 
+def test_project_income_total_historico_keys():
+    """Total histórico: Schwab = todas las filas Received (no solo 12m); Calc = todo el CSV."""
+    proj = logic.project_income(_build_proj_income())
+    # MSTY: 20 pagos de $6→$3 todos dentro de 12 meses -> total == 12m == $90.
+    assert proj["MSTY"]["schwab_received_total"] == pytest.approx(90.0, abs=0.5)
+    assert proj["MSTY"]["schwab_received_total"] == pytest.approx(proj["MSTY"]["schwab_received_12m"], abs=0.01)
+    # SCHB: 5 pagos de $4; el más viejo (~450d) cae fuera de 12m -> total ($20) > 12m ($16).
+    assert proj["SCHB"]["schwab_received_total"] == pytest.approx(20.0, abs=0.01)
+    assert proj["SCHB"]["schwab_received_total"] > proj["SCHB"]["schwab_received_12m"]
+    # Sin results, el total del CSV no está disponible.
+    assert proj["MSTY"]["our_received_total"] is None
+
+
+def test_project_income_csv_total_exceeds_12m_window():
+    """our_received_total incluye dividendos previos a 12m que our_received_12m excluye."""
+    today = pd.Timestamp.today().normalize()
+    rows = [(str((today - pd.Timedelta(weeks=k)).date()), "Reinvest Dividend", 5.0) for k in range(1, 6)]
+    rows.append((str((today - pd.Timedelta(days=730)).date()), "Reinvest Dividend", 10.0))  # ~2 años atrás
+    hist = _hist(rows, ticker="SCHB")
+    proj = logic.project_income(_build_proj_income(), {"SCHB": {"history": hist}})
+    assert proj["SCHB"]["our_received_12m"] == pytest.approx(25.0, abs=0.01)   # solo los 5 recientes
+    assert proj["SCHB"]["our_received_total"] == pytest.approx(35.0, abs=0.01)  # + el viejo de $10
+
+
 # ── filter_income_assets / is_income_strategy_asset (filtro del portafolio de ingresos) ─────
 
 def test_filter_income_assets_excludes_index_etf():

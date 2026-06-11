@@ -567,7 +567,14 @@ st.markdown("""
     .da-kpi-cell.da-kpi-accent { border-top-color: #006497; }
     .da-kpi-cell.da-kpi-green  { border-top-color: #4caf82; }
     .da-kpi-cell.da-kpi-red    { border-top-color: #e05c5c; }
+    .da-kpi-cell.da-kpi-navy   { border-top-color: #021C36; }
     .da-kpi-cell.da-kpi-roc    { border-top-color: #4caf82; background-color: #f0faf5; }
+    .da-income-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2px;
+        margin: 14px 0 10px 0;
+    }
     .da-kpi-label {
         font-family: 'Inter', sans-serif;
         font-size: 9px;
@@ -726,11 +733,13 @@ st.markdown("""
     /* 24. RESPONSIVE */
     @media (max-width: 768px) {
         .da-kpi-bar { grid-template-columns: repeat(2, 1fr); }
+        .da-income-kpi-grid { grid-template-columns: repeat(2, 1fr); }
         .da-step-grid { grid-template-columns: 1fr; }
         .da-ticker-header { flex-direction: column; gap: 4px; }
     }
     @media (max-width: 480px) {
         .da-kpi-bar { grid-template-columns: 1fr; }
+        .da-income-kpi-grid { grid-template-columns: 1fr; }
     }
 
     /* 25. ANIMACIONES DE ENTRADA — staggered fade-up */
@@ -1728,6 +1737,30 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 interp = (f'<b>Tu Δ% es {v}</b>: la calculadora proyecta más que Schwab porque '
                                           'tus pagos recientes vienen <b>subiendo</b>. Aun así, planifica con '
                                           'prudencia.')
+                        elif kind == 'hist':
+                            intro = ('<b>¿Qué es?</b> El total de dividendos que has acumulado en <b>toda tu '
+                                     'historia</b> (no solo los últimos 12 meses), ETF por ETF. La columna '
+                                     '<b>Schwab</b> es lo que tu broker reporta haberte pagado en todo el income; '
+                                     'la columna <b>Calc</b> es lo mismo, reconstruido por la calculadora desde tu '
+                                     'archivo CSV.<br><br>'
+                                     '<b>Ojo con el Δ%:</b> las dos fuentes pueden cubrir <b>ventanas de tiempo '
+                                     'distintas</b>. Tu CSV suele tener <b>más historia</b> que el reporte de income '
+                                     'de Schwab, así que un Δ% grande casi siempre significa que el CSV abarca más '
+                                     'fechas, <b>no un error</b>.')
+                            if pct is None:
+                                interp = ('<b>Δ% no disponible</b>: falta una de las dos fuentes (sube el income de '
+                                          'Schwab y el CSV para comparar el acumulado).')
+                            elif abs(pct) <= 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>, prácticamente cero: ambas fuentes cubren casi la '
+                                          'misma historia y coinciden. Puedes confiar en el acumulado.')
+                            elif pct > 5:
+                                interp = (f'<b>Tu Δ% es {v}</b>: Schwab reporta <b>más</b> acumulado que tu CSV. '
+                                          'Revisa si a tu archivo le faltan <b>pagos antiguos</b> para que cuadre '
+                                          'con todo lo que el broker registró.')
+                            else:
+                                interp = (f'<b>Tu Δ% es {v}</b>: tu CSV muestra <b>más</b> acumulado que el income de '
+                                          'Schwab. Es lo normal cuando el CSV cubre fechas <b>previas</b> a tu '
+                                          'reporte de income: más cobertura, no un error.')
                         else:  # mon
                             intro = ('<b>¿Qué es?</b> Lo mismo que el proyectado anual pero <b>dividido entre '
                                      '12</b>: lo que te entraría cada mes, ETF por ETF.<br><br>'
@@ -1798,9 +1831,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    (_d.get('schwab_proj') or 0) / 12,
                                    (_d.get('our_proj') / 12 if _d.get('our_proj') is not None else None))
                                   for _tk, _d in _items]
+                    _rows_hist = [(_tk, _d.get('schwab_received_total'), _d.get('our_received_total'))
+                                  for _tk, _d in _items]
 
                     st.markdown(
-                        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin:14px 0 10px 0;">'
+                        '<div class="da-income-kpi-grid">'
+                        + _kpi_card('Total histórico', 'hist', 'da-kpi-navy', False, _rows_hist)
                         + _kpi_card('Últimos 12 meses', 'recv', 'da-kpi-accent', False, _rows_recv)
                         + _kpi_card('Proyectado anual', 'ann', '', False, _rows_ann, border_color=_div_color)
                         + _kpi_card('Proyectado mensual', 'mon', 'da-kpi-green', True, _rows_mon)

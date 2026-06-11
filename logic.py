@@ -2561,8 +2561,9 @@ def project_income(income_df, results: dict = None) -> dict:
     (la proyección solo aplica donde el broker proyecta y nosotros tenemos historia suficiente
     para el run-rate). Las `Estimated` se usan SOLO aquí, para contraste; nunca en el cálculo.
 
-    Devuelve {ticker: {schwab_received_12m, our_received_12m, schwab_proj, our_proj,
-    anchor_per_payment, recent_per_payment, payments_per_year, decline_pct, overstatement_pct}}.
+    Devuelve {ticker: {schwab_received_12m, our_received_12m, schwab_received_total,
+    our_received_total, schwab_proj, our_proj, anchor_per_payment, recent_per_payment,
+    payments_per_year, decline_pct, overstatement_pct}}.
     """
     out = {}
     if income_df is None or len(income_df) == 0:
@@ -2598,6 +2599,12 @@ def project_income(income_df, results: dict = None) -> dict:
         if results and isinstance(results.get(tk), dict):
             our_recv_12m = round(_csv_dividends_in_window(results[tk].get('history'), yr_ago, today), 2)
 
+        # Total histórico: Schwab (todas las filas Received) y nuestro (todo el CSV, sin ventana).
+        schwab_recv_total = float(rec['Amount'].sum())
+        our_recv_total = None
+        if results and isinstance(results.get(tk), dict):
+            our_recv_total = round(_csv_dividends_in_window(results[tk].get('history')), 2)
+
         # Caída: promedio por pago del tercio reciente vs el más antiguo dentro de 12m.
         last_yr = rec[rec['Date'] >= yr_ago]
         decline_pct = None
@@ -2610,6 +2617,8 @@ def project_income(income_df, results: dict = None) -> dict:
         out[tk] = {
             'schwab_received_12m': round(schwab_recv_12m, 2),
             'our_received_12m': our_recv_12m,
+            'schwab_received_total': round(schwab_recv_total, 2),
+            'our_received_total': our_recv_total,
             'schwab_proj': round(schwab_proj, 2),
             'our_proj': round(our_proj, 2),
             'anchor_per_payment': round(anchor_pp, 4),
