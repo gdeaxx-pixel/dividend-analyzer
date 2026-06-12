@@ -1,92 +1,1273 @@
-# Generado por fetch_roc_19a.py (fuente: páginas oficiales de YieldMax). Refresco semanal vía GitHub Action.
+# Generado por fetch_roc_19a.py (fuente: páginas oficiales de YieldMax).
+# Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.
 MSTY:
-  asof: '2026-06-11'
+  asof: '2026-06-12'
   source_url: https://yieldmaxetfs.com/our-etfs/msty/
   weighted_pct: 74.48
   per_distribution:
-  - date: '2026-06-11'
+  - date: '2026-06-10'
     roc_pct: 0.0
-  - date: '2026-06-04'
+  - date: '2026-06-03'
     roc_pct: 0.0
-  - date: '2026-05-28'
+  - date: '2026-05-27'
     roc_pct: 18.63
-  - date: '2026-05-21'
+  - date: '2026-05-20'
     roc_pct: 41.7
-  - date: '2026-05-14'
+  - date: '2026-05-13'
     roc_pct: 0.0
-  - date: '2026-05-07'
+  - date: '2026-05-06'
     roc_pct: 99.1
-  - date: '2026-04-30'
+  - date: '2026-04-29'
     roc_pct: 99.09
-  - date: '2026-04-23'
+  - date: '2026-04-22'
     roc_pct: 99.05
-  - date: '2026-04-16'
+  - date: '2026-04-15'
     roc_pct: 98.21
-  - date: '2026-04-09'
+  - date: '2026-04-08'
     roc_pct: 5.67
-  - date: '2026-04-02'
+  - date: '2026-04-01'
     roc_pct: 18.62
-  - date: '2026-03-26'
+  - date: '2026-03-25'
     roc_pct: 14.41
-  - date: '2026-03-19'
+  - date: '2026-03-18'
     roc_pct: 98.82
-  - date: '2026-03-12'
+  - date: '2026-03-11'
     roc_pct: 98.58
-  - date: '2026-03-05'
+  - date: '2026-03-04'
     roc_pct: 14.65
-  - date: '2026-02-26'
+  - date: '2026-02-25'
     roc_pct: 100.0
-  - date: '2026-02-19'
+  - date: '2026-02-18'
     roc_pct: 97.91
-  - date: '2026-02-12'
+  - date: '2026-02-11'
     roc_pct: 98.59
-  - date: '2026-02-05'
+  - date: '2026-02-04'
     roc_pct: 93.12
-  - date: '2026-01-29'
+  - date: '2026-01-28'
     roc_pct: 9.29
-  - date: '2026-01-22'
+  - date: '2026-01-21'
     roc_pct: 94.69
-  - date: '2026-01-15'
+  - date: '2026-01-14'
     roc_pct: 93.9
-  - date: '2026-01-08'
+  - date: '2026-01-07'
     roc_pct: 91.9
-  - date: '2026-01-02'
+  - date: '2025-12-31'
     roc_pct: 94.34
-  - date: '2025-12-26'
+  - date: '2025-12-24'
     roc_pct: 80.04
-  - date: '2025-12-18'
+  - date: '2025-12-17'
     roc_pct: 92.47
-  - date: '2025-12-11'
+  - date: '2025-12-10'
     roc_pct: 96.35
-  - date: '2025-12-04'
+  - date: '2025-12-03'
     roc_pct: 92.88
-  - date: '2025-11-28'
+  - date: '2025-11-26'
     roc_pct: 69.67
-  - date: '2025-11-20'
+  - date: '2025-11-19'
     roc_pct: 24.76
-  - date: '2025-11-13'
+  - date: '2025-11-12'
     roc_pct: 96.04
-  - date: '2025-11-06'
+  - date: '2025-11-05'
     roc_pct: 98.04
-  - date: '2025-10-30'
+  - date: '2025-10-29'
     roc_pct: 78.6
-  - date: '2025-10-23'
+  - date: '2025-10-22'
     roc_pct: 35.21
-  - date: '2025-10-16'
+  - date: '2025-10-15'
     roc_pct: 95.96
-  - date: '2025-09-25'
+  - date: '2025-09-24'
     roc_pct: 96.18
-  - date: '2025-08-28'
+  - date: '2025-08-27'
     roc_pct: 60.65
-  - date: '2025-07-31'
+  - date: '2025-07-30'
     roc_pct: 86.81
-  - date: '2025-07-03'
+  - date: '2025-07-02'
     roc_pct: 96.86
-  - date: '2025-06-05'
+  - date: '2025-06-04'
     roc_pct: 97.45
-  - date: '2024-06-06'
+  - date: '2025-05-07'
+    roc_pct: 18.84
+  - date: '2024-06-05'
     roc_pct: 94.58
-  - date: '2024-05-06'
+  - date: '2024-05-03'
     roc_pct: 92.99
-  - date: '2024-04-04'
+  - date: '2024-04-03'
     roc_pct: 100.0
+AMDY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/amdy/
+  weighted_pct: 64.65
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 45.0
+  - date: '2026-06-03'
+    roc_pct: 98.53
+  - date: '2026-05-27'
+    roc_pct: 98.33
+  - date: '2026-05-20'
+    roc_pct: 41.23
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 0.0
+  - date: '2026-04-29'
+    roc_pct: 98.79
+  - date: '2026-04-22'
+    roc_pct: 98.72
+  - date: '2026-04-15'
+    roc_pct: 98.0
+  - date: '2026-04-08'
+    roc_pct: 97.39
+  - date: '2026-04-01'
+    roc_pct: 24.13
+  - date: '2026-03-25'
+    roc_pct: 21.23
+  - date: '2026-03-18'
+    roc_pct: 10.29
+  - date: '2026-03-11'
+    roc_pct: 96.11
+  - date: '2026-03-04'
+    roc_pct: 42.67
+  - date: '2026-02-25'
+    roc_pct: 21.54
+  - date: '2026-02-18'
+    roc_pct: 93.22
+  - date: '2026-02-11'
+    roc_pct: 0.0
+  - date: '2026-02-04'
+    roc_pct: 0.0
+  - date: '2026-01-28'
+    roc_pct: 96.38
+  - date: '2026-01-21'
+    roc_pct: 93.33
+  - date: '2026-01-14'
+    roc_pct: 89.42
+  - date: '2026-01-07'
+    roc_pct: 89.62
+  - date: '2025-12-31'
+    roc_pct: 95.55
+  - date: '2025-12-24'
+    roc_pct: 95.91
+  - date: '2025-12-17'
+    roc_pct: 0.0
+  - date: '2025-12-10'
+    roc_pct: 97.36
+  - date: '2025-12-03'
+    roc_pct: 98.6
+  - date: '2025-11-26'
+    roc_pct: 0.0
+  - date: '2025-11-19'
+    roc_pct: 99.0
+  - date: '2025-11-12'
+    roc_pct: 8.84
+  - date: '2025-11-05'
+    roc_pct: 99.36
+  - date: '2025-10-29'
+    roc_pct: 99.3
+  - date: '2025-10-22'
+    roc_pct: 0.0
+  - date: '2025-10-15'
+    roc_pct: 98.55
+  - date: '2025-09-17'
+    roc_pct: 72.76
+  - date: '2025-08-20'
+    roc_pct: 97.26
+  - date: '2025-07-23'
+    roc_pct: 0.0
+  - date: '2025-06-25'
+    roc_pct: 96.14
+  - date: '2025-05-28'
+    roc_pct: 96.48
+  - date: '2025-04-30'
+    roc_pct: 94.47
+  - date: '2025-04-02'
+    roc_pct: 93.13
+  - date: '2025-03-05'
+    roc_pct: 92.0
+  - date: '2025-02-05'
+    roc_pct: 83.89
+  - date: '2025-01-07'
+    roc_pct: 0.0
+AMZY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/amzy/
+  weighted_pct: 52.29
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 0.0
+  - date: '2026-06-03'
+    roc_pct: 86.76
+  - date: '2026-05-27'
+    roc_pct: 71.52
+  - date: '2026-05-20'
+    roc_pct: 18.8
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 97.72
+  - date: '2026-04-29'
+    roc_pct: 97.6
+  - date: '2026-04-22'
+    roc_pct: 96.8
+  - date: '2026-04-15'
+    roc_pct: 96.14
+  - date: '2026-04-08'
+    roc_pct: 92.46
+  - date: '2026-04-01'
+    roc_pct: 0.0
+  - date: '2026-03-25'
+    roc_pct: 92.61
+  - date: '2026-03-18'
+    roc_pct: 8.67
+  - date: '2026-03-11'
+    roc_pct: 93.03
+  - date: '2026-03-04'
+    roc_pct: 2.47
+  - date: '2026-02-25'
+    roc_pct: 92.47
+  - date: '2026-02-18'
+    roc_pct: 16.63
+  - date: '2026-02-11'
+    roc_pct: 0.0
+  - date: '2026-02-04'
+    roc_pct: 90.93
+  - date: '2026-01-28'
+    roc_pct: 89.0
+  - date: '2026-01-21'
+    roc_pct: 0.0
+  - date: '2026-01-14'
+    roc_pct: 92.37
+  - date: '2026-01-07'
+    roc_pct: 0.0
+  - date: '2025-12-31'
+    roc_pct: 89.57
+  - date: '2025-12-24'
+    roc_pct: 2.5
+  - date: '2025-12-17'
+    roc_pct: 0.0
+  - date: '2025-12-10'
+    roc_pct: 7.26
+  - date: '2025-12-03'
+    roc_pct: 95.73
+  - date: '2025-11-26'
+    roc_pct: 0.0
+  - date: '2025-11-19'
+    roc_pct: 0.0
+  - date: '2025-11-12'
+    roc_pct: 0.16
+  - date: '2025-11-05'
+    roc_pct: 98.83
+  - date: '2025-10-29'
+    roc_pct: 95.85
+  - date: '2025-10-22'
+    roc_pct: 12.46
+  - date: '2025-10-15'
+    roc_pct: 14.71
+  - date: '2025-09-24'
+    roc_pct: 0.0
+  - date: '2025-08-27'
+    roc_pct: 92.72
+  - date: '2025-07-30'
+    roc_pct: 0.0
+  - date: '2025-07-02'
+    roc_pct: 94.61
+  - date: '2025-06-04'
+    roc_pct: 94.01
+  - date: '2025-05-07'
+    roc_pct: 70.05
+  - date: '2025-04-09'
+    roc_pct: 89.31
+  - date: '2025-03-12'
+    roc_pct: 0.0
+  - date: '2025-02-12'
+    roc_pct: 0.0
+  - date: '2025-01-15'
+    roc_pct: 30.39
+CONY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/cony/
+  weighted_pct: 50.31
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 0.0
+  - date: '2026-06-03'
+    roc_pct: 0.0
+  - date: '2026-05-27'
+    roc_pct: 19.42
+  - date: '2026-05-20'
+    roc_pct: 96.49
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 20.17
+  - date: '2026-04-29'
+    roc_pct: 81.77
+  - date: '2026-04-22'
+    roc_pct: 96.54
+  - date: '2026-04-15'
+    roc_pct: 0.0
+  - date: '2026-04-08'
+    roc_pct: 25.76
+  - date: '2026-04-01'
+    roc_pct: 0.0
+  - date: '2026-03-25'
+    roc_pct: 30.94
+  - date: '2026-03-18'
+    roc_pct: 11.6
+  - date: '2026-03-11'
+    roc_pct: 97.66
+  - date: '2026-03-04'
+    roc_pct: 35.83
+  - date: '2026-02-25'
+    roc_pct: 94.63
+  - date: '2026-02-18'
+    roc_pct: 94.12
+  - date: '2026-02-11'
+    roc_pct: 92.72
+  - date: '2026-02-04'
+    roc_pct: 91.3
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 88.56
+  - date: '2026-01-14'
+    roc_pct: 93.48
+  - date: '2026-01-07'
+    roc_pct: 74.22
+  - date: '2025-12-31'
+    roc_pct: 41.34
+  - date: '2025-12-24'
+    roc_pct: 0.0
+  - date: '2025-12-17'
+    roc_pct: 0.0
+  - date: '2025-12-10'
+    roc_pct: 92.88
+  - date: '2025-12-03'
+    roc_pct: 96.76
+  - date: '2025-11-26'
+    roc_pct: 93.76
+  - date: '2025-11-19'
+    roc_pct: 0.0
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 98.23
+  - date: '2025-10-29'
+    roc_pct: 97.14
+  - date: '2025-10-22'
+    roc_pct: 0.0
+  - date: '2025-10-15'
+    roc_pct: 0.0
+  - date: '2025-09-17'
+    roc_pct: 89.15
+  - date: '2025-08-20'
+    roc_pct: 94.66
+  - date: '2025-07-23'
+    roc_pct: 0.0
+  - date: '2025-06-25'
+    roc_pct: 96.71
+  - date: '2025-05-28'
+    roc_pct: 80.8
+  - date: '2025-04-30'
+    roc_pct: 96.77
+  - date: '2025-04-02'
+    roc_pct: 98.9
+  - date: '2025-03-05'
+    roc_pct: 95.22
+  - date: '2025-02-05'
+    roc_pct: 96.27
+DISO:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/diso/
+  weighted_pct: 46.08
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 0.0
+  - date: '2026-06-03'
+    roc_pct: 0.0
+  - date: '2026-05-27'
+    roc_pct: 64.07
+  - date: '2026-05-20'
+    roc_pct: 1.4
+  - date: '2026-05-13'
+    roc_pct: 93.91
+  - date: '2026-05-06'
+    roc_pct: 21.01
+  - date: '2026-04-29'
+    roc_pct: 31.52
+  - date: '2026-04-22'
+    roc_pct: 91.84
+  - date: '2026-04-15'
+    roc_pct: 90.22
+  - date: '2026-04-08'
+    roc_pct: 39.86
+  - date: '2026-04-01'
+    roc_pct: 22.69
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 0.0
+  - date: '2026-03-11'
+    roc_pct: 96.82
+  - date: '2026-03-04'
+    roc_pct: 0.0
+  - date: '2026-02-25'
+    roc_pct: 90.81
+  - date: '2026-02-18'
+    roc_pct: 41.31
+  - date: '2026-02-11'
+    roc_pct: 13.12
+  - date: '2026-02-04'
+    roc_pct: 35.52
+  - date: '2026-01-28'
+    roc_pct: 1.56
+  - date: '2026-01-21'
+    roc_pct: 8.24
+  - date: '2026-01-14'
+    roc_pct: 0.0
+  - date: '2026-01-07'
+    roc_pct: 0.0
+  - date: '2025-12-31'
+    roc_pct: 58.43
+  - date: '2025-12-24'
+    roc_pct: 90.68
+  - date: '2025-12-17'
+    roc_pct: 92.88
+  - date: '2025-12-10'
+    roc_pct: 93.88
+  - date: '2025-12-03'
+    roc_pct: 74.83
+  - date: '2025-11-26'
+    roc_pct: 17.77
+  - date: '2025-11-19'
+    roc_pct: 88.29
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 95.49
+  - date: '2025-10-29'
+    roc_pct: 8.39
+  - date: '2025-10-22'
+    roc_pct: 33.2
+  - date: '2025-10-15'
+    roc_pct: 41.91
+  - date: '2025-09-24'
+    roc_pct: 0.0
+  - date: '2025-08-27'
+    roc_pct: 0.0
+  - date: '2025-07-30'
+    roc_pct: 80.28
+  - date: '2025-07-02'
+    roc_pct: 93.52
+  - date: '2025-06-04'
+    roc_pct: 94.89
+  - date: '2025-05-07'
+    roc_pct: 94.23
+JPMO:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/jpmo/
+  weighted_pct: 52.66
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 90.81
+  - date: '2026-06-03'
+    roc_pct: 44.51
+  - date: '2026-05-27'
+    roc_pct: 89.98
+  - date: '2026-05-20'
+    roc_pct: 0.0
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 66.45
+  - date: '2026-04-29'
+    roc_pct: 73.74
+  - date: '2026-04-22'
+    roc_pct: 63.82
+  - date: '2026-04-15'
+    roc_pct: 94.13
+  - date: '2026-04-08'
+    roc_pct: 86.83
+  - date: '2026-04-01'
+    roc_pct: 0.0
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 89.54
+  - date: '2026-03-11'
+    roc_pct: 12.36
+  - date: '2026-03-04'
+    roc_pct: 0.0
+  - date: '2026-02-25'
+    roc_pct: 89.96
+  - date: '2026-02-18'
+    roc_pct: 0.0
+  - date: '2026-02-11'
+    roc_pct: 87.92
+  - date: '2026-02-04'
+    roc_pct: 86.71
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 0.0
+  - date: '2026-01-14'
+    roc_pct: 0.0
+  - date: '2026-01-07'
+    roc_pct: 0.0
+  - date: '2025-12-31'
+    roc_pct: 92.54
+  - date: '2025-12-24'
+    roc_pct: 60.17
+  - date: '2025-12-17'
+    roc_pct: 1.24
+  - date: '2025-12-10'
+    roc_pct: 91.67
+  - date: '2025-12-03'
+    roc_pct: 96.61
+  - date: '2025-11-26'
+    roc_pct: 23.83
+  - date: '2025-11-19'
+    roc_pct: 90.92
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 98.08
+  - date: '2025-10-29'
+    roc_pct: 62.75
+  - date: '2025-10-22'
+    roc_pct: 0.0
+  - date: '2025-10-15'
+    roc_pct: 0.0
+  - date: '2025-10-08'
+    roc_pct: 92.81
+  - date: '2025-09-10'
+    roc_pct: 24.78
+  - date: '2025-08-13'
+    roc_pct: 89.11
+  - date: '2025-07-16'
+    roc_pct: 0.0
+  - date: '2025-06-18'
+    roc_pct: 87.32
+  - date: '2025-05-21'
+    roc_pct: 91.7
+  - date: '2025-04-23'
+    roc_pct: 92.6
+  - date: '2025-03-26'
+    roc_pct: 42.2
+  - date: '2025-02-26'
+    roc_pct: 0.0
+  - date: '2025-01-29'
+    roc_pct: 93.1
+  - date: '2025-01-02'
+    roc_pct: 30.9
+MSFO:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/msfo/
+  weighted_pct: 82.77
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 91.61
+  - date: '2026-06-03'
+    roc_pct: 94.12
+  - date: '2026-05-27'
+    roc_pct: 92.48
+  - date: '2026-05-20'
+    roc_pct: 92.16
+  - date: '2026-05-13'
+    roc_pct: 95.77
+  - date: '2026-05-06'
+    roc_pct: 95.28
+  - date: '2026-04-29'
+    roc_pct: 96.41
+  - date: '2026-04-22'
+    roc_pct: 94.22
+  - date: '2026-04-15'
+    roc_pct: 91.11
+  - date: '2026-04-08'
+    roc_pct: 93.74
+  - date: '2026-04-01'
+    roc_pct: 90.85
+  - date: '2026-03-25'
+    roc_pct: 90.78
+  - date: '2026-03-18'
+    roc_pct: 90.47
+  - date: '2026-03-11'
+    roc_pct: 89.65
+  - date: '2026-03-04'
+    roc_pct: 88.39
+  - date: '2026-02-25'
+    roc_pct: 89.41
+  - date: '2026-02-18'
+    roc_pct: 88.31
+  - date: '2026-02-11'
+    roc_pct: 88.32
+  - date: '2026-02-04'
+    roc_pct: 85.69
+  - date: '2026-01-28'
+    roc_pct: 86.92
+  - date: '2026-01-21'
+    roc_pct: 85.86
+  - date: '2026-01-14'
+    roc_pct: 85.31
+  - date: '2026-01-07'
+    roc_pct: 84.13
+  - date: '2025-12-31'
+    roc_pct: 85.48
+  - date: '2025-12-24'
+    roc_pct: 85.05
+  - date: '2025-12-17'
+    roc_pct: 86.22
+  - date: '2025-12-10'
+    roc_pct: 88.84
+  - date: '2025-12-03'
+    roc_pct: 94.2
+  - date: '2025-11-26'
+    roc_pct: 87.28
+  - date: '2025-11-19'
+    roc_pct: 93.97
+  - date: '2025-11-12'
+    roc_pct: 90.9
+  - date: '2025-11-05'
+    roc_pct: 95.76
+  - date: '2025-10-29'
+    roc_pct: 91.42
+  - date: '2025-10-22'
+    roc_pct: 85.86
+  - date: '2025-10-15'
+    roc_pct: 85.92
+  - date: '2025-09-17'
+    roc_pct: 87.57
+  - date: '2025-08-20'
+    roc_pct: 87.82
+  - date: '2025-07-23'
+    roc_pct: 0.0
+  - date: '2025-06-25'
+    roc_pct: 92.03
+  - date: '2025-05-28'
+    roc_pct: 92.68
+  - date: '2025-04-30'
+    roc_pct: 92.04
+  - date: '2025-04-02'
+    roc_pct: 92.91
+  - date: '2025-03-05'
+    roc_pct: 96.05
+  - date: '2025-02-05'
+    roc_pct: 86.27
+NFLY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/nfly/
+  weighted_pct: 60.48
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 0.0
+  - date: '2026-06-03'
+    roc_pct: 0.0
+  - date: '2026-05-27'
+    roc_pct: 82.91
+  - date: '2026-05-20'
+    roc_pct: 0.0
+  - date: '2026-05-13'
+    roc_pct: 92.99
+  - date: '2026-05-06'
+    roc_pct: 75.04
+  - date: '2026-04-29'
+    roc_pct: 74.27
+  - date: '2026-04-22'
+    roc_pct: 0.0
+  - date: '2026-04-15'
+    roc_pct: 94.3
+  - date: '2026-04-08'
+    roc_pct: 94.03
+  - date: '2026-04-01'
+    roc_pct: 20.15
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 64.15
+  - date: '2026-03-11'
+    roc_pct: 98.07
+  - date: '2026-03-04'
+    roc_pct: 97.32
+  - date: '2026-02-25'
+    roc_pct: 90.64
+  - date: '2026-02-18'
+    roc_pct: 0.0
+  - date: '2026-02-11'
+    roc_pct: 0.0
+  - date: '2026-02-04'
+    roc_pct: 24.36
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 26.89
+  - date: '2026-01-14'
+    roc_pct: 92.41
+  - date: '2026-01-07'
+    roc_pct: 71.14
+  - date: '2025-12-31'
+    roc_pct: 87.18
+  - date: '2025-12-24'
+    roc_pct: 89.37
+  - date: '2025-12-17'
+    roc_pct: 0.0
+  - date: '2025-12-10'
+    roc_pct: 5.82
+  - date: '2025-12-03'
+    roc_pct: 92.72
+  - date: '2025-11-26'
+    roc_pct: 0.0
+  - date: '2025-11-19'
+    roc_pct: 89.98
+  - date: '2025-11-12'
+    roc_pct: 4.85
+  - date: '2025-11-05'
+    roc_pct: 96.67
+  - date: '2025-10-29'
+    roc_pct: 0.0
+  - date: '2025-10-22'
+    roc_pct: 37.26
+  - date: '2025-10-15'
+    roc_pct: 89.31
+  - date: '2025-09-17'
+    roc_pct: 89.48
+  - date: '2025-08-20'
+    roc_pct: 90.15
+  - date: '2025-07-23'
+    roc_pct: 0.0
+  - date: '2025-06-25'
+    roc_pct: 90.8
+  - date: '2025-05-28'
+    roc_pct: 94.49
+  - date: '2025-04-30'
+    roc_pct: 95.72
+  - date: '2025-04-02'
+    roc_pct: 100.0
+  - date: '2025-03-05'
+    roc_pct: 92.91
+  - date: '2025-02-05'
+    roc_pct: 96.05
+NVDY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/nvdy/
+  weighted_pct: 45.34
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 57.93
+  - date: '2026-06-03'
+    roc_pct: 0.0
+  - date: '2026-05-27'
+    roc_pct: 0.0
+  - date: '2026-05-20'
+    roc_pct: 95.34
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 0.0
+  - date: '2026-04-29'
+    roc_pct: 97.05
+  - date: '2026-04-22'
+    roc_pct: 95.18
+  - date: '2026-04-15'
+    roc_pct: 94.05
+  - date: '2026-04-08'
+    roc_pct: 93.62
+  - date: '2026-04-01'
+    roc_pct: 3.91
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 94.67
+  - date: '2026-03-11'
+    roc_pct: 0.06
+  - date: '2026-03-04'
+    roc_pct: 0.0
+  - date: '2026-02-25'
+    roc_pct: 0.0
+  - date: '2026-02-18'
+    roc_pct: 92.62
+  - date: '2026-02-11'
+    roc_pct: 2.53
+  - date: '2026-02-04'
+    roc_pct: 92.8
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 72.87
+  - date: '2026-01-14'
+    roc_pct: 87.38
+  - date: '2026-01-07'
+    roc_pct: 21.81
+  - date: '2025-12-31'
+    roc_pct: 94.92
+  - date: '2025-12-24'
+    roc_pct: 62.02
+  - date: '2025-12-17'
+    roc_pct: 9.78
+  - date: '2025-12-10'
+    roc_pct: 66.26
+  - date: '2025-12-03'
+    roc_pct: 16.58
+  - date: '2025-11-26'
+    roc_pct: 5.3
+  - date: '2025-11-19'
+    roc_pct: 95.21
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 98.96
+  - date: '2025-10-29'
+    roc_pct: 21.24
+  - date: '2025-10-22'
+    roc_pct: 0.0
+  - date: '2025-10-15'
+    roc_pct: 0.0
+  - date: '2025-10-08'
+    roc_pct: 95.96
+  - date: '2025-09-10'
+    roc_pct: 8.26
+  - date: '2025-08-13'
+    roc_pct: 0.0
+  - date: '2025-07-16'
+    roc_pct: 37.15
+  - date: '2025-06-18'
+    roc_pct: 95.3
+  - date: '2025-05-21'
+    roc_pct: 97.93
+  - date: '2025-04-23'
+    roc_pct: 85.3
+  - date: '2023-09-07'
+    roc_pct: 92.99
+  - date: '2023-08-03'
+    roc_pct: 94.58
+PLTY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/plty/
+  weighted_pct: 56.46
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 79.73
+  - date: '2026-06-03'
+    roc_pct: 39.68
+  - date: '2026-05-27'
+    roc_pct: 94.88
+  - date: '2026-05-20'
+    roc_pct: 18.35
+  - date: '2026-05-13'
+    roc_pct: 94.88
+  - date: '2026-05-06'
+    roc_pct: 0.0
+  - date: '2026-04-29'
+    roc_pct: 94.77
+  - date: '2026-04-22'
+    roc_pct: 94.96
+  - date: '2026-04-15'
+    roc_pct: 0.0
+  - date: '2026-04-08'
+    roc_pct: 45.91
+  - date: '2026-04-01'
+    roc_pct: 24.14
+  - date: '2026-03-25'
+    roc_pct: 30.19
+  - date: '2026-03-18'
+    roc_pct: 0.0
+  - date: '2026-03-11'
+    roc_pct: 97.44
+  - date: '2026-03-04'
+    roc_pct: 18.14
+  - date: '2026-02-25'
+    roc_pct: 94.5
+  - date: '2026-02-18'
+    roc_pct: 95.65
+  - date: '2026-02-11'
+    roc_pct: 0.0
+  - date: '2026-02-04'
+    roc_pct: 92.82
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 76.48
+  - date: '2026-01-14'
+    roc_pct: 93.43
+  - date: '2026-01-07'
+    roc_pct: 0.0
+  - date: '2025-12-31'
+    roc_pct: 94.88
+  - date: '2025-12-24'
+    roc_pct: 53.23
+  - date: '2025-12-17'
+    roc_pct: 93.31
+  - date: '2025-12-10'
+    roc_pct: 92.53
+  - date: '2025-12-03'
+    roc_pct: 97.81
+  - date: '2025-11-26'
+    roc_pct: 1.71
+  - date: '2025-11-19'
+    roc_pct: 95.63
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 99.02
+  - date: '2025-10-29'
+    roc_pct: 61.43
+  - date: '2025-10-22'
+    roc_pct: 16.39
+  - date: '2025-10-15'
+    roc_pct: 0.0
+  - date: '2025-10-08'
+    roc_pct: 5.66
+  - date: '2025-09-10'
+    roc_pct: 8.67
+  - date: '2025-08-13'
+    roc_pct: 97.92
+  - date: '2025-07-16'
+    roc_pct: 0.0
+  - date: '2025-06-18'
+    roc_pct: 96.5
+  - date: '2025-05-21'
+    roc_pct: 98.54
+  - date: '2025-04-23'
+    roc_pct: 98.08
+TSLY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/tsly/
+  weighted_pct: 59.21
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 0.0
+  - date: '2026-06-03'
+    roc_pct: 100.0
+  - date: '2026-05-27'
+    roc_pct: 81.53
+  - date: '2026-05-20'
+    roc_pct: 100.0
+  - date: '2026-05-13'
+    roc_pct: 100.0
+  - date: '2026-05-06'
+    roc_pct: 100.0
+  - date: '2026-04-29'
+    roc_pct: 0.31
+  - date: '2026-04-22'
+    roc_pct: 100.0
+  - date: '2026-04-15'
+    roc_pct: 0.0
+  - date: '2026-04-08'
+    roc_pct: 0.0
+  - date: '2026-04-01'
+    roc_pct: 0.0
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 92.66
+  - date: '2026-03-11'
+    roc_pct: 38.19
+  - date: '2026-03-04'
+    roc_pct: 0.0
+  - date: '2026-02-25'
+    roc_pct: 0.0
+  - date: '2026-02-18'
+    roc_pct: 94.08
+  - date: '2026-02-11'
+    roc_pct: 34.18
+  - date: '2026-02-04'
+    roc_pct: 0.0
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 74.15
+  - date: '2026-01-14'
+    roc_pct: 100.0
+  - date: '2026-01-07'
+    roc_pct: 0.0
+  - date: '2025-12-31'
+    roc_pct: 0.0
+  - date: '2025-12-24'
+    roc_pct: 100.0
+  - date: '2025-12-17'
+    roc_pct: 27.19
+  - date: '2025-12-10'
+    roc_pct: 100.0
+  - date: '2025-12-03'
+    roc_pct: 100.0
+  - date: '2025-11-26'
+    roc_pct: 100.0
+  - date: '2025-11-19'
+    roc_pct: 0.0
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 98.08
+  - date: '2025-10-29'
+    roc_pct: 0.0
+  - date: '2025-10-22'
+    roc_pct: 56.64
+  - date: '2025-10-15'
+    roc_pct: 100.0
+  - date: '2025-10-01'
+    roc_pct: 80.2
+  - date: '2025-09-03'
+    roc_pct: 95.8
+  - date: '2025-08-06'
+    roc_pct: 50.9
+  - date: '2025-07-09'
+    roc_pct: 82.33
+  - date: '2025-06-11'
+    roc_pct: 95.33
+  - date: '2025-05-14'
+    roc_pct: 97.9
+YMAG:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/ymag/
+  weighted_pct: 57.53
+  per_distribution:
+  - date: '2026-06-09'
+    roc_pct: 69.38
+  - date: '2026-06-02'
+    roc_pct: 65.09
+  - date: '2026-05-26'
+    roc_pct: 70.73
+  - date: '2026-05-19'
+    roc_pct: 43.9
+  - date: '2026-05-12'
+    roc_pct: 78.23
+  - date: '2026-05-05'
+    roc_pct: 75.92
+  - date: '2026-04-28'
+    roc_pct: 95.86
+  - date: '2026-04-21'
+    roc_pct: 79.44
+  - date: '2026-04-14'
+    roc_pct: 72.03
+  - date: '2026-04-07'
+    roc_pct: 14.2
+  - date: '2026-03-31'
+    roc_pct: 33.81
+  - date: '2026-03-24'
+    roc_pct: 59.39
+  - date: '2026-03-17'
+    roc_pct: 39.42
+  - date: '2026-03-10'
+    roc_pct: 27.31
+  - date: '2026-03-03'
+    roc_pct: 50.32
+  - date: '2026-02-24'
+    roc_pct: 52.01
+  - date: '2026-02-17'
+    roc_pct: 77.03
+  - date: '2026-02-10'
+    roc_pct: 78.72
+  - date: '2026-02-03'
+    roc_pct: 38.6
+  - date: '2026-01-27'
+    roc_pct: 54.37
+  - date: '2026-01-20'
+    roc_pct: 59.4
+  - date: '2026-01-13'
+    roc_pct: 0.3
+  - date: '2026-01-06'
+    roc_pct: 33.75
+  - date: '2025-12-30'
+    roc_pct: 59.48
+  - date: '2025-12-23'
+    roc_pct: 83.59
+  - date: '2025-12-16'
+    roc_pct: 67.85
+  - date: '2025-12-09'
+    roc_pct: 55.85
+  - date: '2025-12-02'
+    roc_pct: 41.62
+  - date: '2025-11-25'
+    roc_pct: 43.26
+  - date: '2025-11-18'
+    roc_pct: 13.35
+  - date: '2025-11-11'
+    roc_pct: 97.37
+  - date: '2025-11-04'
+    roc_pct: 59.28
+  - date: '2025-10-28'
+    roc_pct: 54.85
+  - date: '2025-10-21'
+    roc_pct: 59.21
+  - date: '2025-10-14'
+    roc_pct: 83.05
+  - date: '2025-10-08'
+    roc_pct: 0.0
+  - date: '2025-10-01'
+    roc_pct: 9.89
+  - date: '2025-09-24'
+    roc_pct: 94.2
+  - date: '2025-09-17'
+    roc_pct: 13.6
+  - date: '2025-09-10'
+    roc_pct: 93.71
+  - date: '2025-09-03'
+    roc_pct: 71.55
+  - date: '2025-08-27'
+    roc_pct: 95.9
+  - date: '2025-08-20'
+    roc_pct: 7.73
+  - date: '2025-08-13'
+    roc_pct: 47.97
+  - date: '2025-08-06'
+    roc_pct: 0.0
+  - date: '2025-07-30'
+    roc_pct: 0.0
+  - date: '2025-07-23'
+    roc_pct: 42.42
+  - date: '2025-07-16'
+    roc_pct: 50.61
+  - date: '2025-07-09'
+    roc_pct: 90.54
+  - date: '2025-07-02'
+    roc_pct: 77.84
+  - date: '2025-06-25'
+    roc_pct: 94.21
+  - date: '2025-06-18'
+    roc_pct: 92.24
+  - date: '2025-06-11'
+    roc_pct: 94.2
+  - date: '2025-06-04'
+    roc_pct: 97.56
+  - date: '2025-05-28'
+    roc_pct: 96.58
+  - date: '2025-05-21'
+    roc_pct: 94.22
+  - date: '2025-05-14'
+    roc_pct: 94.77
+  - date: '2025-05-07'
+    roc_pct: 94.72
+  - date: '2025-04-30'
+    roc_pct: 79.99
+  - date: '2025-04-23'
+    roc_pct: 87.58
+  - date: '2025-02-12'
+    roc_pct: 94.58
+  - date: '2025-02-05'
+    roc_pct: 92.99
+YMAX:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/ymax/
+  weighted_pct: 56.1
+  per_distribution:
+  - date: '2026-06-09'
+    roc_pct: 70.05
+  - date: '2026-06-02'
+    roc_pct: 72.76
+  - date: '2026-05-26'
+    roc_pct: 49.62
+  - date: '2026-05-19'
+    roc_pct: 49.72
+  - date: '2026-05-12'
+    roc_pct: 38.04
+  - date: '2026-05-05'
+    roc_pct: 60.91
+  - date: '2026-04-28'
+    roc_pct: 92.09
+  - date: '2026-04-21'
+    roc_pct: 78.41
+  - date: '2026-04-14'
+    roc_pct: 42.95
+  - date: '2026-04-07'
+    roc_pct: 20.14
+  - date: '2026-03-31'
+    roc_pct: 25.68
+  - date: '2026-03-24'
+    roc_pct: 0.0
+  - date: '2026-03-17'
+    roc_pct: 49.8
+  - date: '2026-03-10'
+    roc_pct: 92.77
+  - date: '2026-03-03'
+    roc_pct: 60.98
+  - date: '2026-02-24'
+    roc_pct: 61.93
+  - date: '2026-02-17'
+    roc_pct: 58.54
+  - date: '2026-02-10'
+    roc_pct: 59.48
+  - date: '2026-02-03'
+    roc_pct: 54.42
+  - date: '2026-01-27'
+    roc_pct: 64.35
+  - date: '2026-01-20'
+    roc_pct: 61.09
+  - date: '2026-01-13'
+    roc_pct: 41.7
+  - date: '2026-01-06'
+    roc_pct: 50.79
+  - date: '2025-12-30'
+    roc_pct: 59.11
+  - date: '2025-12-23'
+    roc_pct: 51.13
+  - date: '2025-12-16'
+    roc_pct: 77.3
+  - date: '2025-12-09'
+    roc_pct: 81.25
+  - date: '2025-12-02'
+    roc_pct: 35.4
+  - date: '2025-11-25'
+    roc_pct: 50.8
+  - date: '2025-11-18'
+    roc_pct: 19.1
+  - date: '2025-11-11'
+    roc_pct: 95.71
+  - date: '2025-11-04'
+    roc_pct: 63.57
+  - date: '2025-10-28'
+    roc_pct: 60.79
+  - date: '2025-10-21'
+    roc_pct: 23.51
+  - date: '2025-10-14'
+    roc_pct: 60.55
+  - date: '2025-10-08'
+    roc_pct: 37.4
+  - date: '2025-10-01'
+    roc_pct: 13.99
+  - date: '2025-09-24'
+    roc_pct: 48.73
+  - date: '2025-09-17'
+    roc_pct: 62.67
+  - date: '2025-09-10'
+    roc_pct: 68.84
+  - date: '2025-09-03'
+    roc_pct: 42.0
+  - date: '2025-08-27'
+    roc_pct: 66.75
+  - date: '2025-08-20'
+    roc_pct: 72.37
+  - date: '2025-08-13'
+    roc_pct: 17.63
+  - date: '2025-08-06'
+    roc_pct: 55.86
+  - date: '2025-07-30'
+    roc_pct: 0.0
+  - date: '2025-07-23'
+    roc_pct: 6.23
+  - date: '2025-07-16'
+    roc_pct: 76.75
+  - date: '2025-07-09'
+    roc_pct: 95.41
+  - date: '2025-07-02'
+    roc_pct: 96.1
+  - date: '2025-06-25'
+    roc_pct: 94.96
+  - date: '2025-06-18'
+    roc_pct: 92.18
+  - date: '2025-06-11'
+    roc_pct: 96.28
+  - date: '2025-06-04'
+    roc_pct: 92.64
+  - date: '2025-05-28'
+    roc_pct: 81.23
+  - date: '2025-05-21'
+    roc_pct: 95.22
+  - date: '2025-05-14'
+    roc_pct: 96.24
+  - date: '2025-05-07'
+    roc_pct: 89.73
+  - date: '2025-04-30'
+    roc_pct: 73.04
+  - date: '2025-04-23'
+    roc_pct: 74.88
+  - date: '2025-02-05'
+    roc_pct: 94.58
