@@ -155,24 +155,43 @@ def main(argv):
             existing = {}
     out = dict(existing)
 
+    regressions, empty_new = [], []
     for tk in tickers:
         url = FUND_URL.format(tk=tk.lower())
+        rows = []
         try:
             rows = parse_distributions_from_html(fetch_rendered_html(url))
-            if rows:
-                out[tk] = build_entry(tk, rows)
-                print(f"{tk}: {len(rows)} distribuciones, weighted_pct {out[tk]['weighted_pct']}%")
-            else:
-                print(f"{tk}: sin filas parseadas; conservo entrada previa", file=sys.stderr)
         except Exception as e:
-            print(f"{tk}: ERROR {e}; conservo entrada previa", file=sys.stderr)
+            print(f"::warning::{tk}: ERROR al cargar {url}: {e}", file=sys.stderr)
+        if rows:
+            out[tk] = build_entry(tk, rows)
+            print(f"{tk}: {len(rows)} distribuciones, weighted_pct {out[tk]['weighted_pct']}%")
+        else:
+            had_prior = bool((existing.get(tk) or {}).get("per_distribution"))
+            if had_prior:
+                # Tenía datos y ahora no parsea nada -> probable cambio en la página. Auto-vigilancia.
+                regressions.append(tk)
+                print(f"::error::{tk}: 0 filas parseadas pero tenía datos previos "
+                      f"(¿cambió la página de YieldMax?). Conservo la entrada previa.", file=sys.stderr)
+            else:
+                empty_new.append(tk)
+                print(f"::warning::{tk}: sin filas y sin datos previos "
+                      f"(¿ticker/URL correctos? {url})", file=sys.stderr)
 
     os.makedirs(os.path.dirname(ROC_PATH), exist_ok=True)
     with open(ROC_PATH, "w", encoding="utf-8") as fh:
         fh.write("# Generado por fetch_roc_19a.py (fuente: páginas oficiales de YieldMax).\n"
                  "# Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.\n")
         yaml.safe_dump(out, fh, sort_keys=False, allow_unicode=True)
-    print(f"Escrito {ROC_PATH} ({len(out)} fondos).")
+    print(f"Escrito {ROC_PATH} ({len(out)} fondos). "
+          f"Nuevos sin datos: {empty_new or '—'}. Regresiones: {regressions or '—'}.")
+
+    # Salir con error SOLO si un fondo que tenía datos los perdió (dispara email de GitHub).
+    # Los datos buenos ya se escribieron; el commit corre con if: always().
+    if regressions:
+        print(f"::error::Regresión en: {', '.join(regressions)}. "
+              f"Revisa el parser/página. Los demás fondos se actualizaron igual.", file=sys.stderr)
+        return 1
     return 0
 
 

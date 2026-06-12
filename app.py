@@ -1986,15 +1986,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     )
 
                     # ── Tabla ROC: derivación del Retorno de Capital por ETF ──
-                    def _roc_html(roc_acc, roc_pct, source=None):
+                    def _roc_html(roc_acc, roc_pct, source=None, approx=False):
                         if roc_acc is None:
                             return '<span class="num" style="color:#b8c2cc;">n/d</span>'
                         c = '#4caf82' if roc_acc > 0 else ('#e05c5c' if roc_acc < 0 else '#8899aa')
                         _pct = f' ({roc_pct:.0f}%)' if roc_pct is not None else ''
-                        _est = (' <span style="font-size:9px;color:#8899aa;font-weight:600;">est.19a</span>'
-                                if source == '19a' else '')
+                        _tilde = '~' if approx else ''
+                        _tag = ''
+                        if source == '19a':
+                            _tag = ' <span style="font-size:9px;color:#8899aa;font-weight:600;">est.19a</span>'
+                        elif approx:
+                            _tag = ' <span style="font-size:9px;color:#8899aa;font-weight:600;">aprox*</span>'
                         return (f'<span class="num" style="color:{c};">'
-                                f'{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}{_est}</span>')
+                                f'{_tilde}{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}{_tag}</span>')
+
+                    _roc19a = logic.load_roc_19a()
+                    _roc_19a_asof = None        # asof más viejo entre los fondos estimados por 19a
+                    _roc_has_sells = False       # ¿algún ROC de bróker es aproximado por ventas?
 
                     def _val_html(mv, pkt):
                         # Valor actual; rojo si la posición vale menos que lo invertido (erosión de NAV).
@@ -2022,6 +2030,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _roc_a = _rs.get('roc_accumulated')
                         _roc_p = _rs.get('roc_percent')
                         _roc_src = _rs.get('roc_source')
+                        # ROC del bróker con ventas en la posición => aproximado (el invertido va neto de ventas).
+                        _roc_approx = (_roc_src == 'broker'
+                                       and ((_rs.get('shares_sold') or 0) > 0 or _rs.get('history_incomplete')))
+                        if _roc_approx:
+                            _roc_has_sells = True
+                        if _roc_src == '19a':
+                            _asof = (_roc19a.get(str(_tk).upper(), {}) or {}).get('asof')
+                            if _asof and (_roc_19a_asof is None or _asof < _roc_19a_asof):
+                                _roc_19a_asof = _asof
                         _roc_body += (f'<div class="da-roc-row"><span class="tk">{_tk}</span>'
                                       f'<span class="num">{_fmt_money(_paid)}</span>'
                                       f'<span class="num">{_fmt_money(_drip)}</span>'
@@ -2029,7 +2046,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                       f'<span class="num">{_fmt_money(_pkt)}</span>'
                                       f'{_val_html(_mv, _pkt)}'
                                       f'<span class="num">{_fmt_money(_basis)}</span>'
-                                      f'{_roc_html(_roc_a, _roc_p, _roc_src)}</div>')
+                                      f'{_roc_html(_roc_a, _roc_p, _roc_src, _roc_approx)}</div>')
                         _r_paid += (_paid or 0); _r_drip += (_drip or 0); _r_cash += (_cash or 0)
                         _r_pkt += (_pkt or 0); _r_mv += (_mv or 0)
                         if _basis is not None:
@@ -2072,8 +2089,19 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f'{_roc_sub}{_roc_body}{_roc_total}</div></div>',
                         unsafe_allow_html=True
                     )
-                    if not _r_basis_has:
+                    if not _r_basis_has and not _r_any_19a:
                         st.caption('Sube el costo base de tu bróker en el paso de captura para calcular el ROC.')
+                    if _roc_has_sells:
+                        st.caption('* ROC aproximado: la posición tiene ventas, así que "Invertido" va neto de ventas '
+                                   'y el ROC del bróker es estimado. Es exacto en posiciones que solo acumulan.')
+                    if _roc_19a_asof:
+                        try:
+                            _stale = (datetime.date.today() - datetime.date.fromisoformat(_roc_19a_asof)).days
+                        except Exception:
+                            _stale = 0
+                        _warn = ' — dato desactualizado, revisa el refresco semanal (GitHub Action)' if _stale > 21 else ''
+                        st.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
+                                   f'actualizado al {_roc_19a_asof}.{_warn}')
 
                     st.markdown(
                         '<div style="margin:8px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'

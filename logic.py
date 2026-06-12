@@ -1937,7 +1937,7 @@ def load_and_detect_csv(uploaded_file) -> tuple:
 # v2.2 — Solo ETFs YieldMax confirmados por YieldMax LLC
 # NVDL removido: es GraniteShares 2x Long NVDA, NO es YieldMax
 YIELDMAX_WHITELIST = {
-    'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOGY', 'CONY', 'JPMO', 'DISO',
+    'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOY', 'CONY', 'JPMO', 'DISO',
     'YMAX', 'YMAG', 'MSTY', 'AMDY', 'ULTY', 'APLY', 'NFLY',
     'PYPY', 'GDXY', 'SNOY', 'XOMY', 'MRNY', 'BALY', 'COINY',
     'TSMY', 'PLTY', 'ABNY', 'LFGY',
@@ -2038,7 +2038,7 @@ YIELDMAX_RISK_PROFILES = {
     'YMAG':  {'underlying': 'Mag-7', 'name': 'YieldMax Mag7','risk': 'HIGH',   'reason': 'Basket Mag-7 covered-call, beta alto a FAANG'},
     'NVDL':  {'underlying': 'NVDA',  'name': 'NVIDIA 2x',    'risk': 'HIGH',   'reason': 'NVIDIA con apalancamiento 2x — riesgo amplificado'},
     'AMZY':  {'underlying': 'AMZN',  'name': 'Amazon',       'risk': 'MEDIUM', 'reason': 'Mega-cap e-commerce + AWS, volatilidad moderada'},
-    'GOOGY': {'underlying': 'GOOGL', 'name': 'Alphabet',     'risk': 'MEDIUM', 'reason': 'Mega-cap búsqueda + ads + cloud, negocio diversificado'},
+    'GOOY': {'underlying': 'GOOGL', 'name': 'Alphabet',     'risk': 'MEDIUM', 'reason': 'Mega-cap búsqueda + ads + cloud, negocio diversificado'},
     'MSFO':  {'underlying': 'MSFT',  'name': 'Microsoft',    'risk': 'MEDIUM', 'reason': 'Mega-cap diversificado, flujos de caja estables, menor volatilidad'},
     'JPMO':  {'underlying': 'JPM',   'name': 'JPMorgan',     'risk': 'MEDIUM', 'reason': 'Banco más grande de EE.UU., servicios financieros diversificados'},
     'DISO':  {'underlying': 'DIS',   'name': 'Disney',       'risk': 'MEDIUM', 'reason': 'Media + streaming + parques, en proceso de reestructuración'},

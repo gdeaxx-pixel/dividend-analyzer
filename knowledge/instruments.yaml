@@ -99,7 +99,7 @@ AMZY:
   sustainability: "Distribución más estable pero menor (menos volatilidad = primas más baratas)."
   note: "De los YieldMax más 'tranquilos'. Aun así cambia la apreciación de AMZN por income mensual."
 
-GOOGY:
+GOOY:
   type: yieldmax
   underlying: GOOGL
   name: Alphabet

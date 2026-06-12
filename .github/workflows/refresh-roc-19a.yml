@@ -33,9 +33,13 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Refrescar ROC 19a desde YieldMax
+        id: fetch
         run: python fetch_roc_19a.py
+        # exit 1 solo si un fondo que tenía datos los perdió (regresión) → la corrida sale roja
+        # y GitHub te manda email. Los datos buenos ya se escribieron antes de salir.
 
       - name: Commitear si cambió
+        if: always()          # commitea lo bueno aunque el paso anterior marcara regresión
         run: |
           if git diff --quiet -- knowledge/roc_19a.yaml; then
             echo "Sin cambios en knowledge/roc_19a.yaml"
