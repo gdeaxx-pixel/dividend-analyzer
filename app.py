@@ -9,6 +9,21 @@ import os
 import time
 
 
+def _roc_detail_card(stats):
+    """HTML del valor 'Costo base IB / ROC' de las tarjetas de detalle por activo.
+    Soporta ROC estimado por avisos 19a (cuando no hay costo base del bróker)."""
+    if stats.get("ib_cost_basis") is not None:
+        return (f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p>'
+                f'<p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} '
+                f'({stats["roc_percent"]:.1f}%)</p>')
+    if stats.get("roc_accumulated") is not None:
+        return (f'<p class="da-tkpi-value" style="color:#16a34a;">ROC ~${stats["roc_accumulated"]:,.0f}</p>'
+                f'<p class="da-tkpi-sub" style="color:#8899aa;">est. 19a '
+                f'({(stats.get("roc_percent") or 0):.0f}% de distrib.)</p>')
+    return ('<p class="da-tkpi-value" style="color:#cbd5e1;">—</p>'
+            '<p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>')
+
+
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
 
 if st.query_params.get("clear"):
@@ -792,14 +807,14 @@ st.markdown("""
     .da-kpiwide-total .tk, .da-kpiwide-total .num { color: #021C36; }
     .da-kpiwide-total .num { font-size: 13px; }
 
-    /* 22f. TABLA ROC — desglose de Retorno de Capital por ETF (7 columnas) */
+    /* 22f. TABLA ROC — desglose de Retorno de Capital por ETF (8 columnas) */
     .da-roc-row, .da-roc-subhead {
         display: grid;
-        grid-template-columns: minmax(48px, 1.1fr) repeat(6, 1fr);
+        grid-template-columns: minmax(48px, 1.1fr) repeat(7, 1fr);
         gap: 8px;
         align-items: baseline;
         padding: 3px 0;
-        min-width: 640px;
+        min-width: 740px;
     }
     .da-roc-subhead span {
         font-family: 'Inter', sans-serif;
@@ -1971,63 +1986,85 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     )
 
                     # ── Tabla ROC: derivación del Retorno de Capital por ETF ──
-                    def _roc_html(roc_acc, roc_pct):
+                    def _roc_html(roc_acc, roc_pct, source=None):
                         if roc_acc is None:
                             return '<span class="num" style="color:#b8c2cc;">n/d</span>'
                         c = '#4caf82' if roc_acc > 0 else ('#e05c5c' if roc_acc < 0 else '#8899aa')
                         _pct = f' ({roc_pct:.0f}%)' if roc_pct is not None else ''
+                        _est = (' <span style="font-size:9px;color:#8899aa;font-weight:600;">est.19a</span>'
+                                if source == '19a' else '')
                         return (f'<span class="num" style="color:{c};">'
-                                f'{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}</span>')
+                                f'{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}{_est}</span>')
+
+                    def _val_html(mv, pkt):
+                        # Valor actual; rojo si la posición vale menos que lo invertido (erosión de NAV).
+                        if mv is None:
+                            return '<span class="num" style="color:#b8c2cc;">n/d</span>'
+                        c = '#e05c5c' if (pkt and mv < pkt) else '#0F172A'
+                        return f'<span class="num" style="color:{c};">${mv:,.0f}</span>'
 
                     _roc_sub = ('<div class="da-roc-subhead"><span class="lbl">ETF</span>'
                                 '<span>Div. pagados</span><span>Reinvertidos</span>'
                                 '<span>En efectivo</span><span>Invertido</span>'
-                                '<span>Costo bróker</span><span>ROC</span></div>')
+                                '<span>Valor actual</span><span>Costo bróker</span><span>ROC</span></div>')
                     _roc_body = ''
-                    _r_paid = _r_drip = _r_cash = _r_pkt = 0.0
-                    _r_basis = _r_roc = 0.0
-                    _r_basis_has = False
-                    _r_pkt_with_basis = 0.0
+                    _r_paid = _r_drip = _r_cash = _r_pkt = _r_mv = 0.0
+                    _r_basis = _r_roc = _r_dist_for_roc = 0.0
+                    _r_basis_has = _r_roc_has = _r_any_19a = False
                     for _tk, _ in _items:
                         _rs = results.get(_tk, {})
                         _paid = _rs.get('total_dividends')
                         _drip = _rs.get('dividends_collected_drip')
                         _cash = _rs.get('dividends_collected_cash')
                         _pkt  = _rs.get('pocket_investment')
+                        _mv   = _rs.get('market_value')
                         _basis = _rs.get('ib_cost_basis')
                         _roc_a = _rs.get('roc_accumulated')
                         _roc_p = _rs.get('roc_percent')
+                        _roc_src = _rs.get('roc_source')
                         _roc_body += (f'<div class="da-roc-row"><span class="tk">{_tk}</span>'
                                       f'<span class="num">{_fmt_money(_paid)}</span>'
                                       f'<span class="num">{_fmt_money(_drip)}</span>'
                                       f'<span class="num">{_fmt_money(_cash)}</span>'
                                       f'<span class="num">{_fmt_money(_pkt)}</span>'
+                                      f'{_val_html(_mv, _pkt)}'
                                       f'<span class="num">{_fmt_money(_basis)}</span>'
-                                      f'{_roc_html(_roc_a, _roc_p)}</div>')
+                                      f'{_roc_html(_roc_a, _roc_p, _roc_src)}</div>')
                         _r_paid += (_paid or 0); _r_drip += (_drip or 0); _r_cash += (_cash or 0)
-                        _r_pkt += (_pkt or 0)
+                        _r_pkt += (_pkt or 0); _r_mv += (_mv or 0)
                         if _basis is not None:
                             _r_basis += _basis; _r_basis_has = True
                         if _roc_a is not None:
-                            _r_roc += _roc_a; _r_pkt_with_basis += (_pkt or 0)
+                            _r_roc += _roc_a; _r_roc_has = True
+                            _r_dist_for_roc += (_paid or 0)
+                            if _roc_src == '19a':
+                                _r_any_19a = True
                     _r_basis_disp = _r_basis if _r_basis_has else None
-                    _r_roc_disp = _r_roc if _r_basis_has else None
-                    _r_roc_pct = (_r_roc / _r_pkt_with_basis * 100) if _r_pkt_with_basis > 0 else None
+                    _r_roc_disp = _r_roc if _r_roc_has else None
+                    _r_roc_pct = (_r_roc / _r_dist_for_roc * 100) if _r_dist_for_roc > 0 else None
                     _roc_total = ('<div class="da-roc-row da-roc-total"><span class="tk">TOTAL</span>'
                                   f'<span class="num">{_fmt_money(_r_paid)}</span>'
                                   f'<span class="num">{_fmt_money(_r_drip)}</span>'
                                   f'<span class="num">{_fmt_money(_r_cash)}</span>'
                                   f'<span class="num">{_fmt_money(_r_pkt)}</span>'
+                                  f'{_val_html(_r_mv, _r_pkt)}'
                                   f'<span class="num">{_fmt_money(_r_basis_disp)}</span>'
-                                  f'{_roc_html(_r_roc_disp, _r_roc_pct)}</div>')
+                                  f'{_roc_html(_r_roc_disp, _r_roc_pct, "19a" if _r_any_19a else None)}</div>')
                     st.markdown(
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
                         'font-weight:800;color:#021C36;margin:0 0 2px 0;">Retorno de Capital (ROC) por activo</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'El <b>ROC</b> es la parte de tus distribuciones que en realidad es <b>devolución de tu propio '
-                        'capital</b> (no rendimiento): se detecta cuando el <b>costo base que reporta tu bróker</b> es '
-                        'menor a lo que <b>invertiste</b>. ROC = Invertido − Costo bróker. Un ROC alto significa que buena '
-                        'parte de lo que cobraste era tu mismo dinero de vuelta.</p></div>',
+                        'El <b>ROC</b> es la parte de tus distribuciones que es <b>devolución de tu propio capital</b> '
+                        '(no rendimiento). Se calcula como <b>(Invertido + Reinvertido) − Costo bróker</b>: el dinero que '
+                        'metiste a comprar acciones (incluido lo reinvertido, que <b>sube</b> tu costo base) menos lo que '
+                        'el bróker dice que vale tu base ahora; ese hueco es ROC ya contabilizado (el ROC <b>baja</b> la '
+                        'base dólar a dólar).<br>'
+                        'Si <b>no tienes el costo base del bróker</b>, se estima con el <b>% que el fondo publica por '
+                        'distribución en sus avisos 19a-1</b> (marcado <b>est.19a</b>), empatando cada pago por fecha. El '
+                        'dato fiscal definitivo está en tu <b>1099-DIV casilla 3</b>.<br>'
+                        'Señal directa de "ingreso no gratis": compara <b>Invertido vs Valor actual</b> — si el valor cayó '
+                        'muy por debajo de lo invertido pese a cobrar distribuciones (típico de YieldMax), gran parte de tu '
+                        '"ingreso" fue erosión de tu capital.</p></div>',
                         unsafe_allow_html=True
                     )
                     st.markdown(
@@ -3046,7 +3083,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>'}
+                            {_roc_detail_card(stats)}
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Valor de Mercado</p>
@@ -3414,7 +3451,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p><p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} ({stats["roc_percent"]:.1f}%)</p>' if stats.get("ib_cost_basis") is not None else '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p><p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>'}
+                            {_roc_detail_card(stats)}
                         </div>
                         <div class="da-tkpi-cell">
                             <p class="da-tkpi-label">Valor de Mercado</p>

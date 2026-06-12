@@ -302,7 +302,7 @@ def test_cony_portfolio_analysis(monkeypatch):
 
 
 def test_roc_calculation_with_ib_cost_basis(monkeypatch):
-    """ROC = pocket_investment - ib_cost_basis; roc_percent = ROC / pocket_investment * 100"""
+    """ROC = (invertido + reinvertido) - ib_cost_basis; roc_percent = ROC / distribuciones * 100."""
     csv = (
         b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
         b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
@@ -326,10 +326,58 @@ def test_roc_calculation_with_ib_cost_basis(monkeypatch):
 
     assert "MSTY" in results
     s = results["MSTY"]
-    pocket = s["pocket_investment"]
+    basis_in = s["pocket_investment"] + s["dividends_collected_drip"]   # sin DRIP aquí => == pocket
     assert s["ib_cost_basis"] == pytest.approx(4298.17, abs=0.01)
-    assert s["roc_accumulated"] == pytest.approx(pocket - 4298.17, abs=0.01)
-    assert s["roc_percent"] == pytest.approx((pocket - 4298.17) / pocket * 100, abs=0.1)
+    assert s["roc_source"] == "broker"
+    assert s["roc_accumulated"] == pytest.approx(basis_in - 4298.17, abs=0.01)
+    assert s["roc_percent"] == pytest.approx((basis_in - 4298.17) / s["total_dividends"] * 100, abs=0.1)
+
+
+def _roc_norm_df(rows):
+    """DataFrame ya normalizado (Date/Action/Ticker/Quantity/Amount) para probar analyze_portfolio."""
+    return pd.DataFrame([{"Date": pd.Timestamp(d), "Action": a, "Ticker": t, "Quantity": q, "Amount": amt}
+                         for d, a, t, q, amt in rows])
+
+
+_MKT_MOCK = lambda t, d: (pd.DataFrame({"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0]},
+                                       index=[pd.Timestamp("2024-10-15")]), None)
+
+
+def test_roc_includes_reinvested_drip(monkeypatch):
+    """El arreglo: el ROC suma lo reinvertido (DRIP). Con costo base = lo invertido en cash,
+    la fórmula vieja daba ~0; la nueva da ROC = reinvertido."""
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 10, -200.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    results = logic.analyze_portfolio(df, version="TEST_ROC_DRIP",
+                                      ib_cost_basis_map={"MSTY": "2000.00"})
+    s = results["MSTY"]
+    assert s["pocket_investment"] == pytest.approx(2000.0, abs=0.01)
+    assert s["dividends_collected_drip"] == pytest.approx(200.0, abs=0.01)
+    # (2000 + 200) - 2000 = 200  (la fórmula vieja pocket-base habría dado 0)
+    assert s["roc_accumulated"] == pytest.approx(200.0, abs=0.01)
+    assert s["roc_source"] == "broker"
+
+
+def test_roc_estimated_from_19a_when_no_basis(monkeypatch):
+    """Sin costo base del bróker, se estima el ROC con el % publicado por el fondo (19a),
+    empatando por fecha. roc_source == '19a'."""
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 500.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    # 19a controlado: el pago del 2024-10-01 fue 90% ROC
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 90.0, "per_distribution": [{"date": "2024-10-01", "roc_pct": 90.0}]}})
+    results = logic.analyze_portfolio(df, version="TEST_ROC_19A")  # sin ib_cost_basis_map
+    s = results["MSTY"]
+    assert s.get("ib_cost_basis") is None
+    assert s["roc_source"] == "19a"
+    assert s["roc_accumulated"] == pytest.approx(450.0, abs=0.5)   # 500 * 90%
+    assert s["roc_percent"] == pytest.approx(90.0, abs=0.5)
 
 
 def test_roc_none_when_no_basis_provided(monkeypatch):

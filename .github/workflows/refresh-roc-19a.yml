@@ -1,0 +1,48 @@
+name: Refresh ROC 19a data
+
+# Refresca knowledge/roc_19a.yaml con el % de Retorno de Capital que YieldMax publica
+# por distribución (la página cambia cada semana). Corre fetch_roc_19a.py contra la fuente
+# oficial y commitea si hubo cambios → Streamlit Cloud redespliega con el dato fresco.
+
+on:
+  schedule:
+    - cron: '17 12 * * 6'   # sábados 12:17 UTC
+  workflow_dispatch: {}       # disparo manual
+
+permissions:
+  contents: write             # para commitear roc_19a.yaml (usa el GITHUB_TOKEN, sin secretos)
+
+concurrency:
+  group: refresh-roc-19a
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright beautifulsoup4 pandas pyyaml
+          python -m playwright install --with-deps chromium
+
+      - name: Refrescar ROC 19a desde YieldMax
+        run: python fetch_roc_19a.py
+
+      - name: Commitear si cambió
+        run: |
+          if git diff --quiet -- knowledge/roc_19a.yaml; then
+            echo "Sin cambios en knowledge/roc_19a.yaml"
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add knowledge/roc_19a.yaml
+            git commit -m "chore: refresh ROC 19a data (automated)"
+            git push
+          fi

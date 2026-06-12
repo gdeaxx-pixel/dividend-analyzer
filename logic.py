@@ -586,6 +586,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Iterate through transactions to build history
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
+        dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
         cash_flows = []
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
@@ -661,6 +662,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned += _adj_qty
                     shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
+                    dist_dated.append((_tx_date, abs(amount)))
 
                 # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
                 elif 'dividend' in action or 'dividendo' in action:
@@ -673,6 +675,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_drip += _adj_qty
                     if amount < 0:
                         dividends_collected_drip += abs(amount)
+                        dist_dated.append((_tx_date, abs(amount)))
 
             elif is_div_payout:
                 # Cash dividend NOT reinvested. Use signed amount so IB correction
@@ -680,6 +683,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 if not is_drip:
                     dividends_collected_cash += amount
                     irr_flows_dated.append((_tx_date, amount))
+                    if amount > 0:
+                        dist_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf
@@ -1207,19 +1212,36 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             pass
 
         # ── ROC: Return of Capital ────────────────────────────────────────
+        # El ROC reduce el costo base dólar a dólar; el DRIP (reinversión) lo SUBE dólar a dólar.
+        # Por eso el dinero total que entró a comprar acciones = cash de tu bolsillo + reinvertido.
+        #   ROC = (invertido + reinvertido) − costo base del bróker.
+        # roc_percent = qué parte de TUS DISTRIBUCIONES fue ROC (denominador = total_dividends).
         _ib_basis = None
         _roc_accum = None
         _roc_pct = None
+        _roc_source = None
+        _basis_in = pocket_investment + dividends_collected_drip
         if ib_cost_basis_map:
             _raw_basis = ib_cost_basis_map.get(ticker)
             if _raw_basis is not None:
                 try:
                     _ib_basis = float(str(_raw_basis).replace(',', '').replace('$', '').strip())
-                    if pocket_investment > 0 and _ib_basis >= 0:
-                        _roc_accum = round(pocket_investment - _ib_basis, 2)
-                        _roc_pct   = round(_roc_accum / pocket_investment * 100, 2)
+                    if _basis_in > 0 and _ib_basis >= 0:
+                        _roc_accum = round(_basis_in - _ib_basis, 2)
+                        _roc_pct   = round(_roc_accum / total_dividends * 100, 2) if total_dividends > 0 else None
+                        _roc_source = 'broker'
                 except (ValueError, TypeError):
                     pass
+
+        # Respaldo: si no hay costo base del bróker, estimar el ROC con el % que el fondo
+        # publica en sus avisos 19a (ver knowledge/roc_19a.yaml). Empate por fecha si hay
+        # historial por distribución; si no, % ponderado del fondo.
+        if _roc_accum is None and total_dividends > 0:
+            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, dist_dated)
+            if _est_roc is not None:
+                _roc_accum = round(_est_roc, 2)
+                _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
+                _roc_source = '19a'
 
         results[ticker] = {
             # Métricas existentes (sin cambios)
@@ -1265,6 +1287,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
             "roc_percent":         _roc_pct,
+            "roc_source":          _roc_source,
             # Reconciliación desde la captura del broker
             "reconciled_from_snapshot": reconciled_from_snapshot,
             "reconciled_fields":        reconciled_fields,
@@ -2088,6 +2111,74 @@ def load_instruments() -> dict:
         return base
     except Exception:
         return base
+
+
+_ROC19A_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_19a.yaml')
+_ROC19A_CACHE = {}
+
+
+def load_roc_19a() -> dict:
+    """Carga el % de Retorno de Capital que YieldMax publica por distribución
+    (knowledge/roc_19a.yaml), refrescado semanalmente por el GitHub Action que corre
+    fetch_roc_19a.py contra la página oficial del fondo.
+
+    Estructura por ticker (MAYÚSCULAS): {asof, source_url, weighted_pct,
+    per_distribution: [{date, roc_pct}]}. Defensivo: archivo ausente/ inválido → {}.
+    """
+    if _ROC19A_CACHE.get('_loaded'):
+        return _ROC19A_CACHE['data']
+    data = {}
+    if _yaml is not None:
+        try:
+            with open(_ROC19A_PATH, 'r', encoding='utf-8') as fh:
+                raw = _yaml.safe_load(fh) or {}
+            if isinstance(raw, dict):
+                data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
+        except Exception:
+            data = {}
+    _ROC19A_CACHE['_loaded'] = True
+    _ROC19A_CACHE['data'] = data
+    return data
+
+
+def _estimate_roc_from_19a(ticker, dist_dated):
+    """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
+
+    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
+    usa el % ponderado del fondo (`weighted_pct`). Devuelve (roc_$|None, roc_%|None).
+    """
+    info = load_roc_19a().get(str(ticker).upper())
+    if not info or not dist_dated:
+        return None, None
+    total = sum(abs(a or 0) for _, a in dist_dated)
+    if total <= 0:
+        return None, None
+
+    dated = []
+    for rowp in (info.get('per_distribution') or []):
+        try:
+            dated.append((pd.Timestamp(rowp['date']).normalize(), float(rowp['roc_pct'])))
+        except Exception:
+            continue
+    weighted = info.get('weighted_pct')
+    weighted = float(weighted) if weighted is not None else None
+
+    roc_sum = 0.0
+    for dt, amt in dist_dated:
+        amt = abs(amt or 0)
+        pct = None
+        if dated and dt is not None:
+            best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
+            if abs((best[0] - pd.Timestamp(dt).normalize()).days) <= 7:
+                pct = best[1]
+        if pct is None:
+            pct = weighted
+        if pct is None:
+            return None, None
+        roc_sum += amt * (pct / 100.0)
+    return roc_sum, (roc_sum / total * 100.0)
 
 
 def get_yieldmax_risk_profile(ticker: str) -> dict:
