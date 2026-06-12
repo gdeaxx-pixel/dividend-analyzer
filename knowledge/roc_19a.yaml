@@ -1271,3 +1271,98 @@ YMAX:
     roc_pct: 74.88
   - date: '2025-02-05'
     roc_pct: 94.58
+GOOY:
+  asof: '2026-06-12'
+  source_url: https://yieldmaxetfs.com/our-etfs/gooy/
+  weighted_pct: 57.16
+  per_distribution:
+  - date: '2026-06-10'
+    roc_pct: 25.73
+  - date: '2026-06-03'
+    roc_pct: 0.0
+  - date: '2026-05-27'
+    roc_pct: 32.69
+  - date: '2026-05-20'
+    roc_pct: 68.8
+  - date: '2026-05-13'
+    roc_pct: 0.0
+  - date: '2026-05-06'
+    roc_pct: 97.94
+  - date: '2026-04-29'
+    roc_pct: 65.5
+  - date: '2026-04-22'
+    roc_pct: 94.83
+  - date: '2026-04-15'
+    roc_pct: 94.55
+  - date: '2026-04-08'
+    roc_pct: 91.57
+  - date: '2026-04-01'
+    roc_pct: 0.0
+  - date: '2026-03-25'
+    roc_pct: 0.0
+  - date: '2026-03-18'
+    roc_pct: 91.56
+  - date: '2026-03-11'
+    roc_pct: 20.65
+  - date: '2026-03-04'
+    roc_pct: 22.46
+  - date: '2026-02-25'
+    roc_pct: 73.44
+  - date: '2026-02-18'
+    roc_pct: 0.0
+  - date: '2026-02-11'
+    roc_pct: 0.0
+  - date: '2026-02-04'
+    roc_pct: 93.68
+  - date: '2026-01-28'
+    roc_pct: 0.0
+  - date: '2026-01-21'
+    roc_pct: 93.8
+  - date: '2026-01-14'
+    roc_pct: 0.0
+  - date: '2026-01-07'
+    roc_pct: 59.99
+  - date: '2025-12-31'
+    roc_pct: 91.7
+  - date: '2025-12-24'
+    roc_pct: 2.59
+  - date: '2025-12-17'
+    roc_pct: 0.0
+  - date: '2025-12-10'
+    roc_pct: 7.31
+  - date: '2025-12-03'
+    roc_pct: 96.86
+  - date: '2025-11-26'
+    roc_pct: 96.31
+  - date: '2025-11-19'
+    roc_pct: 0.0
+  - date: '2025-11-12'
+    roc_pct: 0.0
+  - date: '2025-11-05'
+    roc_pct: 99.52
+  - date: '2025-10-29'
+    roc_pct: 95.51
+  - date: '2025-10-22'
+    roc_pct: 96.81
+  - date: '2025-10-15'
+    roc_pct: 0.0
+  - date: '2025-10-01'
+    roc_pct: 69.35
+  - date: '2025-09-03'
+    roc_pct: 96.24
+  - date: '2025-08-06'
+    roc_pct: 44.7
+  - date: '2025-07-09'
+    roc_pct: 0.0
+  - date: '2025-06-11'
+    roc_pct: 87.7
+  - date: '2025-05-14'
+    roc_pct: 81.91
+  - date: '2025-04-16'
+    roc_pct: 0.0
+  - date: '2025-03-19'
+    roc_pct: 0.0
+  - date: '2025-02-19'
+    roc_pct: 0.0
+  - date: '2025-01-22'
+    roc_pct: 0.0
