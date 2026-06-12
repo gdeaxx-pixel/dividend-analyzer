@@ -15,6 +15,7 @@ Uso local:  pip install playwright pandas lxml pyyaml && playwright install chro
 import os
 import re
 import sys
+import time
 import datetime
 import yaml
 import pandas as pd
@@ -24,6 +25,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROC_PATH = os.path.join(HERE, "knowledge", "roc_19a.yaml")
 INSTR_PATH = os.path.join(HERE, "knowledge", "instruments.yaml")
 FUND_URL = "https://yieldmaxetfs.com/our-etfs/{tk}/"
+
+RETRIES = 3            # intentos por fondo si la tabla aún no renderiza (anti-blip transitorio)
+RETRY_WAIT = 5         # segundos entre reintentos
+FUND_DELAY = 1.5       # pausa entre fondos para no gatillar throttle de YieldMax
 
 
 def yieldmax_tickers():
@@ -129,15 +134,42 @@ def fetch_rendered_html(url):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page(user_agent="Mozilla/5.0")
-        page.goto(url, wait_until="networkidle", timeout=60000)
         try:
-            page.wait_for_selector("table", timeout=20000)
-        except Exception:
-            pass
-        html = page.content()
-        browser.close()
+            page = browser.new_page(user_agent="Mozilla/5.0")
+            page.goto(url, wait_until="networkidle", timeout=60000)
+            # Espera a que aparezca una tabla y, mejor aún, a que alguna traiga "ROC"
+            # (la tabla de distribuciones se renderiza por JS y a veces tarda).
+            try:
+                page.wait_for_selector("table", timeout=25000)
+                try:
+                    page.wait_for_function(
+                        "() => Array.from(document.querySelectorAll('table'))"
+                        ".some(t => /roc|return of capital/i.test(t.innerText))",
+                        timeout=15000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(2500)   # margen para que termine de poblar la tabla
+            except Exception:
+                pass
+            html = page.content()
+        finally:
+            browser.close()
     return html
+
+
+def fetch_rows_with_retries(url, tk):
+    """Intenta varias veces; reintenta si la tabla no rindió (0 filas). Devuelve la lista de filas."""
+    rows = []
+    for attempt in range(1, RETRIES + 1):
+        try:
+            rows = parse_distributions_from_html(fetch_rendered_html(url))
+        except Exception as e:
+            print(f"::warning::{tk}: intento {attempt}/{RETRIES} ERROR: {e}", file=sys.stderr)
+        if rows:
+            return rows
+        if attempt < RETRIES:
+            time.sleep(RETRY_WAIT)
+    return rows
 
 
 def main(argv):
@@ -158,11 +190,8 @@ def main(argv):
     regressions, empty_new = [], []
     for tk in tickers:
         url = FUND_URL.format(tk=tk.lower())
-        rows = []
-        try:
-            rows = parse_distributions_from_html(fetch_rendered_html(url))
-        except Exception as e:
-            print(f"::warning::{tk}: ERROR al cargar {url}: {e}", file=sys.stderr)
+        rows = fetch_rows_with_retries(url, tk)
+        time.sleep(FUND_DELAY)
         if rows:
             out[tk] = build_entry(tk, rows)
             print(f"{tk}: {len(rows)} distribuciones, weighted_pct {out[tk]['weighted_pct']}%")
