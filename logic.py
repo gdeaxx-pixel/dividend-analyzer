@@ -526,6 +526,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
     # Neutralizar pares de migración entre brokers (TDA -> Schwab) antes de contar.
     df = _net_transfer_pairs(df)
 
+    # Fecha del snapshot del CSV (última actividad registrada): referencia para "rancio" y TTM,
+    # así un CSV exportado hace meses no marca falsos positivos contra el today real.
+    try:
+        _snapshot_date = pd.to_datetime(df['Date'], errors='coerce').max()
+        if pd.isna(_snapshot_date):
+            _snapshot_date = None
+    except Exception:
+        _snapshot_date = None
+
     # Group by Ticker
     tickers = df['Ticker'].unique()
     
@@ -1297,7 +1306,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 _roc_source = '19a'
 
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
-        _fy = forward_realized_yield(ticker_df, market_value)
+        _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
         _withheld = withheld_tax_total(ticker_df)
         _cadence_change = detect_cadence_change(ticker_df)
 
@@ -1392,6 +1401,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "payments_per_year": _fy['payments_per_year'],
             "last_payment":      _fy['last_payment'],
             "ttm_income":        _fy['ttm_income'],
+            "forward_stale":     _fy.get('stale', False),
             "withheld_tax_total": _withheld,
             "price_cagr":        _price_cagr,
             "price_cagr_recent": _price_cagr_recent,
@@ -2863,11 +2873,14 @@ def forward_realized_yield(history_df, market_value, today=None) -> dict:
       - realized_yield = dividendos cobrados en los últimos 12 meses / valor de mercado × 100
         (lo que de verdad entró a tu bolsillo, reconstruido del CSV).
 
-    Devuelve {forward_yield, realized_yield, payments_per_year, last_payment, ttm_income}.
-    Todo None si falta historial de dividendos o valor de mercado.
+    Devuelve {forward_yield, realized_yield, payments_per_year, last_payment, ttm_income, stale}.
+    `forward_yield` es None cuando el último pago es RANCIO (la posición dejó de pagar — vendida
+    o transferida fuera, faltan varios pagos): anualizar un pago viejo sobre el valor actual da
+    un yield inflado y falso (caso real: QYLD con último pago hace ~600 días → 67% espurio). El
+    `realized_yield` (TTM real) sí se mantiene. Todo None si falta historial o valor de mercado.
     """
-    out = {'forward_yield': None, 'realized_yield': None,
-           'payments_per_year': None, 'last_payment': None, 'ttm_income': None}
+    out = {'forward_yield': None, 'realized_yield': None, 'payments_per_year': None,
+           'last_payment': None, 'ttm_income': None, 'stale': False}
     ev = _dividend_events(history_df)
     if ev.empty or not market_value or market_value <= 0:
         return out
@@ -2883,8 +2896,15 @@ def forward_realized_yield(history_df, market_value, today=None) -> dict:
     out['payments_per_year'] = int(ppy)
     out['last_payment'] = round(last_payment, 4)
     out['ttm_income'] = round(ttm, 2)
-    out['forward_yield'] = round(last_payment * ppy / market_value * 100, 2)
     out['realized_yield'] = round(ttm / market_value * 100, 2)
+
+    # Rancio: el último pago es más viejo que ~varios intervalos esperados → la posición dejó de
+    # pagar (vendida/transferida). No proyectamos un forward inflado sobre ese pago muerto.
+    days_since_last = (today - ev.index[-1]).days
+    if days_since_last > max(2.5 * median_gap, 45):
+        out['stale'] = True
+        return out                      # forward_yield queda None
+    out['forward_yield'] = round(last_payment * ppy / market_value * 100, 2)
     return out
 
 

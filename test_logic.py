@@ -1558,3 +1558,21 @@ def test_underlying_exposure_includes_hold_comparison():
                         'forward_yield': 40.0}}
     txt = ' '.join(logic.build_underlying_exposure(results, 'NVDY')['lines'])
     assert 'NVDA directo' in txt and '$13,000' in txt and '$11,000' in txt   # fund total = 9000+2000
+
+
+# ── v3.7: forward yield rancio (posición que dejó de pagar) → None, no inflado ──
+
+def test_forward_yield_stale_when_payments_stopped():
+    # Pagos mensuales que PARARON a mediados de 2024 (posición transferida/vendida).
+    rows = [{'Date': f'2024-{m:02d}-15', 'Action': 'Cash Dividend', 'Amount': 20.0} for m in range(1, 7)]
+    hist = pd.DataFrame(rows); hist['Date'] = pd.to_datetime(hist['Date'])
+    fy = logic.forward_realized_yield(hist, market_value=1000, today='2026-06-01')  # ~700 días después
+    assert fy['stale'] is True and fy['forward_yield'] is None
+    assert fy['realized_yield'] == 0.0          # nada cobrado en los últimos 12m
+
+
+def test_forward_yield_not_stale_when_recent():
+    rows = [{'Date': f'2026-{m:02d}-15', 'Action': 'Cash Dividend', 'Amount': 20.0} for m in range(1, 6)]
+    hist = pd.DataFrame(rows); hist['Date'] = pd.to_datetime(hist['Date'])
+    fy = logic.forward_realized_yield(hist, market_value=1000, today='2026-06-01')
+    assert fy['stale'] is False and fy['forward_yield'] is not None
