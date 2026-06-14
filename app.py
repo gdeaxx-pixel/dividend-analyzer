@@ -918,10 +918,29 @@ st.markdown("""
         line-height: 1.1;
     ">
         CALCULADORA <span style="color:#006497;">//</span> DIVIDENDOS
-        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v2.8</span>
+        <span style="font-size:0.9rem;font-weight:400;letter-spacing:0.12em;color:#8899aa;margin-left:12px;vertical-align:middle;">v3.0</span>
     </h1>
 </div>
 """, unsafe_allow_html=True)
+
+with st.expander("Calculadoras de referencia — en qué nos inspiramos y en qué nos diferenciamos"):
+    st.markdown(
+        "Esta herramienta se construyó estudiando las mejores calculadoras públicas de dividendos y tomando "
+        "lo útil de cada una, pero con un principio propio: **realismo**, sobre todo en los ETF de alto "
+        "rendimiento (YieldMax), donde el *yield* de portada engaña.\n\n"
+        "- **[TipRanks](https://www.tipranks.com/tools/dividend-calculator)** y "
+        "**[DividendCalculator.io](https://dividendcalculator.io/)** — proyección con DRIP, *yield on cost* y "
+        "*forward yield*. → de aquí tomamos el **motor de proyección a futuro** y el *forward yield* vs realizado.\n"
+        "- **[MiniWebtool](https://miniwebtool.com/dividend-reinvestment-calculator/)** y "
+        "**[MarketBeat](https://www.marketbeat.com/dividends/calculator/)** — tabla año por año y efecto "
+        "*bola de nieve* de la reinversión. → la **visualización del interés compuesto**.\n"
+        "- **[DRIPCalc](https://www.dripcalc.com/yieldmax-etfs/)** — retorno con y sin DRIP para fondos YieldMax. "
+        "→ la **comparación reinvertir vs cobrar en efectivo**.\n"
+        "- **[NAV Erosion Calculator](https://dividend-wealth.com/tools/nav-erosion-calculator)** — la carrera "
+        "*ingreso acumulado* vs *pérdida de capital* con punto de *breakeven*. → nuestro **modo realista YieldMax**.\n\n"
+        "**Lo que ninguna hace y aquí sí:** descomponer cuánto de cada distribución es **Retorno de Capital** "
+        "(datos oficiales 19a) y proyectar con la **erosión real observada** del fondo, en vez de asumir que el "
+        "precio sube. Por eso un YieldMax nunca se proyecta como si fuera un ETF de crecimiento.")
 
 
 
@@ -1645,10 +1664,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # ── Interpretación educativa por ticker (lee knowledge/instruments.yaml) ──
             def _render_interpretation(_t):
                 _interp = logic.build_interpretation(results, _t)
-                if not _interp.get('lines'):
+                _exp_lines = logic.build_underlying_exposure(results, _t).get('lines', [])
+                if not _interp.get('lines') and not _exp_lines:
                     return
                 _items = ''.join(
-                    f'<li style="margin:0 0 6px 0;">{_ln}</li>' for _ln in _interp['lines'])
+                    f'<li style="margin:0 0 6px 0;">{_ln}</li>' for _ln in _interp.get('lines', []))
                 st.markdown(
                     '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;margin:0 0 12px 0;">'
                     '<p style="font-family:Inter,sans-serif;font-size:9px;color:#006497;font-weight:700;'
@@ -1658,6 +1678,17 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     + _items + '</ul></div>',
                     unsafe_allow_html=True
                 )
+                if _exp_lines:
+                    _eitems = ''.join(f'<li style="margin:0 0 6px 0;">{_ln}</li>' for _ln in _exp_lines)
+                    st.markdown(
+                        '<div style="border-left:4px solid #021C36;background:#f6f8fa;padding:12px 16px;margin:0 0 12px 0;">'
+                        '<p style="font-family:Inter,sans-serif;font-size:9px;color:#021C36;font-weight:700;'
+                        'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Exposición al subyacente — riesgo asimétrico</p>'
+                        '<ul style="font-family:Inter,sans-serif;font-size:12px;color:#333333;line-height:1.55;'
+                        'margin:0;padding-left:18px;">'
+                        + _eitems + '</ul></div>',
+                        unsafe_allow_html=True
+                    )
 
             # ── Calidad de datos: se calcula aquí (lo usa el aviso de abajo) y se
             #    renderiza al final dentro de un expander vía _render_data_quality_panel. ──
@@ -2455,6 +2486,280 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             except Exception:
                 pass
 
+            # ── Proyección a futuro (escenario) — inspirado en calculadoras DRIP ──
+            _proj_elig = [t for t, s in results.items()
+                          if isinstance(s, dict) and 'error' not in s
+                          and (s.get('forward_yield') or 0) > 0
+                          and (s.get('shares_owned') or 0) > 0 and (s.get('current_price') or 0) > 0]
+            if _proj_elig:
+                import altair as alt
+                import pandas as pd
+                with st.expander("Proyección a futuro (escenario)", expanded=False):
+                    st.caption(
+                        "Es un escenario, no una promesa: parte de tu yield actual y de supuestos que tú "
+                        "controlas. Los YieldMax se proyectan con su erosión de NAV observada — nunca se asume "
+                        "que su precio sube; los ETF de crecimiento usan los supuestos de abajo.")
+                    _c1, _c2, _c3, _c4 = st.columns(4)
+                    with _c1:
+                        _p_hz = st.slider("Horizonte (años)", 1, 30, 5, key="proj_hz")
+                    with _c2:
+                        _p_contrib = st.number_input("Aporte mensual ($)", min_value=0.0, value=0.0,
+                                                     step=50.0, key="proj_contrib")
+                    with _c3:
+                        _COUNTRIES = ['— sin impuesto —', 'Colombia', 'México', 'Chile', 'Perú',
+                                      'Argentina', 'Brasil', 'Otros LATAM']
+                        _p_country_sel = st.selectbox("Tu país (retención NRA)", _COUNTRIES, index=1,
+                                                      key="proj_country",
+                                                      help="No-residentes (NRA): 30% base sobre dividendos de "
+                                                           "fuente EE.UU.; México 10% y Chile 15% por tratado. "
+                                                           "El Retorno de Capital (ROC) reduce la retención real.")
+                        _p_country = _p_country_sel if _p_country_sel in logic.NRA_COUNTRY_RATES else None
+                    with _c4:
+                        _p_drip = st.checkbox("Reinvertir (DRIP)", value=True, key="proj_drip")
+                    _c5, _c6, _c7 = st.columns(3)
+                    with _c5:
+                        _p_divg = st.number_input("Crecim. dividendo % (solo ETFs)", min_value=-20.0,
+                                                  max_value=30.0, value=0.0, step=1.0, key="proj_divg",
+                                                  help="Aplica a ETF de dividendo/crecimiento. Los YieldMax "
+                                                       "usan su erosión observada, no este valor.")
+                    with _c6:
+                        _p_priceg = st.number_input("Apreciación precio % (solo ETFs)", min_value=-20.0,
+                                                    max_value=30.0, value=0.0, step=1.0, key="proj_priceg",
+                                                    help="Aplica a ETF de crecimiento. En YieldMax se ignora.")
+                    with _c7:
+                        _p_goal = st.number_input("Meta ingreso mensual ($)", min_value=0.0, value=0.0,
+                                                  step=100.0, key="proj_goal")
+
+                    # Escenario del subyacente (YieldMax): "¿y si MSTR/BTC se recupera?".
+                    # Deriva el NAV del fondo vía captura asimétrica calibrada a lo observado.
+                    _ym_elig = [t for t in _proj_elig if classify_map.get(t) == 'mode_a'
+                                and (results.get(t) or {}).get('underlying_cagr_recent') is not None]
+                    _scenarios = {}
+                    if _ym_elig:
+                        with st.expander("Escenario del subyacente (YieldMax) — ¿y si la acción base se recupera?"):
+                            st.caption(
+                                "Pon el retorno anual que esperas del SUBYACENTE (MSTR para MSTY, etc.) y el "
+                                "fondo lo refleja con captura asimétrica: toma casi toda la caída pero poca de la "
+                                "subida, menos su erosión estructural. El valor por defecto es el ritmo observado "
+                                "del subyacente en los últimos 12 meses.")
+                            for _ymt in _ym_elig:
+                                _u = results[_ymt].get('underlying_ticker') or '?'
+                                _uobs = results[_ymt].get('underlying_cagr_recent') or 0.0
+                                _scenarios[_ymt] = st.number_input(
+                                    f"{_ymt} — retorno anual de {_u} (%)", min_value=-90.0, max_value=300.0,
+                                    value=float(round(_uobs, 1)), step=5.0, key=f"scen_{_ymt}")
+
+                    _proj_params = {'horizon_years': _p_hz, 'monthly_contribution': _p_contrib,
+                                    'drip': _p_drip, 'country': _p_country,
+                                    'dividend_growth_pct': _p_divg, 'price_appreciation_pct': _p_priceg,
+                                    'income_goal_monthly': (_p_goal or None),
+                                    'underlying_scenarios': (_scenarios or None)}
+                    _fwd = logic.project_portfolio_forward(results, _proj_params, classify_map)
+                    _pf = _fwd['portfolio']
+                    _pt = _fwd['per_ticker']
+
+                    # Caveat de calidad: la proyección parte de costo/valor; si algún activo tiene
+                    # costo incompleto (unreliable), su punto de partida es aproximado.
+                    _proj_unrel = [t for t in _fwd['eligible']
+                                   if logic.assess_ticker_quality(results, t)['level'] in ('unreliable', 'reconciled')]
+                    if _proj_unrel:
+                        st.caption("Aviso — " + ", ".join(_proj_unrel) + ": costo de origen incompleto (acciones "
+                                   "por transferencia); su punto de partida y la proyección son aproximados.")
+
+                    if _pf.get('yearly'):
+                        _last = _pf['yearly'][-1]
+                        _m1, _m2, _m3, _m4 = st.columns(4)
+                        _m1.metric("Valor proyectado", f"${_pf['end_value']:,.0f}",
+                                   f"{(_pf['end_value']/_pf['start_value']-1)*100:+.0f}% vs hoy"
+                                   if _pf['start_value'] > 0 else None)
+                        _m2.metric("Ingreso anual (último año)", f"${_last['annual_income']:,.0f}",
+                                   f"${_last['annual_income']/12:,.0f}/mes")
+                        _m3.metric("Dividendos netos acumulados", f"${_pf['cumulative_dividends_net']:,.0f}")
+                        _m4.metric("Ventaja del DRIP", f"${_pf['drip_advantage']:,.0f}",
+                                   help="Cuánto más vale el portafolio reinvirtiendo vs tomando los "
+                                        "dividendos en efectivo, al final del horizonte.")
+                        if _p_country:
+                            st.caption(f"Ingresos netos de la retención NRA de {_p_country} (efectiva por activo, "
+                                       "ya descontado el escudo del ROC). El histórico de arriba sigue en bruto.")
+                        if _pf.get('income_goal_monthly'):
+                            _gy = _pf.get('income_goal_year')
+                            st.caption(f"Meta de ${_pf['income_goal_monthly']:,.0f}/mes: "
+                                       + (f"se alcanza alrededor del año {_gy}." if _gy
+                                          else "no se alcanza dentro del horizonte proyectado."))
+
+                        # Gráfico: valor del portafolio y dividendos acumulados por año.
+                        _crows = []
+                        for _r in _pf['yearly']:
+                            _crows.append({'Año': _r['year'], 'Serie': 'Valor del portafolio',
+                                           'Valor': _r['portfolio_value']})
+                            _crows.append({'Año': _r['year'], 'Serie': 'Dividendos acum. (neto)',
+                                           'Valor': _r['cumulative_dividends']})
+                        _cdf = pd.DataFrame(_crows)
+                        _chart = alt.Chart(_cdf).mark_line(point=True).encode(
+                            x=alt.X('Año:O', title='Año'),
+                            y=alt.Y('Valor:Q', title='USD', axis=alt.Axis(format='$,.0f')),
+                            color=alt.Color('Serie:N', scale=alt.Scale(
+                                domain=['Valor del portafolio', 'Dividendos acum. (neto)'],
+                                range=['#006497', '#4caf82']),
+                                legend=alt.Legend(title=None, orient='top')),
+                            tooltip=['Año', 'Serie', alt.Tooltip('Valor:Q', format='$,.0f')],
+                        ).properties(height=280)
+                        st.altair_chart(_chart, use_container_width=True)
+
+                        # Tabla por activo: yield forward vs realizado + proyección.
+                        _trows = []
+                        for _tk in _fwd['eligible']:
+                            _e = _pt[_tk]
+                            _yl = _e['yearly'][-1]['annual_income'] if _e['yearly'] else None
+                            _row = {
+                                'Activo': _tk,
+                                'Tipo': 'YieldMax' if _e['is_yieldmax'] else 'ETF',
+                                'Yield forward': f"{_e['forward_yield']:.1f}%",
+                                'Yield realizado': (f"{_e['realized_yield']:.1f}%"
+                                                    if _e.get('realized_yield') is not None else '—'),
+                                'Valor hoy': f"${_e['start_value']:,.0f}",
+                                'Valor proyectado': f"${_e['end_value']:,.0f}",
+                                'Ingreso anual final': f"${_yl:,.0f}" if _yl is not None else '—',
+                                'Dividendos netos acum.': f"${_e['cumulative_dividends_net']:,.0f}",
+                            }
+                            if _p_country:
+                                _row['Retención efectiva'] = f"{_e.get('tax_effective_rate', 0):.1f}%"
+                            _trows.append(_row)
+                        st.dataframe(pd.DataFrame(_trows), use_container_width=True, hide_index=True)
+                        st.caption(
+                            "Yield forward = último pago anualizado (lo que anuncian). "
+                            "Yield realizado = lo que de verdad cobraste en los últimos 12 meses. "
+                            "Cuando el forward es mucho mayor, la cifra de marketing es optimista.")
+
+                        # Aviso de cambio de frecuencia de pago (mensual → semanal, etc.).
+                        _cad_changes = []
+                        for _tk in _fwd['eligible']:
+                            _cc = (results.get(_tk) or {}).get('cadence_change')
+                            if isinstance(_cc, dict) and _cc.get('changed'):
+                                _cad_changes.append(f"**{_tk}**: {_cc['old_label']} → {_cc['recent_label']}")
+                        if _cad_changes:
+                            st.caption("Cambio de frecuencia de pago detectado — " + " · ".join(_cad_changes)
+                                       + ". El forward usa la frecuencia actual; el realizado (lo cobrado) no se afecta.")
+
+                        # YieldMax: carrera ingreso vs erosión de NAV + breakeven.
+                        _ym = [(_tk, _pt[_tk]) for _tk in _fwd['eligible'] if _pt[_tk]['is_yieldmax']]
+                        if _ym:
+                            st.markdown("**YieldMax — ingreso vs erosión de capital (comprar y cobrar, sin DRIP)**")
+                            _wlbl = {'12m': 'últimos 12 meses', 'vida': 'toda la vida del fondo',
+                                     'manual': 'tu valor manual', 'default': 'estimación por defecto'}
+                            st.caption(
+                                "La línea verde es el dinero que cobras; la roja, cuánto cayó tu capital. "
+                                "El cruce es el punto en que el ingreso ya cubrió la pérdida del precio. "
+                                "El total return honesto incluye ambos efectos — no solo el yield de portada. "
+                                "La erosión se estima con el decaimiento de los "
+                                + _wlbl.get(next((_pt[t].get('decay_window') for t, _ in _ym), '12m'), 'últimos 12 meses')
+                                + " (puedes ajustar el supuesto arriba).")
+                            for _tk, _e in _ym:
+                                _bm = _e.get('breakeven_month')
+                                _be_txt = (f"breakeven al mes {_bm}" if _bm
+                                           else "no alcanza breakeven en el horizonte")
+                                _roc = _e.get('roc_fraction_pct')
+                                _roc_txt = (f" · ~{_roc:.0f}% de las distribuciones es retorno de capital (no es rendimiento)"
+                                            if _roc is not None else "")
+                                _htr = _e.get('honest_total_return_pct')
+                                st.markdown(
+                                    f"**{_tk}** — yield portada {_e['forward_yield']:.0f}% · "
+                                    f"total return honesto {('%+.0f%%' % _htr) if _htr is not None else 'n/d'} "
+                                    f"a {_p_hz} año(s) · {_be_txt}{_roc_txt}")
+                                _exp = logic.build_underlying_exposure(results, _tk)
+                                if _exp['lines']:
+                                    st.markdown(
+                                        "<div style='background:#f6f8fa;border-left:3px solid #021C36;"
+                                        "padding:8px 12px;margin:2px 0 8px 0;font-size:12.5px;color:#333;"
+                                        "line-height:1.5;'><b>Exposición al subyacente (riesgo asimétrico):"
+                                        "</b><br>" + "<br>".join(_exp['lines']) + "</div>",
+                                        unsafe_allow_html=True)
+                                _rr = _e.get('race') or []
+                                if _rr:
+                                    _rdf_rows = []
+                                    for _row in _rr:
+                                        _rdf_rows.append({'Mes': _row['month'], 'Serie': 'Ingreso acum. (neto)',
+                                                          'Valor': _row['cum_income_net']})
+                                        _rdf_rows.append({'Mes': _row['month'], 'Serie': 'Pérdida de capital',
+                                                          'Valor': _row['capital_loss']})
+                                    _rdf = pd.DataFrame(_rdf_rows)
+                                    _rchart = alt.Chart(_rdf).mark_line().encode(
+                                        x=alt.X('Mes:Q', title='Mes'),
+                                        y=alt.Y('Valor:Q', title='USD', axis=alt.Axis(format='$,.0f')),
+                                        color=alt.Color('Serie:N', scale=alt.Scale(
+                                            domain=['Ingreso acum. (neto)', 'Pérdida de capital'],
+                                            range=['#4caf82', '#e05c5c']),
+                                            legend=alt.Legend(title=None, orient='top')),
+                                        tooltip=['Mes', 'Serie', alt.Tooltip('Valor:Q', format='$,.0f')],
+                                    ).properties(height=220)
+                                    st.altair_chart(_rchart, use_container_width=True)
+
+                        # ── Módulo fiscal NRA: tu retención real por país × escudo ROC ──
+                        if _p_country:
+                            with st.expander(f"Módulo fiscal — tu retención real en {_p_country}", expanded=False):
+                                _tax_rows = []
+                                for _tk in _fwd['eligible']:
+                                    _bd = logic.nra_tax_breakdown(_p_country, logic._ticker_roc_fraction(_tk, results))
+                                    _tax_rows.append({'Activo': _tk, 'ROC': f"{_bd['roc_fraction']:.0f}%",
+                                                      'Nominal (creías)': f"{_bd['base_rate']:.0f}%",
+                                                      'Efectiva (real)': f"{_bd['effective_rate']:.1f}%"})
+                                st.dataframe(pd.DataFrame(_tax_rows), use_container_width=True, hide_index=True)
+                                _best = max(_fwd['eligible'], default=None,
+                                            key=lambda t: logic._ticker_roc_fraction(t, results))
+                                if _best is not None:
+                                    _eb = _pt[_best]
+                                    _gross = _eb['forward_yield'] / 100.0 * _eb['start_value']
+                                    _bd = logic.nra_tax_breakdown(
+                                        _p_country, logic._ticker_roc_fraction(_best, results),
+                                        nominal_income=_gross)
+                                    st.markdown(f"**Ejemplo con {_best}** (ingreso anual estimado ${_gross:,.0f}):")
+                                    for _l in _bd['lines']:
+                                        st.markdown(f"- {_l}")
+                                    st.caption(_bd['audit_note'])
+
+                        # ── Escenarios (Monte Carlo): rango de resultados, no una sola línea ──
+                        with st.expander("Escenarios (Monte Carlo) — el rango de lo que puede pasar", expanded=False):
+                            _mcc1, _mcc2 = st.columns(2)
+                            with _mcc1:
+                                _mc_infl = st.number_input("Inflación anual % (para la vista real)", min_value=0.0,
+                                                           max_value=20.0, value=3.0, step=0.5, key="mc_infl")
+                            with _mcc2:
+                                _mc_real = st.checkbox("Mostrar en poder de compra de hoy (descontar inflación)",
+                                                       value=False, key="mc_real")
+                            _mc = logic.monte_carlo_projection(
+                                results, {**_proj_params, 'inflation_pct': _mc_infl, 'real_view': _mc_real},
+                                classify_map, n_paths=500, seed=123)
+                            if _mc['bands']:
+                                _f = _mc['final']
+                                _k1, _k2 = st.columns(2)
+                                _k1.metric("Valor final — rango probable (p10–p90)",
+                                           f"${_f['p10']:,.0f} – ${_f['p90']:,.0f}",
+                                           f"mediana ${_f['p50']:,.0f}")
+                                if _mc['prob_goal'] is not None:
+                                    _k2.metric("Prob. de cumplir tu meta de ingreso", f"{_mc['prob_goal']:.0f}%")
+                                _brows = []
+                                for _b in _mc['bands']:
+                                    _brows += [{'Año': _b['year'], 'Banda': 'Pesimista (p10)', 'Valor': _b['p10']},
+                                               {'Año': _b['year'], 'Banda': 'Mediana (p50)', 'Valor': _b['p50']},
+                                               {'Año': _b['year'], 'Banda': 'Optimista (p90)', 'Valor': _b['p90']}]
+                                _bchart = alt.Chart(pd.DataFrame(_brows)).mark_line(point=True).encode(
+                                    x=alt.X('Año:O', title='Año'),
+                                    y=alt.Y('Valor:Q', title='USD', axis=alt.Axis(format='$,.0f')),
+                                    color=alt.Color('Banda:N', scale=alt.Scale(
+                                        domain=['Pesimista (p10)', 'Mediana (p50)', 'Optimista (p90)'],
+                                        range=['#e05c5c', '#021C36', '#4caf82']),
+                                        legend=alt.Legend(title=None, orient='top')),
+                                    tooltip=['Año', 'Banda', alt.Tooltip('Valor:Q', format='$,.0f')],
+                                ).properties(height=280)
+                                st.altair_chart(_bchart, use_container_width=True)
+                                st.caption(
+                                    f"{_mc['n_paths']} escenarios aleatorios usando la volatilidad observada de "
+                                    "cada activo, con un retorno distinto cada año (riesgo de secuencia). "
+                                    + ("Valores en poder de compra de hoy (inflación descontada)."
+                                       if _mc['real_view'] else "Valores nominales."))
+
+                        st.caption("Proyección educativa con supuestos tuyos — no es recomendación de compra o venta.")
+
             # ── Comparativa directa A vs B (solo cuando hay ambos) ────
             _cmp_a_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_a' and 'error' not in s]
             _cmp_b_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_b' and 'error' not in s]
@@ -3023,6 +3328,24 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
                     )
                     st.altair_chart(chart, use_container_width=True)
+
+                    # Aviso de honestidad: si el costo de origen es incompleto (acciones llegadas
+                    # por transferencia con costo desconocido), la comparación vs VOO arranca desde
+                    # donde el CSV tiene datos, no desde la compra original — el ROI es aproximado.
+                    try:
+                        _cq = logic.assess_ticker_quality(results, ticker) if ticker else {'level': 'ok'}
+                    except Exception:
+                        _cq = {'level': 'ok'}
+                    if _cq.get('level') in ('unreliable', 'reconciled'):
+                        st.markdown(
+                            '<div style="border-left:4px solid #e0a23c;background:#fff8ec;padding:10px 14px;'
+                            'margin:4px 0 0 0;font-family:Inter,sans-serif;font-size:12px;color:#664d1a;'
+                            'line-height:1.5;"><b>Comparación aproximada.</b> A este activo le falta el '
+                            'costo de origen en el CSV (probablemente las acciones llegaron por una '
+                            '<b>transferencia</b>, con costo de compra desconocido). La curva vs S&amp;P 500 '
+                            'arranca desde donde hay datos, no desde tu compra original, así que el ROI y la '
+                            'diferencia con el índice son <b>estimados</b>, no exactos.</div>',
+                            unsafe_allow_html=True)
 
             # ── TAB A — Dividendos Income ──────────────────────────────
             with tab_a:

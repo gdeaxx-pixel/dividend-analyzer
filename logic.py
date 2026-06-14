@@ -213,6 +213,23 @@ def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
     return out.drop(index=drop_idx) if drop_idx else df
 
 
+def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20):
+    """Acota una serie de retornos diarios a sus cuantiles [lower, upper] para que outliers
+    espurios (transferencias de acciones sin efectivo, desfases de split, ticks malos de la API)
+    no distorsionen vol/Sharpe/Sortino/beta. Series cortas (<min_len) se devuelven tal cual
+    (los cuantiles no serían fiables). Defensiva ante entradas no-Series."""
+    try:
+        r = returns.dropna()
+    except AttributeError:
+        return returns
+    if len(r) < min_len:
+        return r
+    lo, hi = r.quantile(lower), r.quantile(upper)
+    if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+        return r
+    return r.clip(lo, hi)
+
+
 def _sortino_ratio(daily_returns, rf_daily, periods: int = 252):
     """Sortino anualizado con downside deviation estándar (CFA/GIPS).
 
@@ -898,6 +915,29 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         daily_history['Daily Invested'] = daily_activity['Cash_Flow_In'].reindex(market_data.index).fillna(0)
         daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
 
+        # 5b. Flujo por TRANSFERENCIA de acciones sin efectivo (Internal Transfer / Journaled
+        # Shares / ACATS): valor = cantidad × cierre del día. Una transferencia entra a $0 de
+        # efectivo, así que sin esto ni el benchmark VOO ni el TWR la ven como capital → el chart
+        # haría ver que la posición "aplasta" al S&P (falso). 'Flujo Efectivo' = efectivo +
+        # transferencias se usa en AMBOS (benchmark y TWR). NO se toca Invested Capital (ROI).
+        # Caso real: SCHB +18.9 acc. el 2024-05-13 (benchmark pasaba a $0).
+        transfer_flow = pd.Series(0.0, index=daily_history.index)
+        try:
+            _xfer = ticker_df[ticker_df['Action'].str.lower().str.contains(
+                'transfer|journal|acats|in kind|en especie', na=False)]
+            for _, _xr in _xfer.iterrows():
+                _xd = pd.Timestamp(_xr['Date']).normalize()
+                _xq = pd.to_numeric(_xr.get('Quantity'), errors='coerce')
+                _xa = _clean_money(_xr.get('Amount', 0))
+                if _xd in transfer_flow.index and pd.notna(_xq) and _xq != 0 and (pd.isna(_xa) or abs(_xa) < 0.01):
+                    _xpx = float(daily_history['Price'].get(_xd, 0) or 0)
+                    if _xpx > 0:
+                        transfer_flow.loc[_xd] += float(_xq) * _xpx
+        except Exception:
+            pass
+        daily_history['Transfer Flow'] = transfer_flow
+        daily_history['Flujo Efectivo'] = daily_history['Daily Invested'] + daily_history['Transfer Flow']
+
         # 6. Calculate User Profit (Real)
         # We need to track Cumulative Cash Dividends to add to Market Value
         # Identify Cash Dividend rows in original DF.
@@ -960,9 +1000,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).ffill().bfill()
 
             # Simulación con reinversión de dividendos de VOO (Total Return apples-to-apples).
+            # Usa 'Flujo Efectivo' (efectivo + transferencias de acciones) para que el benchmark
+            # refleje el capital que realmente entró, incluido el que llegó por transferencia.
             voo_shares_running = 0.0
             voo_shares_series  = []
-            daily_invested_s   = daily_history['Daily Invested']
+            daily_invested_s   = daily_history['Flujo Efectivo']
 
             for date in daily_history.index:
                 vp = float(safe_voo_price.loc[date]) if not pd.isna(safe_voo_price.loc[date]) else 0.0
@@ -1005,11 +1047,14 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         #              Wait, 'Daily Invested' was calc as: Amount * -1. 
         #              So Buy (Neg Amount) -> Pos Invested (Inflow). Correct.)
         
+        # El flujo por transferencia de acciones sin efectivo ya se computó arriba
+        # ('Transfer Flow' / 'Flujo Efectivo') y lo usa también el benchmark VOO.
+
         twr_series = []
         cum_twr = 1.0 # Start at 1.0 (100%)
-        
+
         prev_total_val = 0.0
-        
+
         for date, row in daily_history.iterrows():
             # End Value of standard assets
             market_val = row['Market Value']
@@ -1020,8 +1065,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # Total Value Owner Has at End of Day
             end_val = market_val + cash_div
             
-            # Net Flow (New money coming in/out)
-            net_flow = row['Daily Invested']
+            # Net Flow (New money coming in/out) — efectivo + transferencias de acciones sin efectivo
+            net_flow = row['Flujo Efectivo']
             
             # Start Value is yesterday's end value
             start_val = prev_total_val
@@ -1072,6 +1117,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
         spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
 
+        # 1b. Winsorizar retornos diarios (robustez ante saltos que NO son rendimientos):
+        # transferencias de acciones a $0 de efectivo (Internal Transfer / Journaled Shares),
+        # desfases de split o ticks malos de la API crean un "retorno" diario espurio de miles
+        # de % que disparaba la volatilidad/Sharpe/Sortino/beta. Acotar al rango [1%, 99%] de la
+        # propia serie elimina esos outliers sin tocar la reconstrucción de P&L/ROI/equity curve.
+        # (Caso real: SCHB transfer 18.9 acc. el 2024-05-13 → MV $16→$1164 → vol falsa de 3443%.)
+        daily_returns_q = _winsorize_returns(daily_returns_q)
+        spy_daily_returns_q = _winsorize_returns(spy_daily_returns_q)
+
         # 2. Volatilidad anualizada
         if len(daily_returns_q) >= 2:
             volatilidad_anualizada = float(daily_returns_q.std() * np.sqrt(252) * 100)
@@ -1101,14 +1155,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             max_drawdown = None
             daily_history['Drawdown %'] = np.nan
 
-        # 6. Calmar Ratio — CAGR derivado de TWR para consistencia temporal
+        # 6. Calmar Ratio — CAGR compuesto desde los retornos diarios YA winsorizados (no desde el
+        # TWR acumulado crudo, que puede estar corrupto por transferencias / costo incompleto).
         if max_drawdown is not None and max_drawdown < -1e-9 and len(daily_returns_q) >= 2:
-            # Usamos el TWR acumulado final (no ROI simple) para calcular CAGR
-            twr_final = daily_history['User Return %'].dropna()
-            if len(twr_final) > 0:
-                cum_twr_final = 1 + twr_final.iloc[-1] / 100
-                anios_twr = len(twr_final) / 252
-                cagr_twr = ((cum_twr_final ** (1 / anios_twr)) - 1) * 100 if anios_twr > 0 else 0
+            cum_twr_final = float((1 + daily_returns_q).prod())
+            anios_twr = len(daily_returns_q) / 252
+            if anios_twr > 0 and cum_twr_final > 0:
+                cagr_twr = ((cum_twr_final ** (1 / anios_twr)) - 1) * 100
                 calmar_ratio = float(cagr_twr / abs(max_drawdown))
             else:
                 calmar_ratio = None
@@ -1243,6 +1296,41 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
                 _roc_source = '19a'
 
+        # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
+        _fy = forward_realized_yield(ticker_df, market_value)
+        _withheld = withheld_tax_total(ticker_df)
+        _cadence_change = detect_cadence_change(ticker_df)
+
+        # CAGR de precio puro (no contaminado por DRIP/aportes): la erosión/apreciación
+        # observada del NAV. Se calcula sobre toda la ventana Y sobre los últimos 12 meses;
+        # la proyección prefiere el reciente para no extrapolar una caída vieja como eterna.
+        _price_cagr = None
+        _price_cagr_recent = None
+        try:
+            _close = market_data['Close'] if 'Close' in market_data.columns else None
+            if _close is not None:
+                _price_cagr = _annualized_cagr(_close)
+                _price_cagr_recent = _annualized_cagr(_close, days=365)
+        except Exception:
+            pass
+
+        # ── Módulo 1: exposición al subyacente (solo YieldMax) ────────────
+        # MSTY sigue a MSTR, TSLY a TSLA, etc. Traemos el retorno reciente del subyacente
+        # para contrastar la asimetría: el fondo captura casi toda la caída pero capa la subida.
+        _underlying_tk = None
+        _underlying_cagr_recent = None
+        try:
+            _info_u = load_instruments().get(str(ticker).upper(), {})
+            _is_ym = ticker_mode == 'mode_a' or (_info_u.get('type') or '').lower() == 'yieldmax'
+            _u = _info_u.get('underlying')
+            if _is_ym and _u and str(_u).upper() not in ('N/A', 'NA', ''):
+                _underlying_tk = str(_u).upper()
+                _udf, _uerr = fetch_market_data(_underlying_tk, first_date)
+                if _udf is not None and not _udf.empty and 'Close' in _udf.columns:
+                    _underlying_cagr_recent = _annualized_cagr(_udf['Close'], days=365)
+        except Exception:
+            pass
+
         results[ticker] = {
             # Métricas existentes (sin cambios)
             "current_price": current_price,
@@ -1291,6 +1379,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # Reconciliación desde la captura del broker
             "reconciled_from_snapshot": reconciled_from_snapshot,
             "reconciled_fields":        reconciled_fields,
+            # v3.0 — yield doble (realizado vs forward) y retención real del CSV
+            "forward_yield":     _fy['forward_yield'],
+            "realized_yield":    _fy['realized_yield'],
+            "payments_per_year": _fy['payments_per_year'],
+            "last_payment":      _fy['last_payment'],
+            "ttm_income":        _fy['ttm_income'],
+            "withheld_tax_total": _withheld,
+            "price_cagr":        _price_cagr,
+            "price_cagr_recent": _price_cagr_recent,
+            "cadence_change":    _cadence_change,
+            "underlying_ticker": _underlying_tk,
+            "underlying_cagr_recent": _underlying_cagr_recent,
         }
         
     return results
@@ -1969,6 +2069,8 @@ ETF_WHITELIST = {
     'SCHG', 'IWF', 'VUG', 'MGK',
     # Multi-asset / Balanced
     'AOA', 'AOM', 'AOR', 'AOK',
+    # Income / covered-call & prima de volatilidad (alto yield; el filtro de income los bucketea)
+    'QYLD', 'SVOL',
 }
 
 
@@ -2201,6 +2303,51 @@ def get_yieldmax_risk_profile(ticker: str) -> dict:
     }
 
 
+def build_underlying_exposure(results: dict, ticker: str) -> dict:
+    """Explica la exposición ASIMÉTRICA de un YieldMax a su subyacente: captura casi toda la
+    caída pero le capan la subida. Combina el conocimiento curado (instruments.yaml) con el
+    contraste de retornos reales (subyacente vs fondo, últimos 12m). Devuelve {'lines': [...]}.
+    Vacío si el ticker no es YieldMax o no tiene subyacente conocido.
+    """
+    s = results.get(ticker, {}) or {}
+    if not isinstance(s, dict) or 'error' in s:
+        return {'lines': []}
+    info = load_instruments().get(str(ticker).upper(), {})
+    if (info.get('type') or '').lower() != 'yieldmax':
+        return {'lines': []}
+    under = s.get('underlying_ticker') or info.get('underlying')
+    if not under or str(under).upper() in ('N/A', 'NA', ''):
+        return {'lines': []}
+    under = str(under).upper()
+    name = info.get('name', under)
+    driver = info.get('driver')
+
+    lines = []
+    chain = f"{ticker} sigue a {under} ({name})"
+    if driver:
+        chain += f", que a su vez se mueve con {driver}"
+    lines.append(chain + ".")
+    lines.append(
+        f"Su estrategia vende opciones sobre {under}: te llevas casi toda la CAÍDA de {under}, "
+        f"pero te CAPAN la subida. La exposición es asimétrica — riesgo completo a la baja, "
+        f"beneficio limitado al alza.")
+    u = s.get('underlying_cagr_recent')
+    f = s.get('price_cagr_recent')
+    if u is not None and f is not None:
+        contrast = ("Cuando el subyacente cae, el fondo lo acompaña casi 1:1." if u < 0 else
+                    f"Aunque {under} subió, {ticker} capturó solo una fracción de esa subida.")
+        lines.append(f"Últimos 12 meses: {under} {u:+.0f}% vs {ticker} {f:+.0f}%. {contrast}")
+    lines.append(
+        f"Conclusión: si {under} se recupera, {ticker} sube poco; si {under} cae, {ticker} cae "
+        f"casi igual. Tu income depende de que {under} no se desplome.")
+
+    seen, out = set(), []
+    for ln in lines:
+        if ln and ln not in seen:
+            seen.add(ln); out.append(ln)
+    return {'lines': out}
+
+
 def build_interpretation(results: dict, ticker: str, mode: str = None) -> dict:
     """Interpretación EDUCATIVA por ticker: combina el conocimiento curado
     (instruments.yaml) con los números ya calculados. Nunca recomienda comprar/vender
@@ -2248,6 +2395,24 @@ def build_interpretation(results: dict, ticker: str, mode: str = None) -> dict:
                 f"Tu retorno total es {_signed(total_ret)} "
                 f"(capital {_signed(cap)} + income ${inc:,.0f})."
             )
+
+    # (2b) Yield forward (lo que anuncian) vs realizado (lo que cobraste)
+    _fwd_y = s.get('forward_yield')
+    _real_y = s.get('realized_yield')
+    if _fwd_y and _real_y:
+        _ln = (f"Yield forward {_fwd_y:.1f}% (último pago anualizado — lo que anuncian) "
+               f"vs yield realizado {_real_y:.1f}% (lo que de verdad cobraste en 12 meses).")
+        if _fwd_y > _real_y * 1.15:
+            _ln += " El forward es optimista: tus pagos recientes vienen por debajo de ese ritmo."
+        lines.append(_ln)
+
+    # (2c) Cambio de frecuencia de pago (p.ej. mensual → semanal)
+    _cad = s.get('cadence_change')
+    if isinstance(_cad, dict) and _cad.get('changed'):
+        lines.append(
+            f"{_cad['note']} Por eso el ritmo de pagos no se compara 1:1 con antes "
+            f"(un pago {_cad['recent_label']} es menor que uno {_cad['old_label']}, "
+            f"aunque sumen parecido al año).")
 
     # (3) Qué considerar — sostenibilidad / nota curada
     if info.get('income_mechanism') and info.get('sustainability'):
@@ -2540,6 +2705,679 @@ def _csv_dividends_in_window(history_df, start=None, end=None) -> float:
         if 'dividend' in action or 'dividendo' in action:
             total += amount
     return total
+
+
+def _dividend_events(history_df) -> 'pd.Series':
+    """Serie de dividendo BRUTO por fecha de pago (un valor por día con dividendo).
+
+    Misma base que `_csv_dividends_in_window`: cuenta filas 'dividend'/'dividendo'
+    (incluye 'Reinvest Dividend' bruto y dividendo en efectivo) y omite 'Reinvest Shares'
+    (compra neta post-impuesto). Índice = fecha normalizada, valor = monto del pago (positivo).
+    Sirve para derivar frecuencia, último pago y TTM sin depender del income file del broker.
+    """
+    if history_df is None or len(history_df) == 0 or 'Date' not in history_df.columns:
+        return pd.Series(dtype=float)
+    rows = []
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        if 'dividend' not in action and 'dividendo' not in action:
+            continue
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        if is_drip and ('share' in action or 'acciones' in action):
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt) or amt == 0:
+            continue
+        rows.append((pd.to_datetime(row.get('Date'), errors='coerce'), abs(float(amt))))
+    if not rows:
+        return pd.Series(dtype=float)
+    df = pd.DataFrame(rows, columns=['Date', 'Amount']).dropna(subset=['Date'])
+    if df.empty:
+        return pd.Series(dtype=float)
+    df['Date'] = df['Date'].dt.normalize()
+    return df.groupby('Date')['Amount'].sum().sort_index()
+
+
+def _annualized_cagr(close, days=None):
+    """CAGR de precio anualizado (%) sobre una serie de cierres. `days`=None usa toda la
+    serie; `days`=365 usa la ventana de los últimos 12 meses. Defensivo → None si no aplica."""
+    try:
+        c = close.dropna()
+        if len(c) < 5:
+            return None
+        if days is not None:
+            c = c[c.index >= c.index[-1] - pd.Timedelta(days=days)]
+            if len(c) < 5:
+                return None
+        p0 = float(c.iloc[0]); p1 = float(c.iloc[-1])
+        yrs = max((c.index[-1] - c.index[0]).days / 365.25, 0.05)
+        return round(((p1 / p0) ** (1 / yrs) - 1) * 100, 2) if p0 > 0 else None
+    except Exception:
+        return None
+
+
+def forward_realized_yield(history_df, market_value, today=None) -> dict:
+    """Forward yield (lo que ANUNCIAN) vs realized yield (lo que COBRASTE), ambos sobre el
+    valor de mercado actual.
+
+      - forward_yield  = último pago × frecuencia anual / valor de mercado × 100
+        (lo que las páginas y el broker muestran: asume que el último pago se repite plano).
+      - realized_yield = dividendos cobrados en los últimos 12 meses / valor de mercado × 100
+        (lo que de verdad entró a tu bolsillo, reconstruido del CSV).
+
+    Devuelve {forward_yield, realized_yield, payments_per_year, last_payment, ttm_income}.
+    Todo None si falta historial de dividendos o valor de mercado.
+    """
+    out = {'forward_yield': None, 'realized_yield': None,
+           'payments_per_year': None, 'last_payment': None, 'ttm_income': None}
+    ev = _dividend_events(history_df)
+    if ev.empty or not market_value or market_value <= 0:
+        return out
+    today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
+
+    dates = list(ev.index[-12:])
+    gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates)) if (dates[i] - dates[i - 1]).days > 0]
+    median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 30
+    ppy = max(1, round(365 / median_gap)) if median_gap > 0 else 12
+
+    last_payment = float(ev.iloc[-1])
+    ttm = float(ev[ev.index >= today - pd.Timedelta(days=365)].sum())
+    out['payments_per_year'] = int(ppy)
+    out['last_payment'] = round(last_payment, 4)
+    out['ttm_income'] = round(ttm, 2)
+    out['forward_yield'] = round(last_payment * ppy / market_value * 100, 2)
+    out['realized_yield'] = round(ttm / market_value * 100, 2)
+    return out
+
+
+# Frecuencias estándar (pagos/año) → etiqueta legible. Se mapea por cercanía.
+_CADENCE_STD = [(52, 'semanal'), (26, 'quincenal'), (12, 'mensual'),
+                (4, 'trimestral'), (2, 'semestral'), (1, 'anual')]
+
+
+def _cadence_label(ppy):
+    """Etiqueta la frecuencia de pago más cercana a `ppy` (pagos/año)."""
+    if not ppy:
+        return 'desconocida'
+    return min(_CADENCE_STD, key=lambda x: abs(x[0] - ppy))[1]
+
+
+def _ppy_from_dates(dates):
+    """Pagos/año a partir de la mediana de gaps (días) entre fechas de pago."""
+    gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))
+            if (dates[i] - dates[i - 1]).days > 0]
+    if not gaps:
+        return None
+    g = sorted(gaps)[len(gaps) // 2]
+    return max(1, round(365 / g)) if g > 0 else None
+
+
+def detect_cadence_change(history_df, window=6):
+    """Detecta cambios de frecuencia de pago (p.ej. mensual → semanal) comparando la
+    cadencia de la ventana reciente vs la anterior. Devuelve None si no hay pagos
+    suficientes, o {recent_ppy, old_ppy, recent_label, old_label, changed, note}.
+
+    Importante para no comparar peras con manzanas: un pago semanal de $28 no equivale a
+    uno mensual de $200. El yield realizado (TTM) es inmune (suma 12m reales); solo el
+    forward depende de acertar la frecuencia actual, que la mediana móvil ya resuelve.
+    """
+    ev = _dividend_events(history_df)
+    dts = list(ev.index)
+    if len(dts) < 6:                       # mínimo: dos ventanas de 3 pagos
+        return None
+    n = min(window, len(dts) // 2)
+    # Cadencia actual (últimos n) vs la del inicio del registro (primeros n): así se detecta
+    # "antes pagaba mensual, ahora semanal" aunque el cambio haya sido hace varios pagos.
+    recent, older = dts[-n:], dts[:n]
+    if len(recent) < 3 or len(older) < 3:
+        return None
+    rp, op = _ppy_from_dates(recent), _ppy_from_dates(older)
+    if rp is None or op is None:
+        return None
+    rl, ol = _cadence_label(rp), _cadence_label(op)
+    changed = rl != ol
+    note = (f"Cambió su frecuencia de pago: {ol} → {rl}." if changed
+            else f"Frecuencia de pago estable ({rl}).")
+    return {'recent_ppy': rp, 'old_ppy': op, 'recent_label': rl,
+            'old_label': ol, 'changed': changed, 'note': note}
+
+
+def net_of_withholding(gross, rate_pct):
+    """Ingreso neto tras retención de impuesto. `rate_pct` en porcentaje (30 = 30%).
+
+    Para no-residentes (NRA) el dividendo de fuente EE.UU. suele retener 30% (menos si hay
+    tratado). El cálculo histórico de la app es BRUTO a propósito (cuadra con el income file
+    del broker); esta función es la capa de visualización neta, separada. Defensiva ante None.
+    """
+    if gross is None:
+        return None
+    try:
+        r = max(0.0, min(100.0, float(rate_pct or 0)))
+    except (TypeError, ValueError):
+        r = 0.0
+    return gross * (1 - r / 100.0)
+
+
+# ── Módulo fiscal NRA (no-residente): tasa por país × escudo del ROC ──────────
+# Tasas de retención sobre dividendos de fuente EE.UU. para residentes de cada país
+# (tablas IRS / tratados). (tasa_%, ¿tiene_tratado?). Default 30% sin tratado.
+NRA_DEFAULT_RATE = 30.0
+NRA_COUNTRY_RATES = {
+    'México':      (10.0, True),
+    'Chile':       (15.0, True),
+    'Colombia':    (30.0, False),
+    'Perú':        (30.0, False),
+    'Argentina':   (30.0, False),
+    'Brasil':      (30.0, False),
+    'Otros LATAM': (30.0, False),
+}
+
+
+def nra_tax_breakdown(country, roc_fraction_pct, nominal_income=None):
+    """Módulo fiscal NRA: retención REAL sobre dividendos de fuente EE.UU. con la
+    'Ecuación Nugget': `efectiva = tasa_país × (1 − ROC)`. El Retorno de Capital no es
+    dividendo gravable, así que actúa como escudo fiscal en el presente.
+
+    Devuelve {country, base_rate, has_treaty, roc_fraction, effective_rate, lines[], audit_note}.
+    `lines` cumple los 4 requisitos del spec (tratado, ROC=escudo, costo base, contraste
+    nominal vs efectivo). SIEMPRE acompañar con `audit_note` al renderizar.
+
+    NOTA (v2, diferido): (1 − ROC) es una aproximación ligeramente CONSERVADORA — estrictamente,
+    además del ROC, las ganancias de capital de LARGO plazo de la distribución tampoco sufren
+    retención NRA, así que la fracción gravable real puede ser aún menor. Hoy roc_19a.yaml solo
+    guarda `roc_pct`; el desglose completo (ordinary / ST cap gains / LT cap gains / ROC) requiere
+    extender fetch_roc_19a.py y el esquema del YAML. Ver follow-up.
+    """
+    base, treaty = NRA_COUNTRY_RATES.get(country, (NRA_DEFAULT_RATE, False))
+    roc = max(0.0, min(100.0, float(roc_fraction_pct or 0)))
+    effective = round(base * (1 - roc / 100.0), 2)
+
+    lines = []
+    if treaty:
+        lines.append(f"Vives en {country}: por el tratado fiscal con EE.UU., la retención base "
+                     f"sobre dividendos es {base:.0f}% (no el 30% general).")
+    else:
+        lines.append(f"{country} no tiene tratado fiscal vigente con EE.UU., así que aplica la "
+                     f"tasa base del {base:.0f}% por defecto sobre dividendos.")
+    if roc > 0:
+        lines.append(f"De este fondo, ~{roc:.0f}% de lo que reparte es Retorno de Capital (ROC): "
+                     f"NO es un dividendo gravable, es tu propio dinero que te devuelven. Actúa "
+                     f"como escudo fiscal — esa parte hoy no paga retención.")
+        lines.append("Ojo amable: ese Retorno de Capital baja tu costo de compra de la acción. No "
+                     "es gratis para siempre — el impuesto se pospone hasta que vendas (ahí pagarás "
+                     "más ganancia de capital).")
+    if nominal_income and nominal_income > 0:
+        nom_amt = nominal_income * base / 100.0
+        eff_amt = nominal_income * effective / 100.0
+        lines.append(f"Creías que te quitaban el {base:.0f}% (${nom_amt:,.0f}); en realidad, con el "
+                     f"escudo del ROC, la retención efectiva es ~{effective:.1f}% (${eff_amt:,.0f}). "
+                     f"Diferencia a tu favor: ${nom_amt - eff_amt:,.0f}.")
+    else:
+        lines.append(f"Creías que te quitaban el {base:.0f}%; con el escudo del ROC, la retención "
+                     f"efectiva real es ~{effective:.1f}%.")
+
+    audit = ("Cálculos basados en las tablas vigentes del IRS y PwC. La legislación fiscal "
+             "internacional cambia y tu bróker puede retener distinto en la fuente: confirma "
+             "siempre con tu bróker o un asesor fiscal.")
+    return {'country': country, 'base_rate': base, 'has_treaty': treaty,
+            'roc_fraction': round(roc, 1), 'effective_rate': effective,
+            'lines': lines, 'audit_note': audit}
+
+
+def _ticker_roc_fraction(ticker, results=None):
+    """Fracción ROC (%) de un ticker para el módulo fiscal: 19a (weighted_pct) primero,
+    luego el roc_percent ya calculado en results; 0 si no aplica. Acotada a [0, 100]."""
+    wpct = load_roc_19a().get(str(ticker).upper(), {}).get('weighted_pct')
+    if wpct is not None:
+        try:
+            return max(0.0, min(100.0, float(wpct)))
+        except (TypeError, ValueError):
+            pass
+    if results and isinstance(results.get(ticker), dict):
+        rp = results[ticker].get('roc_percent')
+        if rp is not None:
+            try:
+                return max(0.0, min(100.0, float(rp)))
+            except (TypeError, ValueError):
+                pass
+    return 0.0
+
+
+def withheld_tax_total(history_df) -> float:
+    """Retención de impuesto REAL registrada en el CSV, monto positivo retenido (≥0).
+
+    Schwab deja la retención en filas aparte ('NRA Tax Adj') que sobreviven en el historial;
+    se detectan por palabra clave en la columna Action. (En IB la retención 'Foreign Tax
+    Withholding' ya viene plegada como dividendo negativo durante el parseo, así que ahí el
+    dividendo del CSV ya es neto y esta función devolverá 0.) Sirve para mostrar la tasa
+    efectiva real cuando el dato existe, en vez de la tasa asumida.
+    """
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return 0.0
+    total = 0.0
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if not is_tax:
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        total += abs(float(amt))
+    return round(total, 2)
+
+
+# ============================================================
+# v3.0 — PROYECCIÓN A FUTURO (inspirada en calculadoras DRIP, con guardarraíl de realismo)
+# ============================================================
+
+PROJ_DEFAULTS = {
+    'horizon_years': 5,
+    'monthly_contribution': 0.0,
+    'drip': True,
+    'tax_rate_pct': 0.0,
+    'dividend_growth_pct': 0.0,     # crecimiento anual del dividendo (ETFs de dividendo)
+    'price_appreciation_pct': 0.0,  # apreciación anual del precio (ETFs de crecimiento)
+    'yieldmax_decay_fallback_pct': -10.0,  # decaimiento anual si no hay CAGR observado
+    'income_goal_monthly': None,    # hito de ingreso mensual (objetivo)
+    'upside_capture': 0.5,          # YieldMax: fracción de la SUBIDA del subyacente que captura
+    'downside_capture': 1.0,        # YieldMax: fracción de la CAÍDA del subyacente que toma
+}
+
+
+def _yieldmax_nav_from_underlying(scenario_return, underlying_obs, fund_obs,
+                                  upside_capture=0.5, downside_capture=1.0):
+    """Proyecta el retorno anual de NAV de un YieldMax a partir de un escenario del subyacente
+    (p.ej. '¿y si MSTR/Bitcoin se recupera +30%?'), con captura ASIMÉTRICA: toma casi toda la
+    caída (`downside_capture`≈1) pero poca de la subida (`upside_capture`≈0.5), más un 'drag'
+    estructural (comisiones + erosión por ROC) calibrado al punto observado real
+    (`underlying_obs` → `fund_obs`). Devuelve % anual o None si falta el punto de calibración.
+
+    Modelo: cap(R) = downside·min(R,0) + upside·max(R,0);  drag = cap(underlying_obs) − fund_obs;
+    NAV(escenario) = cap(scenario_return) − drag. Así el escenario base (= observado) reproduce
+    el comportamiento real, y un escenario alcista sube el fondo solo parcialmente (techo + drag).
+    """
+    if underlying_obs is None or fund_obs is None:
+        return None
+
+    def cap(r):
+        return downside_capture * min(r, 0.0) + upside_capture * max(r, 0.0)
+
+    drag = cap(underlying_obs) - fund_obs
+    return round(cap(scenario_return) - drag, 2)
+
+
+def _simulate_forward(shares0, price0, fwd_yield_pct, months, monthly_contribution=0.0,
+                      drip=True, tax_rate=0.0, annual_price_growth=0.0, annual_div_growth=0.0):
+    """Simula un ticker mes a mes. Devuelve lista de tuplas mensuales
+    (month, shares, price, value, annual_income_net, cum_div_net, cum_contrib).
+
+    `fwd_yield_pct`: yield forward anual (%) al nivel actual → dividendo anual por acción =
+    fwd_yield_pct/100 × price0. El precio evoluciona a `annual_price_growth` y el dividendo
+    por acción a `annual_div_growth` (en el modelo de erosión ambos van juntos: el yield se
+    mantiene fijo sobre un NAV que cae). `value` incluye el efectivo acumulado si DRIP está off.
+    """
+    dps_annual = (fwd_yield_pct / 100.0) * price0
+    mpg = (1 + annual_price_growth / 100.0) ** (1 / 12.0) - 1
+    mdg = (1 + annual_div_growth / 100.0) ** (1 / 12.0) - 1
+    shares, price, cash = float(shares0), float(price0), 0.0
+    cum_div_net, cum_contrib = 0.0, 0.0
+    monthly = []
+    for m in range(1, months + 1):
+        if monthly_contribution > 0 and price > 0:
+            shares += monthly_contribution / price
+            cum_contrib += monthly_contribution
+        gross = shares * (dps_annual / 12.0)
+        net = gross * (1 - tax_rate)
+        cum_div_net += net
+        if drip and price > 0:
+            shares += net / price
+        else:
+            cash += net
+        price *= (1 + mpg)
+        dps_annual *= (1 + mdg)
+        annual_income_net = shares * dps_annual * (1 - tax_rate)
+        value = shares * price + (0.0 if drip else cash)
+        monthly.append((m, shares, price, value, annual_income_net, cum_div_net, cum_contrib))
+    return monthly
+
+
+def _yearly_from_monthly(monthly):
+    """Resume la simulación mensual a filas anuales (snapshot de fin de cada año)."""
+    rows = []
+    for (m, shares, price, value, ann_inc, cum_div, cum_contrib) in monthly:
+        if m % 12 == 0:
+            rows.append({
+                'year': m // 12, 'shares': round(shares, 4), 'price': round(price, 2),
+                'portfolio_value': round(value, 2), 'annual_income': round(ann_inc, 2),
+                'cumulative_dividends': round(cum_div, 2),
+                'cumulative_contributions': round(cum_contrib, 2),
+            })
+    return rows
+
+
+def project_portfolio_forward(results, params=None, classify_map=None) -> dict:
+    """Proyección a futuro por ticker y consolidada, periodo a periodo (mensual).
+
+    Ramifica por tipo de instrumento — el guardarraíl de realismo:
+      • YieldMax (mode_a / type:yieldmax) → modelo de EROSIÓN: el NAV decae a la tasa
+        observada (`price_cagr`, capada a ≤0: nunca se asume apreciación positiva en un
+        YieldMax) y el yield se mantiene fijo sobre ese NAV que cae, así que el dividendo
+        por acción también baja. Calcula la carrera ingreso-acumulado vs pérdida-de-capital,
+        el mes de breakeven, el retorno total honesto y la fracción que es Retorno de
+        Capital (19a, no es rendimiento real).
+      • ETF de crecimiento/dividendo → modelo ESTÁNDAR: dividendo crece a
+        `dividend_growth_pct`, precio se aprecia a `price_appreciation_pct` (defaults 0%).
+
+    Solo proyecta tickers con `forward_yield`, acciones y precio. Devuelve
+    {'per_ticker': {tk: {...}}, 'portfolio': {...}, 'params': {...}, 'eligible': [...]}.
+    """
+    p = dict(PROJ_DEFAULTS)
+    if params:
+        p.update({k: v for k, v in params.items() if v is not None})
+    months = max(1, int(round(float(p['horizon_years']) * 12)))
+    tax = max(0.0, min(1.0, float(p['tax_rate_pct']) / 100.0))
+    country = p.get('country')   # si se da, la retención es por país × escudo ROC (por ticker)
+    contrib = max(0.0, float(p['monthly_contribution']))
+    drip = bool(p['drip'])
+    classify_map = classify_map or classify_tickers(list(results.keys()))
+    instruments = load_instruments()
+    roc19a = load_roc_19a()
+
+    per_ticker, eligible = {}, []
+    n_eligible = sum(1 for t, s in results.items()
+                     if isinstance(s, dict) and 'error' not in s and (s.get('forward_yield') or 0) > 0
+                     and (s.get('shares_owned') or 0) > 0 and (s.get('current_price') or 0) > 0)
+    contrib_each = contrib / n_eligible if n_eligible > 0 else 0.0  # reparte el aporte mensual
+
+    for tk, s in results.items():
+        if not isinstance(s, dict) or 'error' in s:
+            continue
+        fwd = s.get('forward_yield') or 0
+        shares0 = s.get('shares_owned') or 0
+        price0 = s.get('current_price') or 0
+        if fwd <= 0 or shares0 <= 0 or price0 <= 0:
+            continue
+        eligible.append(tk)
+
+        info = instruments.get(str(tk).upper(), {})
+        is_ym = classify_map.get(tk) == 'mode_a' or (info.get('type') or '').lower() == 'yieldmax'
+
+        # Retención por ticker: si hay país, tasa efectiva = país × (1 − ROC); si no, la plana.
+        if country:
+            _base, _ = NRA_COUNTRY_RATES.get(country, (NRA_DEFAULT_RATE, False))
+            _roc_frac = _ticker_roc_fraction(tk, results)
+            tk_eff_rate = round(_base * (1 - _roc_frac / 100.0), 2)
+            tk_tax = max(0.0, min(1.0, tk_eff_rate / 100.0))
+        else:
+            tk_tax = tax
+            tk_eff_rate = round(tax * 100, 2)
+
+        decay_window = None
+        if is_ym:
+            _scen = (p.get('underlying_scenarios') or {}).get(tk)
+            _scen_nav = None
+            if _scen is not None:
+                # Escenario del subyacente: deriva el NAV del fondo vía captura asimétrica.
+                _scen_nav = _yieldmax_nav_from_underlying(
+                    float(_scen), s.get('underlying_cagr_recent'), s.get('price_cagr_recent'),
+                    p['upside_capture'], p['downside_capture'])
+            if _scen_nav is not None:
+                decay = _scen_nav            # puede ser positivo: el escenario lo permite a propósito
+                decay_window = 'escenario'
+            else:
+                decay = p.get('nav_decay_overrides', {}).get(tk)
+                if decay is None:
+                    # Preferir el decaimiento de los últimos 12 meses (régimen actual) sobre el de
+                    # toda la vida del fondo: no extrapola una caída vieja como si fuera eterna.
+                    obs = s.get('price_cagr_recent')
+                    decay_window = '12m'
+                    if obs is None:
+                        obs = s.get('price_cagr'); decay_window = 'vida'
+                    decay = min(obs, 0.0) if obs is not None else p['yieldmax_decay_fallback_pct']
+                    if obs is None:
+                        decay_window = 'default'
+                else:
+                    decay_window = 'manual'
+            price_growth, div_growth = decay, decay  # yield fijo sobre NAV que cae
+        else:
+            price_growth = p['price_appreciation_pct']
+            div_growth = p['dividend_growth_pct']
+
+        monthly = _simulate_forward(
+            shares0, price0, fwd, months, monthly_contribution=contrib_each, drip=drip,
+            tax_rate=tk_tax, annual_price_growth=price_growth, annual_div_growth=div_growth)
+        monthly_nodrip = _simulate_forward(
+            shares0, price0, fwd, months, monthly_contribution=contrib_each, drip=False,
+            tax_rate=tk_tax, annual_price_growth=price_growth, annual_div_growth=div_growth)
+
+        end_val_drip = monthly[-1][3]
+        end_val_nodrip = monthly_nodrip[-1][3]
+        entry = {
+            'is_yieldmax': is_ym,
+            'forward_yield': fwd,
+            'realized_yield': s.get('realized_yield'),
+            'price_growth_pct': round(price_growth, 2),
+            'div_growth_pct': round(div_growth, 2),
+            'yearly': _yearly_from_monthly(monthly),
+            'end_value': round(end_val_drip, 2),
+            'end_value_nodrip': round(end_val_nodrip, 2),
+            'drip_advantage': round(end_val_drip - end_val_nodrip, 2),
+            'cumulative_dividends_net': round(monthly[-1][5], 2),
+            'start_value': round(shares0 * price0, 2),
+            'cadence_change': s.get('cadence_change'),
+            'tax_effective_rate': tk_eff_rate,
+        }
+
+        if is_ym:
+            # Carrera ingreso vs erosión: buy-and-hold, distribuciones en cash, sin aportes.
+            race = _simulate_forward(shares0, price0, fwd, months, monthly_contribution=0.0,
+                                     drip=False, tax_rate=tk_tax,
+                                     annual_price_growth=price_growth, annual_div_growth=div_growth)
+            start_principal = shares0 * price0
+            breakeven_m, race_rows = None, []
+            for (m, sh, pr, val, ann, cum_div, _c) in race:
+                capital_loss = start_principal - sh * pr  # sh es constante (sin DRIP/aporte)
+                if breakeven_m is None and cum_div >= capital_loss:
+                    breakeven_m = m
+                race_rows.append({'month': m, 'cum_income_net': round(cum_div, 2),
+                                  'capital_loss': round(capital_loss, 2),
+                                  'principal_value': round(sh * pr, 2)})
+            end_income = race[-1][5]
+            end_principal = race[-1][1] * race[-1][2]
+            honest_tr = ((end_income + end_principal - start_principal) / start_principal * 100
+                         if start_principal > 0 else None)
+            wpct = roc19a.get(str(tk).upper(), {}).get('weighted_pct')
+            entry.update({
+                'breakeven_month': breakeven_m,
+                'race': race_rows,
+                'total_income_net': round(end_income, 2),
+                'ending_principal': round(end_principal, 2),
+                'honest_total_return_pct': round(honest_tr, 1) if honest_tr is not None else None,
+                'roc_fraction_pct': round(float(wpct), 1) if wpct is not None else s.get('roc_percent'),
+                'decay_window': decay_window,
+            })
+        per_ticker[tk] = entry
+
+    # ── Consolidado del portafolio: suma por año entre tickers ──
+    portfolio = {'yearly': [], 'start_value': 0.0, 'end_value': 0.0,
+                 'end_value_nodrip': 0.0, 'drip_advantage': 0.0,
+                 'cumulative_dividends_net': 0.0}
+    if per_ticker:
+        n_years = max(len(e['yearly']) for e in per_ticker.values())
+        for y in range(1, n_years + 1):
+            v = inc = cdiv = contribs = 0.0
+            for e in per_ticker.values():
+                yr = next((r for r in e['yearly'] if r['year'] == y), None)
+                if yr:
+                    v += yr['portfolio_value']; inc += yr['annual_income']
+                    cdiv += yr['cumulative_dividends']; contribs += yr['cumulative_contributions']
+            portfolio['yearly'].append({
+                'year': y, 'portfolio_value': round(v, 2), 'annual_income': round(inc, 2),
+                'cumulative_dividends': round(cdiv, 2), 'cumulative_contributions': round(contribs, 2),
+            })
+        portfolio['start_value'] = round(sum(e['start_value'] for e in per_ticker.values()), 2)
+        portfolio['end_value'] = round(sum(e['end_value'] for e in per_ticker.values()), 2)
+        portfolio['end_value_nodrip'] = round(sum(e['end_value_nodrip'] for e in per_ticker.values()), 2)
+        portfolio['drip_advantage'] = round(portfolio['end_value'] - portfolio['end_value_nodrip'], 2)
+        portfolio['cumulative_dividends_net'] = round(
+            sum(e['cumulative_dividends_net'] for e in per_ticker.values()), 2)
+
+        # Hito: mes en que el ingreso mensual del portafolio cruza el objetivo.
+        goal = p.get('income_goal_monthly')
+        if goal and float(goal) > 0:
+            goal = float(goal)
+            hit_year = next((r['year'] for r in portfolio['yearly']
+                             if r['annual_income'] / 12.0 >= goal), None)
+            portfolio['income_goal_monthly'] = goal
+            portfolio['income_goal_year'] = hit_year
+
+    return {'per_ticker': per_ticker, 'portfolio': portfolio,
+            'params': {**p, 'months': months}, 'eligible': eligible}
+
+
+def _mc_simulate_path(asset, n_years, contrib_each, drip, rng, div_growth_base):
+    """Un camino Monte Carlo de un activo: sortea un retorno anual NUEVO cada año (riesgo de
+    secuencia) ~ Normal(media, vol) y compone mes a mes. Devuelve (valores_por_año[],
+    ingreso_anual_final).
+
+    Modelo de YIELD-SOBRE-PRECIO: el dividendo se calcula como `yield × precio` cada mes, así
+    que si el precio cae, el dividendo cae proporcional (realista) y el DRIP nunca explota
+    (la compra de acciones queda atada al yield, no a un dividendo nominal fijo / precio→0).
+    YieldMax: yield constante sobre el NAV que cae. ETF: el yield-on-price crece con `div_growth`.
+    """
+    shares = float(asset['shares0']); price = float(asset['price0'])
+    yld = (asset['fwd'] or 0) / 100.0        # yield anual sobre el precio actual
+    tax = asset['tax']
+    cash = 0.0
+    yearly = []
+    for _y in range(n_years):
+        g = float(rng.normal(asset['mean'], asset['vol']))
+        if asset.get('ym_clamp', asset['is_ym']):
+            g = min(g, 0.0)                       # guardarraíl: YieldMax nunca aprecia (salvo escenario)
+        g = max(min(g, 150.0), -99.0)             # acota el año a [-99%, +150%]
+        mpg = (1 + g / 100.0) ** (1 / 12.0) - 1
+        # ETF: el yield-on-price crece con el dividendo. YieldMax: yield fijo sobre NAV.
+        myg = 0.0 if asset['is_ym'] else ((1 + max(min(div_growth_base, 150.0), -99.0) / 100.0) ** (1 / 12.0) - 1)
+        for _m in range(12):
+            if contrib_each > 0 and price > 0:
+                shares += contrib_each / price
+            net = shares * (yld / 12.0) * price * (1 - tax)   # dividendo del mes (atado al precio)
+            if drip and price > 0:
+                shares += net / price                          # = shares × yld/12 × (1−tax): acotado
+            else:
+                cash += net
+            price = max(price * (1 + mpg), 1e-9)
+            yld *= (1 + myg)
+        yearly.append(shares * price + (0.0 if drip else cash))
+    return yearly, shares * yld * price * (1 - tax)
+
+
+def monte_carlo_projection(results, params=None, classify_map=None, n_paths=500, seed=None) -> dict:
+    """Monte Carlo de la proyección: en vez de una sola línea, sortea el retorno anual de cada
+    activo ~ Normal(media=supuesto, sd=volatilidad observada) — un valor NUEVO por año (riesgo
+    de secuencia) — y corre N caminos. Reporta bandas p10/p50/p90 del valor del portafolio por
+    año, la probabilidad de cumplir la meta de ingreso mensual, y el rango de valor final.
+    `inflation_pct` + `real_view` permiten ver en términos reales. Determinista con `seed`.
+
+    Devuelve {bands:[{year,p10,p50,p90}], final:{p10,p50,p90}, prob_goal, n_paths, real_view, params}.
+    """
+    p = dict(PROJ_DEFAULTS)
+    if params:
+        p.update({k: v for k, v in params.items() if v is not None})
+    n_years = max(1, int(round(float(p['horizon_years']))))
+    tax = max(0.0, min(1.0, float(p['tax_rate_pct']) / 100.0))
+    country = p.get('country')
+    contrib = max(0.0, float(p['monthly_contribution']))
+    drip = bool(p['drip'])
+    inflation = float(p.get('inflation_pct', 3.0) or 0.0)
+    real_view = bool(p.get('real_view', False))
+    goal = p.get('income_goal_monthly')
+    classify_map = classify_map or classify_tickers(list(results.keys()))
+    instruments = load_instruments()
+    rng = np.random.default_rng(seed)
+
+    assets = []
+    for tk, s in results.items():
+        if not isinstance(s, dict) or 'error' in s:
+            continue
+        fwd = s.get('forward_yield') or 0
+        shares0 = s.get('shares_owned') or 0
+        price0 = s.get('current_price') or 0
+        if fwd <= 0 or shares0 <= 0 or price0 <= 0:
+            continue
+        info = instruments.get(str(tk).upper(), {})
+        is_ym = classify_map.get(tk) == 'mode_a' or (info.get('type') or '').lower() == 'yieldmax'
+        ym_clamp = is_ym   # YieldMax normalmente no aprecia; un escenario alcista lo desactiva
+        if is_ym:
+            _scen = (p.get('underlying_scenarios') or {}).get(tk)
+            _scen_nav = (_yieldmax_nav_from_underlying(
+                float(_scen), s.get('underlying_cagr_recent'), s.get('price_cagr_recent'),
+                p['upside_capture'], p['downside_capture']) if _scen is not None else None)
+            if _scen_nav is not None:
+                mean_growth = _scen_nav      # media centrada en el escenario del subyacente
+                ym_clamp = False             # permitir caminos positivos si el escenario es alcista
+            else:
+                obs = s.get('price_cagr_recent')
+                if obs is None:
+                    obs = s.get('price_cagr')
+                mean_growth = min(obs, 0.0) if obs is not None else p['yieldmax_decay_fallback_pct']
+        else:
+            mean_growth = p['price_appreciation_pct']
+        # Vol anualizada (%); acotada a [5, 100]: algunos tickers traen vol corrupta
+        # (p.ej. SCHB/XLK con miles de %), que sin tope haría explotar el Monte Carlo.
+        vol = s.get('volatilidad_anualizada')
+        try:
+            vol = min(max(5.0, float(vol)), 100.0) if vol is not None else 30.0
+        except (TypeError, ValueError):
+            vol = 30.0
+        if country:
+            _base, _ = NRA_COUNTRY_RATES.get(country, (NRA_DEFAULT_RATE, False))
+            tk_tax = max(0.0, min(1.0, _base * (1 - _ticker_roc_fraction(tk, results) / 100.0) / 100.0))
+        else:
+            tk_tax = tax
+        assets.append({'tk': tk, 'shares0': shares0, 'price0': price0, 'fwd': fwd,
+                       'mean': mean_growth, 'vol': vol, 'is_ym': is_ym, 'ym_clamp': ym_clamp,
+                       'tax': tk_tax})
+
+    if not assets:
+        return {'bands': [], 'final': {}, 'prob_goal': None, 'n_paths': 0,
+                'real_view': real_view, 'params': {**p, 'n_years': n_years}}
+
+    contrib_each = contrib / len(assets)
+    div_growth_base = p['dividend_growth_pct']
+    year_values = np.zeros((n_paths, n_years))
+    final_income = np.zeros(n_paths)
+    for i in range(n_paths):
+        for a in assets:
+            yvals, fi = _mc_simulate_path(a, n_years, contrib_each, drip, rng, div_growth_base)
+            year_values[i, :] += np.array(yvals)
+            final_income[i] += fi
+
+    # Deflactar a términos reales si se pide (poder de compra de hoy).
+    if real_view and inflation != 0:
+        deflator = np.array([(1 + inflation / 100.0) ** (y + 1) for y in range(n_years)])
+        year_values = year_values / deflator
+        final_income = final_income / ((1 + inflation / 100.0) ** n_years)
+
+    bands = []
+    for y in range(n_years):
+        col = year_values[:, y]
+        bands.append({'year': y + 1,
+                      'p10': round(float(np.percentile(col, 10)), 2),
+                      'p50': round(float(np.percentile(col, 50)), 2),
+                      'p90': round(float(np.percentile(col, 90)), 2)})
+    fin = year_values[:, -1]
+    final = {'p10': round(float(np.percentile(fin, 10)), 2),
+             'p50': round(float(np.percentile(fin, 50)), 2),
+             'p90': round(float(np.percentile(fin, 90)), 2)}
+    prob_goal = None
+    if goal and float(goal) > 0:
+        prob_goal = round(float(np.mean((final_income / 12.0) >= float(goal))) * 100, 1)
+
+    return {'bands': bands, 'final': final, 'prob_goal': prob_goal, 'n_paths': n_paths,
+            'real_view': real_view, 'params': {**p, 'n_years': n_years}}
 
 
 def reconcile_income(results: dict, income_summary: dict) -> dict:

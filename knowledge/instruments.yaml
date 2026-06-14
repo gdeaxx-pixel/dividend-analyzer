@@ -48,6 +48,7 @@ CONY:
   type: yieldmax
   underlying: COIN
   name: Coinbase
+  driver: el precio de Bitcoin y el mercado cripto
   risk: HIGH
   reason: "Exchange cripto, riesgo regulatorio intenso, correlacionado con BTC"
   income_mechanism: "Calls cubiertas sintéticas sobre COIN; income vía primas de opciones."
@@ -59,6 +60,7 @@ MSTY:
   type: yieldmax
   underlying: MSTR
   name: MicroStrategy
+  driver: el precio de Bitcoin
   risk: HIGH
   reason: "Proxy de Bitcoin con apalancamiento, volatilidad extrema"
   income_mechanism: "Calls cubiertas sintéticas sobre MSTR (que a su vez es un proxy apalancado de Bitcoin); income vía primas, amplificadas por la altísima volatilidad de MSTR."
@@ -221,3 +223,26 @@ GLD:
   risk: MEDIUM
   reason: "ETF respaldado por oro físico; no genera income, cobertura/refugio"
   note: "El oro no paga dividendos ni cupones: tu único retorno es el cambio de precio. Suele actuar como cobertura frente a inflación y estrés de mercado."
+
+# ── Income / covered-call & prima de volatilidad (alto yield, no single-name) ──
+QYLD:
+  type: etf
+  underlying: Nasdaq-100
+  name: Nasdaq-100 Covered Call
+  risk: MEDIUM
+  reason: "Covered call sobre el Nasdaq-100: capa la subida del índice pero mantiene el riesgo de bajada"
+  income_mechanism: "Estrategia buy-write: posee el Nasdaq-100 y genera income vendiendo call cubiertas mensuales sobre el índice; el income son las primas de esas opciones (~12 años de distribución mensual ininterrumpida)."
+  nav_erosion: "En rallies fuertes del Nasdaq el techo de las calls deja el NAV rezagado vs el índice; en caídas baja casi como el índice. Erosión más suave que un YieldMax de un solo nombre, pero el lag estructural existe."
+  sustainability: "Distribución atada a la volatilidad del Nasdaq-100: las primas (y el pago) bajan cuando la volatilidad se calma."
+  note: "Cambias la apreciación del Nasdaq por income mensual. Si esperas un rally fuerte, QQQ directo captura más; QYLD prioriza el flujo. Evalúalo por retorno total, no solo por el yield."
+
+SVOL:
+  type: etf
+  underlying: Volatilidad (futuros del VIX)
+  name: Volatility Premium (short VIX)
+  risk: HIGH
+  reason: "Mantiene posiciones cortas en futuros del VIX para cobrar la prima de volatilidad; un salto brusco del VIX golpea el NAV (riesgo de cola)"
+  income_mechanism: "Shortea 20-30% en futuros del VIX para cobrar el roll yield/prima de volatilidad, con T-bills como colateral y calls del VIX como cobertura. Yield alto (~15-20%)."
+  nav_erosion: "El riesgo no es erosión lenta sino caídas abruptas en spikes de volatilidad (ago-2024: VIX +308% intradía → SVOL cayó ~10-13%). La cobertura con calls del VIX limita la cola pero no la elimina."
+  sustainability: "Distribución mensual estable mientras la volatilidad esté tranquila; en un régimen de vol alta sostenida, income y NAV sufren a la vez."
+  note: "Es una apuesta a que la volatilidad se mantiene baja/normal — no un ETF de dividendos clásico (el yield viene de cobrar la prima por asumir el riesgo de la volatilidad). Riesgo de cola real."

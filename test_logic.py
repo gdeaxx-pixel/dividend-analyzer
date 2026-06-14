@@ -1087,3 +1087,422 @@ def test_filter_growth_assets_complement_of_income():
     assert "BAD" not in growth       # error → excluido
     assert growth["SCHB"]["roi_percent"] == 40.4
     assert growth["SCHB"]["benchmark_roi"] == 20.0
+
+
+# ── v3.0: Proyección a futuro, doble yield, impuestos (Mejoras inspiradas en calculadoras web) ──
+
+def _div_hist(rows):
+    df = pd.DataFrame(rows)
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
+
+def test_net_of_withholding_basic_and_defensive():
+    assert logic.net_of_withholding(100, 30) == pytest.approx(70.0)
+    assert logic.net_of_withholding(100, 0) == pytest.approx(100.0)
+    assert logic.net_of_withholding(None, 30) is None
+    assert logic.net_of_withholding(100, None) == pytest.approx(100.0)
+    # tasas fuera de rango se acotan a [0, 100]
+    assert logic.net_of_withholding(100, 150) == pytest.approx(0.0)
+
+
+def test_dividend_events_excludes_reinvest_shares_and_tax():
+    hist = _div_hist([
+        {'Date': '2025-09-15', 'Action': 'Qualified Dividend', 'Amount': 10},
+        {'Date': '2025-10-15', 'Action': 'Reinvest Dividend', 'Amount': 10},
+        {'Date': '2025-10-15', 'Action': 'Reinvest Shares', 'Amount': -7},   # compra neta → omitir
+        {'Date': '2025-11-15', 'Action': 'NRA Tax Adj', 'Amount': -3},        # impuesto → omitir
+        {'Date': '2025-11-15', 'Action': 'Cash Dividend', 'Amount': 12},
+    ])
+    ev = logic._dividend_events(hist)
+    assert len(ev) == 3
+    assert ev.sum() == pytest.approx(32.0)
+
+
+def test_withheld_tax_total_reads_nra_rows():
+    hist = _div_hist([
+        {'Date': '2025-11-15', 'Action': 'Cash Dividend', 'Amount': 12},
+        {'Date': '2025-11-15', 'Action': 'NRA Tax Adj', 'Amount': -3.6},
+    ])
+    assert logic.withheld_tax_total(hist) == pytest.approx(3.6)
+    # sin filas de impuesto → 0
+    assert logic.withheld_tax_total(_div_hist(
+        [{'Date': '2025-11-15', 'Action': 'Cash Dividend', 'Amount': 12}])) == 0.0
+
+
+def test_forward_realized_yield_distinguishes_headline_from_collected():
+    # Pagos mensuales decrecientes: último pago anualizado (forward) > lo cobrado en 12m (realizado).
+    rows = [{'Date': f'2025-{m:02d}-15', 'Action': 'Cash Dividend', 'Amount': amt}
+            for m, amt in zip(range(1, 13), [20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9])]
+    hist = _div_hist(rows)
+    fy = logic.forward_realized_yield(hist, market_value=1000, today='2026-01-01')
+    assert fy['payments_per_year'] == 12
+    assert fy['last_payment'] == pytest.approx(9.0)
+    # forward = 9*12/1000 = 10.8%
+    assert fy['forward_yield'] == pytest.approx(10.8, abs=0.1)
+    # realized (suma de los 12 pagos) = 174/1000 = 17.4%
+    assert fy['realized_yield'] == pytest.approx(17.4, abs=0.1)
+    # sin valor de mercado → todo None
+    assert logic.forward_realized_yield(hist, market_value=0)['forward_yield'] is None
+
+
+def test_project_growth_etf_drip_beats_cash():
+    results = {'SCHD': {'forward_yield': 4.0, 'realized_yield': 3.9, 'shares_owned': 100,
+                        'current_price': 80.0, 'price_cagr': 8.0}}
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 10, 'drip': True, 'price_appreciation_pct': 6,
+                  'dividend_growth_pct': 5}, classify_map={'SCHD': 'mode_b'})
+    e = out['per_ticker']['SCHD']
+    assert e['is_yieldmax'] is False
+    assert e['price_growth_pct'] == 6 and e['div_growth_pct'] == 5
+    assert e['drip_advantage'] > 0          # reinvertir gana en un activo que aprecia
+    assert e['end_value'] > e['start_value']
+
+
+def test_project_yieldmax_never_assumes_appreciation_and_has_breakeven():
+    results = {'MSTY': {'forward_yield': 60.0, 'realized_yield': 50.0, 'shares_owned': 100,
+                        'current_price': 20.0, 'price_cagr': 12.0, 'roc_percent': 70.0}}
+    # price_cagr positivo (12%): el guardarraíl debe capar a ≤0 para un YieldMax.
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 5, 'drip': False, 'price_appreciation_pct': 10},
+        classify_map={'MSTY': 'mode_a'})
+    e = out['per_ticker']['MSTY']
+    assert e['is_yieldmax'] is True
+    assert e['price_growth_pct'] <= 0       # nunca apreciación positiva
+    assert 'breakeven_month' in e and 'honest_total_return_pct' in e
+    assert 'race' in e and len(e['race']) == 60
+
+
+def test_project_yieldmax_decay_override_and_no_breakeven():
+    results = {'TSLY': {'forward_yield': 20.0, 'realized_yield': 18.0, 'shares_owned': 100,
+                        'current_price': 10.0, 'price_cagr': None}}
+    # Decaimiento brutal (-50%/año) y yield modesto: el ingreso no cubre la pérdida → sin breakeven.
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 3, 'drip': False, 'nav_decay_overrides': {'TSLY': -50.0}},
+        classify_map={'TSLY': 'mode_a'})
+    e = out['per_ticker']['TSLY']
+    assert e['price_growth_pct'] == -50.0
+    assert e['honest_total_return_pct'] < 0     # pierde dinero pese al yield alto
+
+
+def test_project_tax_reduces_income():
+    results = {'MSTY': {'forward_yield': 60.0, 'realized_yield': 50.0, 'shares_owned': 100,
+                        'current_price': 20.0, 'price_cagr': -20.0}}
+    base = logic.project_portfolio_forward(results, {'horizon_years': 3, 'drip': True, 'tax_rate_pct': 0},
+                                           classify_map={'MSTY': 'mode_a'})
+    taxed = logic.project_portfolio_forward(results, {'horizon_years': 3, 'drip': True, 'tax_rate_pct': 30},
+                                            classify_map={'MSTY': 'mode_a'})
+    assert (taxed['per_ticker']['MSTY']['cumulative_dividends_net']
+            < base['per_ticker']['MSTY']['cumulative_dividends_net'])
+
+
+def test_project_skips_ineligible_tickers():
+    results = {
+        'NODIV': {'forward_yield': 0, 'shares_owned': 50, 'current_price': 30.0},     # sin yield
+        'SOLD':  {'forward_yield': 5.0, 'shares_owned': 0, 'current_price': 30.0},    # sin acciones
+        'BAD':   {'error': 'no data'},
+        'OK':    {'forward_yield': 4.0, 'realized_yield': 4.0, 'shares_owned': 10,
+                  'current_price': 50.0, 'price_cagr': 5.0},
+    }
+    out = logic.project_portfolio_forward(results, {'horizon_years': 2}, classify_map={'OK': 'mode_b'})
+    assert out['eligible'] == ['OK']
+
+
+def test_project_income_goal_milestone():
+    results = {'SCHD': {'forward_yield': 4.0, 'realized_yield': 4.0, 'shares_owned': 1000,
+                        'current_price': 80.0, 'price_cagr': 7.0}}
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 20, 'drip': True, 'dividend_growth_pct': 8,
+                  'price_appreciation_pct': 7, 'income_goal_monthly': 500},
+        classify_map={'SCHD': 'mode_b'})
+    assert out['portfolio'].get('income_goal_year') is not None
+
+
+# ── v3.1: detección de cambio de cadencia + decaimiento de ventana reciente ──
+
+def _payment_hist(dates_amounts):
+    df = pd.DataFrame([{'Date': d, 'Action': 'Cash Dividend', 'Amount': a} for d, a in dates_amounts])
+    df['Date'] = pd.to_datetime(df['Date'])
+    return df
+
+
+def test_cadence_change_monthly_to_weekly():
+    import datetime as dt
+    rows = []
+    d = dt.date(2025, 1, 15)
+    for i in range(8):                       # 8 mensuales
+        rows.append((d + dt.timedelta(days=30 * i), 200 - i * 5))
+    start = rows[-1][0]
+    for i in range(1, 9):                     # 8 semanales después
+        rows.append((start + dt.timedelta(days=7 * i), 40 - i))
+    cc = logic.detect_cadence_change(_payment_hist(rows))
+    assert cc['changed'] is True
+    assert cc['old_label'] == 'mensual' and cc['recent_label'] == 'semanal'
+
+
+def test_cadence_stable_quarterly_not_flagged():
+    import datetime as dt
+    rows = [(dt.date(2024, 1, 15) + dt.timedelta(days=91 * i), 75) for i in range(8)]
+    cc = logic.detect_cadence_change(_payment_hist(rows))
+    assert cc['changed'] is False and cc['recent_label'] == 'trimestral'
+
+
+def test_cadence_change_none_when_too_few_payments():
+    import datetime as dt
+    rows = [(dt.date(2025, 1, 15) + dt.timedelta(days=30 * i), 100) for i in range(4)]
+    assert logic.detect_cadence_change(_payment_hist(rows)) is None
+
+
+def test_cadence_label_maps_to_nearest_standard():
+    assert logic._cadence_label(52) == 'semanal'
+    assert logic._cadence_label(11) == 'mensual'      # 11 → mensual (12)
+    assert logic._cadence_label(4) == 'trimestral'
+    assert logic._cadence_label(None) == 'desconocida'
+
+
+def test_projection_prefers_recent_decay_window():
+    # Vida del fondo cayó -60%/año pero el último año solo -20%: la proyección debe usar -20%.
+    results = {'NVDY': {'forward_yield': 40.0, 'realized_yield': 38.0, 'shares_owned': 100,
+                        'current_price': 15.0, 'price_cagr': -60.0, 'price_cagr_recent': -20.0}}
+    out = logic.project_portfolio_forward(results, {'horizon_years': 3, 'drip': False},
+                                          classify_map={'NVDY': 'mode_a'})
+    e = out['per_ticker']['NVDY']
+    assert e['price_growth_pct'] == -20.0
+    assert e['decay_window'] == '12m'
+
+
+def test_projection_falls_back_to_life_cagr_when_no_recent():
+    results = {'TSLY': {'forward_yield': 30.0, 'realized_yield': 28.0, 'shares_owned': 100,
+                        'current_price': 10.0, 'price_cagr': -40.0, 'price_cagr_recent': None}}
+    out = logic.project_portfolio_forward(results, {'horizon_years': 2, 'drip': False},
+                                          classify_map={'TSLY': 'mode_a'})
+    e = out['per_ticker']['TSLY']
+    assert e['price_growth_pct'] == -40.0 and e['decay_window'] == 'vida'
+
+
+# ── v3.2: subyacente (M1), módulo fiscal NRA (M2), Monte Carlo (M3) ──
+
+def test_nra_tax_breakdown_treaty_and_default():
+    co = logic.nra_tax_breakdown('Colombia', 0)
+    assert co['base_rate'] == 30 and co['has_treaty'] is False
+    mx = logic.nra_tax_breakdown('México', 0)
+    assert mx['base_rate'] == 10 and mx['has_treaty'] is True
+    cl = logic.nra_tax_breakdown('Chile', 0)
+    assert cl['base_rate'] == 15 and cl['has_treaty'] is True
+    other = logic.nra_tax_breakdown('Inventelandia', 0)   # país desconocido → 30%
+    assert other['base_rate'] == 30 and other['has_treaty'] is False
+
+
+def test_nra_nugget_equation_roc_shield():
+    # 30% × (1 − 0.745) = 7.65%
+    b = logic.nra_tax_breakdown('Colombia', 74.5, nominal_income=1000)
+    assert b['effective_rate'] == pytest.approx(7.65, abs=0.05)
+    assert any('Retorno de Capital' in l for l in b['lines'])     # educa el ROC
+    assert any('costo de compra' in l for l in b['lines'])        # advierte costo base
+    assert any('$300' in l and '$76' in l for l in b['lines'])    # contraste nominal vs efectivo
+    assert b['audit_note'] and 'IRS' in b['audit_note']           # nota de auditoría
+
+
+def test_nra_no_roc_keeps_base_rate():
+    b = logic.nra_tax_breakdown('Colombia', 0)
+    assert b['effective_rate'] == 30.0
+
+
+def test_project_country_applies_effective_rate_per_ticker():
+    # ZZZY es un YieldMax ficticio (no está en roc_19a.yaml) → usa el roc_percent de results.
+    results = {
+        'ZZZY': {'forward_yield': 60.0, 'realized_yield': 50.0, 'shares_owned': 100,
+                 'current_price': 20.0, 'price_cagr_recent': -25.0, 'roc_percent': 70.0},
+        'SCHD': {'forward_yield': 4.0, 'realized_yield': 4.0, 'shares_owned': 100,
+                 'current_price': 80.0, 'price_cagr_recent': 6.0, 'roc_percent': None},
+    }
+    out = logic.project_portfolio_forward(results, {'horizon_years': 3, 'country': 'Colombia'},
+                                          classify_map={'ZZZY': 'mode_a', 'SCHD': 'mode_b'})
+    # ZZZY: 30 × (1 − 0.70) = 9% ; SCHD sin ROC → 30%
+    assert out['per_ticker']['ZZZY']['tax_effective_rate'] == pytest.approx(9.0, abs=0.1)
+    assert out['per_ticker']['SCHD']['tax_effective_rate'] == pytest.approx(30.0, abs=0.1)
+
+
+def test_build_underlying_exposure_asymmetry():
+    results = {'TSLY': {'underlying_ticker': 'TSLA', 'underlying_cagr_recent': 27.0,
+                        'price_cagr_recent': -31.0, 'shares_owned': 10, 'current_price': 9.0,
+                        'forward_yield': 70.0}}
+    exp = logic.build_underlying_exposure(results, 'TSLY')
+    txt = ' '.join(exp['lines'])
+    assert 'TSLA' in txt and 'CAÍDA' in txt
+    assert '+27%' in txt and '-31%' in txt          # contraste con datos reales
+    # un ticker no-YieldMax no produce líneas
+    assert logic.build_underlying_exposure({'SCHD': {'forward_yield': 4}}, 'SCHD')['lines'] == []
+
+
+def test_monte_carlo_bands_ordered_and_bounded():
+    results = {
+        'MSTY': {'forward_yield': 60.0, 'shares_owned': 100, 'current_price': 20.0,
+                 'price_cagr_recent': -25.0, 'volatilidad_anualizada': 80.0},
+        'SCHD': {'forward_yield': 4.0, 'shares_owned': 100, 'current_price': 80.0,
+                 'price_cagr_recent': 6.0, 'volatilidad_anualizada': 18.0},
+    }
+    cm = {'MSTY': 'mode_a', 'SCHD': 'mode_b'}
+    mc = logic.monte_carlo_projection(results, {'horizon_years': 5, 'income_goal_monthly': 200},
+                                      classify_map=cm, n_paths=400, seed=7)
+    assert mc['final']['p10'] <= mc['final']['p50'] <= mc['final']['p90']
+    assert mc['final']['p90'] < 1e8            # no explota
+    assert 0 <= mc['prob_goal'] <= 100
+    for b in mc['bands']:
+        assert b['p10'] <= b['p50'] <= b['p90']
+
+
+def test_monte_carlo_deterministic_with_seed():
+    results = {'MSTY': {'forward_yield': 60.0, 'shares_owned': 100, 'current_price': 20.0,
+                        'price_cagr_recent': -25.0, 'volatilidad_anualizada': 80.0}}
+    cm = {'MSTY': 'mode_a'}
+    a = logic.monte_carlo_projection(results, {'horizon_years': 4}, classify_map=cm, n_paths=200, seed=99)
+    b = logic.monte_carlo_projection(results, {'horizon_years': 4}, classify_map=cm, n_paths=200, seed=99)
+    assert a['final'] == b['final'] and a['bands'] == b['bands']
+
+
+def test_monte_carlo_corrupt_vol_does_not_explode():
+    # vol corrupta (miles de %) NO debe hacer explotar las bandas (cap + modelo yield-on-price)
+    results = {'XLK': {'forward_yield': 0.4, 'shares_owned': 100, 'current_price': 250.0,
+                       'price_cagr_recent': 30.0, 'volatilidad_anualizada': 3443.0}}
+    cm = {'XLK': 'mode_b'}
+    mc = logic.monte_carlo_projection(results, {'horizon_years': 5}, classify_map=cm, n_paths=300, seed=3)
+    assert mc['final']['p90'] < 1e8
+
+
+def test_monte_carlo_real_view_below_nominal():
+    results = {'SCHD': {'forward_yield': 4.0, 'shares_owned': 100, 'current_price': 80.0,
+                        'price_cagr_recent': 6.0, 'volatilidad_anualizada': 18.0}}
+    cm = {'SCHD': 'mode_b'}
+    real = logic.monte_carlo_projection(results, {'horizon_years': 10, 'price_appreciation_pct': 6,
+                                                  'inflation_pct': 3, 'real_view': True},
+                                        classify_map=cm, n_paths=300, seed=5)
+    nom = logic.monte_carlo_projection(results, {'horizon_years': 10, 'price_appreciation_pct': 6,
+                                                 'inflation_pct': 3, 'real_view': False},
+                                       classify_map=cm, n_paths=300, seed=5)
+    assert real['final']['p50'] < nom['final']['p50']
+
+
+# ── v3.3: winsorización de retornos (fix de volatilidad corrupta por transferencias) ──
+
+def test_winsorize_clips_spurious_spike():
+    import numpy as np
+    # 200 retornos normales (~1%) + 1 glitch de +6843% (transferencia de acciones a $0)
+    normal = pd.Series(np.random.default_rng(0).normal(0, 0.01, 200))
+    spiked = pd.concat([normal, pd.Series([68.43])], ignore_index=True)
+    raw_vol = spiked.std()
+    clean = logic._winsorize_returns(spiked)
+    assert clean.max() < 1.0                      # el glitch quedó acotado
+    assert clean.std() < raw_vol / 10             # la vol deja de estar inflada
+
+
+def test_winsorize_preserves_short_series():
+    s = pd.Series([0.01, -0.02, 0.03, 68.0])      # <min_len → se devuelve tal cual
+    out = logic._winsorize_returns(s)
+    assert out.max() == 68.0
+
+
+def test_winsorize_handles_non_series():
+    assert logic._winsorize_returns(None) is None
+
+
+# ── v3.4: el benchmark VOO refleja transferencias de acciones (no se queda en $0) ──
+
+_XFER_IDX = pd.date_range('2024-01-02', '2024-06-03', freq='D')
+
+
+def _mock_flat50(monkeypatch):
+    """Mockea el precio del ticker (fetch_market_data) Y el de VOO (yf.download) a $50 plano,
+    sin dividendos, para que el benchmark sea determinista (yf.download trae VOO de la red real)."""
+    def mock_fetch(ticker, start_date):
+        return pd.DataFrame({'Close': [50.0] * len(_XFER_IDX), 'Dividends': [0.0] * len(_XFER_IDX),
+                             'Stock Splits': [0.0] * len(_XFER_IDX)}, index=_XFER_IDX), None
+    def mock_download(ticker, **kwargs):
+        return pd.DataFrame({'Close': [50.0] * len(_XFER_IDX), 'Dividends': [0.0] * len(_XFER_IDX)},
+                            index=_XFER_IDX)
+    monkeypatch.setattr(logic, 'fetch_market_data', mock_fetch)
+    monkeypatch.setattr(logic.yf, 'download', mock_download)
+
+
+def test_benchmark_includes_share_transfer(monkeypatch):
+    """Una Internal Transfer a $0 de efectivo debe contar como capital en el benchmark VOO
+    (antes el benchmark ignoraba la transferencia y quedaba subestimado/en $0)."""
+    df = pd.DataFrame([
+        {'Date': '2024-01-02', 'Action': 'Buy', 'Ticker': 'SCHB', 'Quantity': 1, 'Price': 50.0, 'Amount': -50.0},
+        {'Date': '2024-03-01', 'Action': 'Internal Transfer', 'Ticker': 'SCHB', 'Quantity': 20, 'Price': 0.0, 'Amount': 0.0},
+    ])
+    df['Date'] = pd.to_datetime(df['Date'])
+    _mock_flat50(monkeypatch)
+    s = logic.analyze_portfolio(df, version='TEST_XFER')['SCHB']
+    # 1 acción comprada + 20 transferidas = 21 × $50 = $1050 de valor
+    assert s['shares_owned'] == pytest.approx(21.0, abs=0.01)
+    # Benchmark = efectivo ($50) + transferencia ($1000) en VOO @ $50 = 21 acc × $50 = ~$1050, no $50.
+    assert s['benchmark_value'] == pytest.approx(1050.0, abs=5.0), s['benchmark_value']
+
+
+def test_benchmark_no_transfer_unchanged(monkeypatch):
+    """Sin filas de transferencia, el benchmark usa solo el efectivo (comportamiento idéntico)."""
+    df = pd.DataFrame([
+        {'Date': '2024-01-02', 'Action': 'Buy', 'Ticker': 'SCHB', 'Quantity': 10, 'Price': 50.0, 'Amount': -500.0},
+    ])
+    df['Date'] = pd.to_datetime(df['Date'])
+    _mock_flat50(monkeypatch)
+    s = logic.analyze_portfolio(df, version='TEST_NOXFER')['SCHB']
+    # $500 invertidos → 10 acc VOO × $50 = $500 (sin inflar por transferencias inexistentes)
+    assert s['benchmark_value'] == pytest.approx(500.0, abs=1.0)
+
+
+# ── v3.5: modelo por subyacente (escenarios YieldMax) ──
+
+def test_yieldmax_nav_from_underlying_calibration_and_asymmetry():
+    f = logic._yieldmax_nav_from_underlying
+    # El escenario base (= observado) reproduce el comportamiento real observado del fondo.
+    assert f(-67, -67, -83) == pytest.approx(-83.0, abs=0.01)
+    # Subida del subyacente: el fondo captura solo una fracción (upside 0.5) → NAV sube poco.
+    # cap(R)=1.0·min(R,0)+0.5·max(R,0); drag=cap(-67)-(-83)=16 ; NAV(+30)=0.5·30-16=-1
+    assert f(30, -67, -83) == pytest.approx(-1.0, abs=0.01)
+    # Caída más fuerte: captura casi toda la baja → NAV peor.
+    assert f(-90, -67, -83) == pytest.approx(-106.0, abs=0.01)
+    # Sin punto de calibración → None
+    assert f(30, None, -83) is None
+
+
+def test_projection_underlying_scenario_allows_positive(monkeypatch):
+    results = {'MSTY': {'forward_yield': 60.0, 'realized_yield': 50.0, 'shares_owned': 100,
+                        'current_price': 20.0, 'price_cagr_recent': -83.0,
+                        'underlying_cagr_recent': -67.0, 'roc_percent': 74.0}}
+    # Escenario muy alcista del subyacente → NAV del fondo puede ser positivo (escenario lo permite).
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 3, 'drip': False, 'underlying_scenarios': {'MSTY': 100.0}},
+        classify_map={'MSTY': 'mode_a'})
+    e = out['per_ticker']['MSTY']
+    assert e['decay_window'] == 'escenario'
+    assert e['price_growth_pct'] > 0          # +100% subyacente → NAV positivo (0.5·100−16=+34)
+    # Escenario bajista → NAV negativo
+    out2 = logic.project_portfolio_forward(
+        results, {'horizon_years': 3, 'drip': False, 'underlying_scenarios': {'MSTY': -30.0}},
+        classify_map={'MSTY': 'mode_a'})
+    assert out2['per_ticker']['MSTY']['price_growth_pct'] < 0
+
+
+def test_projection_scenario_ignored_without_underlying_data():
+    # Sin underlying_cagr_recent no se puede calibrar → cae al decaimiento normal (capado ≤0).
+    results = {'MSTY': {'forward_yield': 60.0, 'shares_owned': 100, 'current_price': 20.0,
+                        'price_cagr_recent': -25.0, 'underlying_cagr_recent': None}}
+    out = logic.project_portfolio_forward(
+        results, {'horizon_years': 2, 'drip': False, 'underlying_scenarios': {'MSTY': 50.0}},
+        classify_map={'MSTY': 'mode_a'})
+    e = out['per_ticker']['MSTY']
+    assert e['decay_window'] != 'escenario' and e['price_growth_pct'] <= 0
+
+
+def test_monte_carlo_scenario_lifts_median():
+    results = {'MSTY': {'forward_yield': 60.0, 'shares_owned': 100, 'current_price': 20.0,
+                        'price_cagr_recent': -83.0, 'underlying_cagr_recent': -67.0,
+                        'volatilidad_anualizada': 70.0}}
+    cm = {'MSTY': 'mode_a'}
+    base = logic.monte_carlo_projection(results, {'horizon_years': 3}, classify_map=cm, n_paths=400, seed=11)
+    bull = logic.monte_carlo_projection(
+        results, {'horizon_years': 3, 'underlying_scenarios': {'MSTY': 80.0}},
+        classify_map=cm, n_paths=400, seed=11)
+    assert bull['final']['p50'] > base['final']['p50']
