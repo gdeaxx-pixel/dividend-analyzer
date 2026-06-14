@@ -1506,3 +1506,55 @@ def test_monte_carlo_scenario_lifts_median():
         results, {'horizon_years': 3, 'underlying_scenarios': {'MSTY': 80.0}},
         classify_map=cm, n_paths=400, seed=11)
     assert bull['final']['p50'] > base['final']['p50']
+
+
+# ── v3.6: concentración por factor (#2), comparación vs subyacente (#1) ──
+
+def test_ticker_factor_mapping():
+    assert logic._ticker_factor('MSTY') == 'Bitcoin'      # MSTR → Bitcoin
+    assert logic._ticker_factor('CONY') == 'Bitcoin'      # COIN → Bitcoin
+    assert logic._ticker_factor('TSLY') == 'TSLA'         # sin mapeo → el subyacente
+    assert logic._ticker_factor('X', {'underlying': 'Mercado'}) is None
+    assert logic._ticker_factor('X', {}) is None
+
+
+def test_factor_concentration_hidden_bitcoin():
+    # MSTY (MSTR→Bitcoin) + CONY (COIN→Bitcoin) → factor Bitcoin con 2 tickers = correlación oculta
+    results = {
+        'MSTY': {'forward_yield': 60.0, 'market_value': 5000.0},
+        'CONY': {'forward_yield': 50.0, 'market_value': 3000.0},
+        'NVDY': {'forward_yield': 40.0, 'market_value': 2000.0},
+    }
+    fc = logic.build_factor_concentration(results)
+    assert fc['top_factor'] == 'Bitcoin'
+    assert fc['hidden_correlation'] is True
+    btc = next(f for f in fc['factors'] if f['factor'] == 'Bitcoin')
+    assert set(btc['tickers']) == {'MSTY', 'CONY'}
+    assert abs(sum(f['income_share_pct'] for f in fc['factors']) - 100) < 0.5
+
+
+def test_factor_concentration_single_factor_not_hidden():
+    # Un solo YieldMax → no es "correlación oculta" (necesita ≥2 tickers en el factor)
+    results = {'NVDY': {'forward_yield': 40.0, 'market_value': 2000.0}}
+    fc = logic.build_factor_concentration(results)
+    assert fc['hidden_correlation'] is False and fc['top_factor'] == 'NVDA'
+
+
+def test_simulate_hold_value_invests_flow_and_reinvests_divs():
+    idx = pd.date_range('2024-01-01', periods=3, freq='D')
+    price = pd.Series([10.0, 10.0, 20.0], index=idx)      # precio 2x al final
+    div = pd.Series([0.0, 0.0, 0.0], index=idx)
+    flow = pd.Series([100.0, 0.0, 0.0], index=idx)        # $100 día 1 → 10 acciones
+    assert logic._simulate_hold_value(price, div, flow) == pytest.approx(200.0)   # 10 × $20
+    # dividendo por-acción $1 el día 2 (precio $10): +1 acción (10×1/10) → 11 × $20 = $220
+    div2 = pd.Series([0.0, 1.0, 0.0], index=idx)
+    assert logic._simulate_hold_value(price, div2, flow) == pytest.approx(220.0)
+
+
+def test_underlying_exposure_includes_hold_comparison():
+    results = {'NVDY': {'underlying_ticker': 'NVDA', 'underlying_cagr_recent': 42.0,
+                        'price_cagr_recent': -22.0, 'underlying_hold_value': 13000.0,
+                        'market_value': 9000.0, 'dividends_collected_cash': 2000.0,
+                        'forward_yield': 40.0}}
+    txt = ' '.join(logic.build_underlying_exposure(results, 'NVDY')['lines'])
+    assert 'NVDA directo' in txt and '$13,000' in txt and '$11,000' in txt   # fund total = 9000+2000

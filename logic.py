@@ -1319,6 +1319,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # para contrastar la asimetría: el fondo captura casi toda la caída pero capa la subida.
         _underlying_tk = None
         _underlying_cagr_recent = None
+        _underlying_hold_value = None
         try:
             _info_u = load_instruments().get(str(ticker).upper(), {})
             _is_ym = ticker_mode == 'mode_a' or (_info_u.get('type') or '').lower() == 'yieldmax'
@@ -1328,6 +1329,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 _udf, _uerr = fetch_market_data(_underlying_tk, first_date)
                 if _udf is not None and not _udf.empty and 'Close' in _udf.columns:
                     _underlying_cagr_recent = _annualized_cagr(_udf['Close'], days=365)
+                    # #1: ¿y si hubieras tenido el subyacente directo? (misma plata y timing)
+                    _up = _udf['Close'].reindex(daily_history.index).ffill()
+                    _ud = (_udf['Dividends'].reindex(daily_history.index).fillna(0)
+                           if 'Dividends' in _udf.columns else None)
+                    _underlying_hold_value = round(
+                        _simulate_hold_value(_up, _ud, daily_history['Flujo Efectivo']), 2)
         except Exception:
             pass
 
@@ -1391,6 +1398,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "cadence_change":    _cadence_change,
             "underlying_ticker": _underlying_tk,
             "underlying_cagr_recent": _underlying_cagr_recent,
+            "underlying_hold_value": _underlying_hold_value,
         }
         
     return results
@@ -2341,6 +2349,19 @@ def build_underlying_exposure(results: dict, ticker: str) -> dict:
         f"Conclusión: si {under} se recupera, {ticker} sube poco; si {under} cae, {ticker} cae "
         f"casi igual. Tu income depende de que {under} no se desplome.")
 
+    # ¿Y si hubieras tenido el subyacente directo? (misma plata y fechas, total return)
+    hold = s.get('underlying_hold_value')
+    fund_total = (s.get('market_value') or 0) + (s.get('dividends_collected_cash') or 0)
+    if hold and hold > 0 and fund_total > 0:
+        diff = fund_total - hold
+        signo = '+' if diff >= 0 else '−'
+        veredicto = (f"el income compensó: vas {signo}${abs(diff):,.0f} arriba de haber tenido {under}"
+                     if diff >= 0 else
+                     f"con {under} directo tendrías ${abs(diff):,.0f} más — la apreciación superó al income")
+        lines.append(
+            f"En tu período, {ticker} (posición hoy + dividendos cobrados) vale ${fund_total:,.0f}; "
+            f"con la misma plata y fechas en {under} directo serían ${hold:,.0f}: {veredicto}.")
+
     seen, out = set(), []
     for ln in lines:
         if ln and ln not in seen:
@@ -2474,6 +2495,64 @@ def build_portfolio_verdict(results: dict, classify_map: dict = None) -> dict:
             f"precio (${abs(cap):,.0f}): hoy el income es lo que sostiene tu retorno.")
 
     return {'lines': lines[:4]}
+
+
+# Factor macro compartido por subyacentes distintos (riesgo de correlación oculta).
+UNDERLYING_FACTOR_MAP = {
+    'MSTR': 'Bitcoin', 'COIN': 'Bitcoin', 'MARA': 'Bitcoin', 'RIOT': 'Bitcoin',
+    'BITX': 'Bitcoin', 'IBIT': 'Bitcoin', 'CLSK': 'Bitcoin',
+}
+
+
+def _ticker_factor(ticker, info=None):
+    """Factor macro de un ticker: el subyacente, con los proxies de cripto agrupados en
+    'Bitcoin'. None si el subyacente es un índice genérico/mercado o no aplica."""
+    info = info if info is not None else load_instruments().get(str(ticker).upper(), {})
+    und = (info.get('underlying') or '').strip()
+    if not und or und.upper() in ('N/A', 'NA', 'MULTI', 'MERCADO', ''):
+        return None
+    return UNDERLYING_FACTOR_MAP.get(und.upper(), und)
+
+
+def build_factor_concentration(results: dict, classify_map: dict = None, min_share_pct: float = 40.0) -> dict:
+    """Concentración del INGRESO por factor macro subyacente (riesgo de correlación oculta):
+    p.ej. MSTY y CONY se ven como dos posiciones, pero ambas dependen de Bitcoin. Agrupa el
+    ingreso forward anual (forward_yield × valor) por factor (subyacente; MSTR/COIN→Bitcoin)
+    y devuelve los pesos.
+
+    Devuelve {'factors': [{factor, tickers, annual_income, income_share_pct}], 'top_factor',
+    'top_share_pct', 'hidden_correlation': bool}. `hidden_correlation` es True cuando el factor
+    dominante pesa ≥`min_share_pct` Y lo componen ≥2 tickers (correlación que se ve diversificada
+    pero no lo es). Vacío si no hay activos de income con subyacente conocido.
+    """
+    instruments = load_instruments()
+    by_factor, total = {}, 0.0
+    for tk, s in results.items():
+        if not isinstance(s, dict) or 'error' in s or s.get('skipped'):
+            continue
+        fy = s.get('forward_yield') or 0
+        mv = s.get('market_value') or 0
+        if fy <= 0 or mv <= 0:
+            continue
+        factor = _ticker_factor(tk, instruments.get(str(tk).upper(), {}))
+        if factor is None:
+            continue
+        ann_income = fy / 100.0 * mv
+        d = by_factor.setdefault(factor, {'tickers': [], 'annual_income': 0.0})
+        d['tickers'].append(tk)
+        d['annual_income'] += ann_income
+        total += ann_income
+    if total <= 0:
+        return {'factors': [], 'top_factor': None, 'top_share_pct': None, 'hidden_correlation': False}
+    factors = sorted(
+        ({'factor': f, 'tickers': sorted(d['tickers']),
+          'annual_income': round(d['annual_income'], 2),
+          'income_share_pct': round(d['annual_income'] / total * 100, 1)}
+         for f, d in by_factor.items()),
+        key=lambda x: x['income_share_pct'], reverse=True)
+    top = factors[0]
+    return {'factors': factors, 'top_factor': top['factor'], 'top_share_pct': top['income_share_pct'],
+            'hidden_correlation': top['income_share_pct'] >= min_share_pct and len(top['tickers']) >= 2}
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -2754,6 +2833,25 @@ def _annualized_cagr(close, days=None):
         return round(((p1 / p0) ** (1 / yrs) - 1) * 100, 2) if p0 > 0 else None
     except Exception:
         return None
+
+
+def _simulate_hold_value(price_s, div_s, flow_s):
+    """Simula invertir `flow_s` (flujo de capital diario) en un instrumento con precio `price_s`
+    y dividendos `div_s` reinvertidos — el 'qué hubiera pasado si tenías el subyacente directo'.
+    Mismo patrón que el benchmark VOO. Series alineadas al mismo índice. Devuelve el valor final."""
+    shares = 0.0
+    last_val = 0.0
+    for date in price_s.index:
+        vp = price_s.loc[date]
+        vp = float(vp) if not pd.isna(vp) else 0.0
+        if vp > 0:
+            shares += float(flow_s.get(date, 0.0) or 0.0) / vp
+            dv = float(div_s.get(date, 0.0) or 0.0) if div_s is not None else 0.0
+            if dv > 0 and shares > 0:
+                shares += (dv * shares) / vp
+        shares = max(shares, 0.0)
+        last_val = shares * vp
+    return last_val
 
 
 def forward_realized_yield(history_df, market_value, today=None) -> dict:

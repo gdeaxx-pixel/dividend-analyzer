@@ -1696,6 +1696,27 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             _dq_unrel = sorted([t for t, q in _dq.items() if q['level'] == 'unreliable'])
             _dq_recon = sorted([t for t, q in _dq.items() if q['level'] == 'reconciled'])
             _dq_part  = sorted([t for t, q in _dq.items() if q['level'] == 'partial'])
+            _dq_ok    = sorted([t for t, q in _dq.items() if q['level'] == 'ok'])
+
+            # ── Salud de datos (al frente): qué posiciones son confiables vs aproximadas ──
+            _dq_approx = _dq_unrel + _dq_recon + _dq_part
+            if _dq_approx:
+                _acc = '#e0a23c' if _dq_unrel else '#006497'
+                _hmsg = (f'<b>{len(_dq_ok)} posición(es) confiable(s)</b> y '
+                         f'<b>{len(_dq_approx)} aproximada(s)</b>.')
+                _hfix = ''
+                if _dq_unrel:
+                    _hfix = (f' A <b>{", ".join(_dq_unrel)}</b> le falta el costo de origen en el CSV '
+                             f'(probablemente las acciones llegaron por <b>transferencia</b>): su ROI y la '
+                             f'comparación con el índice son estimados. <b>Para volverlas exactas:</b> sube un '
+                             f'estado de cuenta que incluya la compra original, o ingresa el costo base manualmente.')
+                st.markdown(
+                    f'<div style="border-left:4px solid {_acc};background:#f6f8fa;padding:12px 16px;'
+                    f'margin:6px 0 4px 0;font-family:Inter,sans-serif;font-size:12.5px;color:#333;'
+                    f'line-height:1.55;"><span style="font-size:10px;color:{_acc};font-weight:800;'
+                    f'letter-spacing:0.12em;text-transform:uppercase;">Salud de tus datos</span><br>'
+                    f'{_hmsg}{_hfix}</div>',
+                    unsafe_allow_html=True)
 
             def _render_data_quality_panel():
                 # ── Calidad de datos (pre-flight) ─────────────────────────
@@ -2469,6 +2490,37 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
                     'Lectura educativa de tus números — no es recomendación de compra o venta.</p>'
                     '</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── Concentración por factor (riesgo de correlación oculta) ──
+            _fc = logic.build_factor_concentration(results, classify_map)
+            if _fc.get('factors') and len(_fc['factors']) >= 1:
+                _accent = '#e0a23c' if _fc.get('hidden_correlation') else '#006497'
+                _frows = ''.join(
+                    f'<li style="margin:0 0 5px 0;"><b>{_f["factor"]}</b> — {_f["income_share_pct"]:.0f}% '
+                    f'de tu ingreso ({", ".join(_f["tickers"])})</li>'
+                    for _f in _fc['factors'][:5])
+                _hdr = ("Correlación oculta detectada" if _fc.get('hidden_correlation')
+                        else "De dónde viene tu ingreso (por factor)")
+                _intro = ''
+                if _fc.get('hidden_correlation'):
+                    _top = _fc['factors'][0]
+                    _intro = (f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#664d1a;'
+                              f'margin:0 0 8px 0;line-height:1.5;">Se ve diversificado, pero el '
+                              f'<b>{_top["income_share_pct"]:.0f}% de tu ingreso depende de un solo factor '
+                              f'({_top["factor"]})</b> vía {", ".join(_top["tickers"])}. Si ese factor cae, '
+                              f'varias de tus posiciones caen juntas.</p>')
+                st.markdown(
+                    f'<div style="border-left:4px solid {_accent};background:#f6f8fa;padding:14px 18px;margin:6px 0 4px 0;">'
+                    f'<p style="font-family:Inter,sans-serif;font-size:10px;color:{_accent};font-weight:800;'
+                    f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">{_hdr}</p>'
+                    + _intro +
+                    '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#333333;line-height:1.55;'
+                    'margin:0;padding-left:18px;">' + _frows + '</ul>'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
+                    'Ingreso forward anual agrupado por el subyacente de cada fondo (MSTR y COIN cuentan como '
+                    'Bitcoin). Educativo — no es recomendación.</p></div>',
                     unsafe_allow_html=True
                 )
 
