@@ -1698,24 +1698,136 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             _dq_part  = sorted([t for t, q in _dq.items() if q['level'] == 'partial'])
             _dq_ok    = sorted([t for t, q in _dq.items() if q['level'] == 'ok'])
 
-            # ── Salud de datos (al frente): qué posiciones son confiables vs aproximadas ──
+            # ── Capa de comprensión (vista simple primero) ───────────────
+            # En corto: ¿cuánto ingreso genera el portafolio, de dónde viene y
+            # cuánto confiar en los números. El detalle denso vive más abajo.
             _dq_approx = _dq_unrel + _dq_recon + _dq_part
-            if _dq_approx:
-                _acc = '#e0a23c' if _dq_unrel else '#006497'
-                _hmsg = (f'<b>{len(_dq_ok)} posición(es) confiable(s)</b> y '
-                         f'<b>{len(_dq_approx)} aproximada(s)</b>.')
-                _hfix = ''
-                if _dq_unrel:
-                    _hfix = (f' A <b>{", ".join(_dq_unrel)}</b> le falta el costo de origen en el CSV '
-                             f'(probablemente las acciones llegaron por <b>transferencia</b>): su ROI y la '
-                             f'comparación con el índice son estimados. <b>Para volverlas exactas:</b> sube un '
-                             f'estado de cuenta que incluya la compra original, o ingresa el costo base manualmente.')
+
+            def _annual_income_for(_t):
+                # Ingreso anual realista por ticker, con la fuente más confiable disponible:
+                # realized (TTM real) → ttm_income → forward (anunciado). Siempre disponible.
+                _s = results.get(_t) or {}
+                if not isinstance(_s, dict) or 'error' in _s:
+                    return 0.0
+                _mv = _s.get('market_value') or 0
+                _ry = _s.get('realized_yield')
+                if _ry is not None and _mv:
+                    return _ry / 100.0 * _mv
+                _ttm = _s.get('ttm_income')
+                if _ttm:
+                    return float(_ttm)
+                _fy = _s.get('forward_yield')
+                if _fy is not None and _mv:
+                    return _fy / 100.0 * _mv
+                return 0.0
+
+            _growth_fn = getattr(logic, 'filter_growth_assets', None)
+            _growth_set = set((_growth_fn(results) or {}).keys()) if _growth_fn else set()
+            _income_contrib = {}
+            for _t in results:
+                if _t in _growth_set:
+                    continue
+                _ai = _annual_income_for(_t)
+                if _ai > 0:
+                    _income_contrib[_t] = _ai
+            _income_annual  = sum(_income_contrib.values())
+            _income_monthly = _income_annual / 12.0
+            _total_mv = sum((s.get('market_value') or 0) for s in results.values()
+                            if isinstance(s, dict) and 'error' not in s)
+            _income_yield = (_income_annual / _total_mv * 100) if _total_mv else 0.0
+
+            # Confianza de datos (semáforo): exactas vs aproximadas
+            _n_total = len(_dq) or len(results)
+            _n_exact = len(_dq_ok)
+            _n_approx = len(_dq_approx)
+            if _dq_unrel:
+                _conf_color = '#e0a23c'
+            elif _n_approx:
+                _conf_color = '#006497'
+            else:
+                _conf_color = '#4caf82'
+            _conf_delta = 'todas verificadas' if _n_approx == 0 else f'{_n_approx} aproximada(s)'
+
+            if _income_annual > 0:
                 st.markdown(
-                    f'<div style="border-left:4px solid {_acc};background:#f6f8fa;padding:12px 16px;'
-                    f'margin:6px 0 4px 0;font-family:Inter,sans-serif;font-size:12.5px;color:#333;'
-                    f'line-height:1.55;"><span style="font-size:10px;color:{_acc};font-weight:800;'
-                    f'letter-spacing:0.12em;text-transform:uppercase;">Salud de tus datos</span><br>'
-                    f'{_hmsg}{_hfix}</div>',
+                    '<div style="margin:6px 0 2px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#006497;font-weight:700;'
+                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En corto · tu ingreso por dividendos</p>'
+                    '<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.55;margin:0;">'
+                    f'Tu portafolio de <b style="font-family:{_MONO_FONT};">${_total_mv:,.0f}</b> te pagó alrededor de '
+                    f'<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_annual:,.0f}</b> en dividendos en los '
+                    f'<b>últimos 12 meses</b> (~<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_monthly:,.0f}/mes</b>), '
+                    f'un rendimiento de <b style="font-family:{_MONO_FONT};">{_income_yield:.1f}%</b> sobre su valor actual. '
+                    '<span style="color:#8899aa;font-size:12.5px;">Es lo realmente recibido; en activos tipo YieldMax el '
+                    'pago futuro suele ser menor — mira la proyección y el desglose contra el broker en “Ver detalle”.</span>'
+                    '</p></div>',
+                    unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="da-kpi-bar" style="grid-template-columns:repeat(4,1fr);">'
+                    '<div class="da-kpi-cell da-kpi-green"><p class="da-kpi-label">Ingreso mensual</p>'
+                    f'<p class="da-kpi-value">${_income_monthly:,.0f}</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">promedio últimos 12m</p></div>'
+                    '<div class="da-kpi-cell da-kpi-accent"><p class="da-kpi-label">Ingreso anual</p>'
+                    f'<p class="da-kpi-value">${_income_annual:,.0f}</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">recibido, últimos 12m</p></div>'
+                    '<div class="da-kpi-cell da-kpi-navy"><p class="da-kpi-label">Yield sobre valor</p>'
+                    f'<p class="da-kpi-value">{_income_yield:.1f}%</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">ingreso ÷ valor de mercado</p></div>'
+                    f'<div class="da-kpi-cell" style="border-top-color:{_conf_color};">'
+                    '<p class="da-kpi-label">Confianza de datos</p>'
+                    f'<p class="da-kpi-value" style="color:{_conf_color};">{_n_exact}/{_n_total}</p>'
+                    f'<p class="da-kpi-delta" style="color:{_conf_color};">{_conf_delta}</p></div>'
+                    '</div>',
+                    unsafe_allow_html=True)
+
+            # Nota de acción: solo cuando hay posiciones no confiables (falta costo de origen).
+            if _dq_unrel:
+                st.markdown(
+                    f'<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:10px 16px;'
+                    f'margin:2px 0 4px 0;font-family:Inter,sans-serif;font-size:12px;color:#5a4a2a;'
+                    f'line-height:1.55;">A <b>{", ".join(_dq_unrel)}</b> le falta el costo de origen en el CSV '
+                    f'(probablemente las acciones llegaron por <b>transferencia</b>): su ROI y la comparación con el '
+                    f'índice son estimados. <b>Para volverlas exactas:</b> sube un estado de cuenta que incluya la '
+                    f'compra original, o ingresa el costo base manualmente.</div>',
+                    unsafe_allow_html=True)
+
+            # ── ¿De dónde viene tu ingreso? (dona de concentración) ──────
+            if len(_income_contrib) >= 2:
+                import altair as alt
+                _don_items = sorted(_income_contrib.items(), key=lambda x: -x[1])
+                if len(_don_items) > 6:
+                    _don_items = _don_items[:6] + [('Otros', sum(v for _, v in _don_items[6:]))]
+                _don_df = pd.DataFrame([{'Ticker': t, 'Ingreso': v} for t, v in _don_items])
+                _don_total = _don_df['Ingreso'].sum()
+                _don_df['Pct'] = _don_df['Ingreso'] / _don_total * 100 if _don_total else 0
+                _don_palette = ['#021C36', '#006497', '#4caf82', '#166534', '#60A5FA', '#86EFAC', '#8899aa']
+                _top_tk, _top_v = _don_items[0]
+                _top_pct = (_top_v / _don_total * 100) if _don_total else 0
+                _da_section('¿De dónde viene tu ingreso?',
+                            'Cuánto aporta cada posición a tu ingreso anual por dividendos. Mientras más concentrado en pocos nombres, más depende tu ingreso de ellos.')
+                _arc = (alt.Chart(_don_df).mark_arc(innerRadius=70, stroke='#fcf9f8', strokeWidth=2)
+                        .encode(
+                            theta=alt.Theta('Ingreso:Q', stack=True),
+                            order=alt.Order('Ingreso:Q', sort='descending'),
+                            color=alt.Color('Ticker:N',
+                                            scale=alt.Scale(domain=list(_don_df['Ticker']), range=_don_palette),
+                                            legend=alt.Legend(title=None, orient='right',
+                                                              labelFont=_MONO_FONT, labelFontSize=11,
+                                                              labelColor=_INK, symbolType='square', symbolSize=140)),
+                            tooltip=[alt.Tooltip('Ticker:N', title='Activo'),
+                                     alt.Tooltip('Ingreso:Q', format='$,.0f', title='Ingreso anual'),
+                                     alt.Tooltip('Pct:Q', format='.1f', title='% del total')])
+                        .properties(height=280)
+                        .configure_view(strokeWidth=0))
+                st.altair_chart(_arc, use_container_width=True)
+                _top3 = _don_df['Pct'].iloc[:3].sum()
+                _conc_txt = (f', y el <b style="color:#021C36;">{_top3:.0f}%</b> de tus 3 mayores.'
+                             if len(_don_items) >= 3 else '.')
+                st.markdown(
+                    f'<p style="font-family:Inter,sans-serif;font-size:12.5px;color:#5a6b7a;'
+                    f'margin:2px 0 12px 0;line-height:1.5;">El <b style="color:#021C36;">{_top_pct:.0f}%</b> '
+                    f'de tu ingreso viene de <b style="color:#021C36;">{_top_tk}</b>{_conc_txt} '
+                    'Una concentración alta significa que tu ingreso depende mucho de ese activo.</p>',
                     unsafe_allow_html=True)
 
             def _render_data_quality_panel():
@@ -2027,7 +2139,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _rows_hist = [(_tk, _d.get('schwab_received_total'), _d.get('our_received_total'))
                                   for _tk, _d in _items]
 
-                    st.markdown(
+                    _da_section('Ingreso, ROC y comparación con el broker',
+                                'El número fino: lo recibido vs lo proyectado, tu Retorno de Capital por activo y por qué la proyección del broker suele estar inflada.')
+                    _inc_exp = st.expander('Ver detalle · tabla Schwab vs tu cálculo · ROC · gráfica de ingresos', expanded=False)
+                    _inc_exp.markdown(
                         _kpi_wide([
                             ('Total histórico',    'hist', '#021C36',   False, _rows_hist),
                             ('Últimos 12 meses',   'recv', '#006497',   False, _rows_recv),
@@ -2119,7 +2234,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   f'{_val_html(_r_mv, _r_pkt)}'
                                   f'<span class="num">{_fmt_money(_r_basis_disp)}</span>'
                                   f'{_roc_html(_r_roc_disp, _r_roc_pct, "19a" if _r_any_19a else None)}</div>')
-                    st.markdown(
+                    _inc_exp.markdown(
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
                         'font-weight:800;color:#021C36;margin:0 0 2px 0;">Retorno de Capital (ROC) por activo</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
@@ -2136,15 +2251,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         '"ingreso" fue erosión de tu capital.</p></div>',
                         unsafe_allow_html=True
                     )
-                    st.markdown(
+                    _inc_exp.markdown(
                         f'<div class="da-kpi-cell"><div class="da-growth-wrap">'
                         f'{_roc_sub}{_roc_body}{_roc_total}</div></div>',
                         unsafe_allow_html=True
                     )
                     if not _r_basis_has and not _r_any_19a:
-                        st.caption('Sube el costo base de tu bróker en el paso de captura para calcular el ROC.')
+                        _inc_exp.caption('Sube el costo base de tu bróker en el paso de captura para calcular el ROC.')
                     if _roc_has_sells:
-                        st.caption('* ROC aproximado: la posición tiene ventas, así que "Invertido" va neto de ventas '
+                        _inc_exp.caption('* ROC aproximado: la posición tiene ventas, así que "Invertido" va neto de ventas '
                                    'y el ROC del bróker es estimado. Es exacto en posiciones que solo acumulan.')
                     if _roc_19a_asof:
                         try:
@@ -2152,10 +2267,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         except Exception:
                             _stale = 0
                         _warn = ' — dato desactualizado, revisa el refresco semanal (GitHub Action)' if _stale > 21 else ''
-                        st.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
+                        _inc_exp.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
                                    f'actualizado al {_roc_19a_asof}.{_warn}')
 
-                    st.markdown(
+                    _inc_exp.markdown(
                         '<div style="margin:8px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
                         'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingresos: Schwab vs tu cálculo, y proyección</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
@@ -2168,13 +2283,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     )
 
                     # Toggle de métrica del eje: Dólares vs Yield anualizado.
-                    _use_yield = st.radio(
+                    _use_yield = _inc_exp.radio(
                         'Métrica del eje', ['Dólares ($)', 'Yield (%)'],
                         horizontal=True, label_visibility='collapsed', key='_income_metric'
                     ).startswith('Yield')
                     _has_yield = _chart_df['Yield'].notna().any()
                     if _use_yield and not _has_yield:
-                        st.caption('Sin valor de mercado para calcular el yield; mostrando dólares.')
+                        _inc_exp.caption('Sin valor de mercado para calcular el yield; mostrando dólares.')
                         _use_yield = False
                     _yfield, _yfmt, _ytitle = (
                         ('Yield:Q', '.1f', 'Yield anualizado (%)') if _use_yield
@@ -2222,10 +2337,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
                         titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
                     ).configure_legend(labelColor=CHART_PALETTE["axis"])
-                    st.altair_chart(_chart, use_container_width=True)
+                    _inc_exp.altair_chart(_chart, use_container_width=True)
                     if _dropped:
                         _drop_txt = ', '.join(t for t, _ in _dropped)
-                        st.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
+                        _inc_exp.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
 
                     # Justificación auto-generada: por qué la proyección de Schwab está inflada.
                     _flagged = sorted(
@@ -2251,7 +2366,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 'su distribución por acción cae con el tiempo, pero Schwab proyecta plano desde un pago-ancla '
                                 'más alto, ignorando la caída.</p>'
                             )
-                        st.markdown(
+                        _inc_exp.markdown(
                             '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;margin:6px 0 4px 0;">'
                             '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 4px 0;">'
                             'Por qué la proyección de Schwab está inflada</p>'
