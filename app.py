@@ -2,11 +2,24 @@ import streamlit as st
 import pandas as pd
 
 import datetime
+import importlib
 import logic
 import storage
 import json
 import os
 import time
+
+# Streamlit Cloud puede conservar en memoria una versión vieja de `logic` tras un push
+# (el módulo importado no siempre se reimporta sin un "Reboot app" manual). Si falta
+# algún símbolo reciente, el módulo está rancio → recargarlo desde disco. Equivale a un
+# reboot automático: revive de un golpe todas las funciones nuevas sin crashear el análisis.
+_LOGIC_SENTINELS = (
+    "load_roc_19a", "project_portfolio_forward", "build_portfolio_verdict",
+    "monte_carlo_projection", "build_factor_concentration", "build_underlying_exposure",
+    "nra_tax_breakdown", "build_risk_analysis", "build_interpretation",
+)
+if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
+    logic = importlib.reload(logic)
 
 
 def _roc_detail_card(stats):
@@ -2167,7 +2180,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         return (f'<span class="num" style="color:{c};">'
                                 f'{_tilde}{"−" if roc_acc < 0 else ""}${abs(roc_acc):,.0f}{_pct}{_tag}</span>')
 
-                    _roc19a = logic.load_roc_19a()
+                    _load_roc19a = getattr(logic, 'load_roc_19a', None)
+                    _roc19a = _load_roc19a() if _load_roc19a else {}
                     _roc_19a_asof = None        # asof más viejo entre los fondos estimados por 19a
                     _roc_has_sells = False       # ¿algún ROC de bróker es aproximado por ventas?
 
