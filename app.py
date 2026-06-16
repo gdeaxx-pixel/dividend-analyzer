@@ -1940,35 +1940,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _proj, _dropped = logic.filter_income_assets(_proj_all, results)
                 if _proj:
                     import altair as alt
-                    _SER = ['Schwab (recibido 12m)', 'Tu cálculo (recibido 12m)',
-                            'Schwab (proyección 12m)', 'Tu proyección (12m)']
-                    _COLORS = ['#166534', '#86EFAC', '#1E40AF', '#60A5FA']   # verde osc/claro · azul osc/claro
-                    _METODO = {
-                        _SER[0]: 'Dividendos efectivamente pagados por el broker en los últimos 12 meses.',
-                        _SER[1]: 'Mismo recibido, reconstruido desde tu CSV — debe coincidir con Schwab.',
-                        _SER[2]: 'Proyección del broker: pago-ancla más reciente × frecuencia anual (asume el pago plano).',
-                        _SER[3]: 'Run-Rate: promedio de tus pagos recientes (~3 meses) × frecuencia anual; refleja la caída real.',
-                    }
-
-                    def _mkt_of(_t):
-                        _r = results.get(_t) if results else None
-                        return _r.get('market_value') if isinstance(_r, dict) else None
-
-                    _rows_chart = []
-                    def _push(_t, _serie, _monto, _mkt):
-                        if _monto is None:
-                            return
-                        _yld = (_monto / _mkt * 100) if (_mkt and _mkt > 0) else None
-                        _rows_chart.append({'Ticker': _t, 'Serie': _serie, 'Monto': _monto,
-                                            'Yield': _yld, 'Metodo': _METODO[_serie]})
-                    for _t, _d in _proj.items():
-                        _mkt = _mkt_of(_t)
-                        _push(_t, _SER[0], _d.get('schwab_received_12m'), _mkt)
-                        if _d.get('our_received_12m') is not None:
-                            _push(_t, _SER[1], _d.get('our_received_12m'), _mkt)
-                        _push(_t, _SER[2], _d.get('schwab_proj'), _mkt)
-                        _push(_t, _SER[3], _d.get('our_proj'), _mkt)
-                    _chart_df = pd.DataFrame(_rows_chart)
 
                     # ── Fila de KPIs: una fila por ETF de ingreso + TOTAL ──
                     _sum_sproj = sum((_d.get('schwab_proj') or 0) for _d in _proj.values())
@@ -2165,6 +2136,99 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         unsafe_allow_html=True
                     )
 
+                    # ── Gráfica: proyección de ingreso mensual (Schwab vs cálculo), 12 meses ──
+                    _inc_exp.markdown(
+                        '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Proyección de ingreso mensual: Schwab vs tu cálculo</p>'
+                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
+                        'Tu ingreso mensual proyectado para los <b>próximos 12 meses</b>, sumando tus activos de ingreso. '
+                        '<b>Schwab</b> (azul oscuro) repite tu último pago como si nunca cambiara; <b>tu cálculo</b> (azul claro) '
+                        'usa el <b>run-rate reciente</b>, que capta la caída típica de los YieldMax. La etiqueta <b>Δ</b> es '
+                        'cuánto infla Schwab el total mensual.</p></div>',
+                        unsafe_allow_html=True
+                    )
+                    _MES_ABBR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+                                 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+                    _months = [_MES_ABBR[(datetime.date.today().month - 1 + _i) % 12] for _i in range(12)]
+                    _m_sch = _sum_sproj / 12.0
+                    _m_cal = _sum_oproj / 12.0
+                    _line_rows = []
+                    for _mname in _months:
+                        _line_rows.append({'Mes': _mname, 'Serie': 'Schwab (proyección)', 'Monto': _m_sch})
+                        _line_rows.append({'Mes': _mname, 'Serie': 'Tu cálculo (proyección)', 'Monto': _m_cal})
+                    _line_df = pd.DataFrame(_line_rows)
+                    _PROJ_SER = ['Schwab (proyección)', 'Tu cálculo (proyección)']
+                    _PROJ_COL = ['#1E40AF', '#60A5FA']
+                    _pline = alt.Chart(_line_df).mark_line(point=True, strokeWidth=2.5).encode(
+                        x=alt.X('Mes:O', sort=_months, title=None,
+                                axis=alt.Axis(labelAngle=0, labelFontSize=11)),
+                        y=alt.Y('Monto:Q', title='USD / mes', axis=alt.Axis(format='$,.0f')),
+                        color=alt.Color('Serie:N', sort=_PROJ_SER,
+                                        scale=alt.Scale(domain=_PROJ_SER, range=_PROJ_COL),
+                                        legend=alt.Legend(title=None, orient='top', labelFontSize=11)),
+                        tooltip=[alt.Tooltip('Mes:O', title='Mes'),
+                                 alt.Tooltip('Serie:N', title='Serie'),
+                                 alt.Tooltip('Monto:Q', format='$,.2f', title='USD/mes')],
+                    )
+                    _gap_pct = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else None
+                    _player = [_pline]
+                    if _gap_pct is not None and abs(_gap_pct) >= 1:
+                        _lab_df = pd.DataFrame([{'Mes': _months[len(_months) // 2],
+                                                 'Monto': max(_m_sch, _m_cal),
+                                                 'Label': f'Δ {_gap_pct:+.0f}%'}])
+                        _player.append(alt.Chart(_lab_df).mark_text(
+                            baseline='bottom', dy=-8, fontSize=12, fontWeight='bold',
+                            color='#c9821f', font='Inter, system-ui, sans-serif'
+                        ).encode(x=alt.X('Mes:O', sort=_months), y=alt.Y('Monto:Q'),
+                                 text=alt.Text('Label:N')))
+                    _pchart = alt.layer(*_player).properties(
+                        height=300, background=CHART_PALETTE["bg"]
+                    ).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                    ).configure_axis(
+                        grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
+                        tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
+                        titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
+                        titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
+                    ).configure_legend(labelColor=CHART_PALETTE["axis"])
+                    _inc_exp.altair_chart(_pchart, use_container_width=True)
+                    if _dropped:
+                        _drop_txt = ', '.join(t for t, _ in _dropped)
+                        _inc_exp.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
+
+                    # Justificación auto-generada: por qué la proyección de Schwab está inflada.
+                    _flagged = sorted(
+                        [(t, d) for t, d in _proj.items() if (d.get('overstatement_pct') or 0) > logic.INCOME_OVERSTATE_FLAG_PCT],
+                        key=lambda x: -(x[1]['overstatement_pct'] or 0))
+                    _stable = [t for t, d in _proj.items() if abs(d.get('overstatement_pct') or 0) <= 5]
+                    if _flagged:
+                        _just_li = ''.join(
+                            f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab proyecta '
+                            f'<b>${d["schwab_proj"]:,.0f}</b>/año asumiendo <b>${d["anchor_per_payment"]:,.2f}</b> por pago, '
+                            f'pero tu pago real reciente promedia <b>${d["recent_per_payment"]:,.2f}</b> — un ancla '
+                            f'<b style="color:#c9821f;">{d["overstatement_pct"]:.0f}% por encima</b> del nivel actual. '
+                            f'Proyectando tu run-rate real: <b style="color:#006497;">${d["our_proj"]:,.0f}</b>/año. '
+                            f'(Recibido últimos 12m: ${d["schwab_received_12m"]:,.0f}.)</li>'
+                            for t, d in _flagged
+                        )
+                        _stable_html = ''
+                        if _stable:
+                            _stable_html = (
+                                '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:8px 0 0 0;line-height:1.6;">'
+                                f'En cambio, en ETFs de dividendo estable ({", ".join(_stable)}) la proyección de Schwab y la '
+                                'nuestra coinciden (±5%). El sesgo es específico de los ETFs de opción-ingreso tipo YieldMax: '
+                                'su distribución por acción cae con el tiempo, pero Schwab proyecta plano desde un pago-ancla '
+                                'más alto, ignorando la caída.</p>'
+                            )
+                        _inc_exp.markdown(
+                            '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;margin:6px 0 4px 0;">'
+                            '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 4px 0;">'
+                            'Por qué la proyección de Schwab está inflada</p>'
+                            '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#444;margin:4px 0 0 0;padding-left:18px;">'
+                            + _just_li + '</ul>' + _stable_html + '</div>',
+                            unsafe_allow_html=True
+                        )
+
                     # ── Tabla ROC: derivación del Retorno de Capital por ETF ──
                     def _roc_html(roc_acc, roc_pct, source=None, approx=False):
                         if roc_acc is None:
@@ -2192,10 +2256,40 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         c = '#e05c5c' if (pkt and mv < pkt) else '#0F172A'
                         return f'<span class="num" style="color:{c};">${mv:,.0f}</span>'
 
-                    _roc_sub = ('<div class="da-roc-subhead"><span class="lbl">ETF</span>'
-                                '<span>Div. pagados</span><span>Reinvertidos</span>'
-                                '<span>En efectivo</span><span>Invertido</span>'
-                                '<span>Valor actual</span><span>Costo bróker</span><span>ROC</span></div>')
+                    _ROC_TIP = (
+                        '<b>ROC (Retorno de Capital)</b> es la parte de tus distribuciones que es '
+                        '<b>devolución de tu propio capital</b>, no rendimiento. Se calcula como '
+                        '<b>(Invertido + Reinvertido) − Costo bróker</b>: lo que metiste a comprar acciones '
+                        '(incluido lo reinvertido, que sube tu base) menos lo que el bróker dice que vale tu '
+                        'base ahora; ese hueco es ROC ya contabilizado.<br>'
+                        'Si <b>no tienes el costo base del bróker</b>, se estima con el <b>% que el fondo '
+                        'publica en sus avisos 19a-1</b> (marcado <b>est.19a</b>). El dato fiscal definitivo '
+                        'está en tu <b>1099-DIV casilla 3</b>.<br>'
+                        'Señal de "ingreso no gratis": si <b>Valor actual</b> cayó muy por debajo de '
+                        '<b>Invertido</b> pese a cobrar distribuciones (típico de YieldMax), gran parte de tu '
+                        '"ingreso" fue erosión de tu capital.'
+                    )
+
+                    def _roc_th(label, tip, right=False, lbl=False):
+                        # Header de columna con tooltip (mismo patrón .da-tip de la tabla comparativa).
+                        _bc = 'da-tip-box r' if right else 'da-tip-box'
+                        _cls = 'lbl da-tip' if lbl else 'da-tip'
+                        return (f'<span class="{_cls}">{label}'
+                                f'<span class="da-tip-i">i</span>'
+                                f'<span class="{_bc}">{tip}</span></span>')
+
+                    _roc_sub = (
+                        '<div class="da-roc-subhead">'
+                        + _roc_th('ETF', 'El fondo o acción. Cada fila desglosa de dónde viene su ROC.', lbl=True)
+                        + _roc_th('Div. pagados', 'Total de distribuciones que el fondo te pagó: lo reinvertido más lo recibido en efectivo.')
+                        + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base.')
+                        + _roc_th('En efectivo', 'La parte de tus distribuciones que cobraste en efectivo, sin reinvertir.')
+                        + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido.', right=True)
+                        + _roc_th('Valor actual', 'Cuánto vale hoy tu posición. En <b>rojo</b> si vale menos que lo invertido: señal de erosión del NAV.', right=True)
+                        + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b> dólar a dólar.', right=True)
+                        + _roc_th('ROC', _ROC_TIP, right=True)
+                        + '</div>'
+                    )
                     _roc_body = ''
                     _r_paid = _r_drip = _r_cash = _r_pkt = _r_mv = 0.0
                     _r_basis = _r_roc = _r_dist_for_roc = 0.0
@@ -2252,22 +2346,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
                         'font-weight:800;color:#021C36;margin:0 0 2px 0;">Retorno de Capital (ROC) por activo</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'El <b>ROC</b> es la parte de tus distribuciones que es <b>devolución de tu propio capital</b> '
-                        '(no rendimiento). Se calcula como <b>(Invertido + Reinvertido) − Costo bróker</b>: el dinero que '
-                        'metiste a comprar acciones (incluido lo reinvertido, que <b>sube</b> tu costo base) menos lo que '
-                        'el bróker dice que vale tu base ahora; ese hueco es ROC ya contabilizado (el ROC <b>baja</b> la '
-                        'base dólar a dólar).<br>'
-                        'Si <b>no tienes el costo base del bróker</b>, se estima con el <b>% que el fondo publica por '
-                        'distribución en sus avisos 19a-1</b> (marcado <b>est.19a</b>), empatando cada pago por fecha. El '
-                        'dato fiscal definitivo está en tu <b>1099-DIV casilla 3</b>.<br>'
-                        'Señal directa de "ingreso no gratis": compara <b>Invertido vs Valor actual</b> — si el valor cayó '
-                        'muy por debajo de lo invertido pese a cobrar distribuciones (típico de YieldMax), gran parte de tu '
-                        '"ingreso" fue erosión de tu capital.</p></div>',
+                        'Pasa el cursor por el ícono <span style="font-size:9px;font-weight:700;color:#fff;'
+                        'background:#94a3b8;padding:0 4px;">i</span> de cada columna (sobre todo <b>ROC</b>) para ver qué '
+                        'significa y cómo se calcula.</p></div>',
                         unsafe_allow_html=True
                     )
                     _inc_exp.markdown(
-                        f'<div class="da-kpi-cell"><div class="da-growth-wrap">'
-                        f'{_roc_sub}{_roc_body}{_roc_total}</div></div>',
+                        f'<div class="da-kpi-cell">{_roc_sub}{_roc_body}{_roc_total}</div>',
                         unsafe_allow_html=True
                     )
                     if not _r_basis_has and not _r_any_19a:
@@ -2283,111 +2368,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _warn = ' — dato desactualizado, revisa el refresco semanal (GitHub Action)' if _stale > 21 else ''
                         _inc_exp.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
                                    f'actualizado al {_roc_19a_asof}.{_warn}')
-
-                    _inc_exp.markdown(
-                        '<div style="margin:8px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingresos: Schwab vs tu cálculo, y proyección</p>'
-                        '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'Solo se muestran tus <b>activos de generación de ingresos</b> (los índices/crecimiento de dividendo '
-                        'marginal se ocultan para no aplastar la escala). Las dos barras <b>verdes</b> son lo <b>recibido</b> '
-                        'en 12 meses (Schwab vs tu cálculo — deben coincidir); las dos <b>azules</b> son la <b>proyección</b> '
-                        'a 12 meses: la de Schwab (azul oscuro) frente a la nuestra por run-rate reciente (azul claro). '
-                        'La etiqueta Δ sobre cada activo es cuánto infla Schwab su proyección.</p></div>',
-                        unsafe_allow_html=True
-                    )
-
-                    # Toggle de métrica del eje: Dólares vs Yield anualizado.
-                    _use_yield = _inc_exp.radio(
-                        'Métrica del eje', ['Dólares ($)', 'Yield (%)'],
-                        horizontal=True, label_visibility='collapsed', key='_income_metric'
-                    ).startswith('Yield')
-                    _has_yield = _chart_df['Yield'].notna().any()
-                    if _use_yield and not _has_yield:
-                        _inc_exp.caption('Sin valor de mercado para calcular el yield; mostrando dólares.')
-                        _use_yield = False
-                    _yfield, _yfmt, _ytitle = (
-                        ('Yield:Q', '.1f', 'Yield anualizado (%)') if _use_yield
-                        else ('Monto:Q', '$,.0f', 'USD / 12 meses')
-                    )
-
-                    _bars = alt.Chart(_chart_df).mark_bar().encode(
-                        x=alt.X('Ticker:N', title=None, axis=alt.Axis(labelAngle=0, labelFontSize=12)),
-                        xOffset=alt.XOffset('Serie:N', sort=_SER),
-                        y=alt.Y(_yfield, title=_ytitle, axis=alt.Axis(format=_yfmt)),
-                        color=alt.Color('Serie:N', sort=_SER,
-                                        scale=alt.Scale(domain=_SER, range=_COLORS),
-                                        legend=alt.Legend(title=None, orient='top', columns=2, labelFontSize=11)),
-                        tooltip=[alt.Tooltip('Ticker:N'), alt.Tooltip('Serie:N', title='Serie'),
-                                 alt.Tooltip('Monto:Q', format='$,.2f', title='Monto (USD/12m)'),
-                                 alt.Tooltip('Yield:Q', format='.2f', title='Yield anualizado (%)'),
-                                 alt.Tooltip('Metodo:N', title='Cómo se calcula')],
-                    )
-
-                    # Etiqueta Δ sobre cada activo: % que Schwab sobre-proyecta frente a nuestro run-rate.
-                    _delta_rows = []
-                    for _t, _d in _proj.items():
-                        _ov = _d.get('overstatement_pct')
-                        if _ov is None:
-                            continue
-                        _top = max(_d.get('schwab_proj') or 0, _d.get('our_proj') or 0)
-                        _mkt = _mkt_of(_t)
-                        _top_y = (_top / _mkt * 100) if (_use_yield and _mkt and _mkt > 0) else _top
-                        _delta_rows.append({'Ticker': _t, 'Top': _top_y, 'Label': f'Δ {_ov:+.0f}%'})
-                    _layers = [_bars]
-                    if _delta_rows:
-                        _text = alt.Chart(pd.DataFrame(_delta_rows)).mark_text(
-                            baseline='bottom', dy=-4, fontSize=11, fontWeight='bold',
-                            color='#c9821f', font='Inter, system-ui, sans-serif'
-                        ).encode(x=alt.X('Ticker:N'), y=alt.Y('Top:Q'), text=alt.Text('Label:N'))
-                        _layers.append(_text)
-
-                    _chart = alt.layer(*_layers).properties(
-                        height=320, background=CHART_PALETTE["bg"]
-                    ).configure_view(
-                        strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                    ).configure_axis(
-                        grid=True, gridColor=CHART_PALETTE["grid"], domainColor=CHART_PALETTE["axis"],
-                        tickColor=CHART_PALETTE["axis"], labelColor=CHART_PALETTE["axis"],
-                        titleColor=CHART_PALETTE["title"], labelFont='Inter, system-ui, sans-serif',
-                        titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
-                    ).configure_legend(labelColor=CHART_PALETTE["axis"])
-                    _inc_exp.altair_chart(_chart, use_container_width=True)
-                    if _dropped:
-                        _drop_txt = ', '.join(t for t, _ in _dropped)
-                        _inc_exp.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
-
-                    # Justificación auto-generada: por qué la proyección de Schwab está inflada.
-                    _flagged = sorted(
-                        [(t, d) for t, d in _proj.items() if (d.get('overstatement_pct') or 0) > logic.INCOME_OVERSTATE_FLAG_PCT],
-                        key=lambda x: -(x[1]['overstatement_pct'] or 0))
-                    _stable = [t for t, d in _proj.items() if abs(d.get('overstatement_pct') or 0) <= 5]
-                    if _flagged:
-                        _just_li = ''.join(
-                            f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab proyecta '
-                            f'<b>${d["schwab_proj"]:,.0f}</b>/año asumiendo <b>${d["anchor_per_payment"]:,.2f}</b> por pago, '
-                            f'pero tu pago real reciente promedia <b>${d["recent_per_payment"]:,.2f}</b> — un ancla '
-                            f'<b style="color:#c9821f;">{d["overstatement_pct"]:.0f}% por encima</b> del nivel actual. '
-                            f'Proyectando tu run-rate real: <b style="color:#006497;">${d["our_proj"]:,.0f}</b>/año. '
-                            f'(Recibido últimos 12m: ${d["schwab_received_12m"]:,.0f}.)</li>'
-                            for t, d in _flagged
-                        )
-                        _stable_html = ''
-                        if _stable:
-                            _stable_html = (
-                                '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:8px 0 0 0;line-height:1.6;">'
-                                f'En cambio, en ETFs de dividendo estable ({", ".join(_stable)}) la proyección de Schwab y la '
-                                'nuestra coinciden (±5%). El sesgo es específico de los ETFs de opción-ingreso tipo YieldMax: '
-                                'su distribución por acción cae con el tiempo, pero Schwab proyecta plano desde un pago-ancla '
-                                'más alto, ignorando la caída.</p>'
-                            )
-                        _inc_exp.markdown(
-                            '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;margin:6px 0 4px 0;">'
-                            '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 4px 0;">'
-                            'Por qué la proyección de Schwab está inflada</p>'
-                            '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#444;margin:4px 0 0 0;padding-left:18px;">'
-                            + _just_li + '</ul>' + _stable_html + '</div>',
-                            unsafe_allow_html=True
-                        )
 
             # ── Portafolio de crecimiento — rendimiento de precio ──────
             # Robustez en Streamlit Cloud: tras un deploy, el watcher puede reejecutar app.py

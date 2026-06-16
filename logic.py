@@ -1283,12 +1283,19 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _roc_pct = None
         _roc_source = None
         _basis_in = pocket_investment + dividends_collected_drip
+        # Si la reconciliación desde el snapshot del broker sobreescribió pocket_investment con el
+        # costo base del broker (reconciled_fields incluye 'cost_basis'), ese MISMO número alimenta
+        # ib_cost_basis_map. Entonces (pocket+drip) − ib_basis se cancela y el ROC 'broker' colapsa a
+        # ~0 (= solo el drip), justo en YieldMax reconciliados donde el ROC es grande. En ese caso el
+        # método broker no puede derivar ROC: no tenemos el costo ORIGINAL, solo el actual ya reducido
+        # por el ROC. Mostramos el costo del broker igual, pero estimamos el ROC con los 19a (abajo).
+        _cost_reconciled = 'cost_basis' in (reconciled_fields or [])
         if ib_cost_basis_map:
             _raw_basis = ib_cost_basis_map.get(ticker)
             if _raw_basis is not None:
                 try:
                     _ib_basis = float(str(_raw_basis).replace(',', '').replace('$', '').strip())
-                    if _basis_in > 0 and _ib_basis >= 0:
+                    if _basis_in > 0 and _ib_basis >= 0 and not _cost_reconciled:
                         _roc_accum = round(_basis_in - _ib_basis, 2)
                         _roc_pct   = round(_roc_accum / total_dividends * 100, 2) if total_dividends > 0 else None
                         _roc_source = 'broker'
