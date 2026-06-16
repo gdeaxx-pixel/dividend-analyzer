@@ -2697,7 +2697,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 and (results.get(t) or {}).get('underlying_cagr_recent') is not None]
                     _scenarios = {}
                     if _ym_elig:
-                        with st.expander("Escenario del subyacente (YieldMax) — ¿y si la acción base se recupera?"):
+                        with st.container(border=True):
+                            st.markdown("**Escenario del subyacente (YieldMax) — ¿y si la acción base se recupera?**")
                             st.caption(
                                 "Pon el retorno anual que esperas del SUBYACENTE (MSTR para MSTY, etc.) y el "
                                 "fondo lo refleja con captura asimétrica: toma casi toda la caída pero poca de la "
@@ -2857,7 +2858,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                         # ── Módulo fiscal NRA: tu retención real por país × escudo ROC ──
                         if _p_country:
-                            with st.expander(f"Módulo fiscal — tu retención real en {_p_country}", expanded=False):
+                            with st.container(border=True):
+                                st.markdown(f"**Módulo fiscal — tu retención real en {_p_country}**")
                                 _tax_rows = []
                                 for _tk in _fwd['eligible']:
                                     _bd = logic.nra_tax_breakdown(_p_country, logic._ticker_roc_fraction(_tk, results))
@@ -2879,7 +2881,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     st.caption(_bd['audit_note'])
 
                         # ── Escenarios (Monte Carlo): rango de resultados, no una sola línea ──
-                        with st.expander("Escenarios (Monte Carlo) — el rango de lo que puede pasar", expanded=False):
+                        with st.container(border=True):
+                            st.markdown("**Escenarios (Monte Carlo) — el rango de lo que puede pasar**")
                             _mcc1, _mcc2 = st.columns(2)
                             with _mcc1:
                                 _mc_infl = st.number_input("Inflación anual % (para la vista real)", min_value=0.0,
