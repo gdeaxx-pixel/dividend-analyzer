@@ -2139,45 +2139,55 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     # ── Gráfica: proyección de ingreso mensual (Schwab vs cálculo), 12 meses ──
                     _inc_exp.markdown(
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Proyección de ingreso mensual: Schwab vs tu cálculo</p>'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingreso acumulado en el año: Schwab vs tu cálculo</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'Tu ingreso mensual proyectado para los <b>próximos 12 meses</b>, sumando tus activos de ingreso. '
-                        '<b>Schwab</b> (azul oscuro) repite tu último pago como si nunca cambiara; <b>tu cálculo</b> (azul claro) '
-                        'usa el <b>run-rate reciente</b>, que capta la caída típica de los YieldMax. La etiqueta <b>Δ</b> es '
-                        'cuánto infla Schwab el total mensual.</p></div>',
+                        'Cada punto suma <b>todo lo que llevarías cobrado</b> desde hoy hasta ese mes, hasta cerrar el año. '
+                        'La línea azul oscuro (<b>Schwab</b>) repite tu último pago como si nunca bajara; la azul claro '
+                        '(<b>tu cálculo</b>) usa el <b>ritmo real reciente</b>, que capta la caída típica de los YieldMax. '
+                        'Como ambas crecen mes a mes, <b>la separación se ensancha</b>: la franja ámbar es lo que Schwab '
+                        'promete de más, y en el último mes equivale a la diferencia de <b>todo el año</b> (<b>Δ</b>).</p></div>',
                         unsafe_allow_html=True
                     )
                     _MES_ABBR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
                                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
                     _months = [_MES_ABBR[(datetime.date.today().month - 1 + _i) % 12] for _i in range(12)]
-                    _m_sch = _sum_sproj / 12.0
+                    _m_sch = _sum_sproj / 12.0   # incremento mensual (total anual repartido parejo)
                     _m_cal = _sum_oproj / 12.0
                     _line_rows = []
-                    for _mname in _months:
-                        _line_rows.append({'Mes': _mname, 'Serie': 'Schwab (proyección)', 'Monto': _m_sch})
-                        _line_rows.append({'Mes': _mname, 'Serie': 'Tu cálculo (proyección)', 'Monto': _m_cal})
+                    _band_rows = []
+                    for _i, _mname in enumerate(_months, start=1):
+                        _sch_cum = _m_sch * _i
+                        _cal_cum = _m_cal * _i
+                        _line_rows.append({'Mes': _mname, 'Serie': 'Schwab (acumulado)', 'Monto': _sch_cum})
+                        _line_rows.append({'Mes': _mname, 'Serie': 'Tu cálculo (acumulado)', 'Monto': _cal_cum})
+                        _band_rows.append({'Mes': _mname, 'cal_cum': _cal_cum, 'sch_cum': _sch_cum})
                     _line_df = pd.DataFrame(_line_rows)
-                    _PROJ_SER = ['Schwab (proyección)', 'Tu cálculo (proyección)']
+                    _band_df = pd.DataFrame(_band_rows)
+                    _PROJ_SER = ['Schwab (acumulado)', 'Tu cálculo (acumulado)']
                     _PROJ_COL = ['#1E40AF', '#60A5FA']
                     _pline = alt.Chart(_line_df).mark_line(point=True, strokeWidth=2.5).encode(
                         x=alt.X('Mes:O', sort=_months, title=None,
                                 axis=alt.Axis(labelAngle=0, labelFontSize=11)),
-                        y=alt.Y('Monto:Q', title='USD / mes', axis=alt.Axis(format='$,.0f')),
+                        y=alt.Y('Monto:Q', title='USD acumulado', axis=alt.Axis(format='$,.0f')),
                         color=alt.Color('Serie:N', sort=_PROJ_SER,
                                         scale=alt.Scale(domain=_PROJ_SER, range=_PROJ_COL),
                                         legend=alt.Legend(title=None, orient='top', labelFontSize=11)),
                         tooltip=[alt.Tooltip('Mes:O', title='Mes'),
                                  alt.Tooltip('Serie:N', title='Serie'),
-                                 alt.Tooltip('Monto:Q', format='$,.2f', title='USD/mes')],
+                                 alt.Tooltip('Monto:Q', format='$,.0f', title='USD acumulado al mes')],
                     )
                     _gap_pct = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else None
-                    _player = [_pline]
+                    # Franja de discrepancia: el área entre tu acumulado y el de Schwab.
+                    _pband = alt.Chart(_band_df).mark_area(opacity=0.12, color='#c9821f').encode(
+                        x=alt.X('Mes:O', sort=_months),
+                        y=alt.Y('cal_cum:Q'), y2=alt.Y2('sch_cum:Q'))
+                    _player = [_pband, _pline]
                     if _gap_pct is not None and abs(_gap_pct) >= 1:
-                        _lab_df = pd.DataFrame([{'Mes': _months[len(_months) // 2],
-                                                 'Monto': max(_m_sch, _m_cal),
-                                                 'Label': f'Δ {_gap_pct:+.0f}%'}])
+                        _lab_df = pd.DataFrame([{'Mes': _months[-1],
+                                                 'Monto': _sum_sproj,
+                                                 'Label': f'Δ {_gap_pct:+.0f}% · +${_sum_sproj - _sum_oproj:,.0f}/año'}])
                         _player.append(alt.Chart(_lab_df).mark_text(
-                            baseline='bottom', dy=-8, fontSize=12, fontWeight='bold',
+                            baseline='bottom', align='right', dx=-4, dy=-8, fontSize=12, fontWeight='bold',
                             color='#c9821f', font='Inter, system-ui, sans-serif'
                         ).encode(x=alt.X('Mes:O', sort=_months), y=alt.Y('Monto:Q'),
                                  text=alt.Text('Label:N')))
@@ -2192,6 +2202,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
                     ).configure_legend(labelColor=CHART_PALETTE["axis"])
                     _inc_exp.altair_chart(_pchart, use_container_width=True)
+                    _inc_exp.caption('La acumulación reparte el total anual de forma pareja entre los 12 meses; '
+                                     'es una simplificación para comparar los dos métodos, no un calendario exacto de pagos.')
                     if _dropped:
                         _drop_txt = ', '.join(t for t, _ in _dropped)
                         _inc_exp.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
