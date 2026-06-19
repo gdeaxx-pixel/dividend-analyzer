@@ -745,11 +745,11 @@ st.markdown("""
     .da-growth-wrap { overflow-x: auto; margin: 8px 0 2px 0; }
     .da-growth-row {
         display: grid;
-        grid-template-columns: minmax(46px, 1.2fr) repeat(5, 1fr);
+        grid-template-columns: minmax(46px, 1.2fr) repeat(4, 1fr);
         gap: 10px;
         align-items: baseline;
         padding: 4px 0;
-        min-width: 560px;
+        min-width: 460px;
     }
     .da-growth-row > span {
         font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
@@ -1761,37 +1761,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _conf_color = '#4caf82'
             _conf_delta = 'todas verificadas' if _n_approx == 0 else f'{_n_approx} aproximada(s)'
 
-            if _income_annual > 0:
-                st.markdown(
-                    '<div style="margin:6px 0 2px 0;">'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#006497;font-weight:700;'
-                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En corto · tu ingreso por dividendos</p>'
-                    '<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.55;margin:0;">'
-                    f'Tu portafolio de <b style="font-family:{_MONO_FONT};">${_total_mv:,.0f}</b> te pagó alrededor de '
-                    f'<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_annual:,.0f}</b> en dividendos en los '
-                    f'<b>últimos 12 meses</b> (~<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_monthly:,.0f}/mes</b>), '
-                    f'un rendimiento de <b style="font-family:{_MONO_FONT};">{_income_yield:.1f}%</b> sobre su valor actual. '
-                    '<span style="color:#8899aa;font-size:12.5px;">Es lo realmente recibido; en activos tipo YieldMax el '
-                    'pago futuro suele ser menor — mira la proyección y el desglose contra el broker en “Ver detalle”.</span>'
-                    '</p></div>',
-                    unsafe_allow_html=True)
-                st.markdown(
-                    '<div class="da-kpi-bar" style="grid-template-columns:repeat(4,1fr);">'
-                    '<div class="da-kpi-cell da-kpi-green"><p class="da-kpi-label">Ingreso mensual</p>'
-                    f'<p class="da-kpi-value">${_income_monthly:,.0f}</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">promedio últimos 12m</p></div>'
-                    '<div class="da-kpi-cell da-kpi-accent"><p class="da-kpi-label">Ingreso anual</p>'
-                    f'<p class="da-kpi-value">${_income_annual:,.0f}</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">recibido, últimos 12m</p></div>'
-                    '<div class="da-kpi-cell da-kpi-navy"><p class="da-kpi-label">Yield sobre valor</p>'
-                    f'<p class="da-kpi-value">{_income_yield:.1f}%</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">ingreso ÷ valor de mercado</p></div>'
-                    f'<div class="da-kpi-cell" style="border-top-color:{_conf_color};">'
-                    '<p class="da-kpi-label">Confianza de datos</p>'
-                    f'<p class="da-kpi-value" style="color:{_conf_color};">{_n_exact}/{_n_total}</p>'
-                    f'<p class="da-kpi-delta" style="color:{_conf_color};">{_conf_delta}</p></div>'
-                    '</div>',
-                    unsafe_allow_html=True)
+            # ── "En corto · tu ingreso por dividendos" se movió al pie, bajo Análisis de riesgo ──
 
             # Nota de acción: solo cuando hay posiciones no confiables (falta costo de origen).
             if _dq_unrel:
@@ -2012,6 +1982,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                      '<b>Schwab</b> es lo que tu broker reporta haberte pagado en todo el income; '
                                      'la columna <b>Calc</b> es lo mismo, reconstruido por la calculadora desde tu '
                                      'archivo CSV.<br><br>'
+                                     '<b>Es el dividendo bruto</b> (lo que el fondo declaró, <b>antes</b> de la '
+                                     'retención de impuesto a extranjeros). Lo que de verdad entró a tu cuenta, ya '
+                                     'descontado ese impuesto, es el <b>neto</b> que ves abajo en la tabla de ROC '
+                                     '(columna <b>Div. pagados</b>): por eso ese número es menor, no es un error.<br><br>'
                                      '<b>Ojo con el Δ%:</b> las dos fuentes pueden cubrir <b>ventanas de tiempo '
                                      'distintas</b>. Tu CSV suele tener <b>más historia</b> que el reporte de income '
                                      'de Schwab, así que un Δ% grande casi siempre significa que el CSV abarca más '
@@ -2128,7 +2102,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _inc_exp = st.expander('Ver detalle · tabla Schwab vs tu cálculo · ROC · gráfica de ingresos', expanded=False)
                     _inc_exp.markdown(
                         _kpi_wide([
-                            ('Total histórico',    'hist', '#021C36',   False, _rows_hist),
+                            ('Total dividendos',   'hist', '#021C36',   False, _rows_hist),
                             ('Últimos 12 meses',   'recv', '#006497',   False, _rows_recv),
                             ('Proyectado anual',   'ann',  _div_color,  True,  _rows_ann),
                             ('Proyectado mensual', 'mon',  '#4caf82',   True,  _rows_mon),
@@ -2293,7 +2267,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _roc_sub = (
                         '<div class="da-roc-subhead">'
                         + _roc_th('ETF', 'El fondo o acción. Cada fila desglosa de dónde viene su ROC.', lbl=True)
-                        + _roc_th('Div. pagados', 'Total de distribuciones que el fondo te pagó: lo reinvertido más lo recibido en efectivo.')
+                        + _roc_th('Div. pagados', 'Lo que de verdad entró a tu cuenta: lo reinvertido más lo recibido en efectivo, ya <b>neto</b> de la retención de impuesto a extranjeros (NRA). Por eso es menor que el "Total dividendos" de arriba, que es el bruto antes de impuesto.')
                         + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base.')
                         + _roc_th('En efectivo', 'La parte de tus distribuciones que cobraste en efectivo, sin reinvertir.')
                         + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido.', right=True)
@@ -2381,6 +2355,186 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _inc_exp.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
                                    f'actualizado al {_roc_19a_asof}.{_warn}')
 
+            # ── Cuadrículas Schwab vs tu cálculo: inversión · dividendos · ROC ──
+                _cmp_valid = sorted([t for t, s in results.items()
+                                     if isinstance(s, dict) and 'error' not in s],
+                                    key=lambda t: -(results[t].get('market_value') or 0))
+                if _cmp_valid:
+                    def _cell(v, kind='money'):
+                        if v is None:
+                            return '<span class="num" style="color:#b8c2cc;">n/d</span>'
+                        if kind == 'pct':
+                            return f'<span class="num" style="color:{"#4caf82" if v >= 0 else "#e05c5c"};">{v:+.0f}%</span>'
+                        return f'<span class="num">${v:,.0f}</span>'
+
+                    def _delta(s, c, kind='money'):
+                        if s is None or c is None:
+                            return '<span class="pct" style="color:#b8c2cc;">—</span>'
+                        if kind == 'pct':
+                            d = s - c
+                            col = '#8899aa' if abs(d) < 0.5 else ('#e0a23c' if d > 0 else '#006497')
+                            return f'<span class="pct" style="color:{col};">{d:+.0f}pts</span>'
+                        if not c:
+                            return '<span class="pct" style="color:#b8c2cc;">—</span>'
+                        p = (s / c - 1) * 100
+                        col = '#8899aa' if abs(p) < 1 else ('#e0a23c' if p > 0 else '#006497')
+                        return f'<span class="pct" style="color:{col};">{p:+.0f}%</span>'
+
+                    def _grid_css(ncols):
+                        return f'grid-template-columns:minmax(56px,1.2fr) repeat({ncols}, 1fr);'
+
+                    def _triplet(groups, tks):
+                        g = _grid_css(3 * len(groups))
+                        h = f'<div class="da-kpiwide-grouphead" style="{g}"><span></span>'
+                        for lab, acc, _gt, _kd in groups:
+                            h += f'<span class="grp" style="border-bottom-color:{acc};">{lab}</span>'
+                        h += f'</div><div class="da-kpiwide-subhead" style="{g}"><span class="lbl">ETF</span>'
+                        for _ in groups:
+                            h += '<span>Schwab</span><span>Calc</span><span>Δ</span>'
+                        h += '</div>'
+                        tot = [[0.0, 0.0, False, False] for _ in groups]
+                        for t in tks:
+                            h += f'<div class="da-kpiwide-row" style="{g}"><span class="tk">{t}</span>'
+                            for i, (lab, acc, getter, kind) in enumerate(groups):
+                                s, c = getter(t)
+                                h += _cell(s, kind) + _cell(c, kind) + _delta(s, c, kind)
+                                if kind == 'money':
+                                    if s is not None:
+                                        tot[i][0] += s; tot[i][2] = True
+                                    if c is not None:
+                                        tot[i][1] += c; tot[i][3] = True
+                            h += '</div>'
+                        h += f'<div class="da-kpiwide-row da-kpiwide-total" style="{g}"><span class="tk">TOTAL</span>'
+                        for i, (lab, acc, getter, kind) in enumerate(groups):
+                            if kind == 'money':
+                                ss = tot[i][0] if tot[i][2] else None
+                                cc = tot[i][1] if tot[i][3] else None
+                                h += _cell(ss, kind) + _cell(cc, kind) + _delta(ss, cc, kind)
+                            else:
+                                h += '<span class="num" style="color:#b8c2cc;">—</span>' * 2 + '<span class="pct" style="color:#b8c2cc;">—</span>'
+                        return h + '</div>'
+
+                    def _subtitle(txt):
+                        return (f'<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:800;'
+                                f'color:#021C36;letter-spacing:0.04em;text-transform:uppercase;'
+                                f'margin:18px 0 6px 0;">{txt}</p>')
+
+                    _da_section("Comparación con el broker · Schwab vs tu cálculo",
+                                "Lo que reporta Schwab frente a lo que reconstruye la calculadora desde tu CSV: tu inversión, tus dividendos y tu Retorno de Capital, fondo por fondo.")
+
+                    # Cuadrícula A — rendimiento de la inversión
+                    def _A_inv(t):
+                        return (results[t].get('ib_cost_basis'), results[t].get('pocket_investment'))
+
+                    def _A_val(t):
+                        v = results[t].get('market_value')
+                        return (v, v)
+
+                    def _A_gain(t):
+                        v = results[t].get('market_value'); cb = results[t].get('ib_cost_basis'); pk = results[t].get('pocket_investment')
+                        return ((v - cb) if (v is not None and cb is not None) else None,
+                                (v - pk) if (v is not None and pk is not None) else None)
+
+                    def _A_ret(t):
+                        v = results[t].get('market_value'); cb = results[t].get('ib_cost_basis'); pk = results[t].get('pocket_investment')
+                        return (((v - cb) / cb * 100) if (v is not None and cb) else None,
+                                ((v - pk) / pk * 100) if (v is not None and pk) else None)
+
+                    _gridA = _triplet([('Invertido', '#021C36', _A_inv, 'money'),
+                                       ('Valor hoy', '#006497', _A_val, 'money'),
+                                       ('Rendim. $', '#4caf82', _A_gain, 'money'),
+                                       ('Rendim. %', '#2d3748', _A_ret, 'pct')], _cmp_valid)
+                    st.markdown(_subtitle('Rendimiento de tu inversión') + f'<div class="da-kpi-cell">{_gridA}</div>',
+                                unsafe_allow_html=True)
+                    st.caption("«Invertido» en Schwab es el cost basis del bróker (ya reducido por el ROC); en la calculadora "
+                               "es el capital real que desplegaste. Por eso Schwab suele mostrar una ganancia mayor: compara "
+                               "contra una base más baja. El valor de mercado es el mismo en ambas (precio × acciones).")
+
+                    # Cuadrícula B — dividendos (bruto · impuesto · neto)
+                    _divtks = [t for t in _cmp_valid
+                               if (results[t].get('total_dividends') or 0) > 0
+                               or (_proj_all.get(t, {}) or {}).get('schwab_received_total')]
+                    if _divtks:
+                        def _B_gross(t):
+                            p = _proj_all.get(t, {}) or {}
+                            return (p.get('schwab_received_total'), p.get('our_received_total'))
+
+                        def _B_tax(t):
+                            x = results[t].get('withheld_tax_total')
+                            return (x, x)
+
+                        def _B_net(t):
+                            p = _proj_all.get(t, {}) or {}
+                            gs = p.get('schwab_received_total'); gc = p.get('our_received_total')
+                            x = results[t].get('withheld_tax_total') or 0
+                            return ((gs - x) if gs is not None else None,
+                                    (gc - x) if gc is not None else None)
+
+                        def _B_drip(t):
+                            d = results[t].get('dividends_collected_drip')
+                            return (d, d)
+
+                        def _B_cash(t):
+                            c = results[t].get('dividends_collected_cash')
+                            return (c, c)
+
+                        _gridB = _triplet([('Total div. (bruto)', '#021C36', _B_gross, 'money'),
+                                           ('Impuesto NRA', '#e05c5c', _B_tax, 'money'),
+                                           ('Neto recibido', '#4caf82', _B_net, 'money'),
+                                           ('Reinvertidos', '#006497', _B_drip, 'money'),
+                                           ('En efectivo', '#2d3748', _B_cash, 'money')], _divtks)
+                        st.markdown(_subtitle('Dividendos: bruto, impuesto y neto') + f'<div class="da-kpi-cell">{_gridB}</div>',
+                                    unsafe_allow_html=True)
+                        st.caption("El bruto es lo que el fondo declaró; el impuesto NRA (retención a extranjeros, ~30%) se "
+                                   "descuenta y deja el neto que de verdad entró a tu cuenta. «Reinvertidos» y «En efectivo» "
+                                   "salen de tu CSV, así que Schwab y la calculadora coinciden.")
+
+                    # Cuadrícula C — Retorno de Capital (ROC)
+                    _roctks = [t for t in _cmp_valid
+                               if results[t].get('roc_accumulated') is not None
+                               or (results[t].get('total_dividends') or 0) > 0]
+                    if _roctks:
+                        gC = _grid_css(5)
+                        hC = (f'<div class="da-kpiwide-subhead" style="{gC}"><span class="lbl">ETF</span>'
+                              '<span>Costo bróker</span><span>Costo real</span><span>ROC $</span>'
+                              '<span>ROC %</span><span>ROC ÷ div.</span></div>')
+                        _tc1 = _tc2 = _tc3 = 0.0
+                        _h1 = _h2 = _h3 = False
+                        for t in _roctks:
+                            cb = results[t].get('ib_cost_basis'); pk = results[t].get('pocket_investment')
+                            dr = results[t].get('dividends_collected_drip') or 0
+                            real = (pk + dr) if pk is not None else None
+                            rocd = results[t].get('roc_accumulated'); rocp = results[t].get('roc_percent')
+                            td = results[t].get('total_dividends') or 0
+                            rocdiv = (rocd / td * 100) if (rocd is not None and td > 0) else None
+                            hC += (f'<div class="da-kpiwide-row" style="{gC}"><span class="tk">{t}</span>'
+                                   + _cell(cb) + _cell(real)
+                                   + (f'<span class="num" style="color:#4caf82;">${rocd:,.0f}</span>' if rocd is not None
+                                      else '<span class="num" style="color:#b8c2cc;">n/d</span>')
+                                   + _cell(rocp, 'pct')
+                                   + (f'<span class="num" style="color:#4caf82;">{rocdiv:.0f}%</span>' if rocdiv is not None
+                                      else '<span class="num" style="color:#b8c2cc;">n/d</span>')
+                                   + '</div>')
+                            if cb is not None:
+                                _tc1 += cb; _h1 = True
+                            if real is not None:
+                                _tc2 += real; _h2 = True
+                            if rocd is not None:
+                                _tc3 += rocd; _h3 = True
+                        hC += (f'<div class="da-kpiwide-row da-kpiwide-total" style="{gC}"><span class="tk">TOTAL</span>'
+                               + _cell(_tc1 if _h1 else None) + _cell(_tc2 if _h2 else None)
+                               + (f'<span class="num" style="color:#4caf82;">${_tc3:,.0f}</span>' if _h3
+                                  else '<span class="num" style="color:#b8c2cc;">—</span>')
+                               + '<span class="num" style="color:#b8c2cc;">—</span>'
+                               + '<span class="num" style="color:#b8c2cc;">—</span></div>')
+                        st.markdown(_subtitle('Retorno de Capital (ROC)') + f'<div class="da-kpi-cell">{hC}</div>',
+                                    unsafe_allow_html=True)
+                        st.caption("«Costo bróker» es la base que muestra Schwab en tus posiciones; «Costo real» es lo que "
+                                   "desplegaste (bolsillo + reinvertido). La diferencia es el ROC: capital que el fondo te "
+                                   "devolvió y por el que el bróker bajó tu base. «ROC ÷ div.» es qué parte de tus dividendos "
+                                   "fue en realidad devolución de tu capital. Si falta el costo del bróker, el ROC se estima "
+                                   "con los avisos 19a del fondo.")
+
             # ── Portafolio de crecimiento — rendimiento de precio ──────
             # Robustez en Streamlit Cloud: tras un deploy, el watcher puede reejecutar app.py
             # pero conservar en memoria un `logic` viejo (sin la función nueva). Preferimos la
@@ -2429,35 +2583,26 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   key=lambda kv: (kv[1].get('market_value') or 0), reverse=True)
                 _g_head = ('<div class="da-growth-row da-growth-head"><span>ETF</span>'
                            '<span>Invertido</span><span>Valor</span><span>Rendim. $</span>'
-                           '<span>Rendim. %</span><span>vs SPY</span></div>')
+                           '<span>Rendim. %</span></div>')
                 _g_body = ''
-                _g_mv = _g_pocket = _g_div = _g_bench = 0.0
-                _g_bench_has = False
+                _g_mv = _g_pocket = _g_div = 0.0
                 for _tk, _d in _g_items:
                     _mv  = _d.get('market_value');             _pk = _d.get('pocket_investment')
                     _dv  = _d.get('dividends_collected_cash'); _roi = _d.get('roi_percent')
-                    _broi = _d.get('benchmark_roi');           _bv = _d.get('benchmark_value')
                     _gain = ((_mv or 0) + (_dv or 0) - _pk) if _pk is not None else None
-                    _vs = (_roi - _broi) if (_roi is not None and _broi is not None) else None
                     _g_body += (f'<div class="da-growth-row"><span>{_tk}</span>'
                                 f'<span>{_gfmt_money(_pk)}</span>'
                                 f'<span>{_gfmt_money(_mv)}</span>'
                                 f'<span>{_gmoney_ret(_gain)}</span>'
-                                f'<span>{_gret_html(_roi)}</span>'
-                                f'<span>{_gret_html(_vs, " pts")}</span></div>')
+                                f'<span>{_gret_html(_roi)}</span></div>')
                     _g_mv += (_mv or 0); _g_pocket += (_pk or 0); _g_div += (_dv or 0)
-                    if _bv is not None:
-                        _g_bench += _bv; _g_bench_has = True
                 _g_tgain = (_g_mv + _g_div - _g_pocket) if _g_pocket > 0 else None
                 _g_troi = ((_g_mv + _g_div - _g_pocket) / _g_pocket * 100) if _g_pocket > 0 else None
-                _g_tspy = ((_g_bench - _g_pocket) / _g_pocket * 100) if (_g_bench_has and _g_pocket > 0) else None
-                _g_tvs  = (_g_troi - _g_tspy) if (_g_troi is not None and _g_tspy is not None) else None
                 _g_total = ('<div class="da-growth-row da-growth-total"><span>TOTAL</span>'
                             f'<span>{_gfmt_money(_g_pocket)}</span>'
                             f'<span>{_gfmt_money(_g_mv)}</span>'
                             f'<span>{_gmoney_ret(_g_tgain)}</span>'
-                            f'<span>{_gret_html(_g_troi)}</span>'
-                            f'<span>{_gret_html(_g_tvs, " pts")}</span></div>')
+                            f'<span>{_gret_html(_g_troi)}</span></div>')
                 _g_tip = ('<b>¿Qué es?</b> El rendimiento de precio de tus activos de '
                           '<b>crecimiento</b> (posiciones de baja distribución: índices, ETFs y '
                           'acciones de apreciación), activo por activo.<br><br>'
@@ -2469,10 +2614,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                           '<b>Rendim. %</b>: lo mismo en porcentaje (Rendim. $ ÷ invertido). Es tu '
                           'rendimiento <b>total acumulado</b> desde tu primera compra; en '
                           'crecimiento los dividendos son marginales, así que ≈ apreciación del '
-                          'precio. Verde = ganas, rojo = pierdes.<br>'
-                          '<b>vs SPY</b>: cuántos <b>puntos</b> le ganas (verde) o le pierdes (rojo) '
-                          'a haber invertido lo mismo en el S&amp;P 500 con tu mismo timing de '
-                          'aportes — es tu <b>alfa</b> contra el índice.<br><br>'
+                          'precio. Verde = ganas, rojo = pierdes.<br><br>'
                           '<b>Ojo</b>: el rendimiento es <b>acumulado, no anual</b>, así que una '
                           'posición con más tiempo de tenencia tiene ventaja natural; para comparar '
                           'por año, mira el CAGR en el detalle de cada activo más abajo.')
@@ -2482,138 +2624,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                            f'<div class="da-growth-wrap">{_g_head}{_g_body}{_g_total}</div>'
                            f'<span class="da-tip-box">{_g_tip}</span></div>')
                 _da_section("Portafolio de crecimiento — rendimiento de precio",
-                            "Tus posiciones de apreciación (no-income): cuánto pusiste, cuánto valen, cuánto han rendido y si le ganan al S&P 500.")
+                            "Tus posiciones de apreciación (no-income): cuánto pusiste, cuánto valen y cuánto han rendido.")
                 st.markdown(
                     f'<div style="margin:6px 0 4px 0;">{_g_card}</div>',
                     unsafe_allow_html=True
                 )
 
-            # ── Portfolio Global Summary ──────────────────────────────
-            total_invested = sum(s.get('pocket_investment', 0) for s in results.values() if 'error' not in s)
-            total_market   = sum(s.get('market_value', 0)      for s in results.values() if 'error' not in s)
-            total_divs     = sum(s.get('dividends_collected_cash', 0) + s.get('dividends_collected_drip', 0)
-                                 for s in results.values() if 'error' not in s)
-            total_gain     = (total_market + sum(s.get('dividends_collected_cash', 0)
-                                 for s in results.values() if 'error' not in s)) - total_invested
-            total_roi      = (total_gain / total_invested * 100) if total_invested else 0
-
-            # ── KPI Bar — resumen global visual ──────────────────────
-            _total_roc_all   = sum(s.get('roc_accumulated', 0) or 0 for s in results.values() if 'error' not in s)
-            _has_any_roc     = any(s.get('roc_accumulated') is not None for s in results.values() if 'error' not in s)
-            _gain_color      = "#4caf82" if total_gain >= 0 else "#e05c5c"
-            _gain_sign       = "+" if total_gain >= 0 else ""
-            _gain_accent     = "da-kpi-green" if total_gain >= 0 else "da-kpi-red"
-            _roc_cell = (
-                f'<div class="da-kpi-cell da-kpi-roc">'
-                f'<p class="da-kpi-label">ROC Acumulado</p>'
-                f'<p class="da-kpi-value" style="color:#4caf82;">${_total_roc_all:,.0f}</p>'
-                f'<p class="da-kpi-delta" style="color:#4caf82;">'
-                f'{sum(1 for s in results.values() if s.get("roc_accumulated")) } ticker(s)</p>'
-                f'</div>'
-            ) if _has_any_roc else (
-                f'<div class="da-kpi-cell">'
-                f'<p class="da-kpi-label">ROC Acumulado</p>'
-                f'<p class="da-kpi-value" style="color:#cccccc;">—</p>'
-                f'<p class="da-kpi-delta" style="color:#aaaaaa;">Ingresa base IB</p>'
-                f'</div>'
-            )
-            _n_div_all = sum(1 for t in results if classify_map.get(t) == 'mode_a' and 'error' not in results[t])
-            _n_cre_all = sum(1 for t in results if classify_map.get(t) == 'mode_b' and 'error' not in results[t])
-            _da_section("Resumen global del portafolio",
-                        f"Todo tu portafolio combinado · {_n_cre_all} de crecimiento + {_n_div_all} de dividendos · datos de {broker_label}")
-            # ── TL;DR: veredicto de una línea en lenguaje natural ──
-            st.markdown(
-                f'<div style="border-left:4px solid {_gain_color};background:#F8FAFC;padding:14px 20px;margin:6px 0 16px 0;">'
-                f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#64748B;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En resumen</p>'
-                f'<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.5;margin:0;">'
-                f'Hoy tu portafolio vale <b style="font-family:{_MONO_FONT};">${total_market:,.0f}</b> sobre '
-                f'<b style="font-family:{_MONO_FONT};">${total_invested:,.0f}</b> invertidos — retorno total '
-                f'<b style="font-family:{_MONO_FONT};color:{_gain_color};">{_gain_sign}{total_roi:.1f}%</b>'
-                f' (incluye <b style="font-family:{_MONO_FONT};color:#16A34A;">${total_divs:,.0f}</b> en dividendos cobrados).</p>'
-                f'</div>',
-                unsafe_allow_html=True
-            )
-            st.markdown(f"""
-<div class="da-kpi-bar">
-    <div class="da-kpi-cell da-kpi-accent">
-        <p class="da-kpi-label">Total Invertido</p>
-        <p class="da-kpi-value">${total_invested:,.0f}</p>
-        <p class="da-kpi-delta" style="color:#8899aa;">{len(results)} posiciones</p>
-    </div>
-    <div class="da-kpi-cell">
-        <p class="da-kpi-label">Valor de Mercado</p>
-        <p class="da-kpi-value">${total_market:,.0f}</p>
-        <p class="da-kpi-delta" style="color:#8899aa;">precio actual</p>
-    </div>
-    <div class="da-kpi-cell {_gain_accent}">
-        <p class="da-kpi-label">Ganancia / Pérdida</p>
-        <p class="da-kpi-value" style="color:{_gain_color};">{_gain_sign}${total_gain:,.0f}</p>
-        <p class="da-kpi-delta" style="color:{_gain_color};">{_gain_sign}{total_roi:.2f}%</p>
-    </div>
-    <div class="da-kpi-cell">
-        <p class="da-kpi-label">Dividendos Totales</p>
-        <p class="da-kpi-value">${total_divs:,.0f}</p>
-        <p class="da-kpi-delta" style="color:#8899aa;">efectivo + DRIP</p>
-    </div>
-    {_roc_cell}
-</div>
-            """, unsafe_allow_html=True)
-
-            # ── Composición: las posiciones concretas que forman este portafolio global ──
-            _pos_rows = sorted(
-                [(t, s) for t, s in results.items() if 'error' not in s],
-                key=lambda x: -(x[1].get('market_value', 0) or 0)
-            )
-            _chips = ''
-            for _t, _s in _pos_rows:
-                _mv = _s.get('market_value', 0) or 0
-                _w  = (_mv / total_market * 100) if total_market else 0
-                _is_div = classify_map.get(_t) == 'mode_a'
-                _tipo   = 'Dividendos' if _is_div else 'Crecimiento'
-                _c      = '#4caf82' if _is_div else '#006497'
-                _chips += (
-                    f'<div style="display:flex;align-items:center;gap:10px;padding:9px 13px;'
-                    f'background:#f6f8fa;border-left:3px solid {_c};">'
-                    f'<span style="font-family:Inter,sans-serif;font-size:14px;font-weight:800;color:#021C36;">{_t}</span>'
-                    f'<span style="font-family:Inter,sans-serif;font-size:9.5px;font-weight:700;color:{_c};'
-                    f'text-transform:uppercase;letter-spacing:0.07em;">{_tipo}</span>'
-                    f'<span style="flex:1;"></span>'
-                    f'<span style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;'
-                    f'font-variant-numeric:tabular-nums;">${_mv:,.0f} · {_w:.0f}%</span></div>'
-                )
-            st.markdown(
-                '<p style="font-family:Inter,sans-serif;font-size:13px;color:#021C36;margin:14px 0 9px 0;line-height:1.55;">'
-                f'<b>Es tu portafolio completo, no solo crecimiento.</b> Lo forman estas {len(_pos_rows)} posiciones '
-                f'({_n_cre_all} de crecimiento + {_n_div_all} de dividendos); los totales de arriba las suman todas.</p>'
-                '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin:0 0 6px 0;">'
-                + _chips + '</div>',
-                unsafe_allow_html=True
-            )
-
-            if _dq_unrel:
-                st.caption("Aviso: " + ", ".join(_dq_unrel) + " tienen historial de compras incompleto en el CSV, "
-                           "así que el Total Invertido y el ROI de arriba los incluyen con un costo subestimado "
-                           "(su % se ve inflado). Revisa el panel 'Calidad de datos' y exporta el historial completo de esos tickers.")
-            st.caption("ROI = ganancia total acumulada desde el inicio · TIR (Tasa Interna de Retorno / IRR en inglés) = retorno anualizado considerando exactamente cuándo compraste cada lote — más preciso que el ROI para compras escalonadas")
-
-            # ── Lectura del portafolio (síntesis educativa) ───────────
-            _verdict = logic.build_portfolio_verdict(results, classify_map)
-            if _verdict.get('lines'):
-                _v_items = ''.join(
-                    f'<li style="margin:0 0 6px 0;">{_vl}</li>' for _vl in _verdict['lines'])
-                st.markdown(
-                    '<div style="border-left:4px solid #021C36;background:#f6f8fa;padding:14px 18px;margin:10px 0 4px 0;">'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#021C36;font-weight:800;'
-                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Lectura de tu portafolio</p>'
-                    '<ul style="font-family:Inter,sans-serif;font-size:12.5px;color:#333333;line-height:1.55;'
-                    'margin:0;padding-left:18px;">'
-                    + _v_items + '</ul>'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
-                    'Lectura educativa de tus números — no es recomendación de compra o venta.</p>'
-                    '</div>',
-                    unsafe_allow_html=True
-                )
-
+            # ── Proyección y escenarios (el resumen global se retiró) ──
+            _da_section("Proyección a futuro y escenarios",
+                        "Escenarios que tú controlas: cómo podría evolucionar tu portafolio y el rango de resultados posibles.")
             # ── Concentración por factor (riesgo de correlación oculta) ──
             _fc = logic.build_factor_concentration(results, classify_map)
             if _fc.get('factors') and len(_fc['factors']) >= 1:
@@ -2991,23 +3010,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         for t, pct in tickers_detail
                     )
 
-                _da_section("Distribución y rendimiento de tu portafolio",
-                            "Cómo se reparte tu capital y cómo rindió cada bloque")
-
-                # ── Banner: rendimiento combinado ─────────────────────────
-                st.markdown(
-                    f'<div style="background:#021C36;padding:16px 24px;margin-bottom:14px;">'
-                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;font-weight:700;'
-                    f'letter-spacing:0.14em;text-transform:uppercase;margin:0 0 4px 0;">Rendimiento Combinado Total</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:34px;font-weight:800;'
-                    f'color:{_comb_color};margin:0 0 4px 0;letter-spacing:-0.02em;">{_comb_pct:+.2f}%</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;margin:0;">'
-                    f'Capital: <b style="color:#ffffff;">${_comb_inv:,.0f}</b>'
-                    f'&nbsp;&nbsp;→&nbsp;&nbsp;Valor actual: <b style="color:#ffffff;">${_comb_val:,.0f}</b>'
-                    f'&nbsp;&nbsp;·&nbsp;&nbsp;Dividendos cobrados: <b style="color:#4caf82;">${_comb_div:,.0f}</b></p>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
+                _da_section("Distribución de tu capital",
+                            "Cómo se reparte tu capital entre Dividendos y Crecimiento. El rendimiento comparado de ambos va en la gráfica de la sección siguiente.")
 
                 # ── Barra de asignación del capital (reemplaza la dona) ────
                 st.markdown(
@@ -3026,82 +3030,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_inv:,.0f}'
                     f'<span style="display:inline-block;width:9px;height:9px;background:#2d3748;margin-left:6px;vertical-align:middle;"></span></span>'
                     f'</div></div>',
-                    unsafe_allow_html=True
-                )
-
-                # ── Tarjeta de bloque (Dividendos / Crecimiento) ──────────
-                def _render_block_card(name, accent, share, n_tickers, inv, mv, div, pct, tickers_detail):
-                    _ret_color = "#4caf82" if pct >= 0 else "#e05c5c"
-                    _have_today = mv + div
-                    _money_row = (
-                        '<div style="display:flex;justify-content:space-between;">'
-                        '<span style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
-                        'text-transform:uppercase;letter-spacing:0.07em;">{label}</span>'
-                        '<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:{c};">{val}</span></div>'
-                    )
-                    st.markdown(
-                        f'<div style="background:#f6f3f2;padding:20px 22px;border-top:3px solid {accent};height:100%;">'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:{accent};font-weight:700;'
-                        f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 10px 0;">'
-                        f'<span style="display:inline-block;width:9px;height:9px;background:{accent};margin-right:7px;vertical-align:middle;"></span>'
-                        f'{name} · {share:.0f}% del capital · {n_tickers} ticker(s)</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:34px;font-weight:800;'
-                        f'color:{_ret_color};margin:0 0 2px 0;letter-spacing:-0.02em;">{pct:+.2f}%</p>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:0 0 14px 0;">'
-                        f'retorno total (precio + dividendos)</p>'
-                        f'<div style="display:flex;flex-direction:column;gap:5px;">'
-                        + _money_row.format(label='Invertido', c='#021C36', val=f'${inv:,.0f}')
-                        + _money_row.format(label='Valor de mercado', c='#021C36', val=f'${mv:,.0f}')
-                        + _money_row.format(label='Dividendos cobrados', c='#4caf82', val=f'+${div:,.0f}')
-                        + f'</div>'
-                        f'<div style="border-top:1px solid #d8d2cf;margin:10px 0;"></div>'
-                        f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;color:#021C36;">Tienes hoy</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:15px;font-weight:800;color:{_ret_color};">'
-                        f'${_have_today:,.0f} <span style="font-size:11px;font-weight:700;">({pct:+.1f}%)</span></span></div>'
-                        f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;text-transform:uppercase;'
-                        f'letter-spacing:0.10em;margin:0 0 6px 0;">Activos</p>'
-                        f'<div style="min-height:{_tk_minh}px;">{_ticker_rows(tickers_detail)}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
-                _col_a, _col_b = st.columns([1, 1])
-                with _col_a:
-                    _render_block_card('Dividendos', '#006497', _a_share, len(_cmp_a_rows),
-                                       _cmp_a_inv, _cmp_a_mv, _cmp_a_div, _cmp_a_pct, _a_tickers_detail)
-                with _col_b:
-                    _render_block_card('Crecimiento', '#2d3748', _b_share, len(_cmp_b_rows),
-                                       _cmp_b_inv, _cmp_b_mv, _cmp_b_div, _cmp_b_pct, _b_tickers_detail)
-
-                # ── Lectura en lenguaje natural ───────────────────────────
-                if _b_share >= _a_share:
-                    _lead_name, _lead_share, _lead_pct = 'Crecimiento', _b_share, _cmp_b_pct
-                    _oth_name, _oth_share, _oth_pct, _oth_div = 'Dividendos', _a_share, _cmp_a_pct, _cmp_a_div
-                else:
-                    _lead_name, _lead_share, _lead_pct = 'Dividendos', _a_share, _cmp_a_pct
-                    _oth_name, _oth_share, _oth_pct, _oth_div = 'Crecimiento', _b_share, _cmp_b_pct, _cmp_b_div
-                _lead_role = 'sostiene' if _lead_pct >= 0 else 'arrastra'
-                if _oth_pct < 0 and _oth_div > 0:
-                    _oth_clause = f' (su precio cayó, aunque devolvió ${_oth_div:,.0f} en efectivo)'
-                elif _oth_div > 0:
-                    _oth_clause = f' (incluye ${_oth_div:,.0f} en dividendos cobrados)'
-                else:
-                    _oth_clause = ''
-                _lectura = (
-                    f'El <b>{_lead_share:.0f}%</b> de tu capital ({_lead_name}) rinde '
-                    f'<b>{_lead_pct:+.0f}%</b> y {_lead_role} el portafolio; el <b>{_oth_share:.0f}%</b> '
-                    f'en {_oth_name} rinde <b>{_oth_pct:+.0f}%</b>{_oth_clause}. '
-                    f'En conjunto: <b>{_comb_pct:+.0f}%</b>.'
-                )
-                st.markdown(
-                    '<div style="border-left:4px solid #021C36;background:#f6f8fa;padding:14px 18px;margin:16px 0 4px 0;">'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#021C36;font-weight:800;'
-                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">Lectura</p>'
-                    f'<p style="font-family:Inter,sans-serif;font-size:12.5px;color:#333333;line-height:1.55;margin:0;">{_lectura}</p>'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;margin:8px 0 0 0;">'
-                    'Lectura educativa de tus números — no es recomendación de compra o venta.</p>'
-                    '</div>',
                     unsafe_allow_html=True
                 )
 
@@ -4179,6 +4107,40 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             for h in etf_item['top_holdings']
                         ])
                         st.dataframe(holdings_df, hide_index=True, use_container_width=True)
+
+            # ── En corto · tu ingreso por dividendos (movido aquí, al pie de Análisis de riesgo) ──
+            if _income_annual > 0:
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+                st.markdown(
+                    '<div style="margin:6px 0 2px 0;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#006497;font-weight:700;'
+                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En corto · tu ingreso por dividendos</p>'
+                    '<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.55;margin:0;">'
+                    f'Tu portafolio de <b style="font-family:{_MONO_FONT};">${_total_mv:,.0f}</b> te pagó alrededor de '
+                    f'<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_annual:,.0f}</b> en dividendos en los '
+                    f'<b>últimos 12 meses</b> (~<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_monthly:,.0f}/mes</b>), '
+                    f'un rendimiento de <b style="font-family:{_MONO_FONT};">{_income_yield:.1f}%</b> sobre su valor actual. '
+                    '<span style="color:#8899aa;font-size:12.5px;">Es lo realmente recibido; en activos tipo YieldMax el '
+                    'pago futuro suele ser menor — mira la proyección y el desglose contra el broker en “Ver detalle”.</span>'
+                    '</p></div>',
+                    unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="da-kpi-bar" style="grid-template-columns:repeat(4,1fr);">'
+                    '<div class="da-kpi-cell da-kpi-green"><p class="da-kpi-label">Ingreso mensual</p>'
+                    f'<p class="da-kpi-value">${_income_monthly:,.0f}</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">promedio últimos 12m</p></div>'
+                    '<div class="da-kpi-cell da-kpi-accent"><p class="da-kpi-label">Ingreso anual</p>'
+                    f'<p class="da-kpi-value">${_income_annual:,.0f}</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">recibido, últimos 12m</p></div>'
+                    '<div class="da-kpi-cell da-kpi-navy"><p class="da-kpi-label">Yield sobre valor</p>'
+                    f'<p class="da-kpi-value">{_income_yield:.1f}%</p>'
+                    '<p class="da-kpi-delta" style="color:#8899aa;">ingreso ÷ valor de mercado</p></div>'
+                    f'<div class="da-kpi-cell" style="border-top-color:{_conf_color};">'
+                    '<p class="da-kpi-label">Confianza de datos</p>'
+                    f'<p class="da-kpi-value" style="color:{_conf_color};">{_n_exact}/{_n_total}</p>'
+                    f'<p class="da-kpi-delta" style="color:{_conf_color};">{_conf_delta}</p></div>'
+                    '</div>',
+                    unsafe_allow_html=True)
 
             # ── Calidad de datos y validación cruzada (al final, expandible) ──
             st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
