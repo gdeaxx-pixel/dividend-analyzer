@@ -277,7 +277,7 @@ st.markdown("""
         border: none !important;
     }
     [data-testid="stFileUploaderDropzone"] button::after {
-        content: "Arrastra tu archivo aquí\A o haz clic para seleccionar\A\A CSV  ·  XLSX";
+        content: "Arrastra tu archivo aquí\A o haz clic para seleccionar";
         white-space: pre-line;
         visibility: visible !important;
         position: absolute !important;
@@ -936,24 +936,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-with st.expander("Calculadoras de referencia — en qué nos inspiramos y en qué nos diferenciamos"):
-    st.markdown(
-        "Esta herramienta se construyó estudiando las mejores calculadoras públicas de dividendos y tomando "
-        "lo útil de cada una, pero con un principio propio: **realismo**, sobre todo en los ETF de alto "
-        "rendimiento (YieldMax), donde el *yield* de portada engaña.\n\n"
-        "- **[TipRanks](https://www.tipranks.com/tools/dividend-calculator)** y "
-        "**[DividendCalculator.io](https://dividendcalculator.io/)** — proyección con DRIP, *yield on cost* y "
-        "*forward yield*. → de aquí tomamos el **motor de proyección a futuro** y el *forward yield* vs realizado.\n"
-        "- **[MiniWebtool](https://miniwebtool.com/dividend-reinvestment-calculator/)** y "
-        "**[MarketBeat](https://www.marketbeat.com/dividends/calculator/)** — tabla año por año y efecto "
-        "*bola de nieve* de la reinversión. → la **visualización del interés compuesto**.\n"
-        "- **[DRIPCalc](https://www.dripcalc.com/yieldmax-etfs/)** — retorno con y sin DRIP para fondos YieldMax. "
-        "→ la **comparación reinvertir vs cobrar en efectivo**.\n"
-        "- **[NAV Erosion Calculator](https://dividend-wealth.com/tools/nav-erosion-calculator)** — la carrera "
-        "*ingreso acumulado* vs *pérdida de capital* con punto de *breakeven*. → nuestro **modo realista YieldMax**.\n\n"
-        "**Lo que ninguna hace y aquí sí:** descomponer cuánto de cada distribución es **Retorno de Capital** "
-        "(datos oficiales 19a) y proyectar con la **erosión real observada** del fondo, en vez de asumir que el "
-        "precio sube. Por eso un YieldMax nunca se proyecta como si fuera un ETF de crecimiento.")
+# (Las "Calculadoras de referencia" se movieron al pie de la página, arriba del disclaimer.)
 
 
 
@@ -1002,9 +985,15 @@ for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_tick
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
+_already_loaded = (st.session_state.get('_wizard_df_clean') is not None
+                   or st.session_state.get('_wizard_step', 1) >= 3)
 _col_mode, _col_cache = st.columns([6, 1])
 with _col_mode:
-    input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
+    if _already_loaded:
+        # Ya se subió el archivo: ocultar el selector CSV/Excel · Simulación Teórica.
+        input_method = "Subir CSV/Excel"
+    else:
+        input_method = st.radio("Modo de Análisis:", ["Subir CSV/Excel", "Simulación Teórica"], horizontal=True, label_visibility="collapsed")
 with _col_cache:
     st.markdown(
         '<a href="?clear=1" target="_self" style="'
@@ -1211,8 +1200,7 @@ if input_method == "Subir CSV/Excel":
             '@media (prefers-reduced-motion:reduce){.block-container{animation:none}}</style>',
             unsafe_allow_html=True)
 
-    _render_step_indicator(_active_pill, _prev_pill)
-
+    # Stepper de píldoras (01·02·03) eliminado: se deja solo la barra "Progreso de carga".
     if _prev_pill != _active_pill:
         _ptoast = {2: "Configura tus costos", 3: "Paso 3 de 3 · Resultados"}
         if _active_pill in _ptoast:
@@ -1237,6 +1225,7 @@ if input_method == "Subir CSV/Excel":
                 label_visibility="collapsed",
                 help="Interactive Brokers: Informes → Extractos → Transaction History  |  Charles Schwab: Historial → Transacciones → Exportar"
             )
+            st.caption("Formatos aceptados: CSV · XLSX")
             with st.expander("¿No sabes cómo exportar tu archivo?"):
                 st.markdown(
                     '<div style="font-family:Inter,sans-serif;font-size:12.5px;color:#445566;line-height:1.7;">'
@@ -1334,33 +1323,7 @@ if input_method == "Subir CSV/Excel":
                 2, "Posiciones del portafolio", "active",
                 "Confirma acciones y costo real de cada ETF."), unsafe_allow_html=True)
 
-            if _broker_s2 == 'schwab':
-                _has_csv = True
-                _has_photo = bool(_positions)
-                _has_income = bool(st.session_state.get('_wizard_income_summary'))
-
-                def _tri_row(ok, title, desc):
-                    _c = '#4caf82' if ok else '#c9a227'
-                    _mark = '✓' if ok else '○'
-                    return (f'<div style="display:flex;gap:8px;align-items:flex-start;margin:4px 0;">'
-                            f'<span style="color:{_c};font-weight:800;line-height:1.5;">{_mark}</span>'
-                            f'<span style="font-family:Inter,sans-serif;font-size:12.5px;color:#334;line-height:1.5;">'
-                            f'<b>{title}</b> — {desc}</span></div>')
-
-                st.markdown(
-                    '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;margin:4px 0 14px 0;">'
-                    '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;margin:0 0 6px 0;">'
-                    'Charles Schwab · triangula con 3 fuentes para máxima certeza</p>'
-                    '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:0 0 8px 0;line-height:1.6;">'
-                    'Cada fuente confirma algo distinto. Con las tres validamos por triple vía: '
-                    'historia, posición real y dividendos recibidos.</p>'
-                    + _tri_row(_has_csv, 'CSV de transacciones', 'compras, ventas y dividendos (ya cargado).')
-                    + _tri_row(_has_photo, 'Foto de posiciones', 'acciones y costo reales de hoy — corrige el historial incompleto.')
-                    + _tri_row(_has_income, 'Archivo de ingresos (Investment Income)', 'dividendos realmente recibidos — valida el ingreso.')
-                    + '</div>',
-                    unsafe_allow_html=True
-                )
-
+            # Explicación "triangula con 3 fuentes" eliminada (sobraba al subir el primer archivo).
             if _pos_tickers and _gem_key:
                 st.markdown(
                     '<p style="font-family:Inter,sans-serif;font-size:13px;color:#445566;line-height:1.7;margin:0 0 8px 0;">'
@@ -1378,6 +1341,7 @@ if input_method == "Subir CSV/Excel":
                     label_visibility="collapsed",
                     key="_step2_photos"
                 )
+                st.caption("Formatos aceptados: PNG · JPG")
                 if _imgs_s2:
                     _sig = tuple((f.name, f.size) for f in _imgs_s2)
                     if _sig != st.session_state.get('_wizard_photo_sig'):
@@ -1641,17 +1605,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
         skipped_tickers = st.session_state.get('_skipped', {})
         strat_results_cached = st.session_state.get('_strat_results')
 
-        if skipped_tickers:
-            with st.expander(f"{len(skipped_tickers)} ticker(s) excluidos del análisis"):
-                for t, s in skipped_tickers.items():
-                    reason = s.get('reason', '')
-                    if reason == 'not_known_etf':
-                        reason_label = 'No reconocido como ETF de largo plazo (acción individual, ETF inverso o apalancado)'
-                    elif reason == 'held_less_than_14_days':
-                        reason_label = f'Posición cerrada en {s.get("holding_days", "?")} días (< 2 semanas)'
-                    else:
-                        reason_label = 'Excluido'
-                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:2px 0;">— <b>{t}</b> · <span style="color:#888888;">{reason_label}</span></p>', unsafe_allow_html=True)
+        # (Los "ticker(s) excluidos del análisis" se movieron al pie, arriba del disclaimer.)
 
         if results:
             # ── Section header helper (jerarquía visual consistente) ──
@@ -2421,6 +2375,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                     _da_section("Comparación con el broker · Schwab vs tu cálculo",
                                 "Lo que reporta Schwab frente a lo que reconstruye la calculadora desde tu CSV: tu inversión, tus dividendos y tu Retorno de Capital, fondo por fondo.")
+                    _cmp_exp = st.expander("Ver las 3 cuadrículas · inversión, dividendos y ROC", expanded=False)
 
                     # Cuadrícula A — rendimiento de la inversión
                     def _A_inv(t):
@@ -2444,11 +2399,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                        ('Valor hoy', '#006497', _A_val, 'money'),
                                        ('Rendim. $', '#4caf82', _A_gain, 'money'),
                                        ('Rendim. %', '#2d3748', _A_ret, 'pct')], _cmp_valid)
-                    st.markdown(_subtitle('Rendimiento de tu inversión') + f'<div class="da-kpi-cell">{_gridA}</div>',
-                                unsafe_allow_html=True)
-                    st.caption("«Invertido» en Schwab es el cost basis del bróker (ya reducido por el ROC); en la calculadora "
-                               "es el capital real que desplegaste. Por eso Schwab suele mostrar una ganancia mayor: compara "
-                               "contra una base más baja. El valor de mercado es el mismo en ambas (precio × acciones).")
+                    _cmp_exp.markdown(_subtitle('Rendimiento de tu inversión') + f'<div class="da-kpi-cell">{_gridA}</div>',
+                                      unsafe_allow_html=True)
+                    _cmp_exp.caption("«Invertido» en Schwab es el cost basis del bróker (ya reducido por el ROC); en la calculadora "
+                                     "es el capital real que desplegaste. Por eso Schwab suele mostrar una ganancia mayor: compara "
+                                     "contra una base más baja. El valor de mercado es el mismo en ambas (precio × acciones).")
 
                     # Cuadrícula B — dividendos (bruto · impuesto · neto)
                     _divtks = [t for t in _cmp_valid
@@ -2483,11 +2438,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                            ('Neto recibido', '#4caf82', _B_net, 'money'),
                                            ('Reinvertidos', '#006497', _B_drip, 'money'),
                                            ('En efectivo', '#2d3748', _B_cash, 'money')], _divtks)
-                        st.markdown(_subtitle('Dividendos: bruto, impuesto y neto') + f'<div class="da-kpi-cell">{_gridB}</div>',
-                                    unsafe_allow_html=True)
-                        st.caption("El bruto es lo que el fondo declaró; el impuesto NRA (retención a extranjeros, ~30%) se "
-                                   "descuenta y deja el neto que de verdad entró a tu cuenta. «Reinvertidos» y «En efectivo» "
-                                   "salen de tu CSV, así que Schwab y la calculadora coinciden.")
+                        _cmp_exp.markdown(_subtitle('Dividendos: bruto, impuesto y neto') + f'<div class="da-kpi-cell">{_gridB}</div>',
+                                          unsafe_allow_html=True)
+                        _cmp_exp.caption("El bruto es lo que el fondo declaró; el impuesto NRA (retención a extranjeros, ~30%) se "
+                                         "descuenta y deja el neto que de verdad entró a tu cuenta. «Reinvertidos» y «En efectivo» "
+                                         "salen de tu CSV, así que Schwab y la calculadora coinciden.")
 
                     # Cuadrícula C — Retorno de Capital (ROC)
                     _roctks = [t for t in _cmp_valid
@@ -2527,13 +2482,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   else '<span class="num" style="color:#b8c2cc;">—</span>')
                                + '<span class="num" style="color:#b8c2cc;">—</span>'
                                + '<span class="num" style="color:#b8c2cc;">—</span></div>')
-                        st.markdown(_subtitle('Retorno de Capital (ROC)') + f'<div class="da-kpi-cell">{hC}</div>',
-                                    unsafe_allow_html=True)
-                        st.caption("«Costo bróker» es la base que muestra Schwab en tus posiciones; «Costo real» es lo que "
-                                   "desplegaste (bolsillo + reinvertido). La diferencia es el ROC: capital que el fondo te "
-                                   "devolvió y por el que el bróker bajó tu base. «ROC ÷ div.» es qué parte de tus dividendos "
-                                   "fue en realidad devolución de tu capital. Si falta el costo del bróker, el ROC se estima "
-                                   "con los avisos 19a del fondo.")
+                        _cmp_exp.markdown(_subtitle('Retorno de Capital (ROC)') + f'<div class="da-kpi-cell">{hC}</div>',
+                                          unsafe_allow_html=True)
+                        _cmp_exp.caption("«Costo bróker» es la base que muestra Schwab en tus posiciones; «Costo real» es lo que "
+                                         "desplegaste (bolsillo + reinvertido). La diferencia es el ROC: capital que el fondo te "
+                                         "devolvió y por el que el bróker bajó tu base. «ROC ÷ div.» es qué parte de tus dividendos "
+                                         "fue en realidad devolución de tu capital. Si falta el costo del bróker, el ROC se estima "
+                                         "con los avisos 19a del fondo.")
 
             # ── Portafolio de crecimiento — rendimiento de precio ──────
             # Robustez en Streamlit Cloud: tras un deploy, el watcher puede reejecutar app.py
@@ -2623,12 +2578,78 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                            f'<span class="da-tip-i">i</span></p>'
                            f'<div class="da-growth-wrap">{_g_head}{_g_body}{_g_total}</div>'
                            f'<span class="da-tip-box">{_g_tip}</span></div>')
-                _da_section("Portafolio de crecimiento — rendimiento de precio",
+                _da_section("Portafolio crecimiento",
                             "Tus posiciones de apreciación (no-income): cuánto pusiste, cuánto valen y cuánto han rendido.")
                 st.markdown(
                     f'<div style="margin:6px 0 4px 0;">{_g_card}</div>',
                     unsafe_allow_html=True
                 )
+
+                # ── Gráfico comparativo por posición vs S&P 500 (toggle USD / %) ──
+                import pandas as pd
+                import altair as alt
+                _spc_rows = []
+                _spy_usd = {}
+                _spy_inv = {}
+                for _gt in _growth:
+                    _dt = results.get(_gt, {}).get('daily_trend')
+                    if _dt is None or len(_dt) == 0:
+                        continue
+                    _dd = _dt.reset_index()
+                    _dcol = _dd.columns[0]
+                    for _, _r in _dd.iterrows():
+                        _date = pd.Timestamp(_r[_dcol])
+                        _ret = _r.get('User Return %')
+                        _spc_rows.append({'Fecha': _date, 'Serie': _gt,
+                                          'USD': float(_r.get('User Profit') or 0),
+                                          'Pct': (None if _ret is None else float(_ret))})
+                        _spy_usd[_date] = _spy_usd.get(_date, 0.0) + float(_r.get('SPY Profit') or 0)
+                        _spy_inv[_date] = _spy_inv.get(_date, 0.0) + float(_r.get('Invested Capital') or 0)
+                if _spc_rows and _spy_usd:
+                    for _date in sorted(_spy_usd):
+                        _inv = _spy_inv.get(_date, 0)
+                        _spc_rows.append({'Fecha': _date, 'Serie': 'S&P 500',
+                                          'USD': _spy_usd[_date],
+                                          'Pct': (_spy_usd[_date] / _inv * 100) if _inv else None})
+                    _spc_df = pd.DataFrame(_spc_rows)
+                    _spc_df['Fecha'] = pd.to_datetime(_spc_df['Fecha'])
+                    st.markdown(
+                        '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
+                        'margin:18px 0 6px 0;">Cada posición frente al S&amp;P 500</p>', unsafe_allow_html=True)
+                    _spc_key = f"_spc_metric_{st.session_state.get('_file_id', 'x')}"
+                    if hasattr(st, 'segmented_control'):
+                        _spc_metric = st.segmented_control(
+                            "Métrica", options=["% de rendimiento", "Ganancia ($)"],
+                            default="% de rendimiento", key=_spc_key,
+                            label_visibility="collapsed") or "% de rendimiento"
+                    else:
+                        _spc_metric = st.radio("Métrica", ["% de rendimiento", "Ganancia ($)"],
+                                               horizontal=True, key=_spc_key, label_visibility="collapsed")
+                    if _spc_metric == "Ganancia ($)":
+                        _spc_y = alt.Y('USD:Q', axis=_ed_axis('y', fmt='$,.0f', title='Ganancia ($)'))
+                        _spc_plot = _spc_df.dropna(subset=['USD'])
+                    else:
+                        _spc_y = alt.Y('Pct:Q', axis=_ed_axis('y', fmt='+.0f', title='% Retorno'))
+                        _spc_plot = _spc_df.dropna(subset=['Pct'])
+                    _spc_tickers = sorted(_growth.keys())
+                    _spc_domain = _spc_tickers + ['S&P 500']
+                    _spc_range = (['#006497', '#021C36', '#4caf82', '#c9821f', '#60A5FA', '#166534'][:len(_spc_tickers)]
+                                  + ['#9aa5b1'])
+                    _spc_chart = alt.Chart(_spc_plot).mark_line(strokeWidth=2.4).encode(
+                        x=alt.X('Fecha:T', title=None, axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                        y=_spc_y,
+                        color=alt.Color('Serie:N', scale=alt.Scale(domain=_spc_domain, range=_spc_range),
+                                        legend=alt.Legend(title=None, orient='bottom', labelFontSize=11)),
+                        strokeDash=alt.condition("datum.Serie == 'S&P 500'", alt.value([5, 4]), alt.value([1, 0])),
+                        tooltip=[alt.Tooltip('Fecha:T', format='%d %b %Y', title='Fecha'),
+                                 alt.Tooltip('Serie:N', title='Activo'),
+                                 alt.Tooltip('USD:Q', format='$,.0f', title='Ganancia'),
+                                 alt.Tooltip('Pct:Q', format='+.1f', title='% Retorno')],
+                    ).properties(height=380, background=CHART_PALETTE['bg']).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                    st.altair_chart(_spc_chart, use_container_width=True)
+                    st.caption("Cada posición de crecimiento frente al S&P 500 (línea punteada gris), con tu mismo capital "
+                               "y timing. Alterna entre % de rendimiento y ganancia en dólares.")
 
             # ── Proyección y escenarios (el resumen global se retiró) ──
             _da_section("Proyección a futuro y escenarios",
@@ -3013,25 +3034,46 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _da_section("Distribución de tu capital",
                             "Cómo se reparte tu capital entre Dividendos y Crecimiento. El rendimiento comparado de ambos va en la gráfica de la sección siguiente.")
 
-                # ── Barra de asignación del capital (reemplaza la dona) ────
-                st.markdown(
-                    f'<div style="margin:0 0 18px 0;">'
-                    f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;font-weight:700;'
-                    f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">Reparto del capital</p>'
-                    f'<div style="display:flex;height:18px;width:100%;overflow:hidden;">'
-                    f'<div style="width:{_a_share}%;background:#006497;" title="Dividendos"></div>'
-                    f'<div style="width:{_b_share}%;background:#2d3748;" title="Crecimiento"></div>'
-                    f'</div>'
-                    f'<div style="display:flex;justify-content:space-between;margin-top:7px;">'
-                    f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
-                    f'<span style="display:inline-block;width:9px;height:9px;background:#006497;margin-right:6px;vertical-align:middle;"></span>'
-                    f'Dividendos <b>{_a_share:.0f}%</b> · ${_cmp_a_inv:,.0f}</span>'
-                    f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#021C36;">'
-                    f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_inv:,.0f}'
-                    f'<span style="display:inline-block;width:9px;height:9px;background:#2d3748;margin-left:6px;vertical-align:middle;"></span></span>'
-                    f'</div></div>',
-                    unsafe_allow_html=True
-                )
+                # ── Pie chart de asignación del capital (dividendos vs crecimiento, por ETF) ──
+                import altair as alt
+                import pandas as pd
+                _pie_rows = ([{'ETF': t, 'Grupo': 'Dividendos', 'Capital': (s.get('pocket_investment') or 0)}
+                              for t, s in _cmp_a_rows]
+                             + [{'ETF': t, 'Grupo': 'Crecimiento', 'Capital': (s.get('pocket_investment') or 0)}
+                                for t, s in _cmp_b_rows])
+                _pie_df = pd.DataFrame([r for r in _pie_rows if r['Capital'] > 0])
+                if not _pie_df.empty:
+                    _pie_tot = _pie_df['Capital'].sum()
+                    _pie_df['Pct'] = _pie_df['Capital'] / _pie_tot * 100 if _pie_tot else 0
+                    _pie_df['Etiqueta'] = _pie_df['ETF'] + '  ' + _pie_df['Pct'].round(0).astype(int).astype(str) + '%'
+                    _pie_base = alt.Chart(_pie_df).encode(
+                        theta=alt.Theta('Capital:Q', stack=True),
+                        order=alt.Order('Grupo:N'),
+                        color=alt.Color('Grupo:N',
+                            scale=alt.Scale(domain=['Dividendos', 'Crecimiento'], range=['#006497', '#2d3748']),
+                            legend=alt.Legend(title=None, orient='top', labelFontSize=12)),
+                        tooltip=[alt.Tooltip('ETF:N', title='ETF'),
+                                 alt.Tooltip('Grupo:N', title='Portafolio'),
+                                 alt.Tooltip('Capital:Q', format='$,.0f', title='Invertido'),
+                                 alt.Tooltip('Pct:Q', format='.1f', title='% del capital')])
+                    _pie_arc = _pie_base.mark_arc(innerRadius=68, stroke='#fcf9f8', strokeWidth=2)
+                    _pie_txt = _pie_base.mark_text(radius=112, fontSize=11,
+                                                   font='Inter, system-ui, sans-serif').encode(
+                        text=alt.Text('Etiqueta:N'), color=alt.value('#021C36'))
+                    _pie_chart = (_pie_arc + _pie_txt).properties(
+                        height=360, background=CHART_PALETTE['bg']
+                    ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                    st.altair_chart(_pie_chart, use_container_width=True)
+                    st.markdown(
+                        '<div style="display:flex;justify-content:center;gap:28px;margin:-6px 0 4px 0;">'
+                        '<span style="font-family:Inter,sans-serif;font-size:12px;color:#021C36;">'
+                        '<span style="display:inline-block;width:9px;height:9px;background:#006497;margin-right:6px;vertical-align:middle;"></span>'
+                        f'Dividendos <b>{_a_share:.0f}%</b> · ${_cmp_a_inv:,.0f}</span>'
+                        '<span style="font-family:Inter,sans-serif;font-size:12px;color:#021C36;">'
+                        '<span style="display:inline-block;width:9px;height:9px;background:#2d3748;margin-right:6px;vertical-align:middle;"></span>'
+                        f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_inv:,.0f}</span>'
+                        '</div>',
+                        unsafe_allow_html=True)
 
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
@@ -4108,37 +4150,24 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         ])
                         st.dataframe(holdings_df, hide_index=True, use_container_width=True)
 
-            # ── En corto · tu ingreso por dividendos (movido aquí, al pie de Análisis de riesgo) ──
-            if _income_annual > 0:
+            # ── Confianza de datos (la sección "En corto · ingreso" se eliminó) ──
+            _n_total = _n_total or len(results)
+            if _n_total:
+                _conf_extra = _n_total - _n_exact
+                if _conf_extra <= 0:
+                    _conf_c = '#4caf82'
+                    _conf_msg = 'todas tus posiciones tienen el costo exacto'
+                else:
+                    _conf_c = '#006497' if _n_exact > 0 else '#e0a23c'
+                    _conf_msg = (f'{_conf_extra} con costo aproximado: al CSV le faltan las compras originales. '
+                                 'Sube la foto de posiciones para volverlas exactas.')
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
                 st.markdown(
-                    '<div style="margin:6px 0 2px 0;">'
-                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#006497;font-weight:700;'
-                    'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 6px 0;">En corto · tu ingreso por dividendos</p>'
-                    '<p style="font-family:Inter,sans-serif;font-size:15px;color:#0F172A;line-height:1.55;margin:0;">'
-                    f'Tu portafolio de <b style="font-family:{_MONO_FONT};">${_total_mv:,.0f}</b> te pagó alrededor de '
-                    f'<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_annual:,.0f}</b> en dividendos en los '
-                    f'<b>últimos 12 meses</b> (~<b style="font-family:{_MONO_FONT};color:#16A34A;">${_income_monthly:,.0f}/mes</b>), '
-                    f'un rendimiento de <b style="font-family:{_MONO_FONT};">{_income_yield:.1f}%</b> sobre su valor actual. '
-                    '<span style="color:#8899aa;font-size:12.5px;">Es lo realmente recibido; en activos tipo YieldMax el '
-                    'pago futuro suele ser menor — mira la proyección y el desglose contra el broker en “Ver detalle”.</span>'
-                    '</p></div>',
-                    unsafe_allow_html=True)
-                st.markdown(
-                    '<div class="da-kpi-bar" style="grid-template-columns:repeat(4,1fr);">'
-                    '<div class="da-kpi-cell da-kpi-green"><p class="da-kpi-label">Ingreso mensual</p>'
-                    f'<p class="da-kpi-value">${_income_monthly:,.0f}</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">promedio últimos 12m</p></div>'
-                    '<div class="da-kpi-cell da-kpi-accent"><p class="da-kpi-label">Ingreso anual</p>'
-                    f'<p class="da-kpi-value">${_income_annual:,.0f}</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">recibido, últimos 12m</p></div>'
-                    '<div class="da-kpi-cell da-kpi-navy"><p class="da-kpi-label">Yield sobre valor</p>'
-                    f'<p class="da-kpi-value">{_income_yield:.1f}%</p>'
-                    '<p class="da-kpi-delta" style="color:#8899aa;">ingreso ÷ valor de mercado</p></div>'
-                    f'<div class="da-kpi-cell" style="border-top-color:{_conf_color};">'
+                    '<div class="da-kpi-bar" style="grid-template-columns:1fr;">'
+                    f'<div class="da-kpi-cell" style="border-top-color:{_conf_c};">'
                     '<p class="da-kpi-label">Confianza de datos</p>'
-                    f'<p class="da-kpi-value" style="color:{_conf_color};">{_n_exact}/{_n_total}</p>'
-                    f'<p class="da-kpi-delta" style="color:{_conf_color};">{_conf_delta}</p></div>'
+                    f'<p class="da-kpi-value" style="color:{_conf_c};">{_n_exact}/{_n_total} con costo exacto</p>'
+                    f'<p class="da-kpi-delta" style="color:#8899aa;">{_conf_msg}</p></div>'
                     '</div>',
                     unsafe_allow_html=True)
 
@@ -4355,6 +4384,41 @@ elif input_method == "Simulación Teórica":
                         st.altair_chart(_mix_chart(_long), use_container_width=True)
                         if _i < len(_MIXES):
                             st.divider()
+
+# --- Tickers excluidos del análisis (movido al pie, arriba del disclaimer) ---
+_skipped_final = st.session_state.get('_skipped', {})
+if _skipped_final:
+    with st.expander(f"{len(_skipped_final)} ticker(s) excluidos del análisis"):
+        for _t_sk, _s_sk in _skipped_final.items():
+            _reason = _s_sk.get('reason', '')
+            if _reason == 'not_known_etf':
+                _reason_label = 'No reconocido como ETF de largo plazo (acción individual, ETF inverso o apalancado)'
+            elif _reason == 'held_less_than_14_days':
+                _reason_label = f'Posición cerrada en {_s_sk.get("holding_days", "?")} días (< 2 semanas)'
+            else:
+                _reason_label = 'Excluido'
+            st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555555;margin:2px 0;">— <b>{_t_sk}</b> · <span style="color:#888888;">{_reason_label}</span></p>', unsafe_allow_html=True)
+
+# --- Calculadoras de referencia (movidas al pie, arriba del disclaimer) ---
+with st.expander("Calculadoras de referencia — en qué nos inspiramos y en qué nos diferenciamos"):
+    st.markdown(
+        "Esta herramienta se construyó estudiando las mejores calculadoras públicas de dividendos y tomando "
+        "lo útil de cada una, pero con un principio propio: **realismo**, sobre todo en los ETF de alto "
+        "rendimiento (YieldMax), donde el *yield* de portada engaña.\n\n"
+        "- **[TipRanks](https://www.tipranks.com/tools/dividend-calculator)** y "
+        "**[DividendCalculator.io](https://dividendcalculator.io/)** — proyección con DRIP, *yield on cost* y "
+        "*forward yield*. → de aquí tomamos el **motor de proyección a futuro** y el *forward yield* vs realizado.\n"
+        "- **[MiniWebtool](https://miniwebtool.com/dividend-reinvestment-calculator/)** y "
+        "**[MarketBeat](https://www.marketbeat.com/dividends/calculator/)** — tabla año por año y efecto "
+        "*bola de nieve* de la reinversión. → la **visualización del interés compuesto**.\n"
+        "- **[DRIPCalc](https://www.dripcalc.com/yieldmax-etfs/)** — retorno con y sin DRIP para fondos YieldMax. "
+        "→ la **comparación reinvertir vs cobrar en efectivo**.\n"
+        "- **[NAV Erosion Calculator](https://dividend-wealth.com/tools/nav-erosion-calculator)** — la carrera "
+        "*ingreso acumulado* vs *pérdida de capital* con punto de *breakeven*. → nuestro **modo realista YieldMax**.\n\n"
+        "**Lo que ninguna hace y aquí sí:** descomponer cuánto de cada distribución es **Retorno de Capital** "
+        "(datos oficiales 19a) y proyectar con la **erosión real observada** del fondo, en vez de asumir que el "
+        "precio sube. Por eso un YieldMax nunca se proyecta como si fuera un ETF de crecimiento.")
+
 
 # --- Footer Disclaimer — The Architectural Authority, anclaje #021C36 ---
 FOOTER_STYLE = "background-color:#f0eeec;border-top:1px solid #e0ddd9;padding:24px 40px;margin-top:48px;"
