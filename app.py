@@ -3438,9 +3438,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         'User Total Value': port_label,
                         'SPY Profit': 'S&P 500 Simulado ($)'
                     })
-                    safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, pd.NA)
-                    chart_data['Diferencia %'] = ((chart_data[port_label] - safe_spy) / safe_spy) * 100
-                    chart_data['Diferencia %'] = chart_data['Diferencia %'].fillna(0)
+                    safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, float('nan'))
+                    chart_data['Diferencia %'] = (((chart_data[port_label] - safe_spy) / safe_spy) * 100).fillna(0)
                     chart_data_long = chart_data.reset_index().melt(
                         id_vars=['Date', 'Diferencia %'],
                         value_vars=[port_label, 'S&P 500 Simulado ($)'],
