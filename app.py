@@ -780,17 +780,18 @@ st.markdown("""
     }
     .da-growth-total > span { color: #021C36; font-size: 13px; }
 
-    /* 22e. TABLA KPI INGRESOS — consolidada (ETF una sola vez, 4 grupos a lo ancho) */
+    /* 22e. TABLA KPI INGRESOS — consolidada (ETF una sola vez, 4 grupos a lo ancho)
+       Cada grupo muestra solo el valor de la calculadora + Δ% vs Schwab (2 cols). */
     .da-kpiwide-row, .da-kpiwide-grouphead, .da-kpiwide-subhead {
         display: grid;
-        grid-template-columns: minmax(48px, 1.1fr) repeat(12, 1fr);
+        grid-template-columns: minmax(48px, 1.1fr) repeat(8, 1fr);
         gap: 8px;
         align-items: baseline;
         padding: 3px 0;
     }
     .da-kpiwide-grouphead { padding: 2px 0 0 0; }
     .da-kpiwide-grouphead .grp {
-        grid-column: span 3;
+        grid-column: span 2;
         font-family: 'Inter', sans-serif;
         font-size: 9px;
         font-weight: 600;
@@ -1877,9 +1878,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         v = f'{pct:+.0f}%' if pct is not None else None
                         if kind == 'recv':
                             intro = ('<b>¿Qué es?</b> Los dividendos que ya cobraste en los últimos 12 meses, '
-                                     'ETF por ETF. La columna <b>Schwab</b> es lo que tu broker reporta haberte '
-                                     'pagado; la columna <b>Calc</b> es lo mismo, pero reconstruido por la '
-                                     'calculadora desde tu archivo CSV. <b>Δ%</b> es la diferencia entre ambas.')
+                                     'ETF por ETF. La cifra que ves es la que <b>reconstruye la calculadora</b> '
+                                     'desde tu archivo CSV. <b>Δ%</b> es cuánto se desvía de lo que <b>Schwab</b> '
+                                     'reporta haberte pagado: cerca de 0% significa que ambas fuentes coinciden.')
                             if pct is None:
                                 interp = ('<b>Tu Δ% aún no está disponible.</b> La calculadora todavía no puede '
                                           'leer tus pagos desde el CSV. Sube el archivo con el historial de '
@@ -1932,10 +1933,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                           'prudencia.')
                         elif kind == 'hist':
                             intro = ('<b>¿Qué es?</b> El total de dividendos que has acumulado en <b>toda tu '
-                                     'historia</b> (no solo los últimos 12 meses), ETF por ETF. La columna '
-                                     '<b>Schwab</b> es lo que tu broker reporta haberte pagado en todo el income; '
-                                     'la columna <b>Calc</b> es lo mismo, reconstruido por la calculadora desde tu '
-                                     'archivo CSV.<br><br>'
+                                     'historia</b> (no solo los últimos 12 meses), ETF por ETF. La cifra que ves '
+                                     'es la que <b>reconstruye la calculadora</b> desde tu archivo CSV; el '
+                                     '<b>Δ%</b> es cuánto se desvía de lo que <b>Schwab</b> reporta en todo el '
+                                     'income.<br><br>'
                                      '<b>Es el dividendo bruto</b> (lo que el fondo declaró, <b>antes</b> de la '
                                      'retención de impuesto a extranjeros). Lo que de verdad entró a tu cuenta, ya '
                                      'descontado ese impuesto, es el <b>neto</b> que ves abajo en la tabla de ROC '
@@ -2016,7 +2017,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                         sub = '<div class="da-kpiwide-subhead"><span class="lbl">ETF</span>'
                         for _ in groups:
-                            sub += '<span>Schwab</span><span>Calc</span><span>Δ%</span>'
+                            sub += '<span>Calc</span><span>Δ%</span>'
                         sub += '</div>'
 
                         body = ''
@@ -2024,16 +2025,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             cells = f'<span class="tk">{groups[0][4][r][0]}</span>'
                             for _g in groups:
                                 _tk, _s, _c = _g[4][r]
-                                cells += (f'<span class="num">{_fmt_money(_s)}</span>'
-                                          f'<span class="num">{_fmt_money(_c)}</span>'
+                                # Solo el valor de la calculadora; el Δ% sigue comparando contra Schwab (_s).
+                                cells += (f'<span class="num">{_fmt_money(_c)}</span>'
                                           f'{_pct_html(_s, _c)}')
                             body += f'<div class="da-kpiwide-row">{cells}</div>'
 
                         trow = '<span class="tk">TOTAL</span>'
                         for i in range(len(groups)):
                             ts, tcv = totals[i]
-                            trow += (f'<span class="num">{_fmt_money(ts)}</span>'
-                                     f'<span class="num">{_fmt_money(tcv)}</span>'
+                            trow += (f'<span class="num">{_fmt_money(tcv)}</span>'
                                      f'{_pct_html(ts, tcv)}')
                         total = f'<div class="da-kpiwide-row da-kpiwide-total">{trow}</div>'
 
@@ -2130,11 +2130,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         titleFont='Inter, system-ui, sans-serif', titleFontSize=11, titleFontWeight=500
                     ).configure_legend(labelColor=CHART_PALETTE["axis"])
                     _inc_exp.altair_chart(_pchart, use_container_width=True)
-                    _inc_exp.caption('La acumulación reparte el total anual de forma pareja entre los 12 meses; '
-                                     'es una simplificación para comparar los dos métodos, no un calendario exacto de pagos.')
+                    # Notas al pie: secundarias, en letra pequeña con * (no compiten con la gráfica).
+                    _foot = ('* La acumulación reparte el total anual de forma pareja entre los 12 meses; es una '
+                             'simplificación para comparar los dos métodos, no un calendario exacto de pagos.')
                     if _dropped:
                         _drop_txt = ', '.join(t for t, _ in _dropped)
-                        _inc_exp.caption(f'Ocultados (dividendo marginal, fuera del portafolio de ingresos): {_drop_txt}.')
+                        _foot += (f'<br>* No se grafican {_drop_txt}: su dividendo es marginal y quedan fuera del '
+                                  f'portafolio de ingresos.')
+                    _inc_exp.markdown(
+                        f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#a3adb8;'
+                        f'line-height:1.5;margin:4px 0 2px 0;">{_foot}</p>',
+                        unsafe_allow_html=True
+                    )
 
                     # Justificación auto-generada: por qué la proyección de Schwab está inflada.
                     _flagged = sorted(
@@ -2142,23 +2149,27 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         key=lambda x: -(x[1]['overstatement_pct'] or 0))
                     _stable = [t for t, d in _proj.items() if abs(d.get('overstatement_pct') or 0) <= 5]
                     if _flagged:
+                        def _pct_below(d):
+                            a = d.get("anchor_per_payment") or 0
+                            r = d.get("recent_per_payment") or 0
+                            return (1 - r / a) * 100 if a else 0
                         _just_li = ''.join(
-                            f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab proyecta '
-                            f'<b>${d["schwab_proj"]:,.0f}</b>/año asumiendo <b>${d["anchor_per_payment"]:,.2f}</b> por pago, '
-                            f'pero tu pago real reciente promedia <b>${d["recent_per_payment"]:,.2f}</b> — un ancla '
-                            f'<b style="color:#c9821f;">{d["overstatement_pct"]:.0f}% por encima</b> del nivel actual. '
-                            f'Proyectando tu run-rate real: <b style="color:#006497;">${d["our_proj"]:,.0f}</b>/año. '
-                            f'(Recibido últimos 12m: ${d["schwab_received_12m"]:,.0f}.)</li>'
+                            f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab supone que vas a seguir '
+                            f'cobrando <b>${d["anchor_per_payment"]:,.2f}</b> por acción en cada pago (tu último pago alto) '
+                            f'y por eso proyecta <b>${d["schwab_proj"]:,.0f}</b> al año. Pero tus pagos recientes ya bajaron a '
+                            f'<b>${d["recent_per_payment"]:,.2f}</b> en promedio — '
+                            f'<b style="color:#c9821f;">un {_pct_below(d):.0f}% más bajo</b>. Con ese ritmo real cobrarías unos '
+                            f'<b style="color:#006497;">${d["our_proj"]:,.0f}</b> al año. '
+                            f'(En los últimos 12 meses recibiste ${d["schwab_received_12m"]:,.0f}.)</li>'
                             for t, d in _flagged
                         )
                         _stable_html = ''
                         if _stable:
                             _stable_html = (
                                 '<p style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin:8px 0 0 0;line-height:1.6;">'
-                                f'En cambio, en ETFs de dividendo estable ({", ".join(_stable)}) la proyección de Schwab y la '
-                                'nuestra coinciden (±5%). El sesgo es específico de los ETFs de opción-ingreso tipo YieldMax: '
-                                'su distribución por acción cae con el tiempo, pero Schwab proyecta plano desde un pago-ancla '
-                                'más alto, ignorando la caída.</p>'
+                                f'En cambio, en los fondos de dividendo estable ({", ".join(_stable)}) las dos proyecciones casi '
+                                'coinciden. La diferencia solo aparece en los fondos tipo YieldMax: lo que pagan por acción va '
+                                'bajando mes a mes, pero Schwab da por hecho que seguirás cobrando igual que en tu mejor pago.</p>'
                             )
                         _inc_exp.markdown(
                             '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;margin:6px 0 4px 0;">'
@@ -2225,8 +2236,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base.')
                         + _roc_th('En efectivo', 'La parte de tus distribuciones que cobraste en efectivo, sin reinvertir.')
                         + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido.', right=True)
+                        + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b> dólar a dólar. <b>Si coincide con «Invertido»</b>, el ROC no sale de restarlos: viene del % oficial que el fondo publica en sus avisos 19a (marcado <b>est.19a</b>).', right=True)
                         + _roc_th('Valor actual', 'Cuánto vale hoy tu posición. En <b>rojo</b> si vale menos que lo invertido: señal de erosión del NAV.', right=True)
-                        + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b> dólar a dólar.', right=True)
                         + _roc_th('ROC', _ROC_TIP, right=True)
                         + '</div>'
                     )
@@ -2259,8 +2270,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                       f'<span class="num">{_fmt_money(_drip)}</span>'
                                       f'<span class="num">{_fmt_money(_cash)}</span>'
                                       f'<span class="num">{_fmt_money(_pkt)}</span>'
-                                      f'{_val_html(_mv, _pkt)}'
                                       f'<span class="num">{_fmt_money(_basis)}</span>'
+                                      f'{_val_html(_mv, _pkt)}'
                                       f'{_roc_html(_roc_a, _roc_p, _roc_src, _roc_approx)}</div>')
                         _r_paid += (_paid or 0); _r_drip += (_drip or 0); _r_cash += (_cash or 0)
                         _r_pkt += (_pkt or 0); _r_mv += (_mv or 0)
@@ -2279,8 +2290,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   f'<span class="num">{_fmt_money(_r_drip)}</span>'
                                   f'<span class="num">{_fmt_money(_r_cash)}</span>'
                                   f'<span class="num">{_fmt_money(_r_pkt)}</span>'
-                                  f'{_val_html(_r_mv, _r_pkt)}'
                                   f'<span class="num">{_fmt_money(_r_basis_disp)}</span>'
+                                  f'{_val_html(_r_mv, _r_pkt)}'
                                   f'{_roc_html(_r_roc_disp, _r_roc_pct, "19a" if _r_any_19a else None)}</div>')
                     _inc_exp.markdown(
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
@@ -2306,8 +2317,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         except Exception:
                             _stale = 0
                         _warn = ' — dato desactualizado, revisa el refresco semanal (GitHub Action)' if _stale > 21 else ''
-                        _inc_exp.caption(f'ROC marcado "est.19a": % que el fondo publica en sus avisos 19a, '
-                                   f'actualizado al {_roc_19a_asof}.{_warn}')
+                        _inc_exp.caption(f'Cuando el ROC dice "est.19a" no sale de restar Invertido − Costo bróker '
+                                   f'(que aquí pueden coincidir): es el % de devolución de capital que el propio fondo '
+                                   f'declara en sus avisos 19a-1. Por eso puedes ver «Invertido» y «Costo bróker» iguales '
+                                   f'y aun así un ROC con valor. Actualizado al {_roc_19a_asof}.{_warn}')
 
             # ── Cuadrículas Schwab vs tu cálculo: inversión · dividendos · ROC ──
                 _cmp_valid = sorted([t for t, s in results.items()
@@ -2338,20 +2351,22 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         return f'grid-template-columns:minmax(56px,1.2fr) repeat({ncols}, 1fr);'
 
                     def _triplet(groups, tks):
-                        g = _grid_css(3 * len(groups))
+                        # Cada grupo muestra solo el valor de la calculadora + Δ vs Schwab (2 cols).
+                        g = _grid_css(2 * len(groups))
                         h = f'<div class="da-kpiwide-grouphead" style="{g}"><span></span>'
                         for lab, acc, _gt, _kd in groups:
                             h += f'<span class="grp" style="border-bottom-color:{acc};">{lab}</span>'
                         h += f'</div><div class="da-kpiwide-subhead" style="{g}"><span class="lbl">ETF</span>'
                         for _ in groups:
-                            h += '<span>Schwab</span><span>Calc</span><span>Δ</span>'
+                            h += '<span>Calc</span><span>Δ</span>'
                         h += '</div>'
                         tot = [[0.0, 0.0, False, False] for _ in groups]
                         for t in tks:
                             h += f'<div class="da-kpiwide-row" style="{g}"><span class="tk">{t}</span>'
                             for i, (lab, acc, getter, kind) in enumerate(groups):
                                 s, c = getter(t)
-                                h += _cell(s, kind) + _cell(c, kind) + _delta(s, c, kind)
+                                # Solo el valor de la calculadora (c); el Δ sigue comparando contra Schwab (s).
+                                h += _cell(c, kind) + _delta(s, c, kind)
                                 if kind == 'money':
                                     if s is not None:
                                         tot[i][0] += s; tot[i][2] = True
@@ -2363,9 +2378,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             if kind == 'money':
                                 ss = tot[i][0] if tot[i][2] else None
                                 cc = tot[i][1] if tot[i][3] else None
-                                h += _cell(ss, kind) + _cell(cc, kind) + _delta(ss, cc, kind)
+                                h += _cell(cc, kind) + _delta(ss, cc, kind)
                             else:
-                                h += '<span class="num" style="color:#b8c2cc;">—</span>' * 2 + '<span class="pct" style="color:#b8c2cc;">—</span>'
+                                h += '<span class="num" style="color:#b8c2cc;">—</span>' + '<span class="pct" style="color:#b8c2cc;">—</span>'
                         return h + '</div>'
 
                     def _subtitle(txt):
@@ -2401,9 +2416,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                        ('Rendim. %', '#2d3748', _A_ret, 'pct')], _cmp_valid)
                     _cmp_exp.markdown(_subtitle('Rendimiento de tu inversión') + f'<div class="da-kpi-cell">{_gridA}</div>',
                                       unsafe_allow_html=True)
-                    _cmp_exp.caption("«Invertido» en Schwab es el cost basis del bróker (ya reducido por el ROC); en la calculadora "
-                                     "es el capital real que desplegaste. Por eso Schwab suele mostrar una ganancia mayor: compara "
-                                     "contra una base más baja. El valor de mercado es el mismo en ambas (precio × acciones).")
+                    _cmp_exp.caption("Mostramos el valor de la calculadora; el Δ indica cuánto se desvía del dato de Schwab. "
+                                     "En «Invertido», Schwab usa el cost basis del bróker (ya reducido por el ROC) y la calculadora "
+                                     "el capital real que desplegaste, por eso suele haber Δ. El valor de mercado no cambia entre "
+                                     "ambos métodos (precio × acciones), así que su Δ es 0%.")
 
                     # Cuadrícula B — dividendos (bruto · impuesto · neto)
                     _divtks = [t for t in _cmp_valid
@@ -2442,7 +2458,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                           unsafe_allow_html=True)
                         _cmp_exp.caption("El bruto es lo que el fondo declaró; el impuesto NRA (retención a extranjeros, ~30%) se "
                                          "descuenta y deja el neto que de verdad entró a tu cuenta. «Reinvertidos» y «En efectivo» "
-                                         "salen de tu CSV, así que Schwab y la calculadora coinciden.")
+                                         "salen de tu CSV, así que coinciden con Schwab (su Δ es 0%).")
 
                     # Cuadrícula C — Retorno de Capital (ROC)
                     _roctks = [t for t in _cmp_valid
