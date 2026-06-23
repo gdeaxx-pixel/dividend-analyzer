@@ -753,6 +753,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # (se construye aparte desde las transacciones) -> queda parcial a propósito.
         reconciled_from_snapshot = False
         reconciled_fields = []
+        _prefer_19a_roc = False  # fondo con ROC e historial completo: conservar costo real, ROC vía 19a
         _ov = (position_overrides or {}).get(ticker)
         if _ov:
             _ov_sh = _ov.get('shares')
@@ -765,10 +766,21 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             except (TypeError, ValueError):
                 pass
             try:
-                if _ov_co and abs(float(_ov_co) - pocket_investment) > max(0.02 * pocket_investment, 0.5):
-                    pocket_investment = float(_ov_co)
-                    reconciled_from_snapshot = True
-                    reconciled_fields.append('cost_basis')
+                if _ov_co:
+                    _ov_co_f = float(_ov_co)
+                    # Fondo con Retorno de Capital (publica avisos 19a) e historial COMPLETO: el bróker
+                    # reporta una base ya reducida por el ROC, por debajo de lo que metiste (efectivo +
+                    # reinvertido). Conservamos tu COSTO REAL del CSV —"Invertido", ROI y CAGR usan tu
+                    # efectivo, no la base del bróker— y el ROC se estima con el % oficial 19a (la resta
+                    # lo subestima al reinvertir). No es 'reconciliado': el historial está completo.
+                    if (not history_incomplete
+                            and _ov_co_f < pocket_investment + dividends_collected_drip
+                            and str(ticker).upper() in load_roc_19a()):
+                        _prefer_19a_roc = True
+                    elif abs(_ov_co_f - pocket_investment) > max(0.02 * pocket_investment, 0.5):
+                        pocket_investment = _ov_co_f
+                        reconciled_from_snapshot = True
+                        reconciled_fields.append('cost_basis')
             except (TypeError, ValueError):
                 pass
             if reconciled_from_snapshot:
@@ -1295,7 +1307,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             if _raw_basis is not None:
                 try:
                     _ib_basis = float(str(_raw_basis).replace(',', '').replace('$', '').strip())
-                    if _basis_in > 0 and _ib_basis >= 0 and not _cost_reconciled:
+                    if _basis_in > 0 and _ib_basis >= 0 and not _cost_reconciled and not _prefer_19a_roc:
                         _roc_accum = round(_basis_in - _ib_basis, 2)
                         _roc_pct   = round(_roc_accum / total_dividends * 100, 2) if total_dividends > 0 else None
                         _roc_source = 'broker'

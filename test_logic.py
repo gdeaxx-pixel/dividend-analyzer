@@ -380,6 +380,35 @@ def test_roc_estimated_from_19a_when_no_basis(monkeypatch):
     assert s["roc_percent"] == pytest.approx(90.0, abs=0.5)
 
 
+def test_deep_fix_keeps_real_cash_roc_via_19a(monkeypatch):
+    """Arreglo profundo: en un fondo con ROC e historial completo, NO se pisa el costo real del CSV
+    (Invertido/ROI usan tu efectivo) y el ROC se estima con el 19a, no con la resta (que el DRIP
+    subestima cuando reinviertes)."""
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 100, -2000.0),            # efectivo de tu bolsillo
+        ("2024-10-01", "Reinvest Shares", "MSTY", 10, -200.0),  # DRIP (sube la base)
+        ("2024-10-01", "Dividend", "MSTY", 0, 250.0),           # distribución (total_dividends>0)
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 75.0, "per_distribution": [{"date": "2024-10-01", "roc_pct": 75.0}]}})
+    # El bróker reporta una base ya reducida por ROC ($1800), por debajo de pocket+drip=2200.
+    res = logic.analyze_portfolio(
+        df, version="TEST_DEEP_FIX",
+        ib_cost_basis_map={"MSTY": "1800.00"},
+        position_overrides={"MSTY": {"cost_basis": 1800.0}},
+    )
+    s = res["MSTY"]
+    # Costo real conservado (NO reconciliado): Invertido = tu efectivo ($2000), no la base del bróker.
+    assert s["pocket_investment"] == pytest.approx(2000.0, abs=0.01)
+    assert "cost_basis" not in (s.get("reconciled_fields") or [])
+    assert not s.get("reconciled_from_snapshot")
+    assert s["ib_cost_basis"] == pytest.approx(1800.0, abs=0.01)
+    # ROC vía 19a, NO por resta (la resta daría (2000+200)-1800 = 400).
+    assert s["roc_source"] == "19a"
+    assert s["roc_accumulated"] != pytest.approx(400.0, abs=1.0)
+
+
 def test_roc_none_when_no_basis_provided(monkeypatch):
     """Sin ib_cost_basis_map los campos ROC son None."""
     csv = (

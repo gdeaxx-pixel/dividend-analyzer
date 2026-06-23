@@ -2208,17 +2208,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         return f'<span class="num" style="color:{c};">${mv:,.0f}</span>'
 
                     _ROC_TIP = (
-                        '<b>ROC (Retorno de Capital)</b> es la parte de tus distribuciones que es '
-                        '<b>devolución de tu propio capital</b>, no rendimiento. Se calcula como '
-                        '<b>(Invertido + Reinvertido) − Costo bróker</b>: lo que metiste a comprar acciones '
-                        '(incluido lo reinvertido, que sube tu base) menos lo que el bróker dice que vale tu '
-                        'base ahora; ese hueco es ROC ya contabilizado.<br>'
-                        'Si <b>no tienes el costo base del bróker</b>, se estima con el <b>% que el fondo '
-                        'publica en sus avisos 19a-1</b> (marcado <b>est.19a</b>). El dato fiscal definitivo '
-                        'está en tu <b>1099-DIV casilla 3</b>.<br>'
-                        'Señal de "ingreso no gratis": si <b>Valor actual</b> cayó muy por debajo de '
-                        '<b>Invertido</b> pese a cobrar distribuciones (típico de YieldMax), gran parte de tu '
-                        '"ingreso" fue erosión de tu capital.'
+                        '<b>ROC (Retorno de Capital)</b> es la parte de tus distribuciones que el fondo '
+                        'declara como <b>devolución de tu propio capital</b>, no rendimiento. La fuente '
+                        'oficial es el <b>aviso 19a-1 del fondo</b> (= tu <b>1099-DIV casilla 3</b>, marcado '
+                        '<b>est.19a</b>): si el 75% de lo que cobraste fue ROC, ese 75% era tu propio dinero '
+                        'de vuelta, no ganancia.<br>'
+                        'La app también puede <i>estimar</i> el ROC como <b>(Invertido + Reinvertido) − Costo '
+                        'bróker</b> cuando tiene tu costo base; pero si <b>reinvertiste</b> tus distribuciones '
+                        'esa resta <b>subestima</b> el ROC (la reinversión vuelve a subir tu base), por eso '
+                        'manda el % oficial del fondo.<br>'
+                        'Señal de "ingreso no gratis": si <b>Valor actual</b> cayó muy por debajo de lo que '
+                        'pusiste pese a cobrar distribuciones (típico de YieldMax), gran parte de tu "ingreso" '
+                        'fue erosión de tu capital.'
                     )
 
                     def _roc_th(label, tip, right=False, lbl=False):
@@ -2235,8 +2236,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         + _roc_th('Div. pagados', 'Lo que de verdad entró a tu cuenta: lo reinvertido más lo recibido en efectivo, ya <b>neto</b> de la retención de impuesto a extranjeros (NRA). Por eso es menor que el "Total dividendos" de arriba, que es el bruto antes de impuesto.')
                         + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base.')
                         + _roc_th('En efectivo', 'La parte de tus distribuciones que cobraste en efectivo, sin reinvertir.')
-                        + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido.', right=True)
-                        + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b> dólar a dólar. <b>Si coincide con «Invertido»</b>, el ROC no sale de restarlos: viene del % oficial que el fondo publica en sus avisos 19a (marcado <b>est.19a</b>).', right=True)
+                        + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido. Si tu historial está <b>incompleto</b>, la app puede mostrar aquí el costo base del bróker en su lugar.', right=True)
+                        + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b>. No restes esta columna con «Invertido» para sacar el ROC: con reinversión esa resta lo <b>subestima</b>, por eso el ROC viene del % oficial del fondo (avisos 19a, marcado <b>est.19a</b>).', right=True)
                         + _roc_th('Valor actual', 'Cuánto vale hoy tu posición. En <b>rojo</b> si vale menos que lo invertido: señal de erosión del NAV.', right=True)
                         + _roc_th('ROC', _ROC_TIP, right=True)
                         + '</div>'
@@ -2317,10 +2318,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         except Exception:
                             _stale = 0
                         _warn = ' — dato desactualizado, revisa el refresco semanal (GitHub Action)' if _stale > 21 else ''
-                        _inc_exp.caption(f'Cuando el ROC dice "est.19a" no sale de restar Invertido − Costo bróker '
-                                   f'(que aquí pueden coincidir): es el % de devolución de capital que el propio fondo '
-                                   f'declara en sus avisos 19a-1. Por eso puedes ver «Invertido» y «Costo bróker» iguales '
-                                   f'y aun así un ROC con valor. Actualizado al {_roc_19a_asof}.{_warn}')
+                        _inc_exp.caption(f'Cuando el ROC dice "est.19a" NO sale de restar Invertido − Costo bróker '
+                                   f'(con reinversión esa resta subestima el ROC): es el % de devolución de capital que '
+                                   f'el propio fondo declara en sus avisos 19a-1, el mismo dato que verás en tu 1099-DIV '
+                                   f'casilla 3. Es la cifra que importa: ese % de tu "ingreso" fue tu propio capital de '
+                                   f'vuelta, no ganancia — y si tu posición vale hoy menos de lo que pusiste, fue erosión '
+                                   f'de tu capital. Actualizado al {_roc_19a_asof}.{_warn}')
 
             # ── Cuadrículas Schwab vs tu cálculo: inversión · dividendos · ROC ──
                 _cmp_valid = sorted([t for t, s in results.items()
