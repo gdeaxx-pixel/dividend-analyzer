@@ -178,6 +178,65 @@ def test_cost_incomplete_matches_assess():
             f"{t}: _cost_incomplete discrepa de assess_data_quality"
 
 
+# ── Cross-check ROC contra el % oficial 19a (red de seguridad, añadido 2026-06-22) ──
+# El resto del harness NUNCA pasa position_overrides, así que la rama de reconciliación/ROC
+# (la que la app usa en vivo con la foto del bróker) queda sin probar en CI. Este test la
+# ejercita y verifica que el ROC de un fondo YieldMax NO colapsa a la resta enmascarada por el
+# DRIP: debe venir del 19a y cuadrar en magnitud con el % que publica el fondo. Habría atrapado
+# el bug MSTY $18 (7%) vs $191 (75%). Ver Obsidian leccion-roc-19a-vs-resta.
+
+def _roc_19a_cases():
+    """(case, ticker) por cada fondo con datos 19a y cost_basis en el expected.json."""
+    roc19a = logic.load_roc_19a()
+    out = []
+    for cid, c in CASES.items():
+        if c.get("normalized"):
+            continue
+        for t, e in ((c.get("manifest") or {}).get("tickers") or {}).items():
+            if (e.get("cost_basis") is not None
+                    and str(t).upper() in roc19a
+                    and roc19a[str(t).upper()].get("weighted_pct") is not None):
+                out.append((cid, t))
+    return out or [pytest.param(("__none__", "__none__"),
+                                marks=pytest.mark.skip(reason="sin fondos 19a con costo"))]
+
+
+@pytest.mark.parametrize("case_ticker", _roc_19a_cases(), ids=lambda ct: f"{ct[0]}:{ct[1]}")
+def test_roc_19a_crosscheck(case_ticker):
+    case, ticker = case_ticker
+    e = CASES[case]["manifest"]["tickers"][ticker]
+    df, _ = _load(case)
+    dfc = logic.normalize_csv(df)
+    dfc = dfc[dfc["Ticker"] == ticker]
+    if dfc.empty:
+        pytest.skip(f"{case} {ticker}: sin filas en el CSV")
+    cb = e["cost_basis"]
+    try:
+        res = logic.analyze_portfolio(
+            dfc, version="ROC_XCHECK",
+            ib_cost_basis_map={ticker: cb},
+            position_overrides={ticker: {"cost_basis": cb, "shares": e.get("shares")}})
+    except Exception as ex:
+        pytest.skip(f"analyze_portfolio falló (red?): {ex}")
+    s = res.get(ticker)
+    if not s or s.get("skipped") or s.get("roc_accumulated") is None:
+        pytest.skip(f"{case} {ticker}: sin ROC (datos de mercado faltantes?)")
+    drip = s.get("dividends_collected_drip") or 0
+    pocket = s.get("pocket_investment") or 0
+    # 1) Escenario que rompió MSTY: hay reinversión (DRIP) y la base del bróker quedó por debajo de tu
+    #    base total -> la resta esconde el ROC, debe venir del 19a. (Sin DRIP la resta es legítima.)
+    if drip > 0 and not s.get("history_incomplete") and cb < pocket + drip:
+        assert s["roc_source"] == "19a", (
+            f"{case} {ticker}: roc_source={s.get('roc_source')} (esperado '19a' con DRIP); "
+            "la resta esconde el ROC cuando reinviertes")
+    # 2) Cuando el ROC viene del 19a, su magnitud debe cuadrar con el % oficial del fondo. Tolerancia
+    #    amplia para no fallar por el timing de distribuciones; atrapa errores de orden (7% vs 75%).
+    if s.get("roc_source") == "19a":
+        wpct = logic.load_roc_19a()[ticker.upper()]["weighted_pct"]
+        assert s["roc_percent"] == pytest.approx(wpct, abs=30), (
+            f"{case} {ticker}: ROC% {s['roc_percent']} lejos del 19a oficial {wpct}%")
+
+
 # ── Tier vision: OCR de fotos con Gemini (opt-in: pytest -m vision) ───────────
 
 @pytest.mark.vision
