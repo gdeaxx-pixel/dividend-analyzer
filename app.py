@@ -39,6 +39,10 @@ def _roc_detail_card(stats):
 
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
 
+# Flag reversible: panel "Explicación visual del ROC" (infografía IYG) por fondo con ROC.
+# Poner en False lo desactiva al instante, sin tocar nada más. (added 2026-06-23)
+SHOW_ROC_INFOGRAPHIC = True
+
 if st.query_params.get("clear"):
     st.cache_data.clear()
     st.query_params.clear()
@@ -2324,6 +2328,30 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'casilla 3. Es la cifra que importa: ese % de tu "ingreso" fue tu propio capital de '
                                    f'vuelta, no ganancia — y si tu posición vale hoy menos de lo que pusiste, fue erosión '
                                    f'de tu capital. Actualizado al {_roc_19a_asof}.{_warn}')
+
+                # ════ PANEL INFOGRAFÍA ROC (revertible · flag SHOW_ROC_INFOGRAPHIC) ════
+                # Solo para fondos con ROC (YieldMax) en pérdida. Aditivo: solo LEE results.
+                # try/except: si algo falla, no muestra nada y NO rompe la app.
+                if SHOW_ROC_INFOGRAPHIC:
+                    try:
+                        from roc_infographic import roc_infographic_html
+                        import streamlit.components.v1 as _components
+                        for _it in results:
+                            _is = results.get(_it) or {}
+                            if not isinstance(_is, dict):
+                                continue
+                            _ira = _is.get('roc_accumulated'); _irp = _is.get('roc_percent')
+                            _ipk = _is.get('pocket_investment'); _imv = _is.get('market_value')
+                            _itd = _is.get('total_dividends') or 0
+                            if (_ira and _irp and 25 <= _irp <= 100 and _ira <= _itd
+                                    and _ipk and _imv is not None and _imv < _ipk):
+                                _ig_html = roc_infographic_html(_is, _it)
+                                if _ig_html:
+                                    with st.expander(f"📊 Explicación visual del ROC — {_it}"):
+                                        _components.html(_ig_html, height=2480, scrolling=True)
+                    except Exception:
+                        pass
+                # ════ FIN PANEL INFOGRAFÍA ROC ════
 
             # ── Cuadrículas Schwab vs tu cálculo: inversión · dividendos · ROC ──
                 _cmp_valid = sorted([t for t, s in results.items()
