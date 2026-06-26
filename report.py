@@ -38,7 +38,54 @@ def _fmt_pct(v, signed: bool = False) -> str:
         return "N/A"
 
 
+# Las fuentes core de fpdf2 (Helvetica) solo codifican latin-1. Cualquier carácter
+# Unicode fuera de ese rango (em-dash, comillas tipográficas, flechas, viñetas…)
+# lanza una excepción al exportar y rompe TODO el PDF. Mapeamos los más comunes a
+# equivalentes seguros y, como red de seguridad, sustituimos cualquier otro.
+_UNICODE_MAP = {
+    "—": "-", "–": "-",            # — –  (em/en dash)
+    "‘": "'", "’": "'",            # ' '  (comillas simples tipográficas)
+    "“": '"', "”": '"',            # " "  (comillas dobles tipográficas)
+    "…": "...",                         # …
+    "→": "->", "←": "<-",          # → ←
+    "•": "-", "·": "-",            # • ·
+    " ": " ",                          # espacio duro
+}
+
+
+def _lat1(s):
+    if not isinstance(s, str):
+        return s
+    for bad, good in _UNICODE_MAP.items():
+        s = s.replace(bad, good)
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
 class _PDF(FPDF):
+    def cell(self, *args, **kwargs):
+        if len(args) >= 3:
+            args = args[:2] + (_lat1(args[2]),) + args[3:]
+        for k in ("text", "txt"):
+            if k in kwargs:
+                kwargs[k] = _lat1(kwargs[k])
+        return super().cell(*args, **kwargs)
+
+    def multi_cell(self, *args, **kwargs):
+        if len(args) >= 3:
+            args = args[:2] + (_lat1(args[2]),) + args[3:]
+        for k in ("text", "txt"):
+            if k in kwargs:
+                kwargs[k] = _lat1(kwargs[k])
+        return super().multi_cell(*args, **kwargs)
+
+    def text(self, *args, **kwargs):
+        if len(args) >= 3:
+            args = args[:2] + (_lat1(args[2]),) + args[3:]
+        for k in ("text", "txt"):
+            if k in kwargs:
+                kwargs[k] = _lat1(kwargs[k])
+        return super().text(*args, **kwargs)
+
     def __init__(self, broker: str, version: str):
         super().__init__()
         self._broker = BROKER_LABELS.get(broker, broker.upper())
