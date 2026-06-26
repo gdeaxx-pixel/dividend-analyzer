@@ -1743,21 +1743,31 @@ def parse_schwab_income_csv(raw_bytes: bytes):
     Filtra por la columna 'Income Type', nunca por posición (el archivo abre con filas
     'Estimated' antes de las 'Received').
     """
-    for encoding in ('utf-8', 'latin1', 'cp1252'):
+    # Excel (.xlsx): Schwab también exporta el Investment Income como libro de Excel.
+    # Se convierte la hoja a texto CSV y se sigue exactamente el mismo camino que un CSV
+    # (la firma 'PK\x03\x04' es la del ZIP que envuelve todo .xlsx).
+    if raw_bytes[:4] == b'PK\x03\x04':
         try:
-            text = raw_bytes.decode(encoding)
-            break
+            _xl = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine='openpyxl')
+            text = _xl.to_csv(index=False, header=False)
         except Exception:
-            continue
+            return None
     else:
-        text = raw_bytes.decode('utf-8', errors='replace')
+        for encoding in ('utf-8', 'latin1', 'cp1252'):
+            try:
+                text = raw_bytes.decode(encoding)
+                break
+            except Exception:
+                continue
+        else:
+            text = raw_bytes.decode('utf-8', errors='replace')
 
-    if 'investment income transactions' not in text[:3000].lower():
-        return None  # no es este formato
-
+    # Detección por encabezado de columnas (robusta a cambios del título de la primera
+    # línea). La combinación 'transaction date' + 'symbol' + 'income type' es exclusiva
+    # del export de Investment Income; el CSV de transacciones u otros brokers no la traen.
     lines = text.splitlines()
     header_idx = None
-    for i, line in enumerate(lines):
+    for i, line in enumerate(lines[:40]):
         ll = line.lower()
         if 'transaction date' in ll and 'symbol' in ll and 'income type' in ll:
             header_idx = i

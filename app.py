@@ -825,14 +825,14 @@ st.markdown("""
     .da-kpiwide-total .tk, .da-kpiwide-total .num { color: #021C36; }
     .da-kpiwide-total .num { font-size: 13px; }
 
-    /* 22f. TABLA ROC — desglose de Retorno de Capital por ETF (8 columnas) */
+    /* 22f. TABLA CONSOLIDADA — Total div + ROC + inversión + proyección por ETF (10 columnas) */
     .da-roc-row, .da-roc-subhead {
         display: grid;
-        grid-template-columns: minmax(48px, 1.1fr) repeat(7, 1fr);
+        grid-template-columns: minmax(48px, 1.1fr) repeat(9, 1fr);
         gap: 8px;
         align-items: baseline;
         padding: 3px 0;
-        min-width: 740px;
+        min-width: 960px;
     }
     .da-roc-subhead span {
         font-family: 'Inter', sans-serif;
@@ -1445,6 +1445,9 @@ if input_method == "Subir CSV/Excel":
             _nrec = sum(1 for d in (_inc_sum.get('tickers') or {}).values() if d.get('received_total'))
             st.markdown(_da_summary("Ingresos validados", f"{_nrec} tickers con dividendos recibidos"),
                         unsafe_allow_html=True)
+            if st.session_state.get('_wizard_income_multi'):
+                st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
+                           "Para una validación exacta, exporta el income de una sola cuenta.")
             _icc1, _icc2 = st.columns([5, 1])
             with _icc2:
                 if st.button("editar", key="_edit_inc", type="tertiary", use_container_width=True):
@@ -1467,31 +1470,51 @@ if input_method == "Subir CSV/Excel":
             )
             _inc_file = st.file_uploader(
                 "Archivo de ingresos (Investment Income)",
-                type=['csv'], key="_step2_income", label_visibility="collapsed"
+                type=['csv', 'xlsx'], key="_step2_income", label_visibility="collapsed"
             )
             if _inc_file is not None:
                 try:
                     _parseo(["Leyendo ingresos…", "Conciliando dividendos recibidos…"])
                     _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
-                    if _inc_df is None or len(_inc_df) == 0:
+                    if _inc_df is None:
                         st.session_state['_wizard_income_summary'] = None
                         st.session_state['_wizard_income_df'] = None
-                        st.warning(
-                            "No reconocimos este archivo como un “Investment Income” de Charles Schwab. "
-                            "Asegúrate de exportar el reporte de ingresos (no el de transacciones)."
-                        )
+                        st.error(
+                            "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
+                        st.caption(
+                            "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
+                            "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
+                            "ni un Excel (.xls/.xlsx), ni un PDF.")
+                    elif len(_inc_df) == 0:
+                        st.session_state['_wizard_income_summary'] = None
+                        st.session_state['_wizard_income_df'] = None
+                        st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
+                        st.caption(
+                            "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
+                            "Revisa que el export incluya las distribuciones de tus ETFs.")
                     else:
                         _inc_summ = logic.summarize_income(_inc_df)
-                        st.session_state['_wizard_income_summary'] = _inc_summ
-                        st.session_state['_wizard_income_df'] = _inc_df
-                        if _inc_summ.get('multi_account'):
-                            st.warning("El archivo incluye más de una cuenta; los totales podrían mezclarse. "
-                                       "Exporta el income de una sola cuenta para una validación exacta.")
-                        st.rerun()
+                        _nrec_chk = sum(1 for d in (_inc_summ.get('tickers') or {}).values()
+                                        if d.get('received_total'))
+                        if _nrec_chk == 0:
+                            # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
+                            st.session_state['_wizard_income_summary'] = None
+                            st.session_state['_wizard_income_df'] = None
+                            st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
+                            st.caption(
+                                "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
+                                "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
+                                "viene primero y se ignora).")
+                        else:
+                            st.session_state['_wizard_income_summary'] = _inc_summ
+                            st.session_state['_wizard_income_df'] = _inc_df
+                            st.session_state['_wizard_income_multi'] = bool(_inc_summ.get('multi_account'))
+                            st.rerun()
                 except Exception as _ie:
                     st.session_state['_wizard_income_summary'] = None
                     st.session_state['_wizard_income_df'] = None
-                    st.warning(f"No pudimos leer el archivo de ingresos: {_ie}")
+                    st.error("No pudimos leer el archivo de ingresos.")
+                    st.caption(f"Detalle técnico: {_ie}")
         else:
             # Visible desde el inicio pero desactivado (se activa tras Posiciones)
             st.markdown(_da_block3_locked(), unsafe_allow_html=True)
@@ -1873,8 +1896,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     # ── Fila de KPIs: una fila por ETF de ingreso + TOTAL ──
                     _sum_sproj = sum((_d.get('schwab_proj') or 0) for _d in _proj.values())
                     _sum_oproj = sum((_d.get('our_proj') or 0) for _d in _proj.values())
-                    _diverg    = ((_sum_sproj / _sum_oproj - 1) * 100) if _sum_oproj > 0 else 0
-                    _div_color = '#e0a23c' if _diverg > 5 else ('#4caf82' if abs(_diverg) <= 5 else '#006497')
 
                     def _tip_for(kind, tot_s, tot_c):
                         # Tooltip adaptativo: intro fija + interpretación del Δ% TOTAL real.
@@ -2004,69 +2025,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 tc_has = True
                         return ts, (tc if tc_has else None)
 
-                    def _kpi_wide(groups):
-                        # groups: [(title, kind, accent_color, tip_r, rows), ...]
-                        # rows alineadas por índice al mismo orden de tickers (_items)
-                        totals = [_group_total(g[4]) for g in groups]
-
-                        ghead = '<div class="da-kpiwide-grouphead"><span></span>'
-                        for i, (_title, _kind, _color, _tipr, _rows) in enumerate(groups):
-                            ts, tcv = totals[i]
-                            tip = _tip_for(_kind, ts, tcv)
-                            box_cls = 'da-tip-box r' if _tipr else 'da-tip-box'
-                            ghead += (f'<span class="grp da-tip" style="border-bottom-color:{_color};">'
-                                      f'{_title}<span class="da-tip-i">i</span>'
-                                      f'<span class="{box_cls}">{tip}</span></span>')
-                        ghead += '</div>'
-
-                        sub = '<div class="da-kpiwide-subhead"><span class="lbl">ETF</span>'
-                        for _ in groups:
-                            sub += '<span>Calc</span><span>Δ%</span>'
-                        sub += '</div>'
-
-                        body = ''
-                        for r in range(len(groups[0][4])):
-                            cells = f'<span class="tk">{groups[0][4][r][0]}</span>'
-                            for _g in groups:
-                                _tk, _s, _c = _g[4][r]
-                                # Solo el valor de la calculadora; el Δ% sigue comparando contra Schwab (_s).
-                                cells += (f'<span class="num">{_fmt_money(_c)}</span>'
-                                          f'{_pct_html(_s, _c)}')
-                            body += f'<div class="da-kpiwide-row">{cells}</div>'
-
-                        trow = '<span class="tk">TOTAL</span>'
-                        for i in range(len(groups)):
-                            ts, tcv = totals[i]
-                            trow += (f'<span class="num">{_fmt_money(tcv)}</span>'
-                                     f'{_pct_html(ts, tcv)}')
-                        total = f'<div class="da-kpiwide-row da-kpiwide-total">{trow}</div>'
-
-                        return f'<div class="da-kpi-cell">{ghead}{sub}{body}{total}</div>'
-
                     _items = sorted(_proj.items(),
                                     key=lambda kv: (kv[1].get('schwab_received_12m') or 0), reverse=True)
-                    _rows_recv = [(_tk, _d.get('schwab_received_12m'), _d.get('our_received_12m'))
-                                  for _tk, _d in _items]
                     _rows_ann  = [(_tk, _d.get('schwab_proj'), _d.get('our_proj')) for _tk, _d in _items]
-                    _rows_mon  = [(_tk,
-                                   (_d.get('schwab_proj') or 0) / 12,
-                                   (_d.get('our_proj') / 12 if _d.get('our_proj') is not None else None))
-                                  for _tk, _d in _items]
                     _rows_hist = [(_tk, _d.get('schwab_received_total'), _d.get('our_received_total'))
                                   for _tk, _d in _items]
 
                     _da_section('Ingreso, ROC y comparación con el broker',
                                 'El número fino: lo recibido vs lo proyectado, tu Retorno de Capital por activo y por qué la proyección del broker suele estar inflada.')
-                    _inc_exp = st.expander('Ver detalle · tabla Schwab vs tu cálculo · ROC · gráfica de ingresos', expanded=False)
-                    _inc_exp.markdown(
-                        _kpi_wide([
-                            ('Total dividendos',   'hist', '#021C36',   False, _rows_hist),
-                            ('Últimos 12 meses',   'recv', '#006497',   False, _rows_recv),
-                            ('Proyectado anual',   'ann',  _div_color,  True,  _rows_ann),
-                            ('Proyectado mensual', 'mon',  '#4caf82',   True,  _rows_mon),
-                        ]),
-                        unsafe_allow_html=True
-                    )
+                    _inc_exp = st.expander('Ver detalle · tabla consolidada (Schwab vs tu cálculo · ROC) · gráfica de ingresos', expanded=False)
+                    # Las columnas "Últimos 12 meses" y "Proyectado mensual" se eliminaron y todo
+                    # (Total dividendos, ROC e inversión, Proyectado anual) se fundió en UNA sola
+                    # cuadrícula estilo ROC, que se renderiza más abajo (tras la gráfica y la justificación).
 
                     # ── Gráfica: proyección de ingreso mensual (Schwab vs cálculo), 12 meses ──
                     _inc_exp.markdown(
@@ -2188,7 +2158,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     def _roc_html(roc_acc, roc_pct, source=None, approx=False):
                         if roc_acc is None:
                             return '<span class="num" style="color:#b8c2cc;">n/d</span>'
-                        c = '#4caf82' if roc_acc > 0 else ('#e05c5c' if roc_acc < 0 else '#8899aa')
+                        # ROC NO se pinta de verde: un ROC alto no es "buen resultado" (es tu propio
+                        # capital de vuelta). Ámbar = señal de cautela; rojo si fuera negativo.
+                        c = '#c9821f' if roc_acc > 0 else ('#e05c5c' if roc_acc < 0 else '#8899aa')
                         _pct = f' ({roc_pct:.0f}%)' if roc_pct is not None else ''
                         _tilde = '~' if approx else ''
                         _tag = ''
@@ -2210,6 +2182,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             return '<span class="num" style="color:#b8c2cc;">n/d</span>'
                         c = '#e05c5c' if (pkt and mv < pkt) else '#0F172A'
                         return f'<span class="num" style="color:{c};">${mv:,.0f}</span>'
+
+                    def _money_delta(calc, schwab):
+                        # Celda "valor de la calculadora (Δ% vs Schwab)" inline, estilo ROC.
+                        if calc is None:
+                            return '<span class="num" style="color:#b8c2cc;">n/d</span>'
+                        base = f'${calc:,.0f}'
+                        if schwab is None or not calc:
+                            return f'<span class="num">{base}</span>'
+                        p = (schwab / calc - 1) * 100
+                        col = '#e0a23c' if p > 5 else ('#4caf82' if abs(p) <= 5 else '#006497')
+                        return (f'<span class="num">{base} '
+                                f'<span style="font-size:9px;font-weight:600;color:{col};">{p:+.0f}%</span></span>')
 
                     _ROC_TIP = (
                         '<b>ROC (Retorno de Capital)</b> es la parte de tus distribuciones que el fondo '
@@ -2234,24 +2218,33 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'<span class="da-tip-i">i</span>'
                                 f'<span class="{_bc}">{tip}</span></span>')
 
+                    # Totales para los tooltips adaptativos de Total div (hist) y Proy. anual (ann).
+                    _ts_hist, _tc_hist = _group_total(_rows_hist)
+                    _ts_ann, _tc_ann = _group_total(_rows_ann)
                     _roc_sub = (
                         '<div class="da-roc-subhead">'
-                        + _roc_th('ETF', 'El fondo o acción. Cada fila desglosa de dónde viene su ROC.', lbl=True)
-                        + _roc_th('Div. pagados', 'Lo que de verdad entró a tu cuenta: lo reinvertido más lo recibido en efectivo, ya <b>neto</b> de la retención de impuesto a extranjeros (NRA). Por eso es menor que el "Total dividendos" de arriba, que es el bruto antes de impuesto.')
-                        + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base.')
+                        + _roc_th('ETF', 'El fondo o acción. Cada fila desglosa de dónde viene su ingreso y su ROC.', lbl=True)
+                        + _roc_th('Total div.', _tip_for('hist', _ts_hist, _tc_hist))
+                        + _roc_th('Div. pagados', 'Lo que de verdad entró a tu cuenta: lo reinvertido más lo recibido en efectivo, ya <b>neto</b> de la retención de impuesto a extranjeros (NRA). Por eso es menor que <b>Total div.</b> (el bruto antes de impuesto).')
+                        + _roc_th('ROC', _ROC_TIP)
+                        + _roc_th('Reinvertidos', 'La parte de tus distribuciones que se reinvirtió comprando más acciones (DRIP). <b>Sube</b> tu costo base y queda dentro de <b>Valor actual</b>.')
                         + _roc_th('En efectivo', 'La parte de tus distribuciones que cobraste en efectivo, sin reinvertir.')
                         + _roc_th('Invertido', 'El dinero de <b>tu propio bolsillo</b> que metiste a comprar acciones, sin contar lo reinvertido. Si tu historial está <b>incompleto</b>, la app puede mostrar aquí el costo base del bróker en su lugar.', right=True)
                         + _roc_th('Costo bróker', 'La base de costo que tu bróker reporta hoy; el ROC ya la <b>redujo</b>. No restes esta columna con «Invertido» para sacar el ROC: con reinversión esa resta lo <b>subestima</b>, por eso el ROC viene del % oficial del fondo (avisos 19a, marcado <b>est.19a</b>).', right=True)
-                        + _roc_th('Valor actual', 'Cuánto vale hoy tu posición. En <b>rojo</b> si vale menos que lo invertido: señal de erosión del NAV.', right=True)
-                        + _roc_th('ROC', _ROC_TIP, right=True)
+                        + _roc_th('Valor actual', 'Cuánto vale hoy tu posición (ya <b>incluye el DRIP</b>: las acciones compradas por reinversión están dentro). En <b>rojo</b> si vale menos que lo invertido: señal de erosión del NAV.', right=True)
+                        + _roc_th('Proy. anual', _tip_for('ann', _ts_ann, _tc_ann), right=True)
                         + '</div>'
                     )
                     _roc_body = ''
                     _r_paid = _r_drip = _r_cash = _r_pkt = _r_mv = 0.0
                     _r_basis = _r_roc = _r_dist_for_roc = 0.0
                     _r_basis_has = _r_roc_has = _r_any_19a = False
-                    for _tk, _ in _items:
+                    for _tk, _d in _items:
                         _rs = results.get(_tk, {})
+                        _tot_div   = _d.get('our_received_total')      # bruto (antes de NRA)
+                        _tot_div_s = _d.get('schwab_received_total')
+                        _proy      = _d.get('our_proj')
+                        _proy_s    = _d.get('schwab_proj')
                         _paid = _rs.get('total_dividends')
                         _drip = _rs.get('dividends_collected_drip')
                         _cash = _rs.get('dividends_collected_cash')
@@ -2271,13 +2264,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             if _asof and (_roc_19a_asof is None or _asof < _roc_19a_asof):
                                 _roc_19a_asof = _asof
                         _roc_body += (f'<div class="da-roc-row"><span class="tk">{_tk}</span>'
+                                      f'{_money_delta(_tot_div, _tot_div_s)}'
                                       f'<span class="num">{_fmt_money(_paid)}</span>'
+                                      f'{_roc_html(_roc_a, _roc_p, _roc_src, _roc_approx)}'
                                       f'<span class="num">{_fmt_money(_drip)}</span>'
                                       f'<span class="num">{_fmt_money(_cash)}</span>'
                                       f'<span class="num">{_fmt_money(_pkt)}</span>'
                                       f'<span class="num">{_fmt_money(_basis)}</span>'
                                       f'{_val_html(_mv, _pkt)}'
-                                      f'{_roc_html(_roc_a, _roc_p, _roc_src, _roc_approx)}</div>')
+                                      f'{_money_delta(_proy, _proy_s)}</div>')
                         _r_paid += (_paid or 0); _r_drip += (_drip or 0); _r_cash += (_cash or 0)
                         _r_pkt += (_pkt or 0); _r_mv += (_mv or 0)
                         if _basis is not None:
@@ -2291,20 +2286,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _r_roc_disp = _r_roc if _r_roc_has else None
                     _r_roc_pct = (_r_roc / _r_dist_for_roc * 100) if _r_dist_for_roc > 0 else None
                     _roc_total = ('<div class="da-roc-row da-roc-total"><span class="tk">TOTAL</span>'
+                                  f'{_money_delta(_tc_hist, _ts_hist)}'
                                   f'<span class="num">{_fmt_money(_r_paid)}</span>'
+                                  f'{_roc_html(_r_roc_disp, _r_roc_pct, "19a" if _r_any_19a else None)}'
                                   f'<span class="num">{_fmt_money(_r_drip)}</span>'
                                   f'<span class="num">{_fmt_money(_r_cash)}</span>'
                                   f'<span class="num">{_fmt_money(_r_pkt)}</span>'
                                   f'<span class="num">{_fmt_money(_r_basis_disp)}</span>'
                                   f'{_val_html(_r_mv, _r_pkt)}'
-                                  f'{_roc_html(_r_roc_disp, _r_roc_pct, "19a" if _r_any_19a else None)}</div>')
+                                  f'{_money_delta(_tc_ann, _ts_ann)}</div>')
                     _inc_exp.markdown(
                         '<div style="margin:14px 0 2px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
-                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Retorno de Capital (ROC) por activo</p>'
+                        'font-weight:800;color:#021C36;margin:0 0 2px 0;">Ingreso, ROC y comparación con Schwab — consolidado</p>'
                         '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 8px 0;line-height:1.6;">'
-                        'Pasa el cursor por el ícono <span style="font-size:9px;font-weight:700;color:#fff;'
-                        'background:#94a3b8;padding:0 4px;">i</span> de cada columna (sobre todo <b>ROC</b>) para ver qué '
-                        'significa y cómo se calcula.</p></div>',
+                        'Una sola cuadrícula: <b>Total div.</b> (bruto, con su Δ% vs Schwab) → <b>Div. pagados</b> (neto) → '
+                        '<b>ROC</b> a su lado, y al final la <b>Proyección anual</b>. Pasa el cursor por el ícono '
+                        '<span style="font-size:9px;font-weight:700;color:#fff;background:#94a3b8;padding:0 4px;">i</span> '
+                        'de cada columna (sobre todo <b>ROC</b>) para ver qué significa y cómo se calcula.</p></div>',
                         unsafe_allow_html=True
                     )
                     _inc_exp.markdown(
@@ -3045,48 +3043,21 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 # ── Consolidado: Dividendos vs Crecimiento ──────────────
                 import pandas as pd
 
-                _comb_inv  = _cmp_a_inv + _cmp_b_inv
-                _comb_val  = _cmp_a_mv  + _cmp_b_mv
-                _comb_div  = _cmp_a_div + _cmp_b_div
-                _comb_gain = _cmp_a_tr  + _cmp_b_tr
-                _comb_pct  = _comb_gain / _comb_inv * 100 if _comb_inv > 0 else 0
-                _comb_color = "#4caf82" if _comb_pct >= 0 else "#e05c5c"
+                _comb_val = _cmp_a_mv + _cmp_b_mv
 
-                _a_share = _cmp_a_inv / _comb_inv * 100 if _comb_inv > 0 else 0
-                _b_share = _cmp_b_inv / _comb_inv * 100 if _comb_inv > 0 else 0
-
-                _a_tickers_detail = [
-                    (t, s['pocket_investment'] / _cmp_a_inv * 100)
-                    for t, s in sorted(_cmp_a_rows, key=lambda x: x[1]['pocket_investment'], reverse=True)
-                ] if _cmp_a_inv > 0 else []
-                _b_tickers_detail = [
-                    (t, s['pocket_investment'] / _cmp_b_inv * 100)
-                    for t, s in sorted(_cmp_b_rows, key=lambda x: x[1]['pocket_investment'], reverse=True)
-                ] if _cmp_b_inv > 0 else []
-
-                # Alturas idénticas: la zona de tickers reserva el alto del bloque con MÁS tickers,
-                # así ambas tarjetas terminan en la misma línea base aunque tengan distinto nº de tickers.
-                _tk_minh = max(len(_a_tickers_detail), len(_b_tickers_detail), 1) * 23
-
-                def _ticker_rows(tickers_detail):
-                    return ''.join(
-                        f'<div style="display:flex;justify-content:space-between;padding:3px 0;'
-                        f'border-bottom:1px solid rgba(0,0,0,0.06);">'
-                        f'<span style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#021C36;">{t}</span>'
-                        f'<span style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;">{pct:.1f}%</span>'
-                        f'</div>'
-                        for t, pct in tickers_detail
-                    )
+                # Participación referida al VALOR de todo el portafolio (market value), no a lo invertido.
+                _a_share = _cmp_a_mv / _comb_val * 100 if _comb_val > 0 else 0
+                _b_share = _cmp_b_mv / _comb_val * 100 if _comb_val > 0 else 0
 
                 _da_section("Distribución de tu capital",
-                            "Cómo se reparte tu capital entre Dividendos y Crecimiento. El rendimiento comparado de ambos va en la gráfica de la sección siguiente.")
+                            "Qué parte del VALOR de hoy de tu portafolio está en Dividendos y qué parte en Crecimiento. El rendimiento comparado de ambos va en la gráfica de la sección siguiente.")
 
-                # ── Pie chart de asignación del capital (dividendos vs crecimiento, por ETF) ──
+                # ── Pie chart de asignación por VALOR de mercado (dividendos vs crecimiento, por ETF) ──
                 import altair as alt
                 import pandas as pd
-                _pie_rows = ([{'ETF': t, 'Grupo': 'Dividendos', 'Capital': (s.get('pocket_investment') or 0)}
+                _pie_rows = ([{'ETF': t, 'Grupo': 'Dividendos', 'Capital': (s.get('market_value') or 0)}
                               for t, s in _cmp_a_rows]
-                             + [{'ETF': t, 'Grupo': 'Crecimiento', 'Capital': (s.get('pocket_investment') or 0)}
+                             + [{'ETF': t, 'Grupo': 'Crecimiento', 'Capital': (s.get('market_value') or 0)}
                                 for t, s in _cmp_b_rows])
                 _pie_df = pd.DataFrame([r for r in _pie_rows if r['Capital'] > 0])
                 if not _pie_df.empty:
@@ -3101,8 +3072,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             legend=alt.Legend(title=None, orient='top', labelFontSize=12)),
                         tooltip=[alt.Tooltip('ETF:N', title='ETF'),
                                  alt.Tooltip('Grupo:N', title='Portafolio'),
-                                 alt.Tooltip('Capital:Q', format='$,.0f', title='Invertido'),
-                                 alt.Tooltip('Pct:Q', format='.1f', title='% del capital')])
+                                 alt.Tooltip('Capital:Q', format='$,.0f', title='Valor de mercado'),
+                                 alt.Tooltip('Pct:Q', format='.1f', title='% del portafolio')])
                     _pie_arc = _pie_base.mark_arc(innerRadius=68, stroke='#fcf9f8', strokeWidth=2)
                     _pie_txt = _pie_base.mark_text(radius=112, fontSize=11,
                                                    font='Inter, system-ui, sans-serif').encode(
@@ -3115,10 +3086,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         '<div style="display:flex;justify-content:center;gap:28px;margin:-6px 0 4px 0;">'
                         '<span style="font-family:Inter,sans-serif;font-size:12px;color:#021C36;">'
                         '<span style="display:inline-block;width:9px;height:9px;background:#006497;margin-right:6px;vertical-align:middle;"></span>'
-                        f'Dividendos <b>{_a_share:.0f}%</b> · ${_cmp_a_inv:,.0f}</span>'
+                        f'Dividendos <b>{_a_share:.0f}%</b> · ${_cmp_a_mv:,.0f}</span>'
                         '<span style="font-family:Inter,sans-serif;font-size:12px;color:#021C36;">'
                         '<span style="display:inline-block;width:9px;height:9px;background:#2d3748;margin-right:6px;vertical-align:middle;"></span>'
-                        f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_inv:,.0f}</span>'
+                        f'Crecimiento <b>{_b_share:.0f}%</b> · ${_cmp_b_mv:,.0f}</span>'
                         '</div>',
                         unsafe_allow_html=True)
 
