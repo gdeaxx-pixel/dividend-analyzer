@@ -17,6 +17,7 @@ _LOGIC_SENTINELS = (
     "load_roc_19a", "project_portfolio_forward", "build_portfolio_verdict",
     "monte_carlo_projection", "build_factor_concentration", "build_underlying_exposure",
     "nra_tax_breakdown", "build_risk_analysis", "build_interpretation",
+    "classify_roc_health", "load_roc_health_history",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
@@ -2935,6 +2936,57 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f"**{_tk}** — yield portada {_e['forward_yield']:.0f}% · "
                                     f"total return honesto {('%+.0f%%' % _htr) if _htr is not None else 'n/d'} "
                                     f"a {_p_hz} año(s) · {_be_txt}{_roc_txt}")
+                                # Veredicto de salud del NAV: ¿el ROC es destructivo o contable?
+                                _rs = results.get(_tk, {}) or {}
+                                _asof_days = None
+                                _r19 = logic.load_roc_19a().get(str(_tk).upper())
+                                if _r19 and _r19.get('asof'):
+                                    try:
+                                        _asof_days = (datetime.date.today()
+                                                      - datetime.date.fromisoformat(_r19['asof'])).days
+                                    except Exception:
+                                        _asof_days = None
+                                _verdict = logic.classify_roc_health(
+                                    roc_pct=_roc,
+                                    price_cagr=(_rs.get('price_cagr_recent')
+                                                if _rs.get('price_cagr_recent') is not None
+                                                else _rs.get('price_cagr')),
+                                    total_return_pct=_htr,
+                                    history_days=_rs.get('price_history_days'),
+                                    roc_asof_days=_asof_days)
+                                _vreason = _verdict['reason']
+                                if _verdict['verdict'] == 'destructive':
+                                    _u = _rs.get('underlying_cagr_recent')
+                                    _f = _rs.get('price_cagr_recent')
+                                    _und = _rs.get('underlying_ticker')
+                                    if _u is not None and _f is not None and _und:
+                                        _vreason += (f" En 12m el NAV de {_tk} hizo {_f:+.0f}% mientras "
+                                                     f"{str(_und).upper()} hizo {_u:+.0f}%.")
+                                st.markdown(
+                                    f"<div style='margin:4px 0 8px 0;'>"
+                                    f"<span style='background:{_verdict['color']};color:#fff;"
+                                    f"font-size:11px;font-weight:700;letter-spacing:.5px;"
+                                    f"padding:3px 9px;border-radius:0;'>{_verdict['label']}</span>"
+                                    f"<span style='font-size:12.5px;color:#333;margin-left:8px;'>"
+                                    f"{_vreason}</span></div>",
+                                    unsafe_allow_html=True)
+                                # Evolución histórica del veredicto (se llena semanal vía el Action).
+                                _vh = logic.load_roc_health_history().get(str(_tk).upper()) or []
+                                if len(_vh) >= 2:
+                                    _vhdf = pd.DataFrame(_vh)
+                                    _vhdf['date'] = pd.to_datetime(_vhdf['date'])
+                                    _vlabels = {'destructive': 'Destructivo', 'accounting': 'Contable',
+                                                'mixed': 'Vigilar', 'insufficient': 'Sin datos'}
+                                    _vhdf['Veredicto'] = _vhdf['verdict'].map(_vlabels).fillna(_vhdf['verdict'])
+                                    _vchart = alt.Chart(_vhdf).mark_line(point=True, color='#8a8f98').encode(
+                                        x=alt.X('date:T', title='Fecha'),
+                                        y=alt.Y('price_cagr:Q', title='NAV %/año'),
+                                        color=alt.Color('Veredicto:N', scale=alt.Scale(
+                                            domain=['Destructivo', 'Contable', 'Vigilar', 'Sin datos'],
+                                            range=['#e05c5c', '#4caf82', '#e0a23c', '#8a8f98'])),
+                                        tooltip=['date:T', 'Veredicto:N', 'roc_pct:Q', 'price_cagr:Q'],
+                                    ).properties(height=130)
+                                    st.altair_chart(_vchart, use_container_width=True)
                                 _exp = logic.build_underlying_exposure(results, _tk)
                                 if _exp['lines']:
                                     st.markdown(

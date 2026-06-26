@@ -1334,11 +1334,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # la proyección prefiere el reciente para no extrapolar una caída vieja como eterna.
         _price_cagr = None
         _price_cagr_recent = None
+        _price_history_days = None     # cuántos días de NAV observamos (guarda anti falso-veredicto)
         try:
             _close = market_data['Close'] if 'Close' in market_data.columns else None
             if _close is not None:
                 _price_cagr = _annualized_cagr(_close)
                 _price_cagr_recent = _annualized_cagr(_close, days=365)
+                _cc = _close.dropna()
+                if len(_cc) >= 2:
+                    _price_history_days = int((_cc.index[-1] - _cc.index[0]).days)
         except Exception:
             pass
 
@@ -1424,6 +1428,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "withheld_tax_total": _withheld,
             "price_cagr":        _price_cagr,
             "price_cagr_recent": _price_cagr_recent,
+            "price_history_days": _price_history_days,
             "cadence_change":    _cadence_change,
             "underlying_ticker": _underlying_tk,
             "underlying_cagr_recent": _underlying_cagr_recent,
@@ -2291,6 +2296,34 @@ def load_roc_19a() -> dict:
     return data
 
 
+_ROCHEALTH_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_health_history.yaml')
+_ROCHEALTH_CACHE = {}
+
+
+def load_roc_health_history() -> dict:
+    """Carga el histórico del veredicto de salud del NAV por fondo
+    (knowledge/roc_health_history.yaml), generado semanalmente por snapshot_roc_health.py.
+
+    Estructura por ticker (MAYÚSCULAS): [{date, verdict, roc_pct, price_cagr}].
+    Defensivo: archivo ausente/ inválido → {}.
+    """
+    if _ROCHEALTH_CACHE.get('_loaded'):
+        return _ROCHEALTH_CACHE['data']
+    data = {}
+    if _yaml is not None:
+        try:
+            with open(_ROCHEALTH_PATH, 'r', encoding='utf-8') as fh:
+                raw = _yaml.safe_load(fh) or {}
+            if isinstance(raw, dict):
+                data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, list)}
+        except Exception:
+            data = {}
+    _ROCHEALTH_CACHE['_loaded'] = True
+    _ROCHEALTH_CACHE['data'] = data
+    return data
+
+
 def _estimate_roc_from_19a(ticker, dist_dated):
     """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
 
@@ -2328,6 +2361,107 @@ def _estimate_roc_from_19a(ticker, dist_dated):
             return None, None
         roc_sum += amt * (pct / 100.0)
     return roc_sum, (roc_sum / total * 100.0)
+
+
+# ── Veredicto de salud del NAV: ¿el ROC es destructivo o contable? ───────────
+# Umbrales del clasificador. La VERDAD sobre destructividad es la tendencia del NAV
+# (price_cagr) + el total return honesto, NO el % del aviso 19a (que salta entre 0% y
+# 99% por motivos fiscales). El 19a solo dice cuánta de la distribución se cataloga
+# como ROC; si ese ROC es alto Y el NAV cae Y el total return ≤0, entonces te están
+# devolviendo tu propio capital (destructivo). Si el NAV aguanta/sube, es contable.
+ROC_HEALTH_HIGH_PCT     = 50.0   # ROC ≥ esto = "alto" (gran parte de la distribución es capital)
+ROC_HEALTH_NAV_FLAT_PCT = 2.0    # |price_cagr| ≤ esto = NAV prácticamente plano
+ROC_HEALTH_MIN_DAYS     = 180    # < esto de historia de precio = no se puede afirmar nada
+ROC_HEALTH_STALE_DAYS   = 45     # aviso 19a más viejo que esto = dato desactualizado
+
+_ROC_HEALTH_COLORS = {
+    'destructive':  '#e05c5c',   # rojo
+    'accounting':   '#4caf82',   # verde
+    'mixed':        '#e0a23c',   # ámbar
+    'insufficient': '#8a8f98',   # gris
+}
+_ROC_HEALTH_LABELS = {
+    'destructive':  'ROC DESTRUCTIVO',
+    'accounting':   'ROC CONTABLE',
+    'mixed':        'VIGILAR',
+    'insufficient': 'DATOS INSUFICIENTES',
+}
+
+
+def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
+                        history_days=None, roc_asof_days=None) -> dict:
+    """Veredicto único de salud del NAV de un YieldMax. Función PURA y testeable.
+
+    Parámetros (todos numéricos, None si no disponibles):
+      roc_pct          % de la distribución catalogado como ROC (19a o broker).
+      price_cagr       CAGR de precio observado (= erosión/apreciación del NAV), %.
+                       Pasar el reciente (12m) si existe; si no, el de toda la ventana.
+      total_return_pct Total return honesto (precio + income), % — opcional, prioritario.
+      history_days     días de historia de precio observada (guarda anti falso-veredicto).
+      roc_asof_days    antigüedad en días del dato 19a (guarda de frescura).
+
+    Devuelve {'verdict','label','color','reason'} con
+    verdict ∈ {'destructive','accounting','mixed','insufficient'}.
+    """
+    def _out(v, reason):
+        return {'verdict': v, 'label': _ROC_HEALTH_LABELS[v],
+                'color': _ROC_HEALTH_COLORS[v], 'reason': reason}
+
+    # ── Guarda de confianza: sin datos suficientes no se emite veredicto ──
+    if roc_pct is None or price_cagr is None:
+        return _out('insufficient',
+                    "Faltan datos de ROC o del precio del fondo para emitir un veredicto.")
+    if history_days is not None and history_days < ROC_HEALTH_MIN_DAYS:
+        return _out('insufficient',
+                    f"Historia muy corta (~{int(history_days)} días): no se puede afirmar "
+                    f"erosión de NAV a ciencia cierta. Se necesitan ≥{ROC_HEALTH_MIN_DAYS} días.")
+    if roc_asof_days is not None and roc_asof_days > ROC_HEALTH_STALE_DAYS:
+        return _out('insufficient',
+                    f"El dato de ROC (19a) tiene ~{int(roc_asof_days)} días: está "
+                    f"desactualizado para juzgar el estado actual del fondo.")
+
+    # La VERDAD sobre destructividad es la tendencia del NAV (señal PRIMARIA). El total
+    # return solo MATIZA — si tu income compensó la erosión, sigue siendo ROC destructivo
+    # al NAV, solo que aún vas arriba (pero la distribución futura tiende a bajar).
+    roc_high    = roc_pct >= ROC_HEALTH_HIGH_PCT
+    nav_falling = price_cagr < -ROC_HEALTH_NAV_FLAT_PCT
+    nav_rising  = price_cagr >  ROC_HEALTH_NAV_FLAT_PCT
+    tr_pos = total_return_pct is not None and total_return_pct > 0
+    tr_neg = total_return_pct is not None and total_return_pct <= 0
+
+    nav_txt = f"el NAV {'cae' if nav_falling else 'sube' if nav_rising else 'está plano'} ({price_cagr:+.0f}%/año)"
+    tr_txt  = (f" El total return honesto es {total_return_pct:+.0f}%." if total_return_pct is not None else "")
+    tr_nuance = (" Aun así tu income ha más que compensado la erosión, pero el NAV sigue "
+                 "encogiendo y la distribución futura tiende a bajar." if tr_pos else "")
+
+    # ── NAV cae ──
+    if nav_falling:
+        if roc_high:
+            return _out('destructive',
+                        f"{nav_txt[0].upper()+nav_txt[1:]} y el {roc_pct:.0f}% de la distribución es "
+                        f"ROC: el fondo se sostiene devolviéndote tu propio capital — erosión del NAV."
+                        f"{tr_nuance or tr_txt}")
+        if tr_neg:
+            return _out('destructive',
+                        f"{nav_txt[0].upper()+nav_txt[1:]}{tr_txt} Aunque el ROC reportado sea "
+                        f"{roc_pct:.0f}%, el precio se erosiona y el total return es negativo.")
+        # ROC bajo + NAV cae + (TR positivo o desconocido): la caída viene más del subyacente
+        return _out('mixed',
+                    f"{nav_txt[0].upper()+nav_txt[1:]} pero solo el {roc_pct:.0f}% es ROC: la caída "
+                    f"viene más del subyacente que de devolución de capital.{tr_nuance or tr_txt} Vigílalo.")
+
+    # ── NAV sube o plano ──
+    if nav_rising or tr_pos:
+        extra = (f" El {roc_pct:.0f}% catalogado como ROC es clasificación fiscal, no pérdida de capital."
+                 if roc_high else "")
+        return _out('accounting',
+                    f"{nav_txt[0].upper()+nav_txt[1:]}{tr_txt} El ROC es contable (pass-through), "
+                    f"no destructivo: tu capital no se está erosionando.{extra}")
+
+    # ── NAV plano sin señal de total return ──
+    return _out('mixed',
+                f"{nav_txt[0].upper()+nav_txt[1:]}, con {roc_pct:.0f}% de ROC.{tr_txt} Ni claramente "
+                f"destructivo ni claramente sano — conviene seguirlo mes a mes.")
 
 
 def get_yieldmax_risk_profile(ticker: str) -> dict:

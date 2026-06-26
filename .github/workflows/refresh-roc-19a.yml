@@ -1,8 +1,10 @@
 name: Refresh ROC 19a data
 
 # Refresca knowledge/roc_19a.yaml con el % de Retorno de Capital que YieldMax publica
-# por distribución (la página cambia cada semana). Corre fetch_roc_19a.py contra la fuente
-# oficial y commitea si hubo cambios → Streamlit Cloud redespliega con el dato fresco.
+# por distribución (la página cambia cada semana) y registra el veredicto de salud del NAV
+# (ROC destructivo vs contable) en knowledge/roc_health_history.yaml. Commitea si hubo
+# cambios → Streamlit Cloud redespliega con el dato fresco. Avisa por TELEGRAM si el parser
+# se rompe o si algún fondo cambia de veredicto (Daniel casi no revisa el correo).
 
 on:
   schedule:
@@ -10,7 +12,7 @@ on:
   workflow_dispatch: {}       # disparo manual
 
 permissions:
-  contents: write             # para commitear roc_19a.yaml (usa el GITHUB_TOKEN, sin secretos)
+  contents: write             # para commitear los YAML (usa el GITHUB_TOKEN, sin secretos)
 
 concurrency:
   group: refresh-roc-19a
@@ -29,24 +31,56 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install playwright beautifulsoup4 pandas pyyaml
+          # requirements.txt: lo necesita snapshot_roc_health.py (importa logic → yfinance, pandas…).
+          pip install -r requirements.txt
+          pip install playwright beautifulsoup4
           python -m playwright install --with-deps chromium
 
       - name: Refrescar ROC 19a desde YieldMax
         id: fetch
         run: python fetch_roc_19a.py
         # exit 1 solo si un fondo que tenía datos los perdió (regresión) → la corrida sale roja
-        # y GitHub te manda email. Los datos buenos ya se escribieron antes de salir.
+        # y dispara el aviso de Telegram (paso "Avisar por Telegram si el parser se rompió").
+
+      - name: Registrar veredicto de salud del NAV
+        if: always()              # corre aunque fetch marcara regresión (los datos buenos ya se escribieron)
+        continue-on-error: true   # un tropiezo aquí no debe bloquear el commit ni los avisos
+        run: python snapshot_roc_health.py
 
       - name: Commitear si cambió
-        if: always()          # commitea lo bueno aunque el paso anterior marcara regresión
+        if: always()
         run: |
-          if git diff --quiet -- knowledge/roc_19a.yaml; then
-            echo "Sin cambios en knowledge/roc_19a.yaml"
+          git add knowledge/roc_19a.yaml knowledge/roc_health_history.yaml
+          if git diff --cached --quiet; then
+            echo "Sin cambios en los YAML de conocimiento."
           else
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add knowledge/roc_19a.yaml
-            git commit -m "chore: refresh ROC 19a data (automated)"
+            git commit -m "chore: refresh ROC 19a + veredicto salud NAV (automated)"
             git push
           fi
+
+      - name: Avisar por Telegram si el parser se rompió
+        if: failure()             # fetch_roc_19a.py salió con error (probable cambio en la página de YieldMax)
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Sin secrets de Telegram, omito."; exit 0; fi
+          RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="⚠️ <b>Dividend Analyzer</b>: el scraper de ROC 19a falló (¿cambió la página de YieldMax?). Revisa el parser/página. Run: ${RUN}"
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d chat_id="${CHAT}" -d parse_mode=HTML --data-urlencode "text=${MSG}" >/dev/null
+
+      - name: Avisar por Telegram si cambió un veredicto
+        if: always()              # independiente del éxito/fallo del fetch
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ ! -s roc_health_alerts.txt ]; then echo "Sin cambios de veredicto."; exit 0; fi
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Sin secrets de Telegram, omito."; exit 0; fi
+          BODY=$(cat roc_health_alerts.txt)
+          MSG=$(printf '📊 <b>Dividend Analyzer — cambio de salud del NAV</b>\n\n%s' "$BODY")
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d chat_id="${CHAT}" -d parse_mode=HTML --data-urlencode "text=${MSG}" >/dev/null

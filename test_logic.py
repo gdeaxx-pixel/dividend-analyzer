@@ -1605,3 +1605,63 @@ def test_forward_yield_not_stale_when_recent():
     hist = pd.DataFrame(rows); hist['Date'] = pd.to_datetime(hist['Date'])
     fy = logic.forward_realized_yield(hist, market_value=1000, today='2026-06-01')
     assert fy['stale'] is False and fy['forward_yield'] is not None
+
+
+# ── Veredicto de salud del NAV (ROC destructivo vs contable) ───────────────────
+
+def test_roc_health_destructive_high_roc_nav_falling():
+    v = logic.classify_roc_health(roc_pct=95, price_cagr=-40, total_return_pct=-25, history_days=400)
+    assert v["verdict"] == "destructive"
+    assert "DESTRUCTIVO" in v["label"]
+
+
+def test_roc_health_destructive_low_roc_but_nav_collapses():
+    # ROC bajo, pero el NAV cae fuerte y el total return es negativo -> sigue siendo destructivo.
+    v = logic.classify_roc_health(roc_pct=10, price_cagr=-30, total_return_pct=-15, history_days=400)
+    assert v["verdict"] == "destructive"
+
+
+def test_roc_health_accounting_high_roc_nav_rising():
+    # ROC alto pero el NAV sube y el total return es positivo -> contable (pass-through).
+    v = logic.classify_roc_health(roc_pct=80, price_cagr=12, total_return_pct=20, history_days=400)
+    assert v["verdict"] == "accounting"
+    assert "CONTABLE" in v["label"]
+
+
+def test_roc_health_accounting_positive_total_return_flat_nav():
+    v = logic.classify_roc_health(roc_pct=60, price_cagr=0.5, total_return_pct=8, history_days=400)
+    assert v["verdict"] == "accounting"
+
+
+def test_roc_health_mixed_flat_nav_no_signal():
+    v = logic.classify_roc_health(roc_pct=55, price_cagr=-0.5, total_return_pct=None, history_days=400)
+    assert v["verdict"] == "mixed"
+
+
+def test_roc_health_insufficient_missing_inputs():
+    assert logic.classify_roc_health(roc_pct=None, price_cagr=-40)["verdict"] == "insufficient"
+    assert logic.classify_roc_health(roc_pct=90, price_cagr=None)["verdict"] == "insufficient"
+
+
+def test_roc_health_insufficient_short_history():
+    # Fondo joven: aunque parezca destructivo, no hay historia para afirmarlo.
+    v = logic.classify_roc_health(roc_pct=95, price_cagr=-50, total_return_pct=-30, history_days=60)
+    assert v["verdict"] == "insufficient"
+    assert "corta" in v["reason"].lower()
+
+
+def test_roc_health_insufficient_stale_19a():
+    v = logic.classify_roc_health(roc_pct=95, price_cagr=-40, total_return_pct=-25,
+                                  history_days=400, roc_asof_days=120)
+    assert v["verdict"] == "insufficient"
+    assert "desactualizado" in v["reason"].lower()
+
+
+def test_roc_health_always_has_color_and_label():
+    for v in (
+        logic.classify_roc_health(95, -40, -25, history_days=400),
+        logic.classify_roc_health(80, 12, 20, history_days=400),
+        logic.classify_roc_health(55, -0.5, None, history_days=400),
+        logic.classify_roc_health(None, None),
+    ):
+        assert v["color"].startswith("#") and v["label"] and v["reason"]

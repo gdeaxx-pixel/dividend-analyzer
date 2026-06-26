@@ -51,3 +51,6 @@ knowledge/portfolio.yaml
 # Captura de casos de estudio (generados, privados — NO versionar)
 captured_cases.py
 .capture_local/
+
+# Aviso efímero del Action de salud del NAV (no versionar)
+roc_health_alerts.txt
