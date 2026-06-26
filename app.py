@@ -2962,13 +2962,45 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     if _u is not None and _f is not None and _und:
                                         _vreason += (f" En 12m el NAV de {_tk} hizo {_f:+.0f}% mientras "
                                                      f"{str(_und).upper()} hizo {_u:+.0f}%.")
+                                # Capa SIMPLE: titular + medidor Sano↔Destruyéndose + explicación llana.
+                                _score = _verdict.get('gauge_score')
+                                if _score is None:
+                                    _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
+                                                   "font-size:10px;text-align:center;line-height:14px;'>"
+                                                   "no medible aún</div>")
+                                else:
+                                    _gauge_html = (
+                                        "<div style='position:relative;height:14px;margin:6px 0 2px 0;"
+                                        "background:linear-gradient(90deg,#4caf82 0%,#e0a23c 50%,#e05c5c 100%);'>"
+                                        f"<div style='position:absolute;top:-3px;left:{_score:.0f}%;width:3px;"
+                                        "height:20px;background:#021C36;transform:translateX(-50%);'></div></div>"
+                                        "<div style='display:flex;justify-content:space-between;font-size:10px;"
+                                        "color:#888;'><span>Sano</span><span>Destruyéndose</span></div>")
                                 st.markdown(
-                                    f"<div style='margin:4px 0 8px 0;'>"
-                                    f"<span style='background:{_verdict['color']};color:#fff;"
-                                    f"font-size:11px;font-weight:700;letter-spacing:.5px;"
-                                    f"padding:3px 9px;border-radius:0;'>{_verdict['label']}</span>"
-                                    f"<span style='font-size:12.5px;color:#333;margin-left:8px;'>"
-                                    f"{_vreason}</span></div>",
+                                    f"<div style='margin:6px 0 2px 0;font-weight:700;font-size:15px;"
+                                    f"color:{_verdict['color']};'>{_verdict['headline']}</div>"
+                                    f"{_gauge_html}"
+                                    f"<div style='font-size:12.5px;color:#333;margin:6px 0 2px 0;"
+                                    f"line-height:1.5;'>{_verdict['plain']}</div>",
+                                    unsafe_allow_html=True)
+                                # Capa TÉCNICA: detalle con los números, plegado. Se usa <details> HTML
+                                # (no st.expander) porque esta sección YA vive dentro de un expander
+                                # y Streamlit no permite expanders anidados.
+                                _navc = _rs.get('price_cagr_recent')
+                                if _navc is None:
+                                    _navc = _rs.get('price_cagr')
+                                _nums = []
+                                if _navc is not None: _nums.append(f"NAV {_navc:+.0f}%/año")
+                                if _roc is not None:  _nums.append(f"ROC {_roc:.0f}%")
+                                if _htr is not None:  _nums.append(f"total return honesto {_htr:+.0f}%")
+                                st.markdown(
+                                    "<details style='margin:2px 0 8px 0;'>"
+                                    "<summary style='cursor:pointer;font-size:12px;color:#006497;'>"
+                                    "Ver detalle técnico</summary>"
+                                    + (f"<div style='font-size:12px;color:#666;margin:4px 0;'>"
+                                       f"{' · '.join(_nums)}</div>" if _nums else "")
+                                    + f"<div style='font-size:12.5px;color:#333;line-height:1.5;'>"
+                                      f"{_vreason}</div></details>",
                                     unsafe_allow_html=True)
                                 # Evolución histórica del veredicto (se llena semanal vía el Action).
                                 _vh = logic.load_roc_health_history().get(str(_tk).upper()) or []

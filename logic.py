@@ -2386,6 +2386,25 @@ _ROC_HEALTH_LABELS = {
     'mixed':        'VIGILAR',
     'insufficient': 'DATOS INSUFICIENTES',
 }
+# Titular humano (capa simple, visible para cualquiera; el `reason` técnico va en el desplegable).
+_ROC_HEALTH_HEADLINES = {
+    'destructive':  '🔴 Tu capital se está encogiendo',
+    'accounting':   '🟢 Tu capital está sano',
+    'mixed':        '🟡 Señales mezcladas — vigílalo',
+    'insufficient': '⚪ Aún no se puede medir',
+}
+_PLAIN_INSUFFICIENT = ("Todavía no hay suficiente historia (o el dato está viejo) para decir con "
+                       "certeza si tu capital se está erosionando. Vuelve a revisar cuando el fondo "
+                       "tenga más recorrido o se actualice el dato.")
+
+
+def _roc_health_gauge(price_cagr):
+    """Posición 0–100 en el medidor 'Sano ↔ Destruyéndose' a partir del CAGR del NAV.
+    0 = sano (NAV +10%/año o mejor), 100 = destruyéndose (NAV −50%/año o peor). None si no hay dato."""
+    if price_cagr is None:
+        return None
+    score = (10.0 - float(price_cagr)) / 60.0 * 100.0
+    return round(max(0.0, min(100.0, score)), 1)
 
 
 def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
@@ -2400,25 +2419,32 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
       history_days     días de historia de precio observada (guarda anti falso-veredicto).
       roc_asof_days    antigüedad en días del dato 19a (guarda de frescura).
 
-    Devuelve {'verdict','label','color','reason'} con
+    Devuelve {'verdict','label','color','reason','headline','plain','gauge_score'} con
     verdict ∈ {'destructive','accounting','mixed','insufficient'}.
+    - reason: detalle TÉCNICO (para el desplegable). - headline/plain: capa SIMPLE.
+    - gauge_score: 0 (sano) … 100 (destruyéndose), None si 'insufficient'.
     """
-    def _out(v, reason):
-        return {'verdict': v, 'label': _ROC_HEALTH_LABELS[v],
-                'color': _ROC_HEALTH_COLORS[v], 'reason': reason}
+    def _out(v, reason, plain):
+        gauge = None if v == 'insufficient' else _roc_health_gauge(price_cagr)
+        return {'verdict': v, 'label': _ROC_HEALTH_LABELS[v], 'color': _ROC_HEALTH_COLORS[v],
+                'reason': reason, 'headline': _ROC_HEALTH_HEADLINES[v], 'plain': plain,
+                'gauge_score': gauge}
 
     # ── Guarda de confianza: sin datos suficientes no se emite veredicto ──
     if roc_pct is None or price_cagr is None:
         return _out('insufficient',
-                    "Faltan datos de ROC o del precio del fondo para emitir un veredicto.")
+                    "Faltan datos de ROC o del precio del fondo para emitir un veredicto.",
+                    _PLAIN_INSUFFICIENT)
     if history_days is not None and history_days < ROC_HEALTH_MIN_DAYS:
         return _out('insufficient',
                     f"Historia muy corta (~{int(history_days)} días): no se puede afirmar "
-                    f"erosión de NAV a ciencia cierta. Se necesitan ≥{ROC_HEALTH_MIN_DAYS} días.")
+                    f"erosión de NAV a ciencia cierta. Se necesitan ≥{ROC_HEALTH_MIN_DAYS} días.",
+                    _PLAIN_INSUFFICIENT)
     if roc_asof_days is not None and roc_asof_days > ROC_HEALTH_STALE_DAYS:
         return _out('insufficient',
                     f"El dato de ROC (19a) tiene ~{int(roc_asof_days)} días: está "
-                    f"desactualizado para juzgar el estado actual del fondo.")
+                    f"desactualizado para juzgar el estado actual del fondo.",
+                    _PLAIN_INSUFFICIENT)
 
     # La VERDAD sobre destructividad es la tendencia del NAV (señal PRIMARIA). El total
     # return solo MATIZA — si tu income compensó la erosión, sigue siendo ROC destructivo
@@ -2433,6 +2459,9 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
     tr_txt  = (f" El total return honesto es {total_return_pct:+.0f}%." if total_return_pct is not None else "")
     tr_nuance = (" Aun así tu income ha más que compensado la erosión, pero el NAV sigue "
                  "encogiendo y la distribución futura tiende a bajar." if tr_pos else "")
+    # Matiz en lenguaje llano cuando el income aún compensa la caída del precio.
+    plain_nuance = (" Por ahora tus dividendos cobrados compensan la caída, pero el fondo se "
+                    "sigue achicando." if tr_pos else "")
 
     # ── NAV cae ──
     if nav_falling:
@@ -2440,15 +2469,27 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
             return _out('destructive',
                         f"{nav_txt[0].upper()+nav_txt[1:]} y el {roc_pct:.0f}% de la distribución es "
                         f"ROC: el fondo se sostiene devolviéndote tu propio capital — erosión del NAV."
-                        f"{tr_nuance or tr_txt}")
+                        f"{tr_nuance or tr_txt}",
+                        "El fondo te paga sacando dinero de tu propio bolsillo, no solo de ganancias "
+                        "reales. El cheque mensual se ve bien, pero cada mes tu inversión vale menos."
+                        + plain_nuance +
+                        " <b>Qué vigilar:</b> si el precio del fondo sigue cayendo, el pago futuro también baja.")
         if tr_neg:
             return _out('destructive',
                         f"{nav_txt[0].upper()+nav_txt[1:]}{tr_txt} Aunque el ROC reportado sea "
-                        f"{roc_pct:.0f}%, el precio se erosiona y el total return es negativo.")
+                        f"{roc_pct:.0f}%, el precio se erosiona y el total return es negativo.",
+                        "Aunque casi todo lo que te pagan sea ganancia real, el precio del fondo se "
+                        "hunde más rápido: sumando todo, hoy tienes menos de lo que pusiste. "
+                        "<b>Qué vigilar:</b> si el activo que sigue no se recupera, seguirás perdiendo capital.")
         # ROC bajo + NAV cae + (TR positivo o desconocido): la caída viene más del subyacente
         return _out('mixed',
                     f"{nav_txt[0].upper()+nav_txt[1:]} pero solo el {roc_pct:.0f}% es ROC: la caída "
-                    f"viene más del subyacente que de devolución de capital.{tr_nuance or tr_txt} Vigílalo.")
+                    f"viene más del subyacente que de devolución de capital.{tr_nuance or tr_txt} Vigílalo.",
+                    "El precio baja, pero la mayor parte de lo que te pagan sí es ganancia real; la "
+                    "caída viene más del activo que el fondo sigue que de devolverte tu dinero."
+                    + plain_nuance +
+                    " <b>Qué vigilar:</b> revísalo el próximo mes — si el ROC sube y el precio sigue "
+                    "cayendo, pasaría a destructivo.")
 
     # ── NAV sube o plano ──
     if nav_rising or tr_pos:
@@ -2456,12 +2497,17 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
                  if roc_high else "")
         return _out('accounting',
                     f"{nav_txt[0].upper()+nav_txt[1:]}{tr_txt} El ROC es contable (pass-through), "
-                    f"no destructivo: tu capital no se está erosionando.{extra}")
+                    f"no destructivo: tu capital no se está erosionando.{extra}",
+                    "El fondo te paga con dinero que de verdad gana (vendiendo opciones), no con el "
+                    "tuyo. Que la etiqueta diga 'retorno de capital' es solo un tema de impuestos. "
+                    "<b>Tu capital se mantiene o crece.</b>")
 
     # ── NAV plano sin señal de total return ──
     return _out('mixed',
                 f"{nav_txt[0].upper()+nav_txt[1:]}, con {roc_pct:.0f}% de ROC.{tr_txt} Ni claramente "
-                f"destructivo ni claramente sano — conviene seguirlo mes a mes.")
+                f"destructivo ni claramente sano — conviene seguirlo mes a mes.",
+                "El precio está plano y las señales no son claras: ni se nota erosión ni crecimiento. "
+                "<b>Qué vigilar:</b> síguelo mes a mes para ver hacia dónde se inclina.")
 
 
 def get_yieldmax_risk_profile(ticker: str) -> dict:

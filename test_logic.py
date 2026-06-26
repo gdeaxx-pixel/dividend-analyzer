@@ -1665,3 +1665,35 @@ def test_roc_health_always_has_color_and_label():
         logic.classify_roc_health(None, None),
     ):
         assert v["color"].startswith("#") and v["label"] and v["reason"]
+
+
+def test_roc_health_simple_layer_fields_present():
+    v = logic.classify_roc_health(95, -40, -25, history_days=400)
+    assert v["headline"] and v["plain"]
+    assert v["gauge_score"] is not None and 0 <= v["gauge_score"] <= 100
+    assert "encogiendo" in v["headline"].lower()
+
+
+def test_roc_health_gauge_none_when_insufficient():
+    assert logic.classify_roc_health(95, -50, -30, history_days=60)["gauge_score"] is None
+    assert logic.classify_roc_health(None, None)["gauge_score"] is None
+
+
+def test_roc_health_gauge_monotonic_with_nav():
+    # Mas caida del NAV -> score mayor (mas cerca de "destruyendose").
+    worse = logic.classify_roc_health(80, -50, -30, history_days=400)["gauge_score"]
+    mid   = logic.classify_roc_health(80, -20, -10, history_days=400)["gauge_score"]
+    good  = logic.classify_roc_health(80,  15,  20, history_days=400)["gauge_score"]
+    assert worse > mid > good
+    assert good == 0.0
+
+
+def test_roc_health_destructive_tr_positive_has_nuance():
+    v = logic.classify_roc_health(58, -36, 64, history_days=400)
+    assert v["verdict"] == "destructive"
+    assert "compensan" in v["plain"].lower()
+
+
+def test_roc_health_headline_per_verdict():
+    assert "sano" in logic.classify_roc_health(80, 12, 20, history_days=400)["headline"].lower()
+    assert "medir" in logic.classify_roc_health(None, None)["headline"].lower()
