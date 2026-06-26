@@ -26,15 +26,25 @@ def _roc_detail_card(stats):
     """HTML del valor 'Costo base IB / ROC' de las tarjetas de detalle por activo.
     Soporta ROC estimado por avisos 19a (cuando no hay costo base del bróker)."""
     if stats.get("ib_cost_basis") is not None:
-        return (f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p>'
-                f'<p class="da-tkpi-sub" style="color:#16a34a;">ROC: ${stats["roc_accumulated"]:,.2f} '
-                f'({stats["roc_percent"]:.1f}%)</p>')
+        _cb = f'<p class="da-tkpi-value">${stats["ib_cost_basis"]:,.2f}</p>'
+        _ra = stats.get("roc_accumulated")
+        if _ra is not None:
+            _rp = stats.get("roc_percent")
+            _rp_txt = f' ({_rp:.1f}%)' if _rp is not None else ''
+            # ROC en ámbar (no verde): un ROC alto no es buen resultado.
+            return _cb + (f'<p class="da-tkpi-sub" style="color:#c9821f;">ROC: ${_ra:,.2f}{_rp_txt}</p>')
+        return _cb
     if stats.get("roc_accumulated") is not None:
-        return (f'<p class="da-tkpi-value" style="color:#16a34a;">ROC ~${stats["roc_accumulated"]:,.0f}</p>'
+        return (f'<p class="da-tkpi-value" style="color:#c9821f;">ROC ~${stats["roc_accumulated"]:,.0f}</p>'
                 f'<p class="da-tkpi-sub" style="color:#8899aa;">est. 19a '
                 f'({(stats.get("roc_percent") or 0):.0f}% de distrib.)</p>')
     return ('<p class="da-tkpi-value" style="color:#cbd5e1;">—</p>'
             '<p class="da-tkpi-sub">Edítala al cargar (Paso 1)</p>')
+
+
+def _money2(v, dash='n/d'):
+    """Formatea $X.XX de forma None-segura (evita el crash de formatear None)."""
+    return f'${v:,.2f}' if v is not None else dash
 
 
 st.set_page_config(page_title="Calculadora de Dividendos", layout="wide")
@@ -2129,12 +2139,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             return (1 - r / a) * 100 if a else 0
                         _just_li = ''.join(
                             f'<li style="margin:7px 0;line-height:1.6;"><b>{t}</b>: Schwab supone que vas a seguir '
-                            f'cobrando <b>${d["anchor_per_payment"]:,.2f}</b> por acción en cada pago (tu último pago alto) '
-                            f'y por eso proyecta <b>${d["schwab_proj"]:,.0f}</b> al año. Pero tus pagos recientes ya bajaron a '
-                            f'<b>${d["recent_per_payment"]:,.2f}</b> en promedio — '
+                            f'cobrando <b>{_money2(d.get("anchor_per_payment"))}</b> por acción en cada pago (tu último pago alto) '
+                            f'y por eso proyecta <b>{_fmt_money(d.get("schwab_proj"))}</b> al año. Pero tus pagos recientes ya bajaron a '
+                            f'<b>{_money2(d.get("recent_per_payment"))}</b> en promedio — '
                             f'<b style="color:#c9821f;">un {_pct_below(d):.0f}% más bajo</b>. Con ese ritmo real cobrarías unos '
-                            f'<b style="color:#006497;">${d["our_proj"]:,.0f}</b> al año. '
-                            f'(En los últimos 12 meses recibiste ${d["schwab_received_12m"]:,.0f}.)</li>'
+                            f'<b style="color:#006497;">{_fmt_money(d.get("our_proj"))}</b> al año. '
+                            f'(En los últimos 12 meses recibiste {_fmt_money(d.get("schwab_received_12m"))}.)</li>'
                             for t, d in _flagged
                         )
                         _stable_html = ''
@@ -3564,7 +3574,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f'<span class="da-ticker-name">{ticker}</span>'
                         f'<span class="da-mode-badge da-mode-income">Income</span>'
                         f'<span class="da-ticker-price">'
-                        f'${stats["current_price"]:,.2f} &nbsp;·&nbsp; '
+                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
                         f'<span style="color:{_roi_color_a};font-weight:700;">{_roi_a:+.2f}% ROI</span>'
                         f'</span>'
                         f'</div>',
@@ -3942,7 +3952,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f'<span class="da-ticker-name">{ticker}</span>'
                         f'<span class="da-mode-badge da-mode-growth">Growth</span>'
                         f'<span class="da-ticker-price">'
-                        f'${stats["current_price"]:,.2f} &nbsp;·&nbsp; '
+                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
                         f'<span style="color:{_roi_color_b};font-weight:700;">{_roi_b:+.2f}% ROI</span>'
                         f'</span>'
                         f'</div>',
