@@ -1,0 +1,72 @@
+# Generado por snapshot_roc_health.py. Histórico del veredicto de salud del NAV
+# por fondo (ROC destructivo vs contable). No editar a mano.
+AMDY:
+- date: '2026-06-27'
+  price_cagr: 31.2
+  roc_pct: 61.2
+  verdict: accounting
+AMZY:
+- date: '2026-06-27'
+  price_cagr: -35.4
+  roc_pct: 51.7
+  verdict: destructive
+CONY:
+- date: '2026-06-27'
+  price_cagr: -80.2
+  roc_pct: 51.2
+  verdict: destructive
+DISO:
+- date: '2026-06-27'
+  price_cagr: -33.9
+  roc_pct: 46.1
+  verdict: mixed
+GOOY:
+- date: '2026-06-27'
+  price_cagr: 5.1
+  roc_pct: 56.5
+  verdict: accounting
+JPMO:
+- date: '2026-06-27'
+  price_cagr: -17.3
+  roc_pct: 50.6
+  verdict: destructive
+MSFO:
+- date: '2026-06-27'
+  price_cagr: -41.2
+  roc_pct: 82.9
+  verdict: destructive
+MSTY:
+- date: '2026-06-27'
+  price_cagr: -89.3
+  roc_pct: 74.8
+  verdict: destructive
+NFLY:
+- date: '2026-06-27'
+  price_cagr: -57.2
+  roc_pct: 59.9
+  verdict: destructive
+NVDY:
+- date: '2026-06-27'
+  price_cagr: -27.2
+  roc_pct: 40.8
+  verdict: mixed
+PLTY:
+- date: '2026-06-27'
+  price_cagr: -59.1
+  roc_pct: 53.1
+  verdict: destructive
+TSLY:
+- date: '2026-06-27'
+  price_cagr: -36.5
+  roc_pct: 58.0
+  verdict: destructive
+YMAG:
+- date: '2026-06-27'
+  price_cagr: -26.8
+  roc_pct: 56.1
+  verdict: destructive
+YMAX:
+- date: '2026-06-27'
+  price_cagr: -42.7
+  roc_pct: 55.1
+  verdict: destructive
