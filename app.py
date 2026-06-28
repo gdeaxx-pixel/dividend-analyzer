@@ -708,6 +708,17 @@ st.markdown("""
     .da-tip-box.r { left: auto; right: 0; }
     .da-tip-box b { color: #ffffff; font-weight: 700; }
     .da-tip:hover .da-tip-box { visibility: visible; opacity: 1; }
+    /* El subhead de la cuadrícula C estila TODOS sus spans (8px, mayúsculas, gris);
+       restauramos el ícono y la caja del tooltip cuando viven ahí dentro. */
+    .da-kpiwide-subhead .da-tip-i {
+        font-size: 9px; font-weight: 700; color: #ffffff;
+        text-transform: none; text-align: center; letter-spacing: 0;
+    }
+    .da-kpiwide-subhead .da-tip-box {
+        font-size: 11px; font-weight: 400; color: #d8e2ee;
+        text-transform: none; text-align: left; letter-spacing: 0;
+    }
+    .da-kpiwide-subhead .da-tip-box b { color: #ffffff; font-weight: 700; }
 
     /* 22c. MINI-TABLA POR ETF dentro de cada tarjeta KPI */
     .da-mini { margin: 8px 0 2px 0; }
@@ -2368,14 +2379,14 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     key=lambda t: -(results[t].get('market_value') or 0))
                 if _cmp_valid:
                     def _cell(v, kind='money'):
-                        if v is None:
+                        if v is None or v != v:   # None o NaN (precio de mercado no disponible) → n/d
                             return '<span class="num" style="color:#b8c2cc;">n/d</span>'
                         if kind == 'pct':
                             return f'<span class="num" style="color:{"#4caf82" if v >= 0 else "#e05c5c"};">{v:+.0f}%</span>'
                         return f'<span class="num">${v:,.0f}</span>'
 
                     def _delta(s, c, kind='money'):
-                        if s is None or c is None:
+                        if s is None or c is None or s != s or c != c:
                             return '<span class="pct" style="color:#b8c2cc;">—</span>'
                         if kind == 'pct':
                             d = s - c
@@ -2390,32 +2401,55 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     def _grid_css(ncols):
                         return f'grid-template-columns:minmax(56px,1.2fr) repeat({ncols}, 1fr);'
 
+                    def _hd(label, tip, right=False):
+                        # Encabezado con ícono "i" + tooltip (mismo patrón .da-tip de la 1ª cuadrícula).
+                        box = 'da-tip-box r' if right else 'da-tip-box'
+                        return (f'<span class="da-tip">{label}'
+                                f'<span class="da-tip-i">i</span>'
+                                f'<span class="{box}">{tip}</span></span>')
+
                     def _triplet(groups, tks):
-                        # Cada grupo muestra solo el valor de la calculadora + Δ vs Schwab (2 cols).
-                        g = _grid_css(2 * len(groups))
+                        # groups: (label, accent, getter, kind, tip)
+                        #   kind 'money'/'pct' -> getter(t)->(schwab, calc); muestra Calc + Δ (2 cols)
+                        #   kind 'solo'        -> getter(t)->valor;          muestra solo el valor (1 col)
+                        def _span(kind):
+                            return 1 if kind == 'solo' else 2
+                        ncols = sum(_span(_g[3]) for _g in groups)
+                        g = _grid_css(ncols)
                         h = f'<div class="da-kpiwide-grouphead" style="{g}"><span></span>'
-                        for lab, acc, _gt, _kd in groups:
-                            h += f'<span class="grp" style="border-bottom-color:{acc};">{lab}</span>'
+                        for idx, (lab, acc, _gt, kind, tip) in enumerate(groups):
+                            box = 'da-tip-box r' if idx >= len(groups) - 2 else 'da-tip-box'
+                            h += (f'<span class="grp da-tip" style="grid-column:span {_span(kind)};border-bottom-color:{acc};">{lab}'
+                                  f'<span class="da-tip-i">i</span>'
+                                  f'<span class="{box}">{tip}</span></span>')
                         h += f'</div><div class="da-kpiwide-subhead" style="{g}"><span class="lbl">ETF</span>'
-                        for _ in groups:
-                            h += '<span>Calc</span><span>Δ</span>'
+                        for (lab, acc, getter, kind, _tp) in groups:
+                            h += '<span>Calc</span>' if kind == 'solo' else '<span>Calc</span><span>Δ</span>'
                         h += '</div>'
                         tot = [[0.0, 0.0, False, False] for _ in groups]
                         for t in tks:
                             h += f'<div class="da-kpiwide-row" style="{g}"><span class="tk">{t}</span>'
-                            for i, (lab, acc, getter, kind) in enumerate(groups):
+                            for i, (lab, acc, getter, kind, _tp) in enumerate(groups):
+                                if kind == 'solo':
+                                    v = getter(t)
+                                    h += _cell(v, 'money')
+                                    if v is not None and v == v:
+                                        tot[i][1] += v; tot[i][3] = True
+                                    continue
                                 s, c = getter(t)
                                 # Solo el valor de la calculadora (c); el Δ sigue comparando contra Schwab (s).
                                 h += _cell(c, kind) + _delta(s, c, kind)
                                 if kind == 'money':
-                                    if s is not None:
+                                    if s is not None and s == s:
                                         tot[i][0] += s; tot[i][2] = True
-                                    if c is not None:
+                                    if c is not None and c == c:
                                         tot[i][1] += c; tot[i][3] = True
                             h += '</div>'
                         h += f'<div class="da-kpiwide-row da-kpiwide-total" style="{g}"><span class="tk">TOTAL</span>'
-                        for i, (lab, acc, getter, kind) in enumerate(groups):
-                            if kind == 'money':
+                        for i, (lab, acc, getter, kind, _tp) in enumerate(groups):
+                            if kind == 'solo':
+                                h += _cell(tot[i][1] if tot[i][3] else None, 'money')
+                            elif kind == 'money':
                                 ss = tot[i][0] if tot[i][2] else None
                                 cc = tot[i][1] if tot[i][3] else None
                                 h += _cell(cc, kind) + _delta(ss, cc, kind)
@@ -2433,8 +2467,29 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _cmp_exp = st.expander("Ver las 3 cuadrículas · inversión, dividendos y ROC", expanded=False)
 
                     # Cuadrícula A — rendimiento de la inversión
-                    def _A_inv(t):
-                        return (results[t].get('ib_cost_basis'), results[t].get('pocket_investment'))
+                    # Cascada de base de costo (columnas 'solo', un solo valor):
+                    def _A_bolsillo(t):
+                        return results[t].get('pocket_investment')                  # tu dinero, sin reinversión
+
+                    def _A_real(t):
+                        pk = results[t].get('pocket_investment')
+                        dr = results[t].get('dividends_collected_drip') or 0
+                        return (pk + dr) if pk is not None else None                # bolsillo + reinvertido (= costo real)
+
+                    def _A_base_broker(t):
+                        return results[t].get('ib_cost_basis')                      # base que reporta Schwab
+
+                    def _A_base_roc(t):
+                        # Solo aporta cuando el ROC viene del 19a. Con ROC del bróker,
+                        # roc = (pocket+drip) − ib_basis, así que (pocket+drip) − roc == ib_basis
+                        # (= Base · Schwab): sería una columna duplicada y engañosa → n/d.
+                        if results[t].get('roc_source') != '19a':
+                            return None
+                        pk = results[t].get('pocket_investment')
+                        dr = results[t].get('dividends_collected_drip') or 0
+                        real = (pk + dr) if pk is not None else None
+                        roc = results[t].get('roc_accumulated')
+                        return (real - roc) if (real is not None and roc is not None) else None  # costo real − ROC real (19a)
 
                     def _A_val(t):
                         v = results[t].get('market_value')
@@ -2450,16 +2505,45 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         return (((v - cb) / cb * 100) if (v is not None and cb) else None,
                                 ((v - pk) / pk * 100) if (v is not None and pk) else None)
 
-                    _gridA = _triplet([('Invertido', '#021C36', _A_inv, 'money'),
-                                       ('Valor hoy', '#006497', _A_val, 'money'),
-                                       ('Rendim. $', '#4caf82', _A_gain, 'money'),
-                                       ('Rendim. %', '#2d3748', _A_ret, 'pct')], _cmp_valid)
+                    _TIP_A_BOLS = ('<b>¿Qué es?</b> El dinero de <b>tu propio bolsillo</b> que metiste para comprar '
+                                   'acciones, <b>sin contar lo reinvertido</b>. Es tu aporte real de capital, el punto de '
+                                   'partida de la cascada.')
+                    _TIP_A_REAL = ('<b>¿Qué es?</b> Tu bolsillo <b>más</b> los dividendos que reinvertiste (DRIP): todo el '
+                                   'dinero que terminó comprando acciones. (Es el mismo número que <b>«Costo real»</b> en la '
+                                   'cuadrícula de ROC.)')
+                    _TIP_A_BROKER = ('<b>¿Qué es?</b> La base de costo que <b>Schwab reporta</b> hoy. El bróker suele bajar tu '
+                                     'base por <b>menos</b> ROC del que el fondo declara, así que este número queda <b>más '
+                                     'alto</b> de lo que sería con el ROC real. Por eso la app <b>no</b> calcula el ROC restando '
+                                     'estas columnas: lo subestimaría.')
+                    _TIP_A_BASEROC = ('<b>¿Qué es?</b> La misma base, pero restándole el <b>ROC real</b> que el fondo declaró '
+                                      'en sus avisos <b>19a</b> (= 1099-DIV casilla 3). Sale <b>menor</b> que la base de Schwab; '
+                                      'la <b>diferencia entre ambas es el ROC que Schwab no reflejó</b>. Indica cuánto de tu '
+                                      'capital sigue «invertido de verdad» tras descontar lo que el fondo te devolvió. '
+                                      'Solo se calcula cuando hay un ROC del fondo (19a); si no, aparece <b>n/d</b>.')
+                    _TIP_A_VAL = ('<b>¿Qué es?</b> Cuánto vale hoy tu posición a precio de mercado (precio × acciones, '
+                                  'ya <b>incluye el DRIP</b>). El valor de mercado no cambia entre métodos, por eso su '
+                                  '<b>Δ</b> vs Schwab es <b>0%</b>.')
+                    _TIP_A_GAIN = ('<b>¿Qué es?</b> Tu ganancia o pérdida en dólares: <b>Valor hoy − Tu bolsillo</b>. '
+                                   'En verde si ganas, en rojo si pierdes. <b>Ojo:</b> es solo la plusvalía del precio; '
+                                   '<b>no</b> incluye los dividendos que cobraste (esos van en la tabla de dividendos).')
+                    _TIP_A_RET = ('<b>¿Qué es?</b> La misma ganancia o pérdida pero en <b>porcentaje</b> sobre lo '
+                                  'invertido. Útil para comparar fondos de distinto tamaño. <b>No</b> incluye dividendos: '
+                                  'es solo cuánto subió o bajó el precio de tu posición.')
+                    _gridA = _triplet([('Tu bolsillo', '#021C36', _A_bolsillo, 'solo', _TIP_A_BOLS),
+                                       ('+ Reinvertido', '#006497', _A_real, 'solo', _TIP_A_REAL),
+                                       ('Base · Schwab', '#64748B', _A_base_broker, 'solo', _TIP_A_BROKER),
+                                       ('Base · ROC real', '#c9821f', _A_base_roc, 'solo', _TIP_A_BASEROC),
+                                       ('Valor hoy', '#006497', _A_val, 'money', _TIP_A_VAL),
+                                       ('Rendim. $', '#4caf82', _A_gain, 'money', _TIP_A_GAIN),
+                                       ('Rendim. %', '#2d3748', _A_ret, 'pct', _TIP_A_RET)], _cmp_valid)
                     _cmp_exp.markdown(_subtitle('Rendimiento de tu inversión') + f'<div class="da-kpi-cell">{_gridA}</div>',
                                       unsafe_allow_html=True)
-                    _cmp_exp.caption("Mostramos el valor de la calculadora; el Δ indica cuánto se desvía del dato de Schwab. "
-                                     "En «Invertido», Schwab usa el cost basis del bróker (ya reducido por el ROC) y la calculadora "
-                                     "el capital real que desplegaste, por eso suele haber Δ. El valor de mercado no cambia entre "
-                                     "ambos métodos (precio × acciones), así que su Δ es 0%.")
+                    _cmp_exp.caption("Primero la cascada de tu base de costo: «Tu bolsillo» (tu dinero) + lo «Reinvertido» = el "
+                                     "capital real que compró acciones. Ese tramo final se muestra en dos escenarios: «Base · "
+                                     "Schwab» es la base que reporta el bróker, y «Base · ROC real» es la que daría restando el ROC "
+                                     "que el fondo declara en sus avisos 19a. La diferencia entre ambas es el ROC que Schwab no "
+                                     "descontó de la base, por eso la app se guía por el 19a. Luego, «Valor hoy» y los rendimientos "
+                                     "(solo plusvalía de precio, sin dividendos) con su Δ vs Schwab.")
 
                     # Cuadrícula B — dividendos (bruto · impuesto · neto)
                     _divtks = [t for t in _cmp_valid
@@ -2474,12 +2558,20 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             x = results[t].get('withheld_tax_total')
                             return (x, x)
 
-                        def _B_net(t):
+                        def _B_net_teo(t):              # bruto − impuesto; Δ vs Schwab
                             p = _proj_all.get(t, {}) or {}
                             gs = p.get('schwab_received_total'); gc = p.get('our_received_total')
                             x = results[t].get('withheld_tax_total') or 0
                             return ((gs - x) if gs is not None else None,
                                     (gc - x) if gc is not None else None)
+
+                        def _B_net_real(t):             # transacciones reales (drip+cash); Δ vs el teórico
+                            p = _proj_all.get(t, {}) or {}
+                            gc = p.get('our_received_total')
+                            x = results[t].get('withheld_tax_total') or 0
+                            teo = (gc - x) if gc is not None else None   # base de comparación = teórico (calc)
+                            real = results[t].get('total_dividends')     # = drip + cash, ya neto de NRA
+                            return (teo, real)
 
                         def _B_drip(t):
                             d = results[t].get('dividends_collected_drip')
@@ -2489,16 +2581,54 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             c = results[t].get('dividends_collected_cash')
                             return (c, c)
 
-                        _gridB = _triplet([('Total div. (bruto)', '#021C36', _B_gross, 'money'),
-                                           ('Impuesto NRA', '#e05c5c', _B_tax, 'money'),
-                                           ('Neto recibido', '#4caf82', _B_net, 'money'),
-                                           ('Reinvertidos', '#006497', _B_drip, 'money'),
-                                           ('En efectivo', '#2d3748', _B_cash, 'money')], _divtks)
-                        _cmp_exp.markdown(_subtitle('Dividendos: bruto, impuesto y neto') + f'<div class="da-kpi-cell">{_gridB}</div>',
+                        # Orden = flujo del dinero (ver Obsidian: flujo-dinero-dividendo-orden-columnas):
+                        # Bruto → Impuesto → Reinvertido → Efectivo → Neto real → Neto teórico.
+                        _TIP_B_GROSS = ('<b>1. El punto de partida.</b> Todos los dividendos que el fondo declaró haberte '
+                                        'pagado, <b>antes</b> de impuestos. <b>Δ</b> compara la calculadora con Schwab; cerca '
+                                        'de <b>0%</b> = tu CSV está completo.')
+                        _TIP_B_TAX = ('<b>2. Lo que te retienen.</b> El impuesto a extranjeros (<b>NRA</b>, ~30%) que EE.UU. '
+                                      'descuenta del bruto antes de depositártelo. <b>No es un cargo extra:</b> ya venía '
+                                      'restado. <b>Bruto − Impuesto = tu dinero limpio.</b>')
+                        _TIP_B_DRIP = ('<b>3. Destino #1 de tu dinero limpio.</b> La parte que el <b>DRIP</b> reinvirtió '
+                                       'automáticamente en más acciones. (En el CSV ya viene <b>neta</b> de impuesto.) Sale de '
+                                       'tu CSV, por eso su Δ vs Schwab es 0%.')
+                        _TIP_B_CASH = ('<b>4. Destino #2 de tu dinero limpio.</b> La parte que quedó en <b>efectivo</b>, sin '
+                                       'reinvertir. Sale de tu CSV, por eso su Δ vs Schwab es 0%.')
+                        _TIP_B_NET_REAL = ('<b>5. El resultado por transacciones.</b> <b>Reinvertidos + En efectivo</b> = a '
+                                           'dónde fue de verdad tu dinero. El <b>Δ</b> lo compara con el neto teórico: cerca de '
+                                           '<b>0%</b> = ambas rutas cuadran y puedes confiar; si difieren, a tu CSV puede '
+                                           'faltarle algún movimiento.')
+                        _TIP_B_NET_TEO = ('<b>6. El mismo neto, por la fórmula del impuesto.</b> <b>Bruto − Impuesto NRA</b>. '
+                                          'Debería coincidir con el neto real; una diferencia de unos pocos dólares es normal '
+                                          'porque el CSV guarda el reinvertido <b>neto</b> de impuesto pero el efectivo en '
+                                          '<b>bruto</b>. El <b>Δ</b> es vs Schwab (completitud de datos). <b>Ojo:</b> ni el real '
+                                          'ni el teórico son la distribución pre-impuesto — esa es el bruto de arriba.')
+                        _gridB = _triplet([('Total div. (bruto)', '#021C36', _B_gross, 'money', _TIP_B_GROSS),
+                                           ('Impuesto NRA', '#e05c5c', _B_tax, 'money', _TIP_B_TAX),
+                                           ('Reinvertidos', '#006497', _B_drip, 'money', _TIP_B_DRIP),
+                                           ('En efectivo', '#2d3748', _B_cash, 'money', _TIP_B_CASH),
+                                           ('Neto recibido real', '#0F766E', _B_net_real, 'money', _TIP_B_NET_REAL),
+                                           ('Neto recibido teórico', '#4caf82', _B_net_teo, 'money', _TIP_B_NET_TEO)], _divtks)
+                        _formula_b = (
+                            f'<div style="font-family:{_MONO_FONT};font-size:11px;color:#5a6b7a;line-height:1.8;'
+                            'margin:-2px 0 10px 2px;letter-spacing:0.01em;">'
+                            '<span style="display:inline-block;min-width:185px;color:#4caf82;font-weight:700;">'
+                            'Neto recibido teórico</span>= Total dividendo bruto − Impuesto NRA<br>'
+                            '<span style="display:inline-block;min-width:185px;color:#0F766E;font-weight:700;">'
+                            'Neto recibido real</span>= Reinvertidos + En efectivo'
+                            '<div style="font-family:Inter,sans-serif;font-size:10.5px;color:#8899aa;margin-top:3px;'
+                            'font-style:italic;">Dos caminos al mismo neto: deberían coincidir.</div>'
+                            '</div>'
+                        )
+                        _cmp_exp.markdown(_subtitle('Dividendos: el viaje del dinero, de bruto a neto') + _formula_b
+                                          + f'<div class="da-kpi-cell">{_gridB}</div>',
                                           unsafe_allow_html=True)
-                        _cmp_exp.caption("El bruto es lo que el fondo declaró; el impuesto NRA (retención a extranjeros, ~30%) se "
-                                         "descuenta y deja el neto que de verdad entró a tu cuenta. «Reinvertidos» y «En efectivo» "
-                                         "salen de tu CSV, así que coinciden con Schwab (su Δ es 0%).")
+                        _cmp_exp.caption("Sigue el dinero de izquierda a derecha: el fondo paga un dividendo «bruto»; EE.UU. "
+                                         "retiene el «impuesto NRA»; lo que queda limpio se reparte en «Reinvertido» (DRIP) + «En "
+                                         "efectivo», y su suma es el «Neto recibido real». Como verificación, el «Neto teórico» "
+                                         "recalcula ese neto restando el impuesto al bruto. Ambos deberían coincidir; si difieren "
+                                         "unos dólares es porque el CSV registra el reinvertido ya neto y el efectivo en bruto — no "
+                                         "es un error, es un chequeo de que tus datos están completos.")
 
                     # Cuadrícula C — Retorno de Capital (ROC)
                     _roctks = [t for t in _cmp_valid
@@ -2506,9 +2636,24 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                or (results[t].get('total_dividends') or 0) > 0]
                     if _roctks:
                         gC = _grid_css(5)
+                        _TIP_C_CB = ('<b>¿Qué es?</b> La base de costo que Schwab muestra hoy en tu posición. El ROC '
+                                     'ya la <b>redujo</b>: cada vez que el fondo te devuelve capital, el bróker baja esta cifra.')
+                        _TIP_C_REAL = ('<b>¿Qué es?</b> Lo que de verdad desplegaste: tu dinero de <b>bolsillo + lo '
+                                       'reinvertido</b> (DRIP). No baja con el ROC, por eso suele ser mayor que el costo bróker.')
+                        _TIP_C_ROCD = ('<b>¿Qué es?</b> El capital que el fondo te devolvió, en dólares: <b>costo real − '
+                                       'costo bróker</b>. <b>No es ganancia</b>, es tu propio dinero de vuelta.')
+                        _TIP_C_ROCP = ('<b>¿Qué es?</b> El ROC como <b>porcentaje</b> de tu base. Mientras más alto, '
+                                       'mayor parte de tu costo fue devolución de capital y no rendimiento.')
+                        _TIP_C_ROCDIV = ('<b>¿Qué es?</b> Qué parte de <b>todos tus dividendos</b> fue en realidad '
+                                         'devolución de tu capital. Un 75% significa que de cada $100 cobrados, $75 eran '
+                                         'tu propio dinero, no ganancia.')
                         hC = (f'<div class="da-kpiwide-subhead" style="{gC}"><span class="lbl">ETF</span>'
-                              '<span>Costo bróker</span><span>Costo real</span><span>ROC $</span>'
-                              '<span>ROC %</span><span>ROC ÷ div.</span></div>')
+                              + _hd('Costo bróker', _TIP_C_CB)
+                              + _hd('Costo real', _TIP_C_REAL)
+                              + _hd('ROC $', _TIP_C_ROCD, right=True)
+                              + _hd('ROC %', _TIP_C_ROCP, right=True)
+                              + _hd('ROC ÷ div.', _TIP_C_ROCDIV, right=True)
+                              + '</div>')
                         _tc1 = _tc2 = _tc3 = 0.0
                         _h1 = _h2 = _h3 = False
                         for t in _roctks:
