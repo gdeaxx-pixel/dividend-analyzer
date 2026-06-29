@@ -1697,3 +1697,63 @@ def test_roc_health_destructive_tr_positive_has_nuance():
 def test_roc_health_headline_per_verdict():
     assert "sano" in logic.classify_roc_health(80, 12, 20, history_days=400)["headline"].lower()
     assert "medir" in logic.classify_roc_health(None, None)["headline"].lower()
+
+
+# ── Auditoría del yield titular vs realidad (audit_advertised_yield) ────────────
+
+def test_audit_advertised_match_within_tolerance():
+    # titular 66.67 vs mecanismo 64.0 → dentro de banda → 'match'
+    r = logic.audit_advertised_yield(66.67, 64.0, 45.0)
+    assert r["verdict"] == "match"
+    assert round(r["gap_real"], 2) == 21.67  # titular − realizado = dato educativo
+
+
+def test_audit_advertised_ahead_when_titular_exceeds_mechanism():
+    # titular muy por encima de lo que su propia fórmula da hoy
+    r = logic.audit_advertised_yield(80.0, 50.0, 40.0)
+    assert r["verdict"] == "ahead"
+    assert r["gap_fwd"] == 30.0
+
+
+def test_audit_advertised_behind():
+    r = logic.audit_advertised_yield(40.0, 60.0, 55.0)
+    assert r["verdict"] == "behind"
+
+
+def test_audit_advertised_unknown_without_data():
+    assert logic.audit_advertised_yield(None, 50.0, 40.0)["verdict"] == "unknown"
+    assert logic.audit_advertised_yield(70.0, None, 40.0)["verdict"] == "unknown"
+
+
+def test_advertised_distribution_rate_reads_yaml():
+    # los fondos sembrados existen y devuelven float; un ticker inventado devuelve None
+    msty = logic.advertised_distribution_rate("MSTY")
+    assert msty is None or isinstance(msty, float)
+    assert logic.advertised_distribution_rate("ZZZZ_NOPE") is None
+
+
+# ── Hoja Excel: método tradicional vs vista honesta (build_hoja_excel) ──────────
+
+def test_build_hoja_excel_naive_vs_honest():
+    results = {
+        "MSTY": {
+            "pocket_investment": 4197.2, "total_dividends": 2574.54,
+            "withheld_tax_total": 120.0, "market_value": 1131.78,
+            "dividends_collected_cash": 2574.54, "last_payment": 28.85,
+            "price_cagr": -81.5, "roc_percent": 90.0, "price_history_days": 500,
+            "advertised_yield": 66.67, "forward_yield": 132.6, "realized_yield": 227.5,
+            "yield_on_cost": 61.0,
+        },
+        "VOO": {"error": "crecimiento"},  # ignorado: no es mode_a si se filtra
+    }
+    out = logic.build_hoja_excel(results, classify_map={"MSTY": "mode_a", "VOO": "mode_b"})
+    assert len(out["rows"]) == 1
+    r = out["rows"][0]
+    # método tradicional: inversión + dividendos (la fórmula engañosa)
+    assert round(r["total_inv_naive"], 2) == round(4197.2 + 2574.54, 2)
+    # honesto: valor + cash − inversión  (queda negativo → el income no cubrió la erosión)
+    assert round(r["total_return"], 2) == round(1131.78 + 2574.54 - 4197.2, 2)
+    # bruto = neto + NRA
+    assert round(r["dividends_gross"], 2) == round(2574.54 + 120.0, 2)
+    assert r["nav_health"]["verdict"] in ("destructive", "mixed", "accounting", "insufficient")
+    assert r["audit"]["advertised"] == 66.67

@@ -54,3 +54,6 @@ captured_cases.py
 
 # Aviso efímero del Action de salud del NAV (no versionar)
 roc_health_alerts.txt
+
+# Material de diseño local (no versionar)
+design/

@@ -39,3 +39,46 @@ def test_build_entry_weighted_by_amount():
     assert entry["weighted_pct"] == 71.75
     assert entry["source_url"].endswith("/msty/")
     assert len(entry["per_distribution"]) == 2
+
+
+# Estructura real del fund page de YieldMax (valor ANTES de la etiqueta; SEC yield contiguo).
+_RATE_HTML = """
+<html><body>
+  <p>...stay long COIN.</p>
+  <span>77.28%</span> <span>Distribution Rate*</span>
+  <span>9.12%</span> <span>30-Day SEC Yield**</span> <span>As of: 05/01/2026</span>
+  <p>The Distribution Rate is the annual rate an investor would receive...
+     This approach targets a 12% distribution rate by selling options.</p>
+</body></html>
+"""
+
+
+def test_parse_distribution_rate_basic():
+    info = f.parse_distribution_rate_from_html(_RATE_HTML)
+    # toma el titular (precede a la etiqueta), NO el '30-Day SEC Yield' ni el '12%' de la prosa
+    assert info["rate_pct"] == 77.28
+    assert info["as_of"] == "2026-05-01"
+
+
+def test_parse_distribution_rate_allows_over_100():
+    html = "<div>134.50% Distribution Rate*</div>"
+    assert f.parse_distribution_rate_from_html(html)["rate_pct"] == 134.50
+
+
+def test_parse_distribution_rate_ignores_marketing_prose():
+    # solo prosa con "12% distribution rate" (sin decimales, sin titular) -> None
+    html = "<p>This approach targets a 12% distribution rate by selling options.</p>"
+    assert f.parse_distribution_rate_from_html(html)["rate_pct"] is None
+
+
+def test_parse_distribution_rate_absent():
+    info = f.parse_distribution_rate_from_html("<div>Nothing here</div>")
+    assert info["rate_pct"] is None
+    assert info["as_of"] is None
+
+
+def test_build_rate_entry():
+    entry = f.build_rate_entry("MSTY", {"rate_pct": 77.28, "as_of": "2026-05-01"})
+    assert entry["rate_pct"] == 77.28
+    assert entry["as_of"] == "2026-05-01"
+    assert entry["source_url"].endswith("/msty/")

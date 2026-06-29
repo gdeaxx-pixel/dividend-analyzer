@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROC_PATH = os.path.join(HERE, "knowledge", "roc_19a.yaml")
+DIST_RATE_PATH = os.path.join(HERE, "knowledge", "distribution_rate.yaml")
 INSTR_PATH = os.path.join(HERE, "knowledge", "instruments.yaml")
 FUND_URL = "https://yieldmaxetfs.com/our-etfs/{tk}/"
 
@@ -106,6 +107,53 @@ def parse_distributions_from_html(html):
     return []
 
 
+def _parse_rate_pct(v):
+    """Como _parse_pct pero permite tasas > 100%: las 'distribution rate' anualizadas de
+    YieldMax pueden superar el 100% (p.ej. fondos muy volátiles)."""
+    m = re.search(r"(\d{1,3}(?:\.\d+)?)\s*%", str(v))
+    if not m:
+        return None
+    try:
+        p = float(m.group(1))
+        return p if 0 < p <= 999 else None
+    except ValueError:
+        return None
+
+
+def parse_distribution_rate_from_html(html):
+    """Extrae la 'Distribution Rate' TITULAR (y su fecha 'as of' si está) del fund page de
+    YieldMax. Devuelve {'rate_pct': float|None, 'as_of': 'YYYY-MM-DD'|None}.
+
+    YieldMax la muestra como una stat destacada (fuera de la tabla de distribuciones): una
+    etiqueta 'Distribution Rate' con un valor 'XX.XX%' cercano. Se toma el primer % DESPUÉS de
+    la etiqueta (sin cruzar otro %), para no confundirlo con '30-Day SEC Yield'. Testeable sin
+    navegador."""
+    out = {"rate_pct": None, "as_of": None}
+    soup = BeautifulSoup(html or "", "html.parser")
+    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+    # En la página real el valor titular PRECEDE a la etiqueta: "65.82% Distribution Rate*".
+    # Exigimos decimales para no capturar el "12% distribution rate" de la prosa de marketing
+    # ni el "30-Day SEC Yield" contiguo.
+    m = re.search(r"(\d{1,3}\.\d+)\s*%\s*distribution\s+rate", text, re.IGNORECASE)
+    if m:
+        out["rate_pct"] = _parse_rate_pct(m.group(1) + "%")
+        # Fecha "As of: MM/DD/YYYY" en la ventana inmediata tras la etiqueta titular.
+        tail = text[m.end():m.end() + 140]
+        md = re.search(r"as of:?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})", tail, re.IGNORECASE)
+        if md:
+            out["as_of"] = _parse_date(md.group(1))
+    return out
+
+
+def build_rate_entry(tk, rate_info):
+    """Entrada de distribution_rate.yaml para un fondo."""
+    return {
+        "rate_pct": rate_info.get("rate_pct"),
+        "as_of": rate_info.get("as_of") or datetime.date.today().isoformat(),
+        "source_url": FUND_URL.format(tk=tk.lower()),
+    }
+
+
 def build_entry(tk, rows):
     """Entrada de roc_19a.yaml: asof, source_url, weighted_pct (trailing ~12m por monto), per_distribution."""
     rows = sorted(rows, key=lambda r: r[0], reverse=True)
@@ -158,18 +206,21 @@ def fetch_rendered_html(url):
 
 
 def fetch_rows_with_retries(url, tk):
-    """Intenta varias veces; reintenta si la tabla no rindió (0 filas). Devuelve la lista de filas."""
-    rows = []
+    """Intenta varias veces; reintenta si la tabla no rindió (0 filas). Devuelve
+    (rows, html): las filas ROC y el HTML del último render (para parsear también la
+    Distribution Rate titular de la MISMA carga de página)."""
+    rows, html = [], ""
     for attempt in range(1, RETRIES + 1):
         try:
-            rows = parse_distributions_from_html(fetch_rendered_html(url))
+            html = fetch_rendered_html(url)
+            rows = parse_distributions_from_html(html)
         except Exception as e:
             print(f"::warning::{tk}: intento {attempt}/{RETRIES} ERROR: {e}", file=sys.stderr)
         if rows:
-            return rows
+            return rows, html
         if attempt < RETRIES:
             time.sleep(RETRY_WAIT)
-    return rows
+    return rows, html
 
 
 def main(argv):
@@ -178,19 +229,24 @@ def main(argv):
         print("No hay tickers yieldmax que refrescar.", file=sys.stderr)
         return 0
 
-    existing = {}
-    if os.path.exists(ROC_PATH):
-        try:
-            with open(ROC_PATH, "r", encoding="utf-8") as fh:
-                existing = yaml.safe_load(fh) or {}
-        except Exception:
-            existing = {}
+    def _load_yaml(path):
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    return yaml.safe_load(fh) or {}
+            except Exception:
+                return {}
+        return {}
+
+    existing = _load_yaml(ROC_PATH)
     out = dict(existing)
+    existing_rates = _load_yaml(DIST_RATE_PATH)
+    out_rates = dict(existing_rates)
 
     regressions, empty_new = [], []
     for tk in tickers:
         url = FUND_URL.format(tk=tk.lower())
-        rows = fetch_rows_with_retries(url, tk)
+        rows, html = fetch_rows_with_retries(url, tk)
         time.sleep(FUND_DELAY)
         if rows:
             out[tk] = build_entry(tk, rows)
@@ -207,12 +263,30 @@ def main(argv):
                 print(f"::warning::{tk}: sin filas y sin datos previos "
                       f"(¿ticker/URL correctos? {url})", file=sys.stderr)
 
+        # Distribution Rate titular (de la misma carga de página). Resiliencia: si no se
+        # parsea pero había valor previo, se conserva (no se pisa con None).
+        rate_info = parse_distribution_rate_from_html(html)
+        if rate_info.get("rate_pct") is not None:
+            out_rates[tk] = build_rate_entry(tk, rate_info)
+            print(f"{tk}: distribution rate titular {out_rates[tk]['rate_pct']}%")
+        elif (existing_rates.get(tk) or {}).get("rate_pct") is not None:
+            print(f"::warning::{tk}: no se parseó la Distribution Rate (conservo la previa "
+                  f"{existing_rates[tk]['rate_pct']}%).", file=sys.stderr)
+        else:
+            print(f"::warning::{tk}: sin Distribution Rate titular y sin valor previo.",
+                  file=sys.stderr)
+
     os.makedirs(os.path.dirname(ROC_PATH), exist_ok=True)
     with open(ROC_PATH, "w", encoding="utf-8") as fh:
         fh.write("# Generado por fetch_roc_19a.py (fuente: páginas oficiales de YieldMax).\n"
                  "# Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.\n")
         yaml.safe_dump(out, fh, sort_keys=False, allow_unicode=True)
-    print(f"Escrito {ROC_PATH} ({len(out)} fondos). "
+    with open(DIST_RATE_PATH, "w", encoding="utf-8") as fh:
+        fh.write("# Generado por fetch_roc_19a.py: tasa de distribución TITULAR que anuncia "
+                 "YieldMax por fondo.\n# Refresco semanal vía .github/workflows/refresh-roc-19a.yml. "
+                 "No editar a mano.\n")
+        yaml.safe_dump(out_rates, fh, sort_keys=False, allow_unicode=True)
+    print(f"Escrito {ROC_PATH} ({len(out)} fondos) y {DIST_RATE_PATH} ({len(out_rates)} tasas). "
           f"Nuevos sin datos: {empty_new or '—'}. Regresiones: {regressions or '—'}.")
 
     # Salir con error SOLO si un fondo que tenía datos los perdió (dispara email de GitHub).

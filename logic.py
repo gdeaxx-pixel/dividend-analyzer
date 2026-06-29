@@ -1421,6 +1421,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # v3.0 — yield doble (realizado vs forward) y retención real del CSV
             "forward_yield":     _fy['forward_yield'],
             "realized_yield":    _fy['realized_yield'],
+            "advertised_yield":  advertised_distribution_rate(ticker),
             "payments_per_year": _fy['payments_per_year'],
             "last_payment":      _fy['last_payment'],
             "ttm_income":        _fy['ttm_income'],
@@ -2296,6 +2297,45 @@ def load_roc_19a() -> dict:
     return data
 
 
+_DISTRATE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'distribution_rate.yaml')
+_DISTRATE_CACHE = {}
+
+
+def load_distribution_rate() -> dict:
+    """Carga la tasa de distribución TITULAR que anuncia YieldMax por fondo
+    (knowledge/distribution_rate.yaml), refrescada semanalmente por el GitHub Action que corre
+    fetch_roc_19a.py contra la página oficial del fondo.
+
+    Estructura por ticker (MAYÚSCULAS): {rate_pct, as_of, source_url}. Defensivo: archivo
+    ausente/ inválido → {}.
+    """
+    if _DISTRATE_CACHE.get('_loaded'):
+        return _DISTRATE_CACHE['data']
+    data = {}
+    if _yaml is not None:
+        try:
+            with open(_DISTRATE_PATH, 'r', encoding='utf-8') as fh:
+                raw = _yaml.safe_load(fh) or {}
+            if isinstance(raw, dict):
+                data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
+        except Exception:
+            data = {}
+    _DISTRATE_CACHE['_loaded'] = True
+    _DISTRATE_CACHE['data'] = data
+    return data
+
+
+def advertised_distribution_rate(ticker) -> float:
+    """% de distribución titular publicado por YieldMax para `ticker`, o None si no se conoce."""
+    info = load_distribution_rate().get(str(ticker).upper()) or {}
+    r = info.get('rate_pct')
+    try:
+        return float(r) if r is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 _ROCHEALTH_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_health_history.yaml')
 _ROCHEALTH_CACHE = {}
@@ -3115,6 +3155,140 @@ def forward_realized_yield(history_df, market_value, today=None) -> dict:
         return out                      # forward_yield queda None
     out['forward_yield'] = round(last_payment * ppy / market_value * 100, 2)
     return out
+
+
+# Holgura para comparar el yield titular contra el mecanismo: absoluta (puntos %) o relativa
+# (fracción del titular), la mayor. Los YieldMax corren 30-85%, así que una banda solo absoluta
+# sería demasiado estricta para los altos y demasiado laxa para los bajos.
+ADVERTISED_ABS_TOL = 5.0
+ADVERTISED_REL_TOL = 0.15
+
+
+def audit_advertised_yield(advertised, forward, realized):
+    """Audita el yield TITULAR que publica YieldMax contra la realidad reconstruida del CSV.
+
+    3 vías (todas en % anual sobre el valor de mercado actual):
+      advertised : lo que YieldMax PUBLICA (scrapeado, `advertised_yield`).
+      forward    : su propio mecanismo HOY = último pago real × frecuencia / valor (`forward_yield`).
+      realized   : lo que de verdad cobraste = dividendos TTM / valor (`realized_yield`).
+
+    Devuelve {verdict, label, advertised, forward, realized, gap_fwd, gap_real} donde:
+      verdict='match'   → titular ≈ mecanismo: anuncian lo que su fórmula paga (honesto en la forma).
+      verdict='ahead'   → titular ≫ mecanismo: el titular va por delante de lo que pagan ahora.
+      verdict='behind'  → titular ≪ mecanismo: el titular va por debajo (poco común).
+      verdict='unknown' → falta el titular (sin scrape) o el mecanismo (posición rancia/sin pagos).
+    `gap_real` (titular − realizado) es el dato educativo: aun siendo honesto en la forma, el
+    titular casi siempre supera lo que de verdad entró a tu bolsillo.
+    """
+    def _f(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+    a, fwd, rz = _f(advertised), _f(forward), _f(realized)
+    gap_fwd = (a - fwd) if (a is not None and fwd is not None) else None
+    gap_real = (a - rz) if (a is not None and rz is not None) else None
+    if a is None or fwd is None:
+        verdict, label = 'unknown', 'Sin dato suficiente para auditar el titular'
+    else:
+        tol = max(ADVERTISED_ABS_TOL, ADVERTISED_REL_TOL * a)
+        if abs(gap_fwd) <= tol:
+            verdict, label = 'match', 'Anuncian lo que su mecanismo paga'
+        elif gap_fwd > 0:
+            verdict, label = 'ahead', 'El titular va por delante de lo que pagan ahora'
+        else:
+            verdict, label = 'behind', 'El titular va por debajo de lo que pagan ahora'
+    return {'verdict': verdict, 'label': label, 'advertised': a, 'forward': fwd,
+            'realized': rz, 'gap_fwd': gap_fwd, 'gap_real': gap_real}
+
+
+def _roc_pct_for(ticker, stats):
+    """% ROC representativo del fondo: el ponderado de los avisos 19a si existe, si no el
+    estimado del broker (`roc_percent`)."""
+    info = load_roc_19a().get(str(ticker).upper()) or {}
+    w = info.get('weighted_pct')
+    if w is not None:
+        try:
+            return float(w)
+        except (TypeError, ValueError):
+            pass
+    return stats.get('roc_percent')
+
+
+def build_hoja_excel(results, classify_map=None):
+    """Filas de la sección educativa 'Hoja Excel' (solo fondos de income): el método tradicional
+    de la hoja de cálculo —con sus errores— contra la vista honesta corregida.
+
+    Método tradicional (replicado tal cual, a propósito con su sesgo):
+      total_inv_naive = inversión + dividendos  → trata el retorno como capital aportado (infla).
+
+    Vista honesta:
+      total_return = valor de mercado + dividendos en efectivo − inversión  (DRIP ya está en el
+      valor de mercado, por eso NO se suma; mismo criterio que la tarjeta de Retorno Total).
+      dividendos: bruto = neto + impuesto NRA  (total_dividends ya viene neto de NRA).
+      nav_health = classify_roc_health(...)  → veredicto honesto por tendencia del NAV.
+      audit = audit_advertised_yield(...)    → titular vs mecanismo vs realizado.
+
+    Devuelve {'rows': [...], 'totals': {...}} ordenado por valor de mercado desc.
+    """
+    import datetime as _dt
+    rows = []
+    items = [(t, s) for t, s in (results or {}).items()
+             if isinstance(s, dict) and 'error' not in s
+             and (classify_map is None or classify_map.get(t) == 'mode_a')]
+    roc19a = load_roc_19a()
+    for tk, s in items:
+        pocket = s.get('pocket_investment') or 0.0
+        net_div = s.get('total_dividends') or 0.0          # drip + cash, ya neto de NRA
+        nra = s.get('withheld_tax_total') or 0.0
+        gross_div = net_div + nra
+        mv = s.get('market_value') or 0.0
+        cash_div = s.get('dividends_collected_cash') or 0.0
+
+        inicio = None
+        hist = s.get('history')
+        try:
+            if hist is not None and len(hist) and 'Date' in hist.columns:
+                inicio = pd.to_datetime(hist['Date']).min().date().isoformat()
+        except Exception:
+            inicio = None
+
+        total_inv_naive = pocket + net_div                 # la fórmula defectuosa
+        total_return = mv + cash_div - pocket              # la honesta
+        total_return_pct = (total_return / pocket * 100) if pocket > 0 else None
+
+        roc_pct = _roc_pct_for(tk, s)
+        price_cagr = (s.get('price_cagr_recent') if s.get('price_cagr_recent') is not None
+                      else s.get('price_cagr'))
+        asof_days = None
+        _asof = (roc19a.get(str(tk).upper()) or {}).get('asof')
+        if _asof:
+            try:
+                asof_days = (_dt.date.today() - _dt.date.fromisoformat(_asof)).days
+            except Exception:
+                asof_days = None
+        nav_health = classify_roc_health(roc_pct, price_cagr, total_return_pct=total_return_pct,
+                                         history_days=s.get('price_history_days'),
+                                         roc_asof_days=asof_days)
+        audit = audit_advertised_yield(s.get('advertised_yield'), s.get('forward_yield'),
+                                       s.get('realized_yield'))
+        rows.append({
+            'ticker': tk, 'inicio': inicio, 'advertised': s.get('advertised_yield'),
+            'investment': pocket, 'dividends_net': net_div, 'dividends_gross': gross_div,
+            'nra_tax': nra, 'total_inv_naive': total_inv_naive, 'market_value': mv,
+            'last_div': s.get('last_payment'),
+            'total_return': total_return, 'total_return_pct': total_return_pct,
+            'yield_on_cost': s.get('yield_on_cost'), 'realized_yield': s.get('realized_yield'),
+            'forward_yield': s.get('forward_yield'), 'nav_health': nav_health, 'audit': audit,
+        })
+
+    rows.sort(key=lambda r: -(r['market_value'] or 0))
+    totals = {k: sum(r[k] for r in rows) for k in
+              ('investment', 'dividends_net', 'dividends_gross', 'nra_tax',
+               'total_inv_naive', 'market_value', 'total_return')}
+    totals['total_return_pct'] = (totals['total_return'] / totals['investment'] * 100
+                                  if totals['investment'] > 0 else None)
+    return {'rows': rows, 'totals': totals}
 
 
 # Frecuencias estándar (pagos/año) → etiqueta legible. Se mapea por cercanía.

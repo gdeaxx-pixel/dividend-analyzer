@@ -50,7 +50,7 @@ jobs:
       - name: Commitear si cambió
         if: always()
         run: |
-          git add knowledge/roc_19a.yaml knowledge/roc_health_history.yaml
+          git add knowledge/roc_19a.yaml knowledge/roc_health_history.yaml knowledge/distribution_rate.yaml
           if git diff --cached --quiet; then
             echo "Sin cambios en los YAML de conocimiento."
           else
