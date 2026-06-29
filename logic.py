@@ -3253,6 +3253,16 @@ def build_hoja_excel(results, classify_map=None):
         except Exception:
             inicio = None
 
+        # Último dividendo: promedio de los últimos 4 pagos, para suavizar la volatilidad
+        # semanal (un solo pago puede ser atípico). Cae a `last_payment` si no hay historial.
+        last_div_avg = s.get('last_payment')
+        try:
+            _ev = _dividend_events(hist)
+            if _ev is not None and len(_ev):
+                last_div_avg = float(_ev.tail(4).mean())
+        except Exception:
+            pass
+
         total_inv_naive = pocket + net_div                 # la fórmula defectuosa
         total_return = mv + cash_div - pocket              # la honesta
         total_return_pct = (total_return / pocket * 100) if pocket > 0 else None
@@ -3276,7 +3286,7 @@ def build_hoja_excel(results, classify_map=None):
             'ticker': tk, 'inicio': inicio, 'advertised': s.get('advertised_yield'),
             'investment': pocket, 'dividends_net': net_div, 'dividends_gross': gross_div,
             'nra_tax': nra, 'total_inv_naive': total_inv_naive, 'market_value': mv,
-            'last_div': s.get('last_payment'),
+            'last_div': s.get('last_payment'), 'last_div_avg': last_div_avg,
             'total_return': total_return, 'total_return_pct': total_return_pct,
             'yield_on_cost': s.get('yield_on_cost'), 'realized_yield': s.get('realized_yield'),
             'forward_yield': s.get('forward_yield'), 'nav_health': nav_health, 'audit': audit,

@@ -3786,7 +3786,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         f'<td style="padding:7px 10px;text-align:right;">{_money(r["dividends_net"])}</td>'
                         f'<td style="padding:7px 10px;text-align:right;color:#c9821f;font-weight:600;background:#1c1405;">{_money(r["total_inv_naive"])}</td>'
                         f'<td style="padding:7px 10px;text-align:right;">{_money(r["market_value"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#8aa;">{_money(r["last_div"])}</td>'
+                        f'<td style="padding:7px 10px;text-align:right;color:#8aa;">{_money(r.get("last_div_avg") or r["last_div"])}</td>'
                         '</tr>')
                 st.markdown(f"""
 <p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#64748B;margin:2px 0 3px 2px;letter-spacing:0.06em;">① MÉTODO TRADICIONAL <span style="color:#c9821f;">(como tu hoja de Excel)</span></p>
@@ -3797,7 +3797,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     <th style="{_THL_L}">Acción</th><th style="{_THL}">Inversión</th>
     <th style="{_THL}">Dividendos</th>
     <th style="{_THL}background:#1c1405;color:#c9821f;">⚠ Total Inv (Inv+Div)</th>
-    <th style="{_THL}">Valor Mer</th><th style="{_THL}">Último Div</th>
+    <th style="{_THL}">Valor Mer</th><th style="{_THL}">Últ. div (~4 pagos)</th>
   </tr></thead>
   <tbody>{_b1}
     <tr style="border-top:2px solid #006497;font-weight:700;color:#fff;">
@@ -3929,7 +3929,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     <th style="{_hh.replace('text-align:right','text-align:left')}">Veredicto</th>
   </tr></thead><tbody>{_ab}</tbody>
 </table></div>
-<p style="font-family:Inter,sans-serif;font-size:10.5px;color:#64748B;margin:8px 0 0 0;line-height:1.55;"><b>Cómo leerlo:</b> si «titular ≈ mecanismo», anuncian lo que su fórmula paga. Pero ojo: cuando el NAV se desploma, el «realizado sobre tu valor actual» se dispara (divides entre un valor más chico) — un yield alto ahí <b>no</b> es buena señal, es la erosión. La cifra honesta es el <b>retorno total</b> de la tabla de arriba, no el yield.</p>
+<p style="font-family:Inter,sans-serif;font-size:10.5px;color:#64748B;margin:8px 0 0 0;line-height:1.55;"><b>Cómo leerlo:</b> si «titular ≈ mecanismo», anuncian lo que su fórmula paga. Fíjate en <b>«Rend. s/ tu costo»</b>: si se acerca al titular, el fondo sí paga ~lo prometido respecto a tu principal — lo que te empobrece es la <b>caída del NAV</b>, no que paguen poco. Y ojo: cuando el NAV se desploma, el «realizado sobre tu valor actual» se dispara (divides entre un valor más chico) — un yield alto ahí <b>no</b> es buena señal, es la erosión. La cifra honesta es el <b>retorno total</b> de la tabla de arriba, no el yield.</p>
 """, unsafe_allow_html=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
