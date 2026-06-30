@@ -3282,20 +3282,25 @@ def build_hoja_excel(results, classify_map=None):
                                          roc_asof_days=asof_days)
         audit = audit_advertised_yield(s.get('advertised_yield'), s.get('forward_yield'),
                                        s.get('realized_yield'))
+        # ROC en dólares = % de retorno de capital × distribución bruta. NO es una resta de
+        # costos (Inv+Reinv−Costo): es la porción de lo distribuido que era tu propio capital
+        # de vuelta. Sirve para «desinflar» el total_inv_naive en la revelación de la trampa.
+        roc_dollars = (roc_pct / 100.0 * gross_div) if roc_pct is not None else None
         rows.append({
             'ticker': tk, 'inicio': inicio, 'advertised': s.get('advertised_yield'),
             'investment': pocket, 'dividends_net': net_div, 'dividends_gross': gross_div,
             'nra_tax': nra, 'total_inv_naive': total_inv_naive, 'market_value': mv,
             'last_div': s.get('last_payment'), 'last_div_avg': last_div_avg,
             'total_return': total_return, 'total_return_pct': total_return_pct,
+            'roc_pct': roc_pct, 'roc_dollars': roc_dollars,
             'yield_on_cost': s.get('yield_on_cost'), 'realized_yield': s.get('realized_yield'),
             'forward_yield': s.get('forward_yield'), 'nav_health': nav_health, 'audit': audit,
         })
 
     rows.sort(key=lambda r: -(r['market_value'] or 0))
-    totals = {k: sum(r[k] for r in rows) for k in
+    totals = {k: sum((r[k] or 0) for r in rows) for k in
               ('investment', 'dividends_net', 'dividends_gross', 'nra_tax',
-               'total_inv_naive', 'market_value', 'total_return')}
+               'total_inv_naive', 'market_value', 'total_return', 'roc_dollars')}
     totals['total_return_pct'] = (totals['total_return'] / totals['investment'] * 100
                                   if totals['investment'] > 0 else None)
     return {'rows': rows, 'totals': totals}

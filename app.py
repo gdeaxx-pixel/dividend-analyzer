@@ -806,6 +806,65 @@ st.markdown("""
     }
     .da-growth-total > span { color: #021C36; font-size: 13px; }
 
+    /* 22d-bis. CUADRÍCULAS «HOJA EXCEL» — método tradicional + vista honesta.
+       Misma rejilla (display:grid) que la de crecimiento para que las columnas
+       comunes coincidan en espacio entre ambas tablas. El grid-template-columns
+       va inline por tabla (cuentan columnas distintas al expandir el drill-down). */
+    /* Sin overflow en el wrap: los tooltips de encabezado se abren hacia arriba y
+       no deben recortarse. El min-width vive en el div interno. */
+    .da-he-wrap { margin: 6px 0 2px 0; }
+    .da-he-grid { width: 100%; }
+    .da-he-row {
+        display: grid;
+        gap: 10px;
+        align-items: baseline;
+        padding: 6px 0;
+        border-bottom: 1px solid #eef1f4;
+    }
+    .da-he-row > span {
+        font-family: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 700;
+        color: #0F172A;
+        text-align: right;
+        letter-spacing: -0.01em;
+    }
+    .da-he-row > span.l {
+        font-family: 'Inter', sans-serif;
+        text-align: left;
+        color: #021C36;
+        letter-spacing: 0.02em;
+    }
+    .da-he-row > span.c { text-align: center; }
+    .da-he-head { border-bottom: 2px solid #006497; }
+    .da-he-head > span {
+        font-family: 'Inter', sans-serif;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #8899aa;
+    }
+    .da-he-head > span.hl { text-align: left; }
+    .da-he-head > span.c { text-align: center; }
+    .da-he-head > span.da-tip { cursor: help; border-bottom: 1px dotted #b8c2cc; padding-bottom: 1px; }
+    .da-he-head > span.da-tip:hover { border-bottom-color: #006497; color: #006497; }
+    .da-he-total { border-top: 2px solid #006497; border-bottom: none; margin-top: 2px; padding-top: 7px; }
+    .da-he-total > span { color: #021C36; font-size: 13px; }
+    /* acentos semánticos preservados */
+    .da-he-row > span.tk { font-family: 'Inter', sans-serif; font-weight: 800; color: #021C36; text-align: left; }
+    .da-he-row > span.amber { color: #c9821f; }
+    .da-he-row > span.naive { color: #c9821f; background: #fbf3e3; border-radius: 0; }
+    .da-he-head > span.naive { color: #c9821f; background: #fbf3e3; }
+    .da-he-row > span.nra { color: #cc6a6a; }
+    .da-he-row > span.muted { color: #8aa0b2; }
+    .da-he-row > span.pos { color: #1f8a5b; }
+    .da-he-row > span.neg { color: #cf4b4b; }
+    .da-he-badge {
+        display: inline-block; padding: 2px 8px; font-weight: 700;
+        font-size: 10px; letter-spacing: 0.04em; font-family: 'Inter', sans-serif;
+    }
+
     /* 22e. TABLA KPI INGRESOS — consolidada (ETF una sola vez, 4 grupos a lo ancho)
        Cada grupo muestra solo el valor de la calculadora + Δ% vs Schwab (2 cols). */
     .da-kpiwide-row, .da-kpiwide-grouphead, .da-kpiwide-subhead {
@@ -3758,11 +3817,70 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 if not _rows:
                     return
                 _t = _he['totals']
-                _THL = ('padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;'
-                        'font-size:10px;letter-spacing:0.1em;text-transform:uppercase;')
-                _THL_L = _THL.replace('text-align:right', 'text-align:left')
                 _money = lambda x: '—' if x is None else f'${x:,.2f}'
                 _pct = lambda x, d=1: '—' if x is None else f'{x:.{d}f}%'
+                _neg = lambda x: '—' if x is None else f'−${x:,.2f}'
+                _fid = st.session_state.get('_file_id', 'x')
+                _ttrc = '#1f8a5b' if (_t['total_return'] or 0) >= 0 else '#cf4b4b'
+
+                # Tooltips por columna (reutilizan el copy de los párrafos explicativos).
+                _TIP = {
+                    'inicio': 'Fecha de tu primera compra de este activo. Un activo con más tiempo '
+                              'tuvo más oportunidades de pagar y de moverse de precio.',
+                    'accion': 'El ETF o acción. Aquí solo aparecen tus fondos de <b>income</b> '
+                              '(distribución alta), no los de crecimiento.',
+                    'titular': 'El yield <b>titular</b> que publica el fondo (marketing). Anualiza un '
+                               'solo pago sobre el NAV; con distribuciones que saltan semana a semana '
+                               'dice poco de lo que rinde de verdad.',
+                    'inversion': 'Lo que pusiste de tu <b>bolsillo</b> (costo base): el capital real '
+                                 'que aportaste, sin contar dividendos.',
+                    'netos': 'Los dividendos que de verdad entraron a tu cuenta, <b>ya descontado</b> '
+                             'el impuesto NRA. Incluye lo reinvertido (DRIP) y el efectivo.',
+                    'bruto': 'El dividendo <b>bruto</b>: lo que el fondo declaró, <b>antes</b> de la '
+                             'retención de impuesto a extranjeros.',
+                    'nra': 'El impuesto que EE.UU. retiene a extranjeros (~30%) <b>antes</b> de '
+                           'depositarte el dividendo. Por eso el neto es menor que el bruto.',
+                    'totalinv': '⚠ El método viejo: <b>Inversión + Dividendos</b>, como si los '
+                                'dividendos fueran capital que aportaste. <b>No lo son</b>: son '
+                                'retorno —y en YieldMax buena parte es tu propio capital de vuelta '
+                                '(ROC)—. Esta cifra infla el «invertido».',
+                    'roc': '<b>Retorno de capital (ROC)</b>: la porción de lo distribuido que era '
+                           '<b>tu propio dinero de vuelta</b>, no ganancia. Erosiona el NAV. Aquí se '
+                           'resta del «total invertido» para corregir el engaño.',
+                    'capreal': 'Tu <b>capital real aportado</b> una vez devuelto el ROC: Total inv '
+                               '(Inv+Div) − ROC. Acerca el número inflado a lo que de verdad pusiste.',
+                    'valor': 'Lo que valen hoy tus posiciones a precio de mercado.',
+                    'retorno': '<b>Retorno total real</b> = Valor de mercado + dividendos en '
+                               '<b>efectivo</b> − tu inversión. La única cifra que dice si ganaste o '
+                               'perdiste. El DRIP no se suma aparte: ya está dentro del valor de mercado.',
+                    'salud': 'Veredicto honesto por la <b>tendencia del precio del fondo</b> (erosión '
+                             'del NAV), no por el yield titular.',
+                    'ultdiv': 'Promedio de tus últimos ~4 pagos, para suavizar la volatilidad semana '
+                              'a semana de un solo pago.',
+                }
+
+                def _sp(content, cls=''):
+                    return f'<span class="{cls}">{content}</span>' if cls else f'<span>{content}</span>'
+
+                def _th(label, tip, right=False, cls=''):
+                    bc = 'da-tip-box r' if right else 'da-tip-box'
+                    c = (cls + ' da-tip').strip()
+                    return f'<span class="{c}">{label}<span class="{bc}">{tip}</span></span>'
+
+                def _row(cells, tpl, cls=''):
+                    c = ('da-he-row ' + cls).strip()
+                    return f'<div class="{c}" style="grid-template-columns:{tpl};">{cells}</div>'
+
+                def _grid(head, body, total, min_px):
+                    return (f'<div class="da-he-wrap"><div class="da-he-grid" '
+                            f'style="min-width:{min_px}px;">{head}{body}{total}</div></div>')
+
+                # Anchos (fr) por columna lógica; el grid-template se arma por tabla y comparten
+                # las columnas comunes para que coincidan en espacio entre ambas cuadrículas.
+                _W = {'inicio': 'minmax(58px,0.85fr)', 'accion': '0.7fr', 'titular': '0.7fr',
+                      'inversion': '1fr', 'bruto': '1fr', 'nra': '0.9fr', 'netos': '1fr',
+                      'totalinv': '1.1fr', 'roc': '0.9fr', 'capreal': '1.1fr', 'valor': '1fr',
+                      'retorno': '1.15fr', 'salud': '0.95fr', 'ultdiv': '1fr'}
 
                 st.markdown(
                     '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;'
@@ -3774,93 +3892,145 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     'replicamos tal cual (con su sesgo) y la comparamos con lo que de verdad pasó '
                     'con tu dinero.</p>', unsafe_allow_html=True)
 
-                # ── Tabla 1 — método tradicional (replicado, con sus errores) ──
-                _b1 = ""
+                # ── Tabla 1 — método tradicional (rejilla limpia, columnas comunes alineadas) ──
+                _o1 = ['inicio', 'accion', 'inversion', 'netos', 'totalinv', 'valor', 'ultdiv', 'titular']
+                _tpl1 = ' '.join(_W[k] for k in _o1)
+                _h1 = _row(
+                    _th('Inicio', _TIP['inicio'], cls='hl')
+                    + _th('Acción', _TIP['accion'], cls='hl')
+                    + _th('Inversión', _TIP['inversion'])
+                    + _th('Dividendos', _TIP['netos'])
+                    + _th('⚠ Total inv. (Inv+Div)', _TIP['totalinv'], cls='naive')
+                    + _th('Valor mer.', _TIP['valor'])
+                    + _th('Últ. div (~4 pagos)', _TIP['ultdiv'], right=True)
+                    + _th('% Titular', _TIP['titular'], right=True),
+                    _tpl1, cls='da-he-head')
+                _b1 = ''
                 for r in _rows:
-                    _b1 += (
-                        '<tr style="border-bottom:1px solid #0d2a42;">'
-                        f'<td style="padding:7px 10px;color:#8aa;">{r["inicio"] or "—"}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#c9a227;">{_pct(r["advertised"])}</td>'
-                        f'<td style="padding:7px 10px;font-weight:700;color:#fff;">{r["ticker"]}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["investment"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["dividends_net"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#c9821f;font-weight:600;background:#1c1405;">{_money(r["total_inv_naive"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["market_value"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#8aa;">{_money(r.get("last_div_avg") or r["last_div"])}</td>'
-                        '</tr>')
-                st.markdown(f"""
-<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#64748B;margin:2px 0 3px 2px;letter-spacing:0.06em;">① MÉTODO TRADICIONAL <span style="color:#c9821f;">(como tu hoja de Excel)</span></p>
-<div style="overflow-x:auto;margin:0 0 2px 0;">
-<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaa;background:#010f1c;">
-  <thead><tr style="border-bottom:2px solid #006497;">
-    <th style="{_THL_L}">Inicio</th><th style="{_THL}">% Titular</th>
-    <th style="{_THL_L}">Acción</th><th style="{_THL}">Inversión</th>
-    <th style="{_THL}">Dividendos</th>
-    <th style="{_THL}background:#1c1405;color:#c9821f;">⚠ Total Inv (Inv+Div)</th>
-    <th style="{_THL}">Valor Mer</th><th style="{_THL}">Últ. div (~4 pagos)</th>
-  </tr></thead>
-  <tbody>{_b1}
-    <tr style="border-top:2px solid #006497;font-weight:700;color:#fff;">
-      <td style="padding:8px 10px;"></td><td></td><td style="padding:8px 10px;">Total</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['investment'])}</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['dividends_net'])}</td>
-      <td style="padding:8px 10px;text-align:right;color:#c9821f;background:#1c1405;">{_money(_t['total_inv_naive'])}</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['market_value'])}</td><td></td>
-    </tr>
-  </tbody>
-</table></div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#a06a1a;margin:3px 0 16px 2px;line-height:1.5;">⚠ <b>«Total Inv»</b> suma tu dinero con los dividendos como si fueran capital que aportaste. No lo son: son <b>retorno</b> que recibiste — y en YieldMax buena parte es <b>tu propio capital de vuelta (ROC)</b>. Esta columna infla el «invertido» y esconde si ganaste o perdiste.</p>
-""", unsafe_allow_html=True)
+                    _b1 += _row(
+                        _sp(r['inicio'] or '—', 'l muted')
+                        + _sp(r['ticker'], 'tk')
+                        + _sp(_money(r['investment']))
+                        + _sp(_money(r['dividends_net']))
+                        + _sp(_money(r['total_inv_naive']), 'naive')
+                        + _sp(_money(r['market_value']))
+                        + _sp(_money(r.get('last_div_avg') or r['last_div']), 'muted')
+                        + _sp(_pct(r['advertised']), 'amber'),
+                        _tpl1)
+                _tot1 = _row(
+                    _sp('', 'l') + _sp('Total', 'l')
+                    + _sp(_money(_t['investment']))
+                    + _sp(_money(_t['dividends_net']))
+                    + _sp(_money(_t['total_inv_naive']), 'naive')
+                    + _sp(_money(_t['market_value']))
+                    + _sp('') + _sp(''),
+                    _tpl1, cls='da-he-total')
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                    'color:#64748B;margin:2px 0 3px 2px;letter-spacing:0.06em;">① MÉTODO TRADICIONAL '
+                    '<span style="color:#c9821f;">(como tu hoja de Excel)</span></p>'
+                    + _grid(_h1, _b1, _tot1, 620)
+                    + '<p style="font-family:Inter,sans-serif;font-size:10px;color:#a06a1a;'
+                    'margin:4px 0 16px 2px;line-height:1.5;">⚠ <b>«Total inv.»</b> suma tu dinero con '
+                    'los dividendos como si fueran capital que aportaste. No lo son: son <b>retorno</b> '
+                    '—y en YieldMax buena parte es <b>tu propio capital de vuelta (ROC)</b>—. Pasa el '
+                    'cursor por cada encabezado para ver su explicación.</p>',
+                    unsafe_allow_html=True)
 
-                # ── Tabla 2 — vista honesta corregida ──
-                _neg = lambda x: '—' if x is None else f'−${x:,.2f}'
-                _b2 = ""
-                for r in _rows:
-                    _trc = '#4caf82' if (r['total_return'] or 0) >= 0 else '#e05c5c'
-                    _nh = r['nav_health']
-                    _nrastr = _neg(r['nra_tax'])
-                    _badge = (f'<span style="display:inline-block;padding:2px 8px;border-radius:0;'
-                              f'background:{_nh["color"]}22;color:{_nh["color"]};font-weight:700;'
-                              f'font-size:10px;letter-spacing:0.04em;">{_nh["label"]}</span>')
-                    _b2 += (
-                        '<tr style="border-bottom:1px solid #0d2a42;">'
-                        f'<td style="padding:7px 10px;color:#8aa;">{r["inicio"] or "—"}</td>'
-                        f'<td style="padding:7px 10px;font-weight:700;color:#fff;">{r["ticker"]}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["investment"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#8aa;">{_money(r["dividends_gross"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:#e08a8a;">{_nrastr}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["dividends_net"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;">{_money(r["market_value"])}</td>'
-                        f'<td style="padding:7px 10px;text-align:right;color:{_trc};font-weight:700;">{_money(r["total_return"])}<br><span style="font-size:10px;font-weight:600;">({_pct(r["total_return_pct"])})</span></td>'
-                        f'<td style="padding:7px 10px;text-align:center;">{_badge}</td>'
-                        '</tr>')
-                _ttrc = '#4caf82' if (_t['total_return'] or 0) >= 0 else '#e05c5c'
-                st.markdown(f"""
-<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;color:#0F766E;margin:2px 0 3px 2px;letter-spacing:0.06em;">② VISTA HONESTA <span style="color:#5a6b7a;font-weight:500;">(lo que de verdad pasó con tu dinero)</span></p>
-<div style="overflow-x:auto;margin:0 0 2px 0;">
-<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaa;background:#010f1c;">
-  <thead><tr style="border-bottom:2px solid #006497;">
-    <th style="{_THL_L}">Inicio</th><th style="{_THL_L}">Acción</th>
-    <th style="{_THL}">Tu inversión</th><th style="{_THL}">Div. brutos</th>
-    <th style="{_THL}">− Imp. NRA</th><th style="{_THL}">Div. netos</th>
-    <th style="{_THL}">Valor mercado</th><th style="{_THL}">Retorno total real</th>
-    <th style="{_THL.replace('text-align:right','text-align:center')}">Salud del NAV</th>
-  </tr></thead>
-  <tbody>{_b2}
-    <tr style="border-top:2px solid #006497;font-weight:700;color:#fff;">
-      <td style="padding:8px 10px;"></td><td style="padding:8px 10px;">Total</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['investment'])}</td>
-      <td style="padding:8px 10px;text-align:right;color:#8aa;">{_money(_t['dividends_gross'])}</td>
-      <td style="padding:8px 10px;text-align:right;color:#e08a8a;">{_neg(_t['nra_tax'])}</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['dividends_net'])}</td>
-      <td style="padding:8px 10px;text-align:right;">{_money(_t['market_value'])}</td>
-      <td style="padding:8px 10px;text-align:right;color:{_ttrc};">{_money(_t['total_return'])} ({_pct(_t['total_return_pct'])})</td>
-      <td></td>
-    </tr>
-  </tbody>
-</table></div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:3px 0 14px 2px;line-height:1.5;"><b>Retorno total real</b> = Valor de mercado + dividendos en efectivo − tu inversión. Es la única cifra que dice si ganaste o perdiste. Los «Div. netos» incluyen lo <b>reinvertido (DRIP)</b>, que ya está dentro del «Valor de mercado»; por eso el retorno suma solo el <b>efectivo</b>, para no contar el mismo dinero dos veces. <b>Salud del NAV</b> juzga por la tendencia del precio del fondo (erosión), no por el yield titular.</p>
-""", unsafe_allow_html=True)
+                # ── Tabla 2 — vista honesta (interactiva, st.fragment: drill-down sin recarga) ──
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                    'color:#0F766E;margin:6px 0 3px 2px;letter-spacing:0.06em;">② VISTA HONESTA '
+                    '<span style="color:#5a6b7a;font-weight:500;">(lo que de verdad pasó con tu '
+                    'dinero)</span></p>', unsafe_allow_html=True)
+
+                @st.fragment
+                def _honest_grid():
+                    _tc1, _tc2, _ = st.columns([1.1, 1.3, 0.9])
+                    with _tc1:
+                        _sd = st.toggle('Desglosar dividendos netos', value=False,
+                                        key=f'_he_div_{_fid}',
+                                        help='Abre Div. brutos y − Imp. NRA: netos = brutos − impuesto.')
+                    with _tc2:
+                        _strap = st.toggle('Revelar la trampa del «total invertido»', value=False,
+                                           key=f'_he_trap_{_fid}',
+                                           help='Resta el ROC al Inv+Div para mostrar tu capital real aportado.')
+                    _o2 = ['inicio', 'accion', 'inversion']
+                    if _sd:
+                        _o2 += ['bruto', 'nra']
+                    _o2 += ['netos', 'totalinv']
+                    if _strap:
+                        _o2 += ['roc', 'capreal']
+                    _o2 += ['valor', 'retorno', 'salud']
+                    _tpl2 = ' '.join(_W[k] for k in _o2)
+                    _mw2 = max(620, len(_o2) * 86)
+
+                    _hc = (_th('Inicio', _TIP['inicio'], cls='hl')
+                           + _th('Acción', _TIP['accion'], cls='hl')
+                           + _th('Tu inversión', _TIP['inversion']))
+                    if _sd:
+                        _hc += _th('Div. brutos', _TIP['bruto']) + _th('− Imp. NRA', _TIP['nra'])
+                    _hc += (_th('Div. netos', _TIP['netos'])
+                            + _th('⚠ Total inv.', _TIP['totalinv'], cls='naive'))
+                    if _strap:
+                        _hc += _th('− ROC', _TIP['roc']) + _th('Capital real', _TIP['capreal'], right=True)
+                    _hc += (_th('Valor mer.', _TIP['valor'], right=True)
+                            + _th('Retorno total real', _TIP['retorno'], right=True)
+                            + _th('Salud del NAV', _TIP['salud'], right=True, cls='c'))
+                    _h2 = _row(_hc, _tpl2, cls='da-he-head')
+
+                    _b2 = ''
+                    for r in _rows:
+                        _trc = 'pos' if (r['total_return'] or 0) >= 0 else 'neg'
+                        _nh = r['nav_health']
+                        _badge = ('<span class="da-he-badge" style="background:' + _nh['color']
+                                  + '22;color:' + _nh['color'] + ';">' + _nh['label'] + '</span>')
+                        _cells = (_sp(r['inicio'] or '—', 'l muted')
+                                  + _sp(r['ticker'], 'tk')
+                                  + _sp(_money(r['investment'])))
+                        if _sd:
+                            _cells += (_sp(_money(r['dividends_gross']), 'muted')
+                                       + _sp(_neg(r['nra_tax']), 'nra'))
+                        _cells += (_sp(_money(r['dividends_net']))
+                                   + _sp(_money(r['total_inv_naive']), 'naive'))
+                        if _strap:
+                            _cap = (r['total_inv_naive'] - r['roc_dollars']) if r['roc_dollars'] is not None else None
+                            _cells += _sp(_neg(r['roc_dollars']), 'nra') + _sp(_money(_cap))
+                        _ret = (_money(r['total_return'])
+                                + '<br><span style="font-size:10px;">(' + _pct(r['total_return_pct']) + ')</span>')
+                        _cells += _sp(_money(r['market_value'])) + _sp(_ret, _trc) + _sp(_badge, 'c')
+                        _b2 += _row(_cells, _tpl2)
+
+                    _trct = 'pos' if (_t['total_return'] or 0) >= 0 else 'neg'
+                    _tc = _sp('', 'l') + _sp('Total', 'l') + _sp(_money(_t['investment']))
+                    if _sd:
+                        _tc += _sp(_money(_t['dividends_gross']), 'muted') + _sp(_neg(_t['nra_tax']), 'nra')
+                    _tc += _sp(_money(_t['dividends_net'])) + _sp(_money(_t['total_inv_naive']), 'naive')
+                    if _strap:
+                        _tcap = _t['total_inv_naive'] - (_t['roc_dollars'] or 0)
+                        _tc += _sp(_neg(_t['roc_dollars']), 'nra') + _sp(_money(_tcap))
+                    _tret = _money(_t['total_return']) + ' (' + _pct(_t['total_return_pct']) + ')'
+                    _tc += _sp(_money(_t['market_value'])) + _sp(_tret, _trct) + _sp('', 'c')
+                    _tot2 = _row(_tc, _tpl2, cls='da-he-total')
+
+                    st.markdown(_grid(_h2, _b2, _tot2, _mw2), unsafe_allow_html=True)
+                    if _strap:
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:10px;color:#a06a1a;'
+                            'margin:3px 0 6px 2px;line-height:1.5;">El «total inv.» inflado se corrige al '
+                            '<b>devolver el ROC</b> —tu propio capital que el fondo te regresó como si fuera '
+                            'dividendo—; lo que queda es tu <b>capital real aportado</b>.</p>',
+                            unsafe_allow_html=True)
+
+                _honest_grid()
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;'
+                    'margin:3px 0 14px 2px;line-height:1.5;"><b>Retorno total real</b> = Valor de mercado '
+                    '+ dividendos en efectivo − tu inversión. Es la única cifra que dice si ganaste o '
+                    'perdiste. Los «Div. netos» incluyen lo <b>reinvertido (DRIP)</b>, que ya está dentro '
+                    'del «Valor de mercado»; por eso el retorno suma solo el <b>efectivo</b>, para no '
+                    'contar el mismo dinero dos veces. <b>Salud del NAV</b> juzga por la tendencia del '
+                    'precio del fondo (erosión), no por el yield titular.</p>', unsafe_allow_html=True)
 
                 # ── Callout: dónde se equivoca el método viejo (con tus números) ──
                 _naive_total = _t['total_inv_naive']

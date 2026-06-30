@@ -1757,3 +1757,28 @@ def test_build_hoja_excel_naive_vs_honest():
     assert round(r["dividends_gross"], 2) == round(2574.54 + 120.0, 2)
     assert r["nav_health"]["verdict"] in ("destructive", "mixed", "accounting", "insufficient")
     assert r["audit"]["advertised"] == 66.67
+
+
+def test_build_hoja_excel_roc_dollars_trap():
+    # Ticker ficticio sin avisos 19a → roc_pct cae al estimado del broker (roc_percent).
+    results = {
+        "ZZZZ": {
+            "pocket_investment": 4197.2, "total_dividends": 2574.54,
+            "withheld_tax_total": 120.0, "market_value": 1131.78,
+            "dividends_collected_cash": 2574.54, "last_payment": 28.85,
+            "price_cagr": -81.5, "roc_percent": 90.0, "price_history_days": 500,
+            "advertised_yield": 66.67, "forward_yield": 132.6, "realized_yield": 227.5,
+            "yield_on_cost": 61.0,
+        },
+    }
+    out = logic.build_hoja_excel(results, classify_map={"ZZZZ": "mode_a"})
+    r = out["rows"][0]
+    gross = 2574.54 + 120.0
+    assert r["roc_pct"] == 90.0
+    # ROC en dólares = % ROC × distribución bruta (no es una resta de costos).
+    assert round(r["roc_dollars"], 2) == round(0.90 * gross, 2)
+    # «Capital real aportado» = total_inv_naive − ROC$, siempre menor que el inflado.
+    cap_real = r["total_inv_naive"] - r["roc_dollars"]
+    assert cap_real < r["total_inv_naive"]
+    # el total agrega roc_dollars
+    assert round(out["totals"]["roc_dollars"], 2) == round(r["roc_dollars"], 2)
