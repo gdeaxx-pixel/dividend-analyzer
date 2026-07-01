@@ -28,8 +28,8 @@ TSLY:
   name: Tesla
   risk: HIGH
   reason: "Stock EV único, alta volatilidad, dependiente de Elon Musk y ciclos de demanda"
-  income_mechanism: "Genera income vendiendo opciones call cubiertas sintéticas sobre TSLA; tu income son las primas de esas opciones, no dividendos de Tesla (Tesla no paga dividendos)."
-  nav_erosion: "Estructural: la estrategia capa la subida de TSLA y financia parte de la distribución con retorno de capital (ROC). En un rally fuerte de TSLA, el ETF se queda atrás y su precio tiende a erosionarse."
+  income_mechanism: "Genera income vendiendo call spreads sobre TSLA y paga income semanal (desde oct-2025); tu income son las primas, no dividendos de Tesla (Tesla no paga dividendos)."
+  nav_erosion: "Estructural: capa la subida de TSLA y financia parte de la distribución con retorno de capital (ROC). Aplicó un reverse split 1:5, señal de erosión del precio en el tiempo."
   sustainability: "La distribución NO es fija: sube cuando la volatilidad de TSLA es alta (primas más caras) y baja cuando se calma. Un yield anunciado de tres dígitos rara vez se sostiene."
   note: "Holdear TSLY es apostar a TSLA lateral con alta volatilidad. Si crees que TSLA subirá fuerte, holdear TSLA directo captura esa subida; TSLY la cambia por income mensual."
 
@@ -39,7 +39,7 @@ NVDY:
   name: NVIDIA
   risk: HIGH
   reason: "Semiconductor único, ciclo de demanda IA, valuación elevada"
-  income_mechanism: "Genera income vendiendo calls cubiertas sintéticas sobre NVDA; el income son las primas de opciones, no dividendos de NVIDIA."
+  income_mechanism: "Genera income vendiendo call spreads sobre NVDA y paga income semanal (desde oct-2025); el income son las primas, no dividendos de NVIDIA."
   nav_erosion: "La estrategia capa la subida de NVDA. En el ciclo alcista de IA, NVDA directo ha superado ampliamente a NVDY en retorno total; el ETF cambia esa apreciación por flujo mensual."
   sustainability: "Depende de la volatilidad implícita de NVDA. Si NVDA se estabiliza, las primas (y la distribución) bajan."
   note: "Bueno para income; débil para capturar la apreciación de NVDA. Compara siempre su Retorno Total (precio + dividendos) contra holdear NVDA."
@@ -51,7 +51,7 @@ CONY:
   driver: el precio de Bitcoin y el mercado cripto
   risk: HIGH
   reason: "Exchange cripto, riesgo regulatorio intenso, correlacionado con BTC"
-  income_mechanism: "Calls cubiertas sintéticas sobre COIN; income vía primas de opciones."
+  income_mechanism: "Genera income vendiendo call spreads sobre COIN y paga income semanal (desde oct-2025); income vía primas de opciones."
   nav_erosion: "Erosión pronunciada: COIN es muy volátil y la estrategia devuelve mucho capital. CONY ha tenido reverse splits (1:10 en dic-2025), señal de erosión severa del precio."
   sustainability: "Distribución muy variable, atada a la volatilidad de COIN y del cripto. Períodos de calma reducen el income con fuerza."
   note: "De los YieldMax más erosivos. El precio puede caer >50% del ATH; el income debe evaluarse contra esa pérdida de capital (mira el callout de NAV erosion)."
@@ -63,10 +63,10 @@ MSTY:
   driver: el precio de Bitcoin
   risk: HIGH
   reason: "Proxy de Bitcoin con apalancamiento, volatilidad extrema"
-  income_mechanism: "Calls cubiertas sintéticas sobre MSTR (que a su vez es un proxy apalancado de Bitcoin); income vía primas, amplificadas por la altísima volatilidad de MSTR."
-  nav_erosion: "Erosión extrema: MSTY ha caído >50% desde su ATH y tuvo reverse split. La volatilidad genera primas enormes (yield alto) pero el precio del ETF sufre tanto como sube el income."
+  income_mechanism: "Genera income vendiendo call spreads sobre MSTR (proxy apalancado de Bitcoin) y paga income semanal (pasó de mensual a semanal en oct-2025); el income son las primas, amplificadas por la altísima volatilidad de MSTR."
+  nav_erosion: "Erosión extrema: MSTY ha caído >70% desde su ATH y aplicó un reverse split acumulado 1:5 (dic-2025), señal de erosión severa del precio. La volatilidad genera primas enormes (yield alto) pero el precio del ETF sufre tanto como sube el income."
   sustainability: "El yield titular es de los más altos del mercado precisamente porque el riesgo de erosión es de los mayores. No confundir yield alto con retorno alto."
-  note: "Caso de libro de 'yield alto ≠ ganancia'. Evalúa MSTY por Retorno Total (precio hoy + dividendos cobrados − inversión), nunca solo por el yield mensual."
+  note: "Caso de libro de 'yield alto ≠ ganancia'. Evalúa MSTY por Retorno Total (precio hoy + dividendos cobrados − inversión), nunca solo por el yield. Ojo: la distribución es semanal; al comparar 'yield' anualiza 52 pagos, no 12."
 
 NFLY:
   type: yieldmax
