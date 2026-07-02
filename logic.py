@@ -672,6 +672,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                         if amount != 0:
                             pocket_investment += abs(amount)
                             row_cash_flow = abs(amount)
+                            # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
+                            irr_flows_dated.append((_tx_date, -abs(amount)))
                 else:
                     # External deposit / contribution: new money from pocket
                     _adj_qty = abs(qty) * _sf
@@ -680,6 +682,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_pocket += _adj_qty
                     total_shares_bought += _adj_qty
                     row_cash_flow = abs(amount)
+                    # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
+                    irr_flows_dated.append((_tx_date, -abs(amount)))
 
             elif is_drip:
                 # Pattern 1: "Reinvest Shares" / "Comprar Acciones"
@@ -1219,18 +1223,23 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         if ticker_mode in ('mode_a', 'mode_b'):
             try:
                 if ticker_mode == 'mode_a':
-                    div_rows = ticker_df[
-                        ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|reinvest', na=False)
-                    ].copy()
+                    # Fuente única: _dividend_events cuenta 'Reinvest Dividend' (bruto) y
+                    # omite 'Reinvest Shares' (compra neta post-tax). Evita el neteo del DRIP
+                    # de Schwab que subestimaba los meses con reinversión.
+                    div_events = _dividend_events(ticker_df)
+                    if not div_events.empty:
+                        monthly_income = div_events.groupby(
+                            div_events.index.to_period('M').astype(str)
+                        ).sum()
                 else:
                     # mode_b: cash dividends only (exclude reinvest rows to avoid double-count)
                     div_rows = ticker_df[
                         ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield', na=False) &
                         ~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip', na=False)
                     ].copy()
-                if not div_rows.empty:
-                    div_rows['Month'] = div_rows['Date'].dt.to_period('M').astype(str)
-                    monthly_income = div_rows.groupby('Month')['Amount'].sum().abs()
+                    if not div_rows.empty:
+                        div_rows['Month'] = div_rows['Date'].dt.to_period('M').astype(str)
+                        monthly_income = div_rows.groupby('Month')['Amount'].sum().abs()
                 years = max((ticker_df['Date'].max() - ticker_df['Date'].min()).days / 365.25, 0.01)
                 ann_divs = total_dividends / years
                 yield_on_cost = (ann_divs / pocket_investment * 100) if pocket_investment > 0 else 0
@@ -4411,14 +4420,33 @@ def simulate_triple_comparison(buy_flows_json: str) -> dict:
                 if mdata.empty:
                     continue
 
-                shares = 0.0
-                for dt, amt in zip(dates, amounts):
-                    price = mdata['Close'].asof(dt)
-                    if pd.isna(price) or price <= 0:
-                        continue
-                    shares += amt / price
+                mdata = mdata.sort_index()
+                safe_prices = mdata['Close'].replace(0, pd.NA).ffill().bfill()
+                divs = (mdata['Dividends'] if 'Dividends' in mdata.columns
+                        else pd.Series(0.0, index=mdata.index))
 
-                final_price = float(mdata['Close'].iloc[-1])
+                # Asigna cada flujo al último día de mercado disponible (<= fecha del flujo).
+                invested_on = {}
+                for dt, amt in zip(dates, amounts):
+                    trade_day = safe_prices.index.asof(dt)
+                    if pd.isna(trade_day):
+                        trade_day = safe_prices.index[0]
+                    invested_on[trade_day] = invested_on.get(trade_day, 0.0) + amt
+
+                # Total Return: reinvierte los dividendos del ticker (mismo patrón que VOO).
+                shares = 0.0
+                for date in safe_prices.index:
+                    vp = float(safe_prices.loc[date]) if not pd.isna(safe_prices.loc[date]) else 0.0
+                    if vp > 0:
+                        add_cash = invested_on.get(date, 0.0)
+                        if add_cash:
+                            shares += add_cash / vp
+                        div = float(divs.get(date, 0.0) or 0.0)
+                        if div > 0 and shares > 0:
+                            shares += (div * shares) / vp
+                    shares = max(shares, 0.0)
+
+                final_price = float(safe_prices.iloc[-1])
                 final_value = shares * final_price
                 ret_pct = (final_value - total_invested) / total_invested * 100 if total_invested > 0 else 0
 

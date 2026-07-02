@@ -1782,3 +1782,56 @@ def test_build_hoja_excel_roc_dollars_trap():
     assert cap_real < r["total_inv_naive"]
     # el total agrega roc_dollars
     assert round(out["totals"]["roc_dollars"], 2) == round(r["roc_dollars"], 2)
+
+
+# ── Regresión fixes 2026-07-01 (revision-logica) ────────────────────────────────
+
+def test_monthly_income_drip_schwab_no_netea(monkeypatch):
+    """Fix 2: monthly_income (mode_a) usa _dividend_events, no el filtro que neteaba el DRIP.
+    Repro del informe: Reinvest Dividend +10, Reinvest Shares -7, Qualified Dividend +5
+    → el mes debe mostrar 15 (bruto cobrado), no 8 (neteado con la compra del DRIP)."""
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy",              "MSTY", 100, -2000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0,    10.0),
+        ("2024-10-01", "Reinvest Shares",   "MSTY", 7,    -7.0),
+        ("2024-10-15", "Qualified Dividend", "MSTY", 0,    5.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(df, version="TEST_MONTHLY_DRIP")["MSTY"]
+    mi = s["monthly_income"]
+    assert float(mi.loc["2024-10"]) == pytest.approx(15.0, abs=0.01)
+
+
+def test_irr_incluye_deposito_con_costo(monkeypatch):
+    """Fix 3: la rama deposit registra el flujo en el IRR. Una posición fondeada por una
+    contribución externa con costo produce un IRR finito; antes quedaba en None porque el
+    único flujo negativo (el capital que entró) no se registraba."""
+    df = _roc_norm_df([
+        ("2024-09-01", "Contribution", "MSTY", 100, -2000.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(df, version="TEST_IRR_DEPOSIT")["MSTY"]
+    assert s["pocket_investment"] == pytest.approx(2000.0, abs=0.01)
+    assert s["irr_anual"] is not None
+    # market_value ≈ pocket → IRR cercano a 0, pero finito (sin el fix: None).
+    assert abs(s["irr_anual"]) < 20
+
+
+def test_triple_comparison_reinvierte_dividendos(monkeypatch):
+    """Fix 1: simulate_triple_comparison reinvierte los dividendos (total return).
+    Con 1 dividendo de 10 sobre 10 acciones a $100, el valor final sube de 1000 a 1100
+    (antes ignoraba las distribuciones y daba 1000 / 0%)."""
+    import json
+
+    def _mkt(ticker, start):
+        idx = pd.to_datetime(["2024-09-02", "2024-09-03"])
+        df = pd.DataFrame({"Close": [100.0, 100.0], "Dividends": [0.0, 10.0]}, index=idx)
+        return df, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", _mkt)
+    flows = json.dumps([["2024-09-01", 1000.0]])
+    res = logic.simulate_triple_comparison(flows)
+    assert res, "simulate_triple_comparison devolvió vacío"
+    for key in ("all_vti", "all_ymax", "all_spy"):
+        assert res[key]["final_value"] == pytest.approx(1100.0, abs=0.5)
+        assert res[key]["return_pct"] == pytest.approx(10.0, abs=0.1)
