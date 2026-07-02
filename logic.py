@@ -366,7 +366,11 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
                         # US: 12,500.00 -> comma=thousands, dot=decimal
                         s = s.replace(',', '')
                 elif has_comma:
-                    # Only a comma present: treat as decimal (European / IB '0,155')
+                    # Only a comma present: treat as decimal (European / IB '0,155').
+                    # NOTA: no se puede distinguir la coma de miles US ("1,234"→1234) del
+                    # decimal europeo ("579,314"→579.314) desde el string — ambos son
+                    # \d{1,3},\d{3}. Se prioriza IB (formato real en uso); un CSV genérico
+                    # US con miles y sin decimales es un caso hipotético que no se soporta.
                     s = s.replace(',', '.')
                 # only a dot or no separator: already valid
                 return s
@@ -613,7 +617,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
         dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
-        cash_flows = []
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
             qty = safe_float(row.get('Quantity', 0))
@@ -1043,6 +1046,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
 
             daily_history['VOO Shares Held'] = voo_shares_series
             daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price']
+            # Guardado para beta/alpha: retorno TOTAL de VOO (precio + dividendos), sin flujos.
+            daily_history['VOO Div'] = voo_divs
 
         except Exception as e:
             print(f"Error calculating benchmark (VOO): {e}")
@@ -1052,7 +1057,14 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         try:
             _spy_final    = float(daily_history['SPY Profit'].replace(0, np.nan).dropna().iloc[-1])
             benchmark_value = _spy_final
-            benchmark_roi   = (_spy_final - pocket_investment) / pocket_investment * 100 if pocket_investment > 0 else None
+            # El benchmark invierte 'Flujo Efectivo' (efectivo + valor de transferencias), así que
+            # su ROI debe medirse sobre ESA misma base, no sobre pocket_investment (que excluye
+            # transferencias) — de lo contrario numerador y denominador hablan de capitales distintos.
+            _bench_base = float(daily_history['Flujo Efectivo'][daily_history['Flujo Efectivo'] > 0].sum()) \
+                if 'Flujo Efectivo' in daily_history.columns else pocket_investment
+            if _bench_base <= 0:
+                _bench_base = pocket_investment
+            benchmark_roi   = (_spy_final - _bench_base) / _bench_base * 100 if _bench_base > 0 else None
         except Exception:
             benchmark_value = None
             benchmark_roi   = None
@@ -1139,8 +1151,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         twr_factor = (1 + daily_history['User Return %'] / 100).replace(0, np.nan)
         daily_returns_q = twr_factor.pct_change().dropna()
 
-        spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
-        spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
+        # Beta/alpha contra el retorno TOTAL de VOO (precio + dividendos reinvertidos), NO contra
+        # 'SPY Profit' (valor de la cartera VOO simulada, que salta cada vez que entra capital y
+        # mete "retornos" falsos en el benchmark). Fallback a SPY Profit si no hay serie de precio.
+        if ('VOO Price' in daily_history.columns
+                and daily_history['VOO Price'].replace(0, np.nan).notna().sum() > 2):
+            _vp = daily_history['VOO Price'].replace(0, np.nan)
+            _vd = (daily_history['VOO Div'] if 'VOO Div' in daily_history.columns
+                   else pd.Series(0.0, index=daily_history.index)).fillna(0.0)
+            spy_daily_returns_q = ((_vp + _vd) / _vp.shift(1) - 1).dropna()
+        else:
+            spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
+            spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
 
         # 1b. Winsorizar retornos diarios (robustez ante saltos que NO son rendimientos):
         # transferencias de acciones a $0 de efectivo (Internal Transfer / Journaled Shares),
@@ -2161,8 +2183,10 @@ def is_held_too_briefly(ticker_df: pd.DataFrame, threshold_days: int = 14) -> tu
     Returns (False, None) if position is still open OR was held long enough.
     Only triggers when ALL shares have been sold (net_shares ≈ 0).
     """
+    # Excluye 'transfer'/'journal': una salida por transferencia trae Quantity negativa y, con
+    # abs(), inflaba total_bought — una posición realmente cerrada podía no detectarse.
     buys = ticker_df[ticker_df['Action'].str.lower().str.contains(
-        'buy|bought|compra|deposit|transfer|contribution|journal', na=False)]
+        'buy|bought|compra|deposit|contribution', na=False)]
     sells = ticker_df[ticker_df['Action'].str.lower().str.contains(
         'sell|sold|venta', na=False)]
 
@@ -2974,6 +2998,12 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
         flags.append('low_coverage')
 
     cost_broken = {'sells_exceed_buys', 'value_without_cost', 'no_cost_recorded'} & set(flags)
+    # csv_coverage_pct mide la vida del FONDO, no de la posición: un fondo viejo con la posición
+    # abierta hace poco pero documentada al 100% marca % bajo aunque el historial esté completo.
+    # Por eso 'low_coverage' solo degrada a 'partial' si además hay una señal real de historial
+    # truncado (history_incomplete / value_without_cost); por sí solo no es evidencia de nada.
+    low_cov_meaningful = 'low_coverage' in flags and (
+        s.get('history_incomplete') or 'value_without_cost' in flags)
     if cost_broken:
         level = 'unreliable'
         reason = ("El historial de compras de este ticker en el CSV esta incompleto "
@@ -2983,11 +3013,12 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
         action = (f"Exporta el historial COMPLETO de {ticker} desde la apertura de la posicion "
                   "y vuelve a subir el archivo. Mientras tanto no compares 1:1 con tu broker "
                   "las acciones, el valor ni el ROI de este ticker.")
-    elif 'low_coverage' in flags:
+    elif low_cov_meaningful:
         level = 'partial'
-        reason = (f"El CSV cubre solo ~{cov:.0f}% de la vida de la posicion; las metricas de largo "
-                  "plazo (CAGR, drawdown) pueden quedar incompletas.")
-        action = f"Si quieres precision total, exporta desde la apertura de {ticker}."
+        reason = (f"El CSV cubre solo ~{cov:.0f}% de la vida del fondo y además falta parte del "
+                  "historial de la posición; las métricas de largo plazo (CAGR, drawdown) pueden "
+                  "quedar incompletas.")
+        action = f"Si quieres precisión total, exporta {ticker} desde la apertura de la posición."
     else:
         level = 'ok'
         reason = ""
@@ -3784,6 +3815,9 @@ def _mc_simulate_path(asset, n_years, contrib_each, drip, rng, div_growth_base):
         g = max(min(g, 150.0), -99.0)             # acota el año a [-99%, +150%]
         mpg = (1 + g / 100.0) ** (1 / 12.0) - 1
         # ETF: el yield-on-price crece con el dividendo. YieldMax: yield fijo sobre NAV.
+        # NOTA: se mantiene a propósito el modelo yield-on-price (dividendo atado al precio):
+        # desacoplar el dps del precio para igualar al determinista reintroduce la explosión
+        # del DRIP cuando el precio→0 bajo volatilidad corrupta (ver test_monte_carlo_corrupt_vol).
         myg = 0.0 if asset['is_ym'] else ((1 + max(min(div_growth_base, 150.0), -99.0) / 100.0) ** (1 / 12.0) - 1)
         for _m in range(12):
             if contrib_each > 0 and price > 0:
@@ -4308,7 +4342,7 @@ def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
         'broker': broker or 'generic',
         'app_version': app_version,
         'schema_version': CAPTURE_SCHEMA_VERSION,
-        'captured_at': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+        'captured_at': datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + 'Z',
         'n_rows': int(len(min_df)),
         'tickers': sorted(ground_truth.keys()),
     }

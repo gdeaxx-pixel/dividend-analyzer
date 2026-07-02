@@ -1835,3 +1835,32 @@ def test_triple_comparison_reinvierte_dividendos(monkeypatch):
     for key in ("all_vti", "all_ymax", "all_spy"):
         assert res[key]["final_value"] == pytest.approx(1100.0, abs=0.5)
         assert res[key]["return_pct"] == pytest.approx(10.0, abs=0.1)
+
+
+# ── Regresión fixes 6-9 (revision-logica, 2026-07-02) ───────────────────────────
+# Nota: los fixes 4 (coma de miles) y 5 (MC div growth) se descartaron por conflicto con
+# comportamiento correcto existente (IB '579,314'=579.314 y el guardarraíl anti-explosión
+# del Monte Carlo). Ver log 2026-07-02.
+
+def test_coverage_baja_sola_no_marca_partial():
+    """Fix 6: un fondo viejo con la posición documentada al 100% marca coverage bajo (vida del
+    FONDO, no de la posición) → no debe degradarse a 'partial' sin una señal real de historial
+    truncado. Antes: badge 'partial' falso."""
+    results = {"SMH": {"csv_coverage_pct": 7.0}}   # sin history_incomplete ni cost issues
+    q = logic.assess_ticker_quality(results, "SMH")
+    assert q["level"] == "ok"
+    assert "low_coverage" in q["flags"]            # el flag informativo se conserva
+
+
+def test_held_too_briefly_ignora_transfers():
+    """Fix 9: una transferencia (qty con abs) no debe contar como compra. Una posición
+    realmente cerrada en pocos días se detecta aunque haya una fila de transferencia."""
+    tdf = pd.DataFrame({
+        "Date": [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-03"),
+                 pd.Timestamp("2024-01-05")],
+        "Action": ["Buy", "Transfer", "Sell"],
+        "Quantity": [100, -30, -100],
+    })
+    too_brief, days = logic.is_held_too_briefly(tdf, threshold_days=14)
+    assert too_brief is True
+    assert days == 4
