@@ -2259,6 +2259,92 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 """, unsafe_allow_html=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
+            mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
+            mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
+
+            # Eventos técnicos consolidados → acordeón al pie (se llenan en los loops de detalle)
+            _tech_events = []
+
+            # ── Helper: render quant metrics + SPY chart (shared) ──────
+            def render_quant_and_chart(stats, ticker=""):
+                import altair as alt
+                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+                st.markdown("### MÉTRICAS DE RIESGO AJUSTADO")
+                qr1, qr2, qr3 = st.columns(3)
+                qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
+                qr2.metric("Sortino Ratio",     fmt_ratio(stats.get('sortino_ratio')))
+                qr3.metric("Max Drawdown",      fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
+                st.caption("Sharpe: retorno ajustado por riesgo (>1 = bueno, >2 = muy bueno) · Sortino: igual pero solo penaliza la volatilidad negativa · Max Drawdown: caída máxima desde el pico")
+                qr4, qr5, qr6 = st.columns(3)
+                qr4.metric("Beta vs VOO",       fmt_ratio(stats.get('beta_vs_voo')))
+                qr5.metric("Alpha Anualizado",  fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
+                qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
+                st.caption("Beta: correlación con el mercado (1 = se mueve igual que el índice) · Alpha: retorno extra sobre el mercado (positivo = supera al índice) · Volatilidad: desviación estándar anualizada")
+
+                if 'daily_trend' in stats and not stats['daily_trend'].empty:
+                    st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
+                    st.markdown("### SIMULACIÓN VS S&P 500 (VOO)")
+                    port_label = f"{ticker} ($)" if ticker else "Portafolio Real ($)"
+                    chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
+                    chart_data = chart_data.rename(columns={
+                        'User Total Value': port_label,
+                        'SPY Profit': 'S&P 500 Simulado ($)'
+                    })
+                    safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, float('nan'))
+                    chart_data['Diferencia %'] = (((chart_data[port_label] - safe_spy) / safe_spy) * 100).fillna(0)
+                    chart_data_long = chart_data.reset_index().melt(
+                        id_vars=['Date', 'Diferencia %'],
+                        value_vars=[port_label, 'S&P 500 Simulado ($)'],
+                        var_name='Estrategia', value_name='Valor'
+                    )
+                    base = alt.Chart(chart_data_long).encode(
+                        x=alt.X('Date:T', axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                        y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)')),
+                        color=alt.Color('Estrategia:N', scale=alt.Scale(
+                            domain=[port_label, 'S&P 500 Simulado ($)'],
+                            range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
+                        )),
+                        tooltip=[
+                            alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
+                            alt.Tooltip('Estrategia:N', title='Estrategia'),
+                            alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
+                            alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
+                        ]
+                    )
+                    area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == port_label]).mark_area(
+                        opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
+                    ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
+                    chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
+                        height=400, background=CHART_PALETTE["bg"]
+                    ).configure_view(
+                        strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                    ).configure_legend(
+                        labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
+                        labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
+                        labelFontSize=12, titleFontSize=10, titleFontWeight=500,
+                        strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+
+                    # Aviso de honestidad: si el costo de origen es incompleto (acciones llegadas
+                    # por transferencia con costo desconocido), la comparación vs VOO arranca desde
+                    # donde el CSV tiene datos, no desde la compra original — el ROI es aproximado.
+                    try:
+                        _cq = logic.assess_ticker_quality(results, ticker) if ticker else {'level': 'ok'}
+                    except Exception:
+                        _cq = {'level': 'ok'}
+                    if _cq.get('level') in ('unreliable', 'reconciled'):
+                        st.markdown(
+                            '<div style="border-left:4px solid #e0a23c;background:#fff8ec;padding:10px 14px;'
+                            'margin:4px 0 0 0;font-family:Inter,sans-serif;font-size:12px;color:#664d1a;'
+                            'line-height:1.5;"><b>Comparación aproximada.</b> A este activo le falta el '
+                            'costo de origen en el CSV (probablemente las acciones llegaron por una '
+                            '<b>transferencia</b>, con costo de compra desconocido). La curva vs S&amp;P 500 '
+                            'arranca desde donde hay datos, no desde tu compra original, así que el ROI y la '
+                            'diferencia con el índice son <b>estimados</b>, no exactos.</div>',
+                            unsafe_allow_html=True)
+
+
             # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
             _income_df_s3 = st.session_state.get('_wizard_income_df')
             if _income_df_s3 is not None and len(_income_df_s3) > 0:
@@ -3688,8 +3774,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
-            mode_a_tickers = [t for t, m in classify_map.items() if m == 'mode_a']
-            mode_b_tickers = [t for t, m in classify_map.items() if m == 'mode_b']
 
             # ── Rendimiento en el tiempo: Dividendos vs Crecimiento ───
             if mode_a_tickers and mode_b_tickers:
@@ -4009,8 +4093,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
 
-            # Eventos técnicos consolidados → acordeón al pie (se llenan en los loops de detalle)
-            _tech_events = []
 
             # ── ACORDEÓN: Detalle por portafolio ───────────────────────
             _da_section("Detalle por portafolio",
@@ -4024,84 +4106,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 expanded=False,
             )
 
-            # ── Helper: render quant metrics + SPY chart (shared) ──────
-            def render_quant_and_chart(stats, ticker=""):
-                import altair as alt
-                st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
-                st.markdown("### MÉTRICAS DE RIESGO AJUSTADO")
-                qr1, qr2, qr3 = st.columns(3)
-                qr1.metric("Sharpe Ratio",      fmt_ratio(stats.get('sharpe_ratio')))
-                qr2.metric("Sortino Ratio",     fmt_ratio(stats.get('sortino_ratio')))
-                qr3.metric("Max Drawdown",      fmt_ratio(stats.get('max_drawdown'), sufijo="%"))
-                st.caption("Sharpe: retorno ajustado por riesgo (>1 = bueno, >2 = muy bueno) · Sortino: igual pero solo penaliza la volatilidad negativa · Max Drawdown: caída máxima desde el pico")
-                qr4, qr5, qr6 = st.columns(3)
-                qr4.metric("Beta vs VOO",       fmt_ratio(stats.get('beta_vs_voo')))
-                qr5.metric("Alpha Anualizado",  fmt_ratio(stats.get('alpha_anualizado'), sufijo="%"))
-                qr6.metric("Volatilidad Anual", fmt_ratio(stats.get('volatilidad_anualizada'), sufijo="%"))
-                st.caption("Beta: correlación con el mercado (1 = se mueve igual que el índice) · Alpha: retorno extra sobre el mercado (positivo = supera al índice) · Volatilidad: desviación estándar anualizada")
-
-                if 'daily_trend' in stats and not stats['daily_trend'].empty:
-                    st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
-                    st.markdown("### SIMULACIÓN VS S&P 500 (VOO)")
-                    port_label = f"{ticker} ($)" if ticker else "Portafolio Real ($)"
-                    chart_data = stats['daily_trend'][['User Total Value', 'SPY Profit']].copy()
-                    chart_data = chart_data.rename(columns={
-                        'User Total Value': port_label,
-                        'SPY Profit': 'S&P 500 Simulado ($)'
-                    })
-                    safe_spy = chart_data['S&P 500 Simulado ($)'].replace(0, float('nan'))
-                    chart_data['Diferencia %'] = (((chart_data[port_label] - safe_spy) / safe_spy) * 100).fillna(0)
-                    chart_data_long = chart_data.reset_index().melt(
-                        id_vars=['Date', 'Diferencia %'],
-                        value_vars=[port_label, 'S&P 500 Simulado ($)'],
-                        var_name='Estrategia', value_name='Valor'
-                    )
-                    base = alt.Chart(chart_data_long).encode(
-                        x=alt.X('Date:T', axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
-                        y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt='$,.0f', title='Valor ($)')),
-                        color=alt.Color('Estrategia:N', scale=alt.Scale(
-                            domain=[port_label, 'S&P 500 Simulado ($)'],
-                            range=[CHART_PALETTE["portfolio"], CHART_PALETTE["sp500"]]
-                        )),
-                        tooltip=[
-                            alt.Tooltip('Date:T', format='%Y-%m-%d', title='Fecha'),
-                            alt.Tooltip('Estrategia:N', title='Estrategia'),
-                            alt.Tooltip('Valor:Q', format='$,.2f', title='Valor USD'),
-                            alt.Tooltip('Diferencia %:Q', format='.2f', title='Dif. vs S&P 500 (%)')
-                        ]
-                    )
-                    area = alt.Chart(chart_data_long[chart_data_long['Estrategia'] == port_label]).mark_area(
-                        opacity=0.08, color=CHART_PALETTE["portfolio"], interpolate='monotone'
-                    ).encode(x=alt.X('Date:T'), y=alt.Y('Valor:Q'))
-                    chart = (area + base.mark_line(strokeWidth=2.5, interpolate='monotone')).properties(
-                        height=400, background=CHART_PALETTE["bg"]
-                    ).configure_view(
-                        strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                    ).configure_legend(
-                        labelColor=CHART_PALETTE["title"], titleColor=CHART_PALETTE["axis"],
-                        labelFont='Inter, system-ui, sans-serif', titleFont='Inter, system-ui, sans-serif',
-                        labelFontSize=12, titleFontSize=10, titleFontWeight=500,
-                        strokeColor='transparent', fillColor=CHART_PALETTE["bg"], padding=12, cornerRadius=0
-                    )
-                    st.altair_chart(chart, use_container_width=True)
-
-                    # Aviso de honestidad: si el costo de origen es incompleto (acciones llegadas
-                    # por transferencia con costo desconocido), la comparación vs VOO arranca desde
-                    # donde el CSV tiene datos, no desde la compra original — el ROI es aproximado.
-                    try:
-                        _cq = logic.assess_ticker_quality(results, ticker) if ticker else {'level': 'ok'}
-                    except Exception:
-                        _cq = {'level': 'ok'}
-                    if _cq.get('level') in ('unreliable', 'reconciled'):
-                        st.markdown(
-                            '<div style="border-left:4px solid #e0a23c;background:#fff8ec;padding:10px 14px;'
-                            'margin:4px 0 0 0;font-family:Inter,sans-serif;font-size:12px;color:#664d1a;'
-                            'line-height:1.5;"><b>Comparación aproximada.</b> A este activo le falta el '
-                            'costo de origen en el CSV (probablemente las acciones llegaron por una '
-                            '<b>transferencia</b>, con costo de compra desconocido). La curva vs S&amp;P 500 '
-                            'arranca desde donde hay datos, no desde tu compra original, así que el ROI y la '
-                            'diferencia con el índice son <b>estimados</b>, no exactos.</div>',
-                            unsafe_allow_html=True)
 
 
             # ── TAB A — Dividendos Income ──────────────────────────────
