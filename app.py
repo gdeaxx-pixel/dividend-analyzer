@@ -1886,7 +1886,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # Confianza de datos (semáforo): exactas vs aproximadas
             _n_total = len(_dq) or len(results)
             _n_exact = len(_dq_ok)
-            _n_approx = len(_dq_approx)
 
             # ── "En corto · tu ingreso por dividendos" se movió al pie, bajo Análisis de riesgo ──
 
@@ -2487,8 +2486,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
             # ── Comparativa directa A vs B (solo cuando hay ambos) ────
             if _cmp_a_rows and _cmp_b_rows:
-                _cmp_a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
-                _cmp_b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
                 # ── Consolidado: Dividendos vs Crecimiento ──────────────
                 import pandas as pd
 
