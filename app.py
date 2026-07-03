@@ -1848,7 +1848,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # ── Capa de comprensión (vista simple primero) ───────────────
             # En corto: ¿cuánto ingreso genera el portafolio, de dónde viene y
             # cuánto confiar en los números. El detalle denso vive más abajo.
-            _dq_approx = _dq_unrel + _dq_recon + _dq_part
 
             def _annual_income_for(_t):
                 # Ingreso anual realista por ticker, con la fuente más confiable disponible:
