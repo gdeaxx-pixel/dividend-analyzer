@@ -1816,13 +1816,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             _n_total = len(_dq) or len(results)
             _n_exact = len(_dq_ok)
             _n_approx = len(_dq_approx)
-            if _dq_unrel:
-                _conf_color = '#e0a23c'
-            elif _n_approx:
-                _conf_color = '#006497'
-            else:
-                _conf_color = '#4caf82'
-            _conf_delta = 'todas verificadas' if _n_approx == 0 else f'{_n_approx} aproximada(s)'
 
             # ── "En corto · tu ingreso por dividendos" se movió al pie, bajo Análisis de riesgo ──
 
@@ -2344,6 +2337,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             'diferencia con el índice son <b>estimados</b>, no exactos.</div>',
                             unsafe_allow_html=True)
 
+            # ── Agregados A/B (dividendos vs crecimiento) ───────────
+            _cmp_a_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_a' and 'error' not in s]
+            _cmp_b_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_b' and 'error' not in s]
+            _cmp_a_inv = sum(s['pocket_investment'] for _, s in _cmp_a_rows)
+            _cmp_a_mv  = sum(s['market_value'] for _, s in _cmp_a_rows)
+            _cmp_a_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_a_rows)
+            _cmp_a_tr  = _cmp_a_mv + _cmp_a_div - _cmp_a_inv
+            _cmp_a_pct = _cmp_a_tr / _cmp_a_inv * 100 if _cmp_a_inv > 0 else 0
+            _cmp_b_inv = sum(s['pocket_investment'] for _, s in _cmp_b_rows)
+            _cmp_b_mv  = sum(s['market_value'] for _, s in _cmp_b_rows)
+            _cmp_b_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_b_rows)
+            _cmp_b_tr  = _cmp_b_mv + _cmp_b_div - _cmp_b_inv
+            _cmp_b_pct = _cmp_b_tr / _cmp_b_inv * 100 if _cmp_b_inv > 0 else 0
+            _comb_val = _cmp_a_mv + _cmp_b_mv
+            # Participación referida al VALOR de todo el portafolio (market value), no a lo invertido.
+            _a_share = _cmp_a_mv / _comb_val * 100 if _comb_val > 0 else 0
+            _b_share = _cmp_b_mv / _comb_val * 100 if _comb_val > 0 else 0
 
             # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
             _income_df_s3 = st.session_state.get('_wizard_income_df')
@@ -3701,32 +3711,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         st.caption("Proyección educativa con supuestos tuyos — no es recomendación de compra o venta.")
 
             # ── Comparativa directa A vs B (solo cuando hay ambos) ────
-            _cmp_a_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_a' and 'error' not in s]
-            _cmp_b_rows = [(t, s) for t, s in results.items() if classify_map.get(t) == 'mode_b' and 'error' not in s]
             if _cmp_a_rows and _cmp_b_rows:
-                _cmp_a_inv = sum(s['pocket_investment'] for _, s in _cmp_a_rows)
-                _cmp_a_mv  = sum(s['market_value'] for _, s in _cmp_a_rows)
-                _cmp_a_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_a_rows)
-                _cmp_a_tr  = _cmp_a_mv + _cmp_a_div - _cmp_a_inv
-                _cmp_a_pct = _cmp_a_tr / _cmp_a_inv * 100 if _cmp_a_inv > 0 else 0
-                _cmp_b_inv = sum(s['pocket_investment'] for _, s in _cmp_b_rows)
-                _cmp_b_mv  = sum(s['market_value'] for _, s in _cmp_b_rows)
-                _cmp_b_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cmp_b_rows)
-                _cmp_b_tr  = _cmp_b_mv + _cmp_b_div - _cmp_b_inv
-                _cmp_b_pct = _cmp_b_tr / _cmp_b_inv * 100 if _cmp_b_inv > 0 else 0
-                _cmp_diff  = abs(_cmp_a_pct - _cmp_b_pct)
-                _cmp_winner_label = "Dividendos Income" if _cmp_a_pct >= _cmp_b_pct else "ETFs de Crecimiento"
-                _cmp_winner_color = "#c8102e" if _cmp_a_pct >= _cmp_b_pct else "#006497"
                 _cmp_a_ret_color = "#4caf82" if _cmp_a_pct >= 0 else "#e05c5c"
                 _cmp_b_ret_color = "#4caf82" if _cmp_b_pct >= 0 else "#e05c5c"
                 # ── Consolidado: Dividendos vs Crecimiento ──────────────
                 import pandas as pd
-
-                _comb_val = _cmp_a_mv + _cmp_b_mv
-
-                # Participación referida al VALOR de todo el portafolio (market value), no a lo invertido.
-                _a_share = _cmp_a_mv / _comb_val * 100 if _comb_val > 0 else 0
-                _b_share = _cmp_b_mv / _comb_val * 100 if _comb_val > 0 else 0
 
                 _da_section("Distribución de tu capital",
                             "Qué parte del VALOR de hoy de tu portafolio está en Dividendos y qué parte en Crecimiento. El rendimiento comparado de ambos va en la gráfica de la sección siguiente.")
