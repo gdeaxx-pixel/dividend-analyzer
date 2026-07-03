@@ -1830,6 +1830,68 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     f'compra original, o ingresa el costo base manualmente.</div>',
                     unsafe_allow_html=True)
 
+            # ── Tu dinero de un vistazo (portada) ────────────────────────
+            _gl_valid = {t: s for t, s in results.items()
+                         if isinstance(s, dict) and 'error' not in s and not s.get('skipped')}
+            _gl_inv = sum((s.get('pocket_investment') or 0) for s in _gl_valid.values())
+            _gl_mv = sum((s.get('market_value') or 0) for s in _gl_valid.values())
+            _gl_div_net = sum((s.get('total_dividends') or 0) for s in _gl_valid.values())
+            _gl_cash = sum((s.get('dividends_collected_cash') or 0) for s in _gl_valid.values())
+            _gl_tr = _gl_mv + _gl_cash - _gl_inv
+            _gl_pct = (_gl_tr / _gl_inv * 100) if _gl_inv else 0.0
+            _da_section('Tu dinero de un vistazo',
+                        'Los cuatro números que resumen todo tu portafolio. Cada uno aparece aquí una sola vez; el resto del reporte explica de dónde salen.')
+            _gl_tr_cls = 'da-kpi-green' if _gl_tr >= 0 else 'da-kpi-red'
+            _gl_tr_color = '#4caf82' if _gl_tr >= 0 else '#e05c5c'
+            _gl_tip = (
+                "<b>¿Qué es el retorno total real?</b> Es la única cifra que responde "
+                "'¿voy ganando o perdiendo?'. Suma lo que valen hoy tus posiciones más los "
+                "dividendos que te depositaron en efectivo, y le resta lo que pusiste de tu bolsillo."
+                "<br>· El <b>broker</b> suele mostrar solo la ganancia del precio, sin los dividendos."
+                "<br>· La <b>hoja de Excel</b> típica suma dividendos dos veces (los reinvertidos ya "
+                "están dentro del valor de hoy)."
+                "<br><b>¿Por qué en efectivo y no todos los dividendos?</b> Porque los reinvertidos "
+                "(DRIP) compraron más acciones que ya cuentan dentro de 'vale hoy'; sumarlos otra vez "
+                "inflaría el resultado."
+                "<br>Guíate por este número para decidir; el yield y los pagos mensuales son detalle.")
+            st.markdown(
+                '<div class="da-kpi-bar da-income-kpi-grid">'
+                '<div class="da-kpi-cell da-kpi-navy">'
+                '<p class="da-kpi-label">Pusiste de tu bolsillo</p>'
+                f'<p class="da-kpi-value">${_gl_inv:,.0f}</p>'
+                '<p class="da-kpi-delta" style="color:#8899aa;">sin contar dividendos reinvertidos</p></div>'
+                '<div class="da-kpi-cell da-kpi-accent">'
+                '<p class="da-kpi-label">Vale hoy</p>'
+                f'<p class="da-kpi-value">${_gl_mv:,.0f}</p>'
+                '<p class="da-kpi-delta" style="color:#8899aa;">valor de mercado de todas tus posiciones</p></div>'
+                '<div class="da-kpi-cell da-kpi-green">'
+                '<p class="da-kpi-label">Dividendos cobrados (netos)</p>'
+                f'<p class="da-kpi-value">${_gl_div_net:,.0f}</p>'
+                '<p class="da-kpi-delta" style="color:#8899aa;">ya descontado el impuesto de ~30% a extranjeros</p></div>'
+                f'<div class="da-kpi-cell {_gl_tr_cls}">'
+                '<p class="da-kpi-label"><span class="da-tip">Retorno total real'
+                '<span class="da-tip-i">i</span>'
+                f'<span class="da-tip-box r">{_gl_tip}</span></span></p>'
+                f'<p class="da-kpi-value" style="color:{_gl_tr_color};">${_gl_tr:,.0f} ({_gl_pct:+.1f}%)</p>'
+                '<p class="da-kpi-delta" style="color:#8899aa;">valor hoy + dividendos en efectivo − lo que pusiste</p></div>'
+                '</div>',
+                unsafe_allow_html=True)
+            _gl_word = 'ganando' if _gl_tr >= 0 else 'perdiendo'
+            st.markdown(
+                f'<p style="font-family:Inter,sans-serif;font-size:16px;color:#021C36;'
+                f'margin:4px 0 12px 0;line-height:1.5;">Hoy estás '
+                f'<b style="color:{_gl_tr_color};">{_gl_word} ${abs(_gl_tr):,.0f} ({abs(_gl_pct):.1f}%)</b> '
+                f'sobre el dinero que pusiste de tu bolsillo.</p>',
+                unsafe_allow_html=True)
+            _gl_verdict = (logic.build_portfolio_verdict(results, classify_map) or {}).get('lines') or []
+            if _gl_verdict:
+                _gl_items = '<br>'.join(f'· {_ln}' for _ln in _gl_verdict)
+                st.markdown(
+                    '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;'
+                    'margin:0 0 12px 0;font-family:Inter,sans-serif;font-size:12px;color:#333333;'
+                    f'line-height:1.6;">{_gl_items}</div>',
+                    unsafe_allow_html=True)
+
             # ── ¿De dónde viene tu ingreso? (dona de concentración) ──────
             if len(_income_contrib) >= 2:
                 import altair as alt
