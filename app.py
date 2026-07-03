@@ -3794,6 +3794,638 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     'Una concentración alta significa que tu ingreso depende mucho de ese activo.</p>',
                     unsafe_allow_html=True)
 
+            # ── ACORDEÓN: Detalle por portafolio ───────────────────────
+            _da_section("Detalle por portafolio",
+                        "Abre cada portafolio para ver sus posiciones y métricas de riesgo")
+            tab_a = st.expander(
+                f"PORTAFOLIO DE DIVIDENDOS   ·   income mensual   ·   {len(mode_a_tickers)} fondos",
+                expanded=True,
+            )
+            tab_b = st.expander(
+                f"PORTAFOLIO DE CRECIMIENTO   ·   apreciación de capital   ·   {len(mode_b_tickers)} ETFs",
+                expanded=False,
+            )
+
+
+
+            # ── TAB A — Dividendos Income ──────────────────────────────
+            with tab_a:
+                shown_a = False
+
+                for ticker, stats in results.items():
+                    if classify_map.get(ticker) != 'mode_a':
+                        continue
+                    if "error" in stats:
+                        _ec = _csv_ticker_data.get(ticker, {})
+                        _ec_data_html = ''
+                        if _ec:
+                            _ec_data_html = (
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("shares",0):.4f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec.get("invested",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos CSV</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#4caf82;margin:2px 0 0 0;">${_ec.get("dividends_csv",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("first_date","N/A")}</p></div>'
+                            )
+                        st.markdown(
+                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
+                            f'padding:16px 20px;margin:8px 0 16px 0;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
+                            f'yfinance no pudo cargar datos de mercado. Suele ocurrir con ETFs recientes '
+                            f'(PLTY, NFLY, SMCY). Métricas de riesgo y valor de mercado no disponibles.</p>'
+                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
+                            f'{_ec_data_html}</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
+                            f'Detalle: {stats["error"]}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                        continue
+                    shown_a = True
+                    _roi_a = stats.get('roi_percent', 0)
+                    _roi_color_a = "#4caf82" if _roi_a >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div class="da-ticker-header">'
+                        f'<span class="da-ticker-name">{ticker}</span>'
+                        f'<span class="da-mode-badge da-mode-income">Income</span>'
+                        f'<span class="da-ticker-price">'
+                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
+                        f'<span style="color:{_roi_color_a};font-weight:700;">{_roi_a:+.2f}% ROI</span>'
+                        f'</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    _h_buys = stats.get('shares_bought', 0)
+                    _h_sells = stats.get('shares_sold', 0)
+                    _proj_m = stats.get('monthly_income')
+                    _proj_recent = _proj_m[_proj_m > 0].tail(3) if (_proj_m is not None and not _proj_m.empty) else None
+                    _proj_val = _proj_recent.mean() if (_proj_recent is not None and len(_proj_recent) > 0) else None
+                    _proj_cell = (
+                        f'<p class="da-tkpi-value" style="color:#16a34a;">${_proj_val:,.2f}</p>'
+                        f'<p class="da-tkpi-sub">prom. últ. 3 meses</p>'
+                    ) if _proj_val else (
+                        '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p>'
+                        '<p class="da-tkpi-sub">sin historial</p>'
+                    )
+                    st.markdown(f"""
+                    <div class="da-tkpi">
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Acciones</p>
+                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
+                            <p class="da-tkpi-sub">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Tu inversión</p>
+                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
+                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Base broker (con ROC)</p>
+                            {_roc_detail_card(stats)}
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Valor de Mercado</p>
+                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
+                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label" style="color:#16a34a;">Próx. mes (est.)</p>
+                            {_proj_cell}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    for _sp in stats.get('splits_detected', []):
+                        _ratio = _sp['ratio']
+                        _kind = "Split" if _ratio > 1 else "Reverse Split"
+                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
+
+                    _q = logic.assess_ticker_quality(results, ticker)
+                    if _q['level'] == 'unreliable':
+                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
+                    elif _q['level'] == 'reconciled':
+                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
+
+                    # ROC Callout — solo si hay datos de IB
+                    if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
+                        _roc_acc = stats['roc_accumulated']
+                        _roc_pct_v = stats['roc_percent']
+                        _ib_b_v = stats['ib_cost_basis']
+                        _pocket_v = stats['pocket_investment']
+                        st.markdown(
+                            f'<div class="da-roc-callout">'
+                            f'<p class="da-roc-callout-title">Return of Capital detectado</p>'
+                            f'<div class="da-roc-callout-values">'
+                            f'<div><p class="da-roc-number">${_roc_acc:,.2f}</p>'
+                            f'<p class="da-roc-sub">ROC acumulado</p></div>'
+                            f'<div><p class="da-roc-number">{_roc_pct_v:.1f}%</p>'
+                            f'<p class="da-roc-sub">del costo real</p></div>'
+                            f'<div><p class="da-roc-number">${_ib_b_v:,.2f}</p>'
+                            f'<p class="da-roc-sub">base actual del broker</p></div>'
+                            f'</div>'
+                            f'<p class="da-roc-explain">Tu broker redujo tu base de ${_pocket_v:,.2f} a ${_ib_b_v:,.2f} '
+                            f'porque {_roc_pct_v:.1f}% de las distribuciones fue clasificado como Return of Capital.'
+                            f' Esto reduce tu ganancia de capital imponible al vender.</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    # Fase 6: Cobertura del CSV
+                    _cov = stats.get('csv_coverage_pct')
+                    _inc_yf = stats.get('csv_inception_yf')
+                    if _cov is not None:
+                        _cov_color = "#006497" if _cov >= 80 else ("#e67e22" if _cov >= 60 else "#c0392b")
+                        _inc_txt = f" (ticker cotiza desde {_inc_yf})" if _inc_yf else ""
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_cov:.0f}%</b> del historial disponible{_inc_txt}</p>', unsafe_allow_html=True)
+                        if _cov < 80:
+                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
+
+                    # Fase 2: Discrepancias de precio
+                    for _disc in stats.get('price_discrepancies', []):
+                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_disc['date']}: precio CSV ${_disc['csv_price']:.2f} vs yfinance ${_disc['yf_price']:.2f} (ratio {_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
+
+                    # Fase 3: Eventos corporativos (dividendos especiales)
+                    for _ca in stats.get('corporate_actions', []):
+                        if _ca['type'] == 'Dividendo especial':
+                            _tech_events.append({'date': _ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_ca.get('amount', 0):.4f} por acción"})
+
+                    # Fase 9: Total Return primero — Capital + Income desglosados
+                    _total_ret = stats['market_value'] + stats['dividends_collected_cash'] - stats['pocket_investment']
+                    _total_ret_pct = (_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
+                    _cap_comp = stats['market_value'] - stats['pocket_investment']
+                    _inc_comp = stats['dividends_collected_cash']
+                    _tr_color = "#4caf82" if _total_ret >= 0 else "#e05c5c"
+                    _cap_color = "#4caf82" if _cap_comp >= 0 else "#e05c5c"
+                    st.markdown(f"""
+                    <div style="background:#F8FAFC;border-left:3px solid {_tr_color};padding:13px 18px;margin:8px 0 12px 0;">
+                        <p style="font-family:Inter,sans-serif;font-size:10px;color:#64748B;font-weight:400;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Retorno Total</p>
+                        <p style="font-family:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;font-size:26px;font-weight:700;color:{_tr_color};margin:0 0 6px 0;letter-spacing:-0.01em;">${_total_ret:+,.2f} <span style="font-size:15px;font-weight:600;">({_total_ret_pct:+.2f}%)</span></p>
+                        <p style="font-family:Inter,sans-serif;font-size:11.5px;color:#334155;margin:0;">Capital: <b style="color:{_cap_color};">${_cap_comp:+,.2f}</b> &nbsp;·&nbsp; Income: <b style="color:#16a34a;">${_inc_comp:,.2f}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # NAV Erosion callout — solo cuando el precio cayó (relevante para YieldMax)
+                    if _cap_comp < 0:
+                        _erosion_amt = abs(_cap_comp)
+                        _offset = _inc_comp - _erosion_amt
+                        _nav_m_income = stats.get('monthly_income')
+                        _nav_avg_monthly = (
+                            _nav_m_income.mean()
+                            if (_nav_m_income is not None and not _nav_m_income.empty and _nav_m_income.mean() > 0)
+                            else None
+                        )
+                        if _offset >= 0:
+                            _nav_label   = "COMPENSADO"
+                            _nav_border  = "#4caf82"
+                            _nav_verdict = f"Los dividendos superaron la caída de precio en <b style='color:#4caf82;'>${_offset:,.2f}</b>. Tu capital está cubierto por el income."
+                        else:
+                            _deficit_nav = abs(_offset)
+                            _nav_label   = "DEFICIT NETO"
+                            _nav_border  = "#e05c5c"
+                            if _nav_avg_monthly and _nav_avg_monthly > 0:
+                                _months_nav = _deficit_nav / _nav_avg_monthly
+                                _nav_verdict = (
+                                    f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída — "
+                                    f"a tasa actual (~${_nav_avg_monthly:,.0f}/mes): <b>~{_months_nav:.0f} meses más</b>"
+                                )
+                            else:
+                                _nav_verdict = f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída de precio"
+                        st.markdown(
+                            f'<div style="border-left:4px solid {_nav_border};padding:12px 16px;margin:0 0 12px 0;background:#f6f3f2;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:{_nav_border};font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">NAV EROSION · {_nav_label}</p>'
+                            f'<div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:8px;">'
+                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
+                            f'letter-spacing:0.10em;text-transform:uppercase;">Caida de precio</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#e05c5c;margin:0;">'
+                            f'${_erosion_amt:,.2f}</p></div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:16px;color:#cccccc;margin:0 0 4px 0;">vs</p>'
+                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
+                            f'letter-spacing:0.10em;text-transform:uppercase;">Income cobrado</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#4caf82;margin:0;">'
+                            f'${_inc_comp:,.2f}</p></div>'
+                            f'</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0;">{_nav_verdict}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+
+                    _render_interpretation(ticker)
+
+                    # Fase 7: IRR + ROI + Yield on Cost + Break-even
+                    _irr_val = stats.get('irr_anual')
+                    _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
+                    _be_income = stats.get('monthly_income')
+                    _be_avg = (
+                        _be_income.mean()
+                        if (_be_income is not None and not _be_income.empty and _be_income.mean() > 0)
+                        else None
+                    )
+                    _divs_recv = stats.get('dividends_collected_cash', 0)
+                    if _divs_recv >= stats['pocket_investment']:
+                        _be_str = "Ya recuperado"
+                        _be_help = f"Los dividendos cobrados (${_divs_recv:,.0f}) ya superan tu inversión inicial"
+                    elif _be_avg and _be_avg > 0:
+                        _remaining_to_recover = stats['pocket_investment'] - _divs_recv
+                        _months_left = _remaining_to_recover / _be_avg
+                        _be_date = (datetime.date.today() + datetime.timedelta(days=int(_months_left * 30.44))).strftime('%b %Y')
+                        _be_str = f"{_be_date} (~{int(_months_left)} m)"
+                        _be_help = (
+                            f"Faltan ${_remaining_to_recover:,.0f} en dividendos para recuperar tu inversión. "
+                            f"A ${_be_avg:,.0f}/mes promedio, ~{int(_months_left)} meses más."
+                        )
+                    else:
+                        _be_str = "N/A"
+                        _be_help = "Sin historial de dividendos suficiente para calcular"
+                    _a1, _a2, _a3, _a4 = st.columns(4)
+                    _a1.metric("ROI Total", f"{stats['roi_percent']:+.2f}%")
+                    _a2.metric("TIR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
+                    _a3.metric("Yield on Cost", f"{stats.get('yield_on_cost', 0):.2f}%")
+                    _a4.metric("Break-even", _be_str, help=_be_help)
+
+                    results_data = {
+                        "Indicador": [
+                            "Inversión (el dinero que tu pusiste)",
+                            "Valor de Mercado (valor de tu inversión hoy)",
+                            "Div. Efectivo (dividendos pagados a tu balance)",
+                            "Valor de Div. Reinvertidos",
+                            "Total generado en dividendos (Cash + Reinversión)",
+                            "Acciones Compradas",
+                            "Acciones por DRIP",
+                            "Acciones Totales",
+                            "Ganancia en $",
+                            "Ganancia en %"
+                        ],
+                        "Valor": [
+                            f"${stats['pocket_investment']:,.2f}",
+                            f"${stats['market_value']:,.2f}",
+                            f"${stats['dividends_collected_cash']:,.2f}",
+                            f"${stats['dividends_collected_drip']:,.2f}",
+                            f"${stats['total_dividends']:,.2f}",
+                            f"{stats.get('shares_owned_pocket', 0):.4f}",
+                            f"{stats.get('shares_owned_drip', 0):.4f}",
+                            f"{stats['shares_owned']:.4f}",
+                            f"${stats['net_profit']:,.2f}",
+                            f"{stats['roi_percent']:.2f}%"
+                        ]
+                    }
+                    st.dataframe(
+                        pd.DataFrame(results_data),
+                        column_config={
+                            "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
+                            "Valor": st.column_config.TextColumn("Resultado", width="large"),
+                        },
+                        hide_index=True, use_container_width=True
+                    )
+
+                    st.markdown("### VERIFICACIÓN RÁPIDA")
+                    result_color = "green" if stats['net_profit'] >= 0 else "red"
+                    st.latex(r"""
+                    \footnotesize
+                    \begin{array}{r c c c c c}
+                    \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
+                    & \downarrow & & & & \\[0.5em]
+                    \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
+                    \textcolor{%s}{%s} = & %s & + & %s & - & %s
+                    \end{array}
+                    """ % (
+                        result_color,
+                        f"\\${stats['net_profit']:,.2f}",
+                        f"{stats['market_value']:,.2f}",
+                        f"{stats['dividends_collected_cash']:,.2f}",
+                        f"{stats['pocket_investment']:,.2f}"
+                    ))
+
+
+                    render_quant_and_chart(stats, ticker)
+                    st.divider()
+
+                if shown_a:
+                    _ca_rows = [
+                        (ticker, stats) for ticker, stats in results.items()
+                        if classify_map.get(ticker) == 'mode_a' and 'error' not in stats
+                    ]
+                    if _ca_rows:
+                        st.markdown("### RESUMEN CONSOLIDADO — FONDOS DE DIVIDENDOS")
+                        _ca_total_inv = sum(s['pocket_investment'] for _, s in _ca_rows)
+                        _ca_total_mv  = sum(s['market_value'] for _, s in _ca_rows)
+                        _ca_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _ca_rows)
+                        _ca_total_tr  = _ca_total_mv + _ca_total_div - _ca_total_inv
+                        _ca_total_tr_pct = (_ca_total_tr / _ca_total_inv * 100) if _ca_total_inv > 0 else 0
+                        _ca_tbody = ""
+                        _ca_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _ca_rows)
+                        _ca_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _ca_rows if _cs.get('ib_cost_basis') is not None)
+                        _ca_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _ca_rows if _cs.get('roc_accumulated') is not None)
+                        _ca_total_roc_pct = round(_ca_total_roc / _ca_total_inv * 100, 1) if (_ca_has_roc and _ca_total_inv > 0) else None
+                        for _ct, _cs in _ca_rows:
+                            _cr = _cs['roi_percent']
+                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _ib_b = _cs.get('ib_cost_basis')
+                            _roc_a = _cs.get('roc_accumulated')
+                            _roc_p = _cs.get('roc_percent')
+                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
+                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
+                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
+                            _ca_tbody += (
+                                f'<tr style="border-bottom:1px solid #0d2a42;">'
+                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
+                                f'</tr>'
+                            )
+                        _ca_tr_color = "#4caf82" if _ca_total_tr_pct >= 0 else "#e05c5c"
+                        _total_ib_str  = f'${_ca_total_ib:,.2f}' if _ca_has_roc else 'Ver broker'
+                        _total_roc_str = f'${_ca_total_roc:,.2f} <span style="color:#4caf82;">({_ca_total_roc_pct:.1f}%)</span>' if _ca_has_roc else '—'
+                        _total_ib_color = '#ffffff' if _ca_has_roc else '#445566'
+                        st.markdown(f"""
+<div style="overflow-x:auto;margin:4px 0 6px 0;">
+<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+  <thead>
+    <tr style="border-bottom:2px solid #006497;">
+      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_ca_tbody}
+    <tr style="border-top:2px solid #006497;font-weight:700;">
+      <td style="padding:8px 10px;color:#ffffff;">Total</td>
+      <td style="padding:8px 10px;"></td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_inv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_div:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_mv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:{_total_ib_color};">{_total_ib_str}</td>
+      <td style="padding:7px 10px;text-align:right;">{_total_roc_str}</td>
+      <td style="padding:8px 10px;text-align:right;color:{_ca_tr_color};">{_ca_total_tr_pct:+.2f}%</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
+                        """, unsafe_allow_html=True)
+
+                if not shown_a:
+                    st.info("No hay posiciones YieldMax activas en este portafolio.")
+
+            # ── TAB B — ETFs de Crecimiento ────────────────────────────
+            with tab_b:
+                shown_b = False
+                for ticker, stats in results.items():
+                    if classify_map.get(ticker) != 'mode_b':
+                        continue
+                    if "error" in stats:
+                        _ec_b = _csv_ticker_data.get(ticker, {})
+                        _ec_b_html = ''
+                        if _ec_b:
+                            _ec_b_html = (
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("shares",0):.4f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec_b.get("invested",0):,.2f}</p></div>'
+                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
+                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
+                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("first_date","N/A")}</p></div>'
+                            )
+                        st.markdown(
+                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
+                            f'padding:16px 20px;margin:8px 0 16px 0;">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
+                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
+                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
+                            f'yfinance no pudo cargar datos de mercado para este ETF.</p>'
+                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
+                            f'{_ec_b_html}</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
+                            f'Detalle: {stats["error"]}</p>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                        continue
+                    shown_b = True
+                    _roi_b = stats.get('roi_percent', 0)
+                    _roi_color_b = "#4caf82" if _roi_b >= 0 else "#e05c5c"
+                    st.markdown(
+                        f'<div class="da-ticker-header">'
+                        f'<span class="da-ticker-name">{ticker}</span>'
+                        f'<span class="da-mode-badge da-mode-growth">Growth</span>'
+                        f'<span class="da-ticker-price">'
+                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
+                        f'<span style="color:{_roi_color_b};font-weight:700;">{_roi_b:+.2f}% ROI</span>'
+                        f'</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    _hb_buys = stats.get('shares_bought', 0)
+                    _hb_sells = stats.get('shares_sold', 0)
+                    st.markdown(f"""
+                    <div class="da-tkpi">
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Acciones</p>
+                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
+                            <p class="da-tkpi-sub">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Tu inversión</p>
+                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
+                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Base broker (con ROC)</p>
+                            {_roc_detail_card(stats)}
+                        </div>
+                        <div class="da-tkpi-cell">
+                            <p class="da-tkpi-label">Valor de Mercado</p>
+                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
+                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    for _sp in stats.get('splits_detected', []):
+                        _ratio = _sp['ratio']
+                        _kind = "Split" if _ratio > 1 else "Reverse Split"
+                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
+
+                    _q = logic.assess_ticker_quality(results, ticker)
+                    if _q['level'] == 'unreliable':
+                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
+                    elif _q['level'] == 'reconciled':
+                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
+
+                    # Fase 6: Cobertura del CSV
+                    _b_cov = stats.get('csv_coverage_pct')
+                    _b_inc_yf = stats.get('csv_inception_yf')
+                    if _b_cov is not None:
+                        _b_cov_color = "#006497" if _b_cov >= 80 else ("#e67e22" if _b_cov >= 60 else "#c0392b")
+                        _b_inc_txt = f" (ticker cotiza desde {_b_inc_yf})" if _b_inc_yf else ""
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_b_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_b_cov:.0f}%</b> del historial disponible{_b_inc_txt}</p>', unsafe_allow_html=True)
+                        if _b_cov < 80:
+                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
+
+                    # Fase 2: Discrepancias de precio
+                    for _b_disc in stats.get('price_discrepancies', []):
+                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_b_disc['date']}: precio CSV ${_b_disc['csv_price']:.2f} vs yfinance ${_b_disc['yf_price']:.2f} (ratio {_b_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
+
+                    # Fase 3: Eventos corporativos (dividendos especiales)
+                    for _b_ca in stats.get('corporate_actions', []):
+                        if _b_ca['type'] == 'Dividendo especial':
+                            _tech_events.append({'date': _b_ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_b_ca.get('amount', 0):.4f} por acción"})
+
+                    # Fase 4: Retorno total incluye dividendos cobrados (no solo apreciación de precio)
+                    _b_divs = stats.get('dividends_collected_cash', 0)
+                    _b_total_ret = stats['market_value'] + _b_divs - stats['pocket_investment']
+                    _b_total_ret_pct = (_b_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
+                    cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
+                    _b_irr_val = stats.get('irr_anual')
+                    _b_irr_str = f"{_b_irr_val:+.2f}%" if _b_irr_val is not None else "N/A"
+                    bc3, bc4 = st.columns(2)
+                    bc3.metric("Retorno Total", f"${_b_total_ret:+,.2f}", delta=f"{_b_total_ret_pct:+.2f}%", help="Apreciación de precio + dividendos cobrados")
+                    bc4.metric("IRR Anualizado", _b_irr_str, help="Tasa interna de retorno — considera el timing real de cada compra. Más preciso que CAGR para compras escalonadas.")
+                    _b_bench_roi = stats.get('benchmark_roi')
+                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#556677;margin:4px 0 4px 0;">CAGR: <b>{cagr_str}</b></p>', unsafe_allow_html=True)
+                    # Fase 8: Benchmark con timing real
+                    if _b_bench_roi is not None:
+                        _b_diff = _b_total_ret_pct - _b_bench_roi
+                        _b_bench_color = "#4caf82" if _b_diff >= 0 else "#e05c5c"
+                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:{_b_bench_color};margin:0 0 12px 0;">vs VOO (mismo timing): <b>{_b_bench_roi:+.2f}%</b> · Tu ventaja: <b>{_b_diff:+.2f}%</b></p>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
+
+                    _render_interpretation(ticker)
+
+                    # Mode B dividends (VTI, SCHB, SCHD pay quarterly cash dividends)
+                    b_monthly = stats.get('monthly_income')
+                    if b_monthly is not None and not b_monthly.empty:
+                        import altair as alt
+                        b_yoc = stats.get('yield_on_cost', 0)
+                        b_total_div = stats.get('dividends_collected_cash', 0)
+                        st.markdown("### DIVIDENDOS COBRADOS")
+                        bd1, bd2 = st.columns(2)
+                        bd1.metric("Total Dividendos", f"${b_total_div:,.2f}")
+                        bd2.metric("Yield on Cost", f"{b_yoc:.2f}%" if b_yoc else "—")
+                        b_income_df = b_monthly.reset_index()
+                        b_income_df.columns = ['Mes', 'Dividendo']
+                        b_income_chart = alt.Chart(b_income_df).mark_bar(color='#006497', opacity=0.85).encode(
+                            x=alt.X('Mes:O', sort=None, axis=_ed_axis('x', label_angle=0, title='Mes')),
+                            y=alt.Y('Dividendo:Q', axis=_ed_axis('y', fmt='$,.2f', title='Dividendo ($)')),
+                            tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
+                        ).properties(height=160, background=CHART_PALETTE["bg"]).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
+                        )
+                        st.altair_chart(b_income_chart, use_container_width=True)
+
+                    render_quant_and_chart(stats, ticker)
+                    st.divider()
+
+                if shown_b:
+                    _cb_rows = [
+                        (ticker, stats) for ticker, stats in results.items()
+                        if classify_map.get(ticker) == 'mode_b' and 'error' not in stats
+                    ]
+                    if _cb_rows:
+                        st.markdown("### RESUMEN CONSOLIDADO — ETFs DE CRECIMIENTO")
+                        _cb_total_inv = sum(s['pocket_investment'] for _, s in _cb_rows)
+                        _cb_total_mv  = sum(s['market_value'] for _, s in _cb_rows)
+                        _cb_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cb_rows)
+                        _cb_total_tr  = _cb_total_mv + _cb_total_div - _cb_total_inv
+                        _cb_total_tr_pct = (_cb_total_tr / _cb_total_inv * 100) if _cb_total_inv > 0 else 0
+                        _cb_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _cb_rows)
+                        _cb_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _cb_rows if _cs.get('ib_cost_basis') is not None)
+                        _cb_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _cb_rows if _cs.get('roc_accumulated') is not None)
+                        _cb_total_roc_pct = round(_cb_total_roc / _cb_total_inv * 100, 1) if (_cb_has_roc and _cb_total_inv > 0) else None
+                        _cb_tbody = ""
+                        for _ct, _cs in _cb_rows:
+                            _cr = _cs['roi_percent']
+                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
+                            _ib_b = _cs.get('ib_cost_basis')
+                            _roc_a = _cs.get('roc_accumulated')
+                            _roc_p = _cs.get('roc_percent')
+                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
+                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
+                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
+                            _cb_tbody += (
+                                f'<tr style="border-bottom:1px solid #0d2a42;">'
+                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
+                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
+                                f'</tr>'
+                            )
+                        _cb_tr_color = "#4caf82" if _cb_total_tr_pct >= 0 else "#e05c5c"
+                        _total_cb_ib_str  = f'${_cb_total_ib:,.2f}' if _cb_has_roc else 'Ver broker'
+                        _total_cb_roc_str = f'${_cb_total_roc:,.2f} <span style="color:#4caf82;">({_cb_total_roc_pct:.1f}%)</span>' if _cb_has_roc else '—'
+                        _total_cb_ib_color = '#ffffff' if _cb_has_roc else '#445566'
+                        st.markdown(f"""
+<div style="overflow-x:auto;margin:4px 0 6px 0;">
+<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
+  <thead>
+    <tr style="border-bottom:2px solid #006497;">
+      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
+      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {_cb_tbody}
+    <tr style="border-top:2px solid #006497;font-weight:700;">
+      <td style="padding:8px 10px;color:#ffffff;">Total</td>
+      <td style="padding:8px 10px;"></td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_inv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_div:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_mv:,.2f}</td>
+      <td style="padding:8px 10px;text-align:right;color:{_total_cb_ib_color};">{_total_cb_ib_str}</td>
+      <td style="padding:7px 10px;text-align:right;">{_total_cb_roc_str}</td>
+      <td style="padding:8px 10px;text-align:right;color:{_cb_tr_color};">{_cb_total_tr_pct:+.2f}%</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
+                        """, unsafe_allow_html=True)
+
+                if not shown_b:
+                    st.info("No hay ETFs de crecimiento activos en este portafolio.")
 
             # ── Proyección y escenarios (el resumen global se retiró) ──
             _da_section("Proyección a futuro y escenarios",
@@ -4452,641 +5084,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
                     st.altair_chart(_chart, use_container_width=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
-
-
-
-            # ── ACORDEÓN: Detalle por portafolio ───────────────────────
-            _da_section("Detalle por portafolio",
-                        "Abre cada portafolio para ver sus posiciones y métricas de riesgo")
-            tab_a = st.expander(
-                f"PORTAFOLIO DE DIVIDENDOS   ·   income mensual   ·   {len(mode_a_tickers)} fondos",
-                expanded=True,
-            )
-            tab_b = st.expander(
-                f"PORTAFOLIO DE CRECIMIENTO   ·   apreciación de capital   ·   {len(mode_b_tickers)} ETFs",
-                expanded=False,
-            )
-
-
-
-            # ── TAB A — Dividendos Income ──────────────────────────────
-            with tab_a:
-                shown_a = False
-
-                for ticker, stats in results.items():
-                    if classify_map.get(ticker) != 'mode_a':
-                        continue
-                    if "error" in stats:
-                        _ec = _csv_ticker_data.get(ticker, {})
-                        _ec_data_html = ''
-                        if _ec:
-                            _ec_data_html = (
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("shares",0):.4f}</p></div>'
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec.get("invested",0):,.2f}</p></div>'
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Dividendos CSV</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#4caf82;margin:2px 0 0 0;">${_ec.get("dividends_csv",0):,.2f}</p></div>'
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec.get("first_date","N/A")}</p></div>'
-                            )
-                        st.markdown(
-                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
-                            f'padding:16px 20px;margin:8px 0 16px 0;">'
-                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
-                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
-                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
-                            f'yfinance no pudo cargar datos de mercado. Suele ocurrir con ETFs recientes '
-                            f'(PLTY, NFLY, SMCY). Métricas de riesgo y valor de mercado no disponibles.</p>'
-                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
-                            f'{_ec_data_html}</div>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
-                            f'Detalle: {stats["error"]}</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-                        continue
-                    shown_a = True
-                    _roi_a = stats.get('roi_percent', 0)
-                    _roi_color_a = "#4caf82" if _roi_a >= 0 else "#e05c5c"
-                    st.markdown(
-                        f'<div class="da-ticker-header">'
-                        f'<span class="da-ticker-name">{ticker}</span>'
-                        f'<span class="da-mode-badge da-mode-income">Income</span>'
-                        f'<span class="da-ticker-price">'
-                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
-                        f'<span style="color:{_roi_color_a};font-weight:700;">{_roi_a:+.2f}% ROI</span>'
-                        f'</span>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
-                    _h_buys = stats.get('shares_bought', 0)
-                    _h_sells = stats.get('shares_sold', 0)
-                    _proj_m = stats.get('monthly_income')
-                    _proj_recent = _proj_m[_proj_m > 0].tail(3) if (_proj_m is not None and not _proj_m.empty) else None
-                    _proj_val = _proj_recent.mean() if (_proj_recent is not None and len(_proj_recent) > 0) else None
-                    _proj_cell = (
-                        f'<p class="da-tkpi-value" style="color:#16a34a;">${_proj_val:,.2f}</p>'
-                        f'<p class="da-tkpi-sub">prom. últ. 3 meses</p>'
-                    ) if _proj_val else (
-                        '<p class="da-tkpi-value" style="color:#cbd5e1;">—</p>'
-                        '<p class="da-tkpi-sub">sin historial</p>'
-                    )
-                    st.markdown(f"""
-                    <div class="da-tkpi">
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Acciones</p>
-                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
-                            <p class="da-tkpi-sub">Compradas {_h_buys:.2f} · Vendidas {_h_sells:.2f}</p>
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Tu inversión</p>
-                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
-                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {_roc_detail_card(stats)}
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Valor de Mercado</p>
-                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
-                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label" style="color:#16a34a;">Próx. mes (est.)</p>
-                            {_proj_cell}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    for _sp in stats.get('splits_detected', []):
-                        _ratio = _sp['ratio']
-                        _kind = "Split" if _ratio > 1 else "Reverse Split"
-                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
-
-                    _q = logic.assess_ticker_quality(results, ticker)
-                    if _q['level'] == 'unreliable':
-                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
-                    elif _q['level'] == 'reconciled':
-                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
-
-                    # ROC Callout — solo si hay datos de IB
-                    if stats.get('ib_cost_basis') is not None and stats.get('roc_accumulated') is not None:
-                        _roc_acc = stats['roc_accumulated']
-                        _roc_pct_v = stats['roc_percent']
-                        _ib_b_v = stats['ib_cost_basis']
-                        _pocket_v = stats['pocket_investment']
-                        st.markdown(
-                            f'<div class="da-roc-callout">'
-                            f'<p class="da-roc-callout-title">Return of Capital detectado</p>'
-                            f'<div class="da-roc-callout-values">'
-                            f'<div><p class="da-roc-number">${_roc_acc:,.2f}</p>'
-                            f'<p class="da-roc-sub">ROC acumulado</p></div>'
-                            f'<div><p class="da-roc-number">{_roc_pct_v:.1f}%</p>'
-                            f'<p class="da-roc-sub">del costo real</p></div>'
-                            f'<div><p class="da-roc-number">${_ib_b_v:,.2f}</p>'
-                            f'<p class="da-roc-sub">base actual del broker</p></div>'
-                            f'</div>'
-                            f'<p class="da-roc-explain">Tu broker redujo tu base de ${_pocket_v:,.2f} a ${_ib_b_v:,.2f} '
-                            f'porque {_roc_pct_v:.1f}% de las distribuciones fue clasificado como Return of Capital.'
-                            f' Esto reduce tu ganancia de capital imponible al vender.</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-
-                    # Fase 6: Cobertura del CSV
-                    _cov = stats.get('csv_coverage_pct')
-                    _inc_yf = stats.get('csv_inception_yf')
-                    if _cov is not None:
-                        _cov_color = "#006497" if _cov >= 80 else ("#e67e22" if _cov >= 60 else "#c0392b")
-                        _inc_txt = f" (ticker cotiza desde {_inc_yf})" if _inc_yf else ""
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_cov:.0f}%</b> del historial disponible{_inc_txt}</p>', unsafe_allow_html=True)
-                        if _cov < 80:
-                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
-
-                    # Fase 2: Discrepancias de precio
-                    for _disc in stats.get('price_discrepancies', []):
-                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_disc['date']}: precio CSV ${_disc['csv_price']:.2f} vs yfinance ${_disc['yf_price']:.2f} (ratio {_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
-
-                    # Fase 3: Eventos corporativos (dividendos especiales)
-                    for _ca in stats.get('corporate_actions', []):
-                        if _ca['type'] == 'Dividendo especial':
-                            _tech_events.append({'date': _ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_ca.get('amount', 0):.4f} por acción"})
-
-                    # Fase 9: Total Return primero — Capital + Income desglosados
-                    _total_ret = stats['market_value'] + stats['dividends_collected_cash'] - stats['pocket_investment']
-                    _total_ret_pct = (_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
-                    _cap_comp = stats['market_value'] - stats['pocket_investment']
-                    _inc_comp = stats['dividends_collected_cash']
-                    _tr_color = "#4caf82" if _total_ret >= 0 else "#e05c5c"
-                    _cap_color = "#4caf82" if _cap_comp >= 0 else "#e05c5c"
-                    st.markdown(f"""
-                    <div style="background:#F8FAFC;border-left:3px solid {_tr_color};padding:13px 18px;margin:8px 0 12px 0;">
-                        <p style="font-family:Inter,sans-serif;font-size:10px;color:#64748B;font-weight:400;margin:0 0 4px 0;letter-spacing:0.08em;text-transform:uppercase;">Retorno Total</p>
-                        <p style="font-family:'SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;font-size:26px;font-weight:700;color:{_tr_color};margin:0 0 6px 0;letter-spacing:-0.01em;">${_total_ret:+,.2f} <span style="font-size:15px;font-weight:600;">({_total_ret_pct:+.2f}%)</span></p>
-                        <p style="font-family:Inter,sans-serif;font-size:11.5px;color:#334155;margin:0;">Capital: <b style="color:{_cap_color};">${_cap_comp:+,.2f}</b> &nbsp;·&nbsp; Income: <b style="color:#16a34a;">${_inc_comp:,.2f}</b></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    # NAV Erosion callout — solo cuando el precio cayó (relevante para YieldMax)
-                    if _cap_comp < 0:
-                        _erosion_amt = abs(_cap_comp)
-                        _offset = _inc_comp - _erosion_amt
-                        _nav_m_income = stats.get('monthly_income')
-                        _nav_avg_monthly = (
-                            _nav_m_income.mean()
-                            if (_nav_m_income is not None and not _nav_m_income.empty and _nav_m_income.mean() > 0)
-                            else None
-                        )
-                        if _offset >= 0:
-                            _nav_label   = "COMPENSADO"
-                            _nav_border  = "#4caf82"
-                            _nav_verdict = f"Los dividendos superaron la caída de precio en <b style='color:#4caf82;'>${_offset:,.2f}</b>. Tu capital está cubierto por el income."
-                        else:
-                            _deficit_nav = abs(_offset)
-                            _nav_label   = "DEFICIT NETO"
-                            _nav_border  = "#e05c5c"
-                            if _nav_avg_monthly and _nav_avg_monthly > 0:
-                                _months_nav = _deficit_nav / _nav_avg_monthly
-                                _nav_verdict = (
-                                    f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída — "
-                                    f"a tasa actual (~${_nav_avg_monthly:,.0f}/mes): <b>~{_months_nav:.0f} meses más</b>"
-                                )
-                            else:
-                                _nav_verdict = f"Faltan <b style='color:#e05c5c;'>${_deficit_nav:,.2f}</b> en dividendos para cubrir la caída de precio"
-                        st.markdown(
-                            f'<div style="border-left:4px solid {_nav_border};padding:12px 16px;margin:0 0 12px 0;background:#f6f3f2;">'
-                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:{_nav_border};font-weight:700;'
-                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">NAV EROSION · {_nav_label}</p>'
-                            f'<div style="display:flex;gap:20px;align-items:flex-end;margin-bottom:8px;">'
-                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
-                            f'letter-spacing:0.10em;text-transform:uppercase;">Caida de precio</p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#e05c5c;margin:0;">'
-                            f'${_erosion_amt:,.2f}</p></div>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:16px;color:#cccccc;margin:0 0 4px 0;">vs</p>'
-                            f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;margin:0 0 2px 0;'
-                            f'letter-spacing:0.10em;text-transform:uppercase;">Income cobrado</p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:20px;font-weight:800;color:#4caf82;margin:0;">'
-                            f'${_inc_comp:,.2f}</p></div>'
-                            f'</div>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555555;margin:0;">{_nav_verdict}</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-
-                    _render_interpretation(ticker)
-
-                    # Fase 7: IRR + ROI + Yield on Cost + Break-even
-                    _irr_val = stats.get('irr_anual')
-                    _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
-                    _be_income = stats.get('monthly_income')
-                    _be_avg = (
-                        _be_income.mean()
-                        if (_be_income is not None and not _be_income.empty and _be_income.mean() > 0)
-                        else None
-                    )
-                    _divs_recv = stats.get('dividends_collected_cash', 0)
-                    if _divs_recv >= stats['pocket_investment']:
-                        _be_str = "Ya recuperado"
-                        _be_help = f"Los dividendos cobrados (${_divs_recv:,.0f}) ya superan tu inversión inicial"
-                    elif _be_avg and _be_avg > 0:
-                        _remaining_to_recover = stats['pocket_investment'] - _divs_recv
-                        _months_left = _remaining_to_recover / _be_avg
-                        _be_date = (datetime.date.today() + datetime.timedelta(days=int(_months_left * 30.44))).strftime('%b %Y')
-                        _be_str = f"{_be_date} (~{int(_months_left)} m)"
-                        _be_help = (
-                            f"Faltan ${_remaining_to_recover:,.0f} en dividendos para recuperar tu inversión. "
-                            f"A ${_be_avg:,.0f}/mes promedio, ~{int(_months_left)} meses más."
-                        )
-                    else:
-                        _be_str = "N/A"
-                        _be_help = "Sin historial de dividendos suficiente para calcular"
-                    _a1, _a2, _a3, _a4 = st.columns(4)
-                    _a1.metric("ROI Total", f"{stats['roi_percent']:+.2f}%")
-                    _a2.metric("TIR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
-                    _a3.metric("Yield on Cost", f"{stats.get('yield_on_cost', 0):.2f}%")
-                    _a4.metric("Break-even", _be_str, help=_be_help)
-
-                    results_data = {
-                        "Indicador": [
-                            "Inversión (el dinero que tu pusiste)",
-                            "Valor de Mercado (valor de tu inversión hoy)",
-                            "Div. Efectivo (dividendos pagados a tu balance)",
-                            "Valor de Div. Reinvertidos",
-                            "Total generado en dividendos (Cash + Reinversión)",
-                            "Acciones Compradas",
-                            "Acciones por DRIP",
-                            "Acciones Totales",
-                            "Ganancia en $",
-                            "Ganancia en %"
-                        ],
-                        "Valor": [
-                            f"${stats['pocket_investment']:,.2f}",
-                            f"${stats['market_value']:,.2f}",
-                            f"${stats['dividends_collected_cash']:,.2f}",
-                            f"${stats['dividends_collected_drip']:,.2f}",
-                            f"${stats['total_dividends']:,.2f}",
-                            f"{stats.get('shares_owned_pocket', 0):.4f}",
-                            f"{stats.get('shares_owned_drip', 0):.4f}",
-                            f"{stats['shares_owned']:.4f}",
-                            f"${stats['net_profit']:,.2f}",
-                            f"{stats['roi_percent']:.2f}%"
-                        ]
-                    }
-                    st.dataframe(
-                        pd.DataFrame(results_data),
-                        column_config={
-                            "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
-                            "Valor": st.column_config.TextColumn("Resultado", width="large"),
-                        },
-                        hide_index=True, use_container_width=True
-                    )
-
-                    st.markdown("### VERIFICACIÓN RÁPIDA")
-                    result_color = "green" if stats['net_profit'] >= 0 else "red"
-                    st.latex(r"""
-                    \footnotesize
-                    \begin{array}{r c c c c c}
-                    \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
-                    & \downarrow & & & & \\[0.5em]
-                    \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
-                    \textcolor{%s}{%s} = & %s & + & %s & - & %s
-                    \end{array}
-                    """ % (
-                        result_color,
-                        f"\\${stats['net_profit']:,.2f}",
-                        f"{stats['market_value']:,.2f}",
-                        f"{stats['dividends_collected_cash']:,.2f}",
-                        f"{stats['pocket_investment']:,.2f}"
-                    ))
-
-
-                    render_quant_and_chart(stats, ticker)
-                    st.divider()
-
-                if shown_a:
-                    _ca_rows = [
-                        (ticker, stats) for ticker, stats in results.items()
-                        if classify_map.get(ticker) == 'mode_a' and 'error' not in stats
-                    ]
-                    if _ca_rows:
-                        st.markdown("### RESUMEN CONSOLIDADO — FONDOS DE DIVIDENDOS")
-                        _ca_total_inv = sum(s['pocket_investment'] for _, s in _ca_rows)
-                        _ca_total_mv  = sum(s['market_value'] for _, s in _ca_rows)
-                        _ca_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _ca_rows)
-                        _ca_total_tr  = _ca_total_mv + _ca_total_div - _ca_total_inv
-                        _ca_total_tr_pct = (_ca_total_tr / _ca_total_inv * 100) if _ca_total_inv > 0 else 0
-                        _ca_tbody = ""
-                        _ca_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _ca_rows)
-                        _ca_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _ca_rows if _cs.get('ib_cost_basis') is not None)
-                        _ca_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _ca_rows if _cs.get('roc_accumulated') is not None)
-                        _ca_total_roc_pct = round(_ca_total_roc / _ca_total_inv * 100, 1) if (_ca_has_roc and _ca_total_inv > 0) else None
-                        for _ct, _cs in _ca_rows:
-                            _cr = _cs['roi_percent']
-                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
-                            _ib_b = _cs.get('ib_cost_basis')
-                            _roc_a = _cs.get('roc_accumulated')
-                            _roc_p = _cs.get('roc_percent')
-                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
-                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
-                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
-                            _ca_tbody += (
-                                f'<tr style="border-bottom:1px solid #0d2a42;">'
-                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
-                                f'</tr>'
-                            )
-                        _ca_tr_color = "#4caf82" if _ca_total_tr_pct >= 0 else "#e05c5c"
-                        _total_ib_str  = f'${_ca_total_ib:,.2f}' if _ca_has_roc else 'Ver broker'
-                        _total_roc_str = f'${_ca_total_roc:,.2f} <span style="color:#4caf82;">({_ca_total_roc_pct:.1f}%)</span>' if _ca_has_roc else '—'
-                        _total_ib_color = '#ffffff' if _ca_has_roc else '#445566'
-                        st.markdown(f"""
-<div style="overflow-x:auto;margin:4px 0 6px 0;">
-<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
-  <thead>
-    <tr style="border-bottom:2px solid #006497;">
-      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
-    </tr>
-  </thead>
-  <tbody>
-    {_ca_tbody}
-    <tr style="border-top:2px solid #006497;font-weight:700;">
-      <td style="padding:8px 10px;color:#ffffff;">Total</td>
-      <td style="padding:8px 10px;"></td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_inv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_div:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_ca_total_mv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:{_total_ib_color};">{_total_ib_str}</td>
-      <td style="padding:7px 10px;text-align:right;">{_total_roc_str}</td>
-      <td style="padding:8px 10px;text-align:right;color:{_ca_tr_color};">{_ca_total_tr_pct:+.2f}%</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
-                        """, unsafe_allow_html=True)
-
-                if not shown_a:
-                    st.info("No hay posiciones YieldMax activas en este portafolio.")
-
-            # ── TAB B — ETFs de Crecimiento ────────────────────────────
-            with tab_b:
-                shown_b = False
-                for ticker, stats in results.items():
-                    if classify_map.get(ticker) != 'mode_b':
-                        continue
-                    if "error" in stats:
-                        _ec_b = _csv_ticker_data.get(ticker, {})
-                        _ec_b_html = ''
-                        if _ec_b:
-                            _ec_b_html = (
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Acciones compradas</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("shares",0):.4f}</p></div>'
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Invertido (CSV)</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">${_ec_b.get("invested",0):,.2f}</p></div>'
-                                f'<div><p style="font-family:Inter,sans-serif;font-size:9px;color:#8899aa;'
-                                f'margin:0;letter-spacing:0.10em;text-transform:uppercase;">Primera compra</p>'
-                                f'<p style="font-family:Inter,sans-serif;font-size:16px;font-weight:700;'
-                                f'color:#1a1a1a;margin:2px 0 0 0;">{_ec_b.get("first_date","N/A")}</p></div>'
-                            )
-                        st.markdown(
-                            f'<div style="border-left:4px solid #e05c5c;background:#fff8f8;'
-                            f'padding:16px 20px;margin:8px 0 16px 0;">'
-                            f'<p style="font-family:Inter,sans-serif;font-size:9px;color:#e05c5c;font-weight:700;'
-                            f'letter-spacing:0.12em;text-transform:uppercase;margin:0 0 8px 0;">'
-                            f'PRECIO NO DISPONIBLE · {ticker}</p>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#555;margin:0 0 10px 0;">'
-                            f'yfinance no pudo cargar datos de mercado para este ETF.</p>'
-                            f'<div style="display:flex;gap:20px;flex-wrap:wrap;margin:0 0 8px 0;">'
-                            f'{_ec_b_html}</div>'
-                            f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#999;margin:0;">'
-                            f'Detalle: {stats["error"]}</p>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-                        continue
-                    shown_b = True
-                    _roi_b = stats.get('roi_percent', 0)
-                    _roi_color_b = "#4caf82" if _roi_b >= 0 else "#e05c5c"
-                    st.markdown(
-                        f'<div class="da-ticker-header">'
-                        f'<span class="da-ticker-name">{ticker}</span>'
-                        f'<span class="da-mode-badge da-mode-growth">Growth</span>'
-                        f'<span class="da-ticker-price">'
-                        f'{_money2(stats.get("current_price"))} &nbsp;·&nbsp; '
-                        f'<span style="color:{_roi_color_b};font-weight:700;">{_roi_b:+.2f}% ROI</span>'
-                        f'</span>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
-                    _hb_buys = stats.get('shares_bought', 0)
-                    _hb_sells = stats.get('shares_sold', 0)
-                    st.markdown(f"""
-                    <div class="da-tkpi">
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Acciones</p>
-                            <p class="da-tkpi-value">{stats['shares_owned']:.4f}</p>
-                            <p class="da-tkpi-sub">Compradas {_hb_buys:.2f} · Vendidas {_hb_sells:.2f}</p>
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Tu inversión</p>
-                            <p class="da-tkpi-value">${stats['pocket_investment']:,.2f}</p>
-                            <p class="da-tkpi-sub">lo que pusiste de tu bolsillo</p>
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Base broker (con ROC)</p>
-                            {_roc_detail_card(stats)}
-                        </div>
-                        <div class="da-tkpi-cell">
-                            <p class="da-tkpi-label">Valor de Mercado</p>
-                            <p class="da-tkpi-value">${stats['market_value']:,.2f}</p>
-                            <p class="da-tkpi-sub">@ ${stats['current_price']:,.2f} por acción</p>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    for _sp in stats.get('splits_detected', []):
-                        _ratio = _sp['ratio']
-                        _kind = "Split" if _ratio > 1 else "Reverse Split"
-                        _tech_events.append({'date': _sp['date'], 'ticker': ticker, 'tipo': _kind, 'desc': f"{_ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
-
-                    _q = logic.assess_ticker_quality(results, ticker)
-                    if _q['level'] == 'unreliable':
-                        st.warning(f"{ticker} · datos incompletos: {_q['reason']} {_q['action']}")
-                    elif _q['level'] == 'reconciled':
-                        _tech_events.append({'date': '', 'ticker': ticker, 'tipo': 'Reconciliación', 'desc': f"Reconciliado desde tu captura: {_q['reason']}"})
-
-                    # Fase 6: Cobertura del CSV
-                    _b_cov = stats.get('csv_coverage_pct')
-                    _b_inc_yf = stats.get('csv_inception_yf')
-                    if _b_cov is not None:
-                        _b_cov_color = "#006497" if _b_cov >= 80 else ("#e67e22" if _b_cov >= 60 else "#c0392b")
-                        _b_inc_txt = f" (ticker cotiza desde {_b_inc_yf})" if _b_inc_yf else ""
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:{_b_cov_color};margin:0 0 2px 0;">CSV cubre el <b>{_b_cov:.0f}%</b> del historial disponible{_b_inc_txt}</p>', unsafe_allow_html=True)
-                        if _b_cov < 80:
-                            st.caption("Se recomienda >=80% de cobertura para métricas de riesgo confiables")
-
-                    # Fase 2: Discrepancias de precio
-                    for _b_disc in stats.get('price_discrepancies', []):
-                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_b_disc['date']}: precio CSV ${_b_disc['csv_price']:.2f} vs yfinance ${_b_disc['yf_price']:.2f} (ratio {_b_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
-
-                    # Fase 3: Eventos corporativos (dividendos especiales)
-                    for _b_ca in stats.get('corporate_actions', []):
-                        if _b_ca['type'] == 'Dividendo especial':
-                            _tech_events.append({'date': _b_ca['date'], 'ticker': ticker, 'tipo': 'Dividendo especial', 'desc': f"${_b_ca.get('amount', 0):.4f} por acción"})
-
-                    # Fase 4: Retorno total incluye dividendos cobrados (no solo apreciación de precio)
-                    _b_divs = stats.get('dividends_collected_cash', 0)
-                    _b_total_ret = stats['market_value'] + _b_divs - stats['pocket_investment']
-                    _b_total_ret_pct = (_b_total_ret / stats['pocket_investment'] * 100) if stats['pocket_investment'] > 0 else 0
-                    cagr_str = f"{stats['cagr']:.2f}%" if stats.get('cagr') is not None else "N/A"
-                    _b_irr_val = stats.get('irr_anual')
-                    _b_irr_str = f"{_b_irr_val:+.2f}%" if _b_irr_val is not None else "N/A"
-                    bc3, bc4 = st.columns(2)
-                    bc3.metric("Retorno Total", f"${_b_total_ret:+,.2f}", delta=f"{_b_total_ret_pct:+.2f}%", help="Apreciación de precio + dividendos cobrados")
-                    bc4.metric("IRR Anualizado", _b_irr_str, help="Tasa interna de retorno — considera el timing real de cada compra. Más preciso que CAGR para compras escalonadas.")
-                    _b_bench_roi = stats.get('benchmark_roi')
-                    st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#556677;margin:4px 0 4px 0;">CAGR: <b>{cagr_str}</b></p>', unsafe_allow_html=True)
-                    # Fase 8: Benchmark con timing real
-                    if _b_bench_roi is not None:
-                        _b_diff = _b_total_ret_pct - _b_bench_roi
-                        _b_bench_color = "#4caf82" if _b_diff >= 0 else "#e05c5c"
-                        st.markdown(f'<p style="font-family:Inter,sans-serif;font-size:12px;color:{_b_bench_color};margin:0 0 12px 0;">vs VOO (mismo timing): <b>{_b_bench_roi:+.2f}%</b> · Tu ventaja: <b>{_b_diff:+.2f}%</b></p>', unsafe_allow_html=True)
-                    else:
-                        st.markdown('<div style="margin-bottom:12px;"></div>', unsafe_allow_html=True)
-
-                    _render_interpretation(ticker)
-
-                    # Mode B dividends (VTI, SCHB, SCHD pay quarterly cash dividends)
-                    b_monthly = stats.get('monthly_income')
-                    if b_monthly is not None and not b_monthly.empty:
-                        import altair as alt
-                        b_yoc = stats.get('yield_on_cost', 0)
-                        b_total_div = stats.get('dividends_collected_cash', 0)
-                        st.markdown("### DIVIDENDOS COBRADOS")
-                        bd1, bd2 = st.columns(2)
-                        bd1.metric("Total Dividendos", f"${b_total_div:,.2f}")
-                        bd2.metric("Yield on Cost", f"{b_yoc:.2f}%" if b_yoc else "—")
-                        b_income_df = b_monthly.reset_index()
-                        b_income_df.columns = ['Mes', 'Dividendo']
-                        b_income_chart = alt.Chart(b_income_df).mark_bar(color='#006497', opacity=0.85).encode(
-                            x=alt.X('Mes:O', sort=None, axis=_ed_axis('x', label_angle=0, title='Mes')),
-                            y=alt.Y('Dividendo:Q', axis=_ed_axis('y', fmt='$,.2f', title='Dividendo ($)')),
-                            tooltip=[alt.Tooltip('Mes:O', title='Mes'), alt.Tooltip('Dividendo:Q', format='$,.2f', title='Ingreso')]
-                        ).properties(height=160, background=CHART_PALETTE["bg"]).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE["bg"]
-                        )
-                        st.altair_chart(b_income_chart, use_container_width=True)
-
-                    render_quant_and_chart(stats, ticker)
-                    st.divider()
-
-                if shown_b:
-                    _cb_rows = [
-                        (ticker, stats) for ticker, stats in results.items()
-                        if classify_map.get(ticker) == 'mode_b' and 'error' not in stats
-                    ]
-                    if _cb_rows:
-                        st.markdown("### RESUMEN CONSOLIDADO — ETFs DE CRECIMIENTO")
-                        _cb_total_inv = sum(s['pocket_investment'] for _, s in _cb_rows)
-                        _cb_total_mv  = sum(s['market_value'] for _, s in _cb_rows)
-                        _cb_total_div = sum(s.get('dividends_collected_cash', 0) for _, s in _cb_rows)
-                        _cb_total_tr  = _cb_total_mv + _cb_total_div - _cb_total_inv
-                        _cb_total_tr_pct = (_cb_total_tr / _cb_total_inv * 100) if _cb_total_inv > 0 else 0
-                        _cb_has_roc = any(_cs.get('ib_cost_basis') is not None for _, _cs in _cb_rows)
-                        _cb_total_ib  = sum(_cs['ib_cost_basis'] for _, _cs in _cb_rows if _cs.get('ib_cost_basis') is not None)
-                        _cb_total_roc = sum(_cs['roc_accumulated'] for _, _cs in _cb_rows if _cs.get('roc_accumulated') is not None)
-                        _cb_total_roc_pct = round(_cb_total_roc / _cb_total_inv * 100, 1) if (_cb_has_roc and _cb_total_inv > 0) else None
-                        _cb_tbody = ""
-                        for _ct, _cs in _cb_rows:
-                            _cr = _cs['roi_percent']
-                            _cc = "#4caf82" if _cr >= 0 else "#e05c5c"
-                            _ib_b = _cs.get('ib_cost_basis')
-                            _roc_a = _cs.get('roc_accumulated')
-                            _roc_p = _cs.get('roc_percent')
-                            _ib_str  = f'${_ib_b:,.2f}' if _ib_b is not None else '—'
-                            _roc_str = f'${_roc_a:,.2f} <span style="color:#4caf82;">({_roc_p:.1f}%)</span>' if _roc_a is not None else '—'
-                            _ib_color  = '#ffffff' if _ib_b is not None else '#445566'
-                            _cb_tbody += (
-                                f'<tr style="border-bottom:1px solid #0d2a42;">'
-                                f'<td style="padding:7px 10px;font-weight:700;color:#ffffff;">{_ct}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">{_cs["shares_owned"]:.4f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs["pocket_investment"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs.get("dividends_collected_cash",0):,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">${_cs["market_value"]:,.2f}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:{_ib_color};">{_ib_str}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;">{_roc_str}</td>'
-                                f'<td style="padding:7px 10px;text-align:right;color:{_cc};font-weight:600;">{_cr:+.2f}%</td>'
-                                f'</tr>'
-                            )
-                        _cb_tr_color = "#4caf82" if _cb_total_tr_pct >= 0 else "#e05c5c"
-                        _total_cb_ib_str  = f'${_cb_total_ib:,.2f}' if _cb_has_roc else 'Ver broker'
-                        _total_cb_roc_str = f'${_cb_total_roc:,.2f} <span style="color:#4caf82;">({_cb_total_roc_pct:.1f}%)</span>' if _cb_has_roc else '—'
-                        _total_cb_ib_color = '#ffffff' if _cb_has_roc else '#445566'
-                        st.markdown(f"""
-<div style="overflow-x:auto;margin:4px 0 6px 0;">
-<table class="da-table" style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#aaaaaa;background:#010f1c;">
-  <thead>
-    <tr style="border-bottom:2px solid #006497;">
-      <th style="padding:8px 10px;text-align:left;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Ticker</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Acciones</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Tu inversión</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Dividendos Cobrados</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Valor Mercado</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">Base de Coste (ROC)</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROC Acumulado</th>
-      <th style="padding:8px 10px;text-align:right;color:#8899aa;font-weight:500;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">ROI Total</th>
-    </tr>
-  </thead>
-  <tbody>
-    {_cb_tbody}
-    <tr style="border-top:2px solid #006497;font-weight:700;">
-      <td style="padding:8px 10px;color:#ffffff;">Total</td>
-      <td style="padding:8px 10px;"></td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_inv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_div:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:#ffffff;">${_cb_total_mv:,.2f}</td>
-      <td style="padding:8px 10px;text-align:right;color:{_total_cb_ib_color};">{_total_cb_ib_str}</td>
-      <td style="padding:7px 10px;text-align:right;">{_total_cb_roc_str}</td>
-      <td style="padding:8px 10px;text-align:right;color:{_cb_tr_color};">{_cb_total_tr_pct:+.2f}%</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-<p style="font-family:Inter,sans-serif;font-size:10px;color:#445566;margin:4px 0 16px 0;">Base de Coste (ROC): el broker reduce el costo base por distribuciones clasificadas como Return of Capital. En Interactive Brokers: Portafolio → Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → Posiciones → columna "Cost Basis".</p>
-                        """, unsafe_allow_html=True)
-
-                if not shown_b:
-                    st.info("No hay ETFs de crecimiento activos en este portafolio.")
 
             # ============================================================
             # Section F — Risk Analysis
