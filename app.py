@@ -2874,44 +2874,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         'retorno total real de la portada.</div>',
                         unsafe_allow_html=True)
 
-            # ── ¿De dónde viene tu ingreso? (dona de concentración) ──────
-            if len(_income_contrib) >= 2:
-                import altair as alt
-                _don_items = sorted(_income_contrib.items(), key=lambda x: -x[1])
-                if len(_don_items) > 6:
-                    _don_items = _don_items[:6] + [('Otros', sum(v for _, v in _don_items[6:]))]
-                _don_df = pd.DataFrame([{'Ticker': t, 'Ingreso': v} for t, v in _don_items])
-                _don_total = _don_df['Ingreso'].sum()
-                _don_df['Pct'] = _don_df['Ingreso'] / _don_total * 100 if _don_total else 0
-                _don_palette = ['#021C36', '#006497', '#4caf82', '#166534', '#60A5FA', '#86EFAC', '#8899aa']
-                _top_tk, _top_v = _don_items[0]
-                _top_pct = (_top_v / _don_total * 100) if _don_total else 0
-                _da_section('¿De dónde viene tu ingreso?',
-                            'Cuánto aporta cada posición a tu ingreso anual por dividendos. Mientras más concentrado en pocos nombres, más depende tu ingreso de ellos.')
-                _arc = (alt.Chart(_don_df).mark_arc(innerRadius=70, stroke='#fcf9f8', strokeWidth=2)
-                        .encode(
-                            theta=alt.Theta('Ingreso:Q', stack=True),
-                            order=alt.Order('Ingreso:Q', sort='descending'),
-                            color=alt.Color('Ticker:N',
-                                            scale=alt.Scale(domain=list(_don_df['Ticker']), range=_don_palette),
-                                            legend=alt.Legend(title=None, orient='right',
-                                                              labelFont=_MONO_FONT, labelFontSize=11,
-                                                              labelColor=_INK, symbolType='square', symbolSize=140)),
-                            tooltip=[alt.Tooltip('Ticker:N', title='Activo'),
-                                     alt.Tooltip('Ingreso:Q', format='$,.0f', title='Ingreso anual'),
-                                     alt.Tooltip('Pct:Q', format='.1f', title='% del total')])
-                        .properties(height=280)
-                        .configure_view(strokeWidth=0))
-                st.altair_chart(_arc, use_container_width=True)
-                _top3 = _don_df['Pct'].iloc[:3].sum()
-                _conc_txt = (f', y el <b style="color:#021C36;">{_top3:.0f}%</b> de tus 3 mayores.'
-                             if len(_don_items) >= 3 else '.')
-                st.markdown(
-                    f'<p style="font-family:Inter,sans-serif;font-size:12.5px;color:#5a6b7a;'
-                    f'margin:2px 0 12px 0;line-height:1.5;">El <b style="color:#021C36;">{_top_pct:.0f}%</b> '
-                    f'de tu ingreso viene de <b style="color:#021C36;">{_top_tk}</b>{_conc_txt} '
-                    'Una concentración alta significa que tu ingreso depende mucho de ese activo.</p>',
-                    unsafe_allow_html=True)
 
             def _render_data_quality_panel():
                 # ── Calidad de datos (pre-flight) ─────────────────────────
@@ -3151,7 +3113,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _rows_hist = [(_tk, _d.get('schwab_received_total'), _d.get('our_received_total'))
                                   for _tk, _d in _items]
 
-                    _da_section('Ingreso, ROC y comparación con el broker',
+                    _da_section('Ingreso y comparación con el broker',
                                 'El número fino: lo recibido vs lo proyectado, tu Retorno de Capital por activo y por qué la proyección del broker suele estar inflada.')
                     _inc_exp = st.expander('Ver detalle · tabla consolidada (Schwab vs tu cálculo · ROC) · gráfica de ingresos', expanded=False)
                     # Las columnas "Últimos 12 meses" y "Proyectado mensual" se eliminaron y todo
@@ -3560,8 +3522,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'color:#021C36;letter-spacing:0.04em;text-transform:uppercase;'
                                 f'margin:18px 0 6px 0;">{txt}</p>')
 
-                    _da_section("Comparación con el broker · Schwab vs tu cálculo",
-                                "Lo que reporta Schwab frente a lo que reconstruye la calculadora desde tu CSV: tu inversión, tus dividendos y tu Retorno de Capital, fondo por fondo.")
+                    st.markdown(
+                        '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
+                        'margin:18px 0 6px 0;">Comparación con el broker · Schwab vs tu cálculo</p>',
+                        unsafe_allow_html=True)
                     _cmp_exp = st.expander("Ver las 3 cuadrículas · inversión, dividendos y ROC", expanded=False)
 
                     # Cuadrícula A — rendimiento de la inversión
@@ -3788,6 +3752,47 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                          "devolvió y por el que el bróker bajó tu base. «ROC ÷ div.» es qué parte de tus dividendos "
                                          "fue en realidad devolución de tu capital. Si falta el costo del bróker, el ROC se estima "
                                          "con los avisos 19a del fondo.")
+
+            # ── ¿De dónde viene tu ingreso? (dona de concentración) ──────
+            if len(_income_contrib) >= 2:
+                import altair as alt
+                _don_items = sorted(_income_contrib.items(), key=lambda x: -x[1])
+                if len(_don_items) > 6:
+                    _don_items = _don_items[:6] + [('Otros', sum(v for _, v in _don_items[6:]))]
+                _don_df = pd.DataFrame([{'Ticker': t, 'Ingreso': v} for t, v in _don_items])
+                _don_total = _don_df['Ingreso'].sum()
+                _don_df['Pct'] = _don_df['Ingreso'] / _don_total * 100 if _don_total else 0
+                _don_palette = ['#021C36', '#006497', '#4caf82', '#166534', '#60A5FA', '#86EFAC', '#8899aa']
+                _top_tk, _top_v = _don_items[0]
+                _top_pct = (_top_v / _don_total * 100) if _don_total else 0
+                st.markdown(
+                    '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
+                    'margin:18px 0 6px 0;">¿De dónde viene tu ingreso? (concentración)</p>',
+                    unsafe_allow_html=True)
+                _arc = (alt.Chart(_don_df).mark_arc(innerRadius=70, stroke='#fcf9f8', strokeWidth=2)
+                        .encode(
+                            theta=alt.Theta('Ingreso:Q', stack=True),
+                            order=alt.Order('Ingreso:Q', sort='descending'),
+                            color=alt.Color('Ticker:N',
+                                            scale=alt.Scale(domain=list(_don_df['Ticker']), range=_don_palette),
+                                            legend=alt.Legend(title=None, orient='right',
+                                                              labelFont=_MONO_FONT, labelFontSize=11,
+                                                              labelColor=_INK, symbolType='square', symbolSize=140)),
+                            tooltip=[alt.Tooltip('Ticker:N', title='Activo'),
+                                     alt.Tooltip('Ingreso:Q', format='$,.0f', title='Ingreso anual'),
+                                     alt.Tooltip('Pct:Q', format='.1f', title='% del total')])
+                        .properties(height=280)
+                        .configure_view(strokeWidth=0))
+                st.altair_chart(_arc, use_container_width=True)
+                _top3 = _don_df['Pct'].iloc[:3].sum()
+                _conc_txt = (f', y el <b style="color:#021C36;">{_top3:.0f}%</b> de tus 3 mayores.'
+                             if len(_don_items) >= 3 else '.')
+                st.markdown(
+                    f'<p style="font-family:Inter,sans-serif;font-size:12.5px;color:#5a6b7a;'
+                    f'margin:2px 0 12px 0;line-height:1.5;">El <b style="color:#021C36;">{_top_pct:.0f}%</b> '
+                    f'de tu ingreso viene de <b style="color:#021C36;">{_top_tk}</b>{_conc_txt} '
+                    'Una concentración alta significa que tu ingreso depende mucho de ese activo.</p>',
+                    unsafe_allow_html=True)
 
 
             # ── Proyección y escenarios (el resumen global se retiró) ──
