@@ -2336,12 +2336,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'<b>{_money(_d["drip"])}</b> que tu propio dinero generó y '
                                    f'reinvirtió = <b>{_money(_d["total"])}</b> de capital '
                                    f'trabajando en {_vj_tk}.')
+                        if _no_imp:
+                            _n1 = (f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos '
+                                   f'brutos por tus acciones. Veamos qué pasó con ellos en el '
+                                   f'camino a tu cuenta…')
+                        else:
+                            _n1 = (f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos '
+                                   f'brutos por tus acciones. Pero antes de que lleguen a ti, el '
+                                   f'gobierno de EE.UU. toma una parte…')
                         _narr = [
                             f'Este es el capital neto que pusiste de tu propio dinero para '
                             f'comprar {_vj_tk}.',
-                            f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos brutos '
-                            f'por tus acciones. Pero antes de que lleguen a ti, el gobierno de '
-                            f'EE.UU. toma una parte…',
+                            _n1,
                             _n2,
                             _n3,
                             _n4,
