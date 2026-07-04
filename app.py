@@ -2307,23 +2307,44 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             unsafe_allow_html=True)
 
                         # Narrativas: un renglón por paso; las previas se atenúan encima.
+                        # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
+                        _no_imp = _d['imp'] <= 0.01
+                        _no_drip = _d['drip'] <= 0.01
+                        if _no_imp:
+                            _n2 = (f'En este archivo no aparece retención de impuesto para '
+                                   f'{_vj_tk}. Si eres inversionista extranjero (NRA), '
+                                   f'normalmente EE.UU. retiene ~30% de cada dividendo — revisa '
+                                   f'tu 1042-S. Aquí el dividendo pasó completo: '
+                                   f'<b>{_money(_d["neto"])}</b>.')
+                        else:
+                            _n2 = (f'Por ser inversionista extranjero se retiene automáticamente '
+                                   f'~30% de impuesto NRA (<b>{_neg(_d["imp"])}</b>). Te quedan '
+                                   f'<b>{_money(_d["neto"])}</b> libres.')
+                        if _no_drip:
+                            _n3 = (f'Tus dividendos limpios se fueron completos a tu cuenta en '
+                                   f'efectivo (<b>{_money(_d["cash"])}</b>) — en esta cuenta no '
+                                   f'hay reinversión automática (DRIP).')
+                            _n4 = (f'Sin reinversión, tu capital en {_vj_tk} sigue siendo tus '
+                                   f'<b>{_money(_d["pocket"])}</b> originales; tus dividendos '
+                                   f'(<b>{_money(_d["cash"])}</b>) están aparte, en efectivo.')
+                        else:
+                            _n3 = (f'De tus dividendos limpios, <b>{_money(_d["cash"])}</b> se '
+                                   f'fueron a tu cuenta en efectivo (listos para retirar) y '
+                                   f'<b>{_money(_d["drip"])}</b> compraron más acciones '
+                                   f'automáticamente (DRIP).')
+                            _n4 = (f'Tus <b>{_money(_d["pocket"])}</b> iniciales + los '
+                                   f'<b>{_money(_d["drip"])}</b> que tu propio dinero generó y '
+                                   f'reinvirtió = <b>{_money(_d["total"])}</b> de capital '
+                                   f'trabajando en {_vj_tk}.')
                         _narr = [
                             f'Este es el capital neto que pusiste de tu propio dinero para '
                             f'comprar {_vj_tk}.',
                             f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos brutos '
                             f'por tus acciones. Pero antes de que lleguen a ti, el gobierno de '
                             f'EE.UU. toma una parte…',
-                            f'Por ser inversionista extranjero se retiene automáticamente ~30% '
-                            f'de impuesto NRA (<b>{_neg(_d["imp"])}</b>). Te quedan '
-                            f'<b>{_money(_d["neto"])}</b> libres.',
-                            f'De tus dividendos limpios, <b>{_money(_d["cash"])}</b> se fueron a '
-                            f'tu cuenta en efectivo (listos para retirar) y '
-                            f'<b>{_money(_d["drip"])}</b> compraron más acciones automáticamente '
-                            f'(DRIP).',
-                            f'Tus <b>{_money(_d["pocket"])}</b> iniciales + los '
-                            f'<b>{_money(_d["drip"])}</b> que tu propio dinero generó y '
-                            f'reinvirtió = <b>{_money(_d["total"])}</b> de capital trabajando '
-                            f'en {_vj_tk}.',
+                            _n2,
+                            _n3,
+                            _n4,
                         ]
                         _nhtml = ''
                         for _ni in range(_step):
@@ -2333,12 +2354,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:12.5px;'
                                    f'color:#021C36;line-height:1.55;margin:0;">{_narr[_step]}</p>')
                         if _step == 4:
+                            if _no_drip:
+                                _honesty = ('La ganancia real la mide el <b>retorno total</b> '
+                                            'de la portada.')
+                            else:
+                                _honesty = (f'Ojo: {_money(_d["total"])} es <b>capital '
+                                            f'invertido</b>, no ganancia. Las acciones que '
+                                            f'compró el DRIP valen hoy lo que diga el mercado — '
+                                            f'la ganancia real la mide el <b>retorno total</b> '
+                                            f'de la portada.')
                             _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:11px;'
-                                       f'color:#445566;line-height:1.55;margin:6px 0 0 0;">Ojo: '
-                                       f'{_money(_d["total"])} es <b>capital invertido</b>, no '
-                                       f'ganancia. Las acciones que compró el DRIP valen hoy lo '
-                                       f'que diga el mercado — la ganancia real la mide el '
-                                       f'<b>retorno total</b> de la portada.</p>')
+                                       f'color:#445566;line-height:1.55;margin:6px 0 0 0;">'
+                                       f'{_honesty}</p>')
                         st.markdown(f'<div style="margin:6px 0 10px 2px;">{_nhtml}</div>',
                                     unsafe_allow_html=True)
 
