@@ -2306,6 +2306,42 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             f'minmax(96px,1fr));gap:6px;margin:8px 0 4px 0;">{_vcells}</div>',
                             unsafe_allow_html=True)
 
+                        # Narrativas: un renglón por paso; las previas se atenúan encima.
+                        _narr = [
+                            f'Este es el capital neto que pusiste de tu propio dinero para '
+                            f'comprar {_vj_tk}.',
+                            f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos brutos '
+                            f'por tus acciones. Pero antes de que lleguen a ti, el gobierno de '
+                            f'EE.UU. toma una parte…',
+                            f'Por ser inversionista extranjero se retiene automáticamente ~30% '
+                            f'de impuesto NRA (<b>{_neg(_d["imp"])}</b>). Te quedan '
+                            f'<b>{_money(_d["neto"])}</b> libres.',
+                            f'De tus dividendos limpios, <b>{_money(_d["cash"])}</b> se fueron a '
+                            f'tu cuenta en efectivo (listos para retirar) y '
+                            f'<b>{_money(_d["drip"])}</b> compraron más acciones automáticamente '
+                            f'(DRIP).',
+                            f'Tus <b>{_money(_d["pocket"])}</b> iniciales + los '
+                            f'<b>{_money(_d["drip"])}</b> que tu propio dinero generó y '
+                            f'reinvirtió = <b>{_money(_d["total"])}</b> de capital trabajando '
+                            f'en {_vj_tk}.',
+                        ]
+                        _nhtml = ''
+                        for _ni in range(_step):
+                            _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                       f'color:#333333;line-height:1.55;margin:0 0 3px 0;'
+                                       f'opacity:.55;">{_narr[_ni]}</p>')
+                        _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:12.5px;'
+                                   f'color:#021C36;line-height:1.55;margin:0;">{_narr[_step]}</p>')
+                        if _step == 4:
+                            _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                       f'color:#445566;line-height:1.55;margin:6px 0 0 0;">Ojo: '
+                                       f'{_money(_d["total"])} es <b>capital invertido</b>, no '
+                                       f'ganancia. Las acciones que compró el DRIP valen hoy lo '
+                                       f'que diga el mercado — la ganancia real la mide el '
+                                       f'<b>retorno total</b> de la portada.</p>')
+                        st.markdown(f'<div style="margin:6px 0 10px 2px;">{_nhtml}</div>',
+                                    unsafe_allow_html=True)
+
                     _viaje_dinero()
 
                 # ── Callout: dónde se equivoca el método viejo (con tus números) ──
