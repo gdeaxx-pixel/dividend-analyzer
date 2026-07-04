@@ -2208,6 +2208,106 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     'contar el mismo dinero dos veces. <b>Salud del NAV</b> juzga por la tendencia del '
                     'precio del fondo (erosión), no por el yield titular.</p>', unsafe_allow_html=True)
 
+                # ── El viaje del dinero — desglose interactivo por fondo ──
+                # Gate de integridad: solo fondos con todos los campos y ecuaciones
+                # que cuadran (pocket+drip==total y bruto−imp==drip+cash, ±$1).
+                _vj_data = {}
+                for r in _rows:
+                    _vtk = r['ticker']
+                    _vpk = r['investment']
+                    _vbr = r['dividends_gross']
+                    _vim = r['nra_tax']
+                    _vnt = r['dividends_net']
+                    _vch = (results.get(_vtk) or {}).get('dividends_collected_cash')
+                    if None in (_vpk, _vbr, _vim, _vnt, _vch) or _vpk <= 0:
+                        continue
+                    _vdr = _vnt - _vch
+                    if _vdr < 0:
+                        continue
+                    _vtc = _vpk + _vdr
+                    if abs((_vpk + _vdr) - _vtc) > 1 or abs((_vbr - _vim) - (_vdr + _vch)) > 1:
+                        continue
+                    _vj_data[_vtk] = {'pocket': _vpk, 'bruto': _vbr, 'imp': _vim,
+                                      'neto': _vnt, 'drip': _vdr, 'cash': _vch, 'total': _vtc}
+
+                if _vj_data:
+                    @st.fragment
+                    def _viaje_dinero():
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                            'color:#006497;margin:10px 0 3px 2px;letter-spacing:0.06em;">EL VIAJE DEL '
+                            'DINERO <span style="color:#5a6b7a;font-weight:500;">(paso a paso, fondo '
+                            'por fondo)</span></p>', unsafe_allow_html=True)
+                        if hasattr(st, 'pills'):
+                            _vj_tk = st.pills('Ver el viaje del dinero — elige un fondo',
+                                              options=list(_vj_data.keys()),
+                                              selection_mode='single',
+                                              key=f'_vj_fondo_{_fid}')
+                        else:
+                            _vj_tk = st.radio('Ver el viaje del dinero — elige un fondo',
+                                              options=['(ninguno)'] + list(_vj_data.keys()),
+                                              horizontal=True, key=f'_vj_fondo_{_fid}')
+                            _vj_tk = None if _vj_tk == '(ninguno)' else _vj_tk
+                        if not _vj_tk:
+                            return
+                        _d = _vj_data[_vj_tk]
+
+                        _step_labels = ['Tu bolsillo', 'Total div. (bruto)', 'Impuesto NRA',
+                                        'Reinvertidos y efectivo', '+ Re invertido']
+                        if hasattr(st, 'pills'):
+                            _sel = st.pills('Paso', options=_step_labels, default=_step_labels[0],
+                                            selection_mode='single',
+                                            key=f'_vj_{_vj_tk}_{_fid}',
+                                            label_visibility='collapsed')
+                            _step = _step_labels.index(_sel) if _sel in _step_labels else 0
+                        else:
+                            _sk = f'_vj_{_vj_tk}_{_fid}'
+                            _step = int(st.session_state.get(_sk, 0))
+                            _cprev, _cnext, _ = st.columns([0.2, 0.2, 0.6])
+                            if _cprev.button('← Anterior', key=_sk + '_p', disabled=_step <= 0):
+                                _step = max(0, _step - 1)
+                            if _cnext.button('Siguiente →', key=_sk + '_n', disabled=_step >= 4):
+                                _step = min(4, _step + 1)
+                            st.session_state[_sk] = _step
+
+                        # Mini-tabla propia del stepper (no ensancha la tabla honesta).
+                        _cols = [('pocket', 'Tu bolsillo', _money(_d['pocket'])),
+                                 ('bruto', 'Total div. (bruto)', _money(_d['bruto'])),
+                                 ('imp', 'Impuesto NRA', _neg(_d['imp'])),
+                                 ('drip', 'Reinvertidos', _money(_d['drip'])),
+                                 ('cash', 'En efectivo', _money(_d['cash'])),
+                                 ('total', '+ Re invertido', _money(_d['total']))]
+                        _visible = {0: ['pocket'],
+                                    1: ['pocket', 'bruto'],
+                                    2: ['pocket', 'bruto', 'imp'],
+                                    3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
+                                    4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total']}[_step]
+                        _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp'},
+                                    3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
+                        _vcells = ''
+                        for _cid, _clabel, _cval in _cols:
+                            if _cid not in _visible:
+                                continue
+                            _is_cur = _cid in _current
+                            _cst = ('border:2px solid #006497;background:#eef6fb;opacity:1;'
+                                    if _is_cur else
+                                    'border:2px solid transparent;opacity:.55;')
+                            _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                            _vcells += (
+                                f'<div style="{_cst}padding:8px 10px;text-align:right;">'
+                                f'<span style="display:block;font-family:Inter,sans-serif;font-size:8px;'
+                                f'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                f'color:#8899aa;margin-bottom:3px;">{_clabel}</span>'
+                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,Consolas,'
+                                f'monospace;font-size:13px;font-weight:700;color:{_vcol};'
+                                f'letter-spacing:-0.01em;">{_cval}</span></div>')
+                        st.markdown(
+                            f'<div style="display:grid;grid-template-columns:repeat({len(_visible)},'
+                            f'minmax(96px,1fr));gap:6px;margin:8px 0 4px 0;">{_vcells}</div>',
+                            unsafe_allow_html=True)
+
+                    _viaje_dinero()
+
                 # ── Callout: dónde se equivoca el método viejo (con tus números) ──
                 _naive_total = _t['total_inv_naive']
                 _real_total = _t['total_return']
