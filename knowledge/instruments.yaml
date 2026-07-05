@@ -139,11 +139,12 @@ DISO:
   underlying: DIS
   name: Disney
   risk: MEDIUM
+  delisted: "2026-06-18"
   reason: "Media + streaming + parques, en proceso de reestructuración"
   income_mechanism: "Calls cubiertas sintéticas sobre DIS; income vía primas."
   nav_erosion: "Volatilidad media; erosión asociada a la estrategia de opciones."
   sustainability: "Distribución variable según la volatilidad de DIS."
-  note: "Single-name en reestructuración convertido en income mensual."
+  note: "FONDO CERRADO: YieldMax lo liquidó el 18-jun-2026 (último día de trading 15-jun-2026); quien lo tenía recibió efectivo al NAV de cierre. Los datos históricos se conservan para analizar posiciones pasadas."
 
 AMDY:
   type: yieldmax

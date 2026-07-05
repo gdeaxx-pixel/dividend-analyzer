@@ -33,14 +33,17 @@ FUND_DELAY = 1.5       # pausa entre fondos para no gatillar throttle de YieldMa
 
 
 def yieldmax_tickers():
-    """Tickers tipo 'yieldmax' en instruments.yaml (la lista a refrescar)."""
+    """Tickers tipo 'yieldmax' en instruments.yaml (la lista a refrescar). Los marcados
+    `delisted` (fondo cerrado/liquidado) se saltan: su página ya no existe y sus datos
+    históricos previos se conservan tal cual."""
     try:
         with open(INSTR_PATH, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
     except Exception:
         return []
     return sorted(str(t).upper() for t, v in data.items()
-                  if isinstance(v, dict) and str(v.get("type", "")).lower() == "yieldmax")
+                  if isinstance(v, dict) and str(v.get("type", "")).lower() == "yieldmax"
+                  and not v.get("delisted"))
 
 
 def _parse_date(v):
@@ -205,11 +208,62 @@ def fetch_rendered_html(url):
     return html
 
 
+_BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+    "Referer": "https://yieldmaxetfs.com/",
+}
+
+_CHALLENGE_MARKERS = ("just a moment", "cf-challenge", "attention required",
+                      "verify you are human", "checking your browser")
+
+
+def _challenge_hint(html, tk):
+    """Si el HTML recibido parece una página de challenge anti-bot, dejarlo dicho en el log
+    (distingue 'nos bloquean' de 'cambió la página')."""
+    low = (html or "").lower()
+    for marker in _CHALLENGE_MARKERS:
+        if marker in low:
+            print(f"::warning::{tk}: el HTML recibido parece challenge anti-bot "
+                  f"('{marker}') — bloqueo al runner, no cambio de página.", file=sys.stderr)
+            return True
+    return False
+
+
+def fetch_plain_html(url):
+    """Fetch sin navegador: la tabla de distribuciones hoy viene server-rendered en el HTML
+    plano, así que esto suele bastar y evita el fingerprint de chromium headless."""
+    import requests
+    resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+class PageGone(Exception):
+    """La página del fondo devuelve 404: fondo cerrado/renombrado, no un fallo del parser."""
+
+
 def fetch_rows_with_retries(url, tk):
-    """Intenta varias veces; reintenta si la tabla no rindió (0 filas). Devuelve
-    (rows, html): las filas ROC y el HTML del último render (para parsear también la
-    Distribution Rate titular de la MISMA carga de página)."""
+    """Capas: (1) HTTP plano con headers de navegador; (2) Playwright renderizado.
+    Reintenta si la tabla no rindió (0 filas). Devuelve (rows, html): las filas ROC y el
+    HTML de la última carga (para parsear también la Distribution Rate titular de la MISMA
+    carga de página). Lanza PageGone si la página da 404 (fondo retirado)."""
     rows, html = [], ""
+    for attempt in range(1, RETRIES + 1):
+        try:
+            html = fetch_plain_html(url)
+            rows = parse_distributions_from_html(html)
+        except Exception as e:
+            if getattr(getattr(e, "response", None), "status_code", None) == 404:
+                raise PageGone(url)
+            print(f"::warning::{tk}: intento plano {attempt}/{RETRIES} ERROR: {e}", file=sys.stderr)
+        if rows:
+            return rows, html
+        _challenge_hint(html, tk)
+        if attempt < RETRIES:
+            time.sleep(RETRY_WAIT)
     for attempt in range(1, RETRIES + 1):
         try:
             html = fetch_rendered_html(url)
@@ -218,6 +272,7 @@ def fetch_rows_with_retries(url, tk):
             print(f"::warning::{tk}: intento {attempt}/{RETRIES} ERROR: {e}", file=sys.stderr)
         if rows:
             return rows, html
+        _challenge_hint(html, tk)
         if attempt < RETRIES:
             time.sleep(RETRY_WAIT)
     return rows, html
@@ -246,7 +301,14 @@ def main(argv):
     regressions, empty_new = [], []
     for tk in tickers:
         url = FUND_URL.format(tk=tk.lower())
-        rows, html = fetch_rows_with_retries(url, tk)
+        try:
+            rows, html = fetch_rows_with_retries(url, tk)
+        except PageGone:
+            print(f"::warning::{tk}: la página del fondo da 404 (¿cerrado/renombrado?). "
+                  f"Conservo datos previos; si cerró, marca `delisted:` en instruments.yaml.",
+                  file=sys.stderr)
+            time.sleep(FUND_DELAY)
+            continue
         time.sleep(FUND_DELAY)
         if rows:
             out[tk] = build_entry(tk, rows)
