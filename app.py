@@ -17,7 +17,7 @@ _LOGIC_SENTINELS = (
     "load_roc_19a", "project_portfolio_forward", "build_portfolio_verdict",
     "monte_carlo_projection", "build_factor_concentration", "build_underlying_exposure",
     "nra_tax_breakdown", "build_risk_analysis", "build_interpretation",
-    "classify_roc_health", "load_roc_health_history",
+    "classify_roc_health", "load_roc_health_history", "latest_health_verdict",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
@@ -2468,9 +2468,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                       - datetime.date.fromisoformat(_r19['asof'])).days
                     except Exception:
                         _asof_days = None
+                _prev_v = logic.latest_health_verdict(tk)
                 _verdict = logic.classify_roc_health(
                     roc_pct=_roc_pct, price_cagr=_navc, total_return_pct=_tr_pct,
-                    history_days=stats.get('price_history_days'), roc_asof_days=_asof_days)
+                    history_days=stats.get('price_history_days'), roc_asof_days=_asof_days,
+                    prev_verdict=_prev_v)
                 _score = _verdict.get('gauge_score')
                 if _score is None:
                     _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
@@ -4831,6 +4833,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                                       - datetime.date.fromisoformat(_r19['asof'])).days
                                     except Exception:
                                         _asof_days = None
+                                _prev_v = logic.latest_health_verdict(_tk)
                                 _verdict = logic.classify_roc_health(
                                     roc_pct=_roc,
                                     price_cagr=(_rs.get('price_cagr_recent')
@@ -4838,7 +4841,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                                 else _rs.get('price_cagr')),
                                     total_return_pct=_htr,
                                     history_days=_rs.get('price_history_days'),
-                                    roc_asof_days=_asof_days)
+                                    roc_asof_days=_asof_days,
+                                    prev_verdict=_prev_v)
                                 _vreason = _verdict['reason']
                                 if _verdict['verdict'] == 'destructive':
                                     _u = _rs.get('underlying_cagr_recent')
