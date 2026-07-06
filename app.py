@@ -2283,6 +2283,25 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             st.session_state[_sk] = _step
 
                         # Mini-tabla propia del stepper (no ensancha la tabla honesta).
+                        def _cell(cid, label, val, is_cur, color, sub='', dim=True):
+                            _cst = ('border:2px solid #006497;background:#eef6fb;opacity:1;'
+                                    if is_cur else
+                                    f'border:2px solid transparent;'
+                                    f'opacity:{".55" if dim else "1"};')
+                            return (
+                                f'<div style="{_cst}padding:8px 10px;text-align:right;">'
+                                f'<span style="display:block;font-family:Inter,sans-serif;font-size:8px;'
+                                f'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                f'color:#8899aa;margin-bottom:3px;">{label}</span>'
+                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,Consolas,'
+                                f'monospace;font-size:13px;font-weight:700;color:{color};'
+                                f'letter-spacing:-0.01em;">{val}</span>{sub}</div>')
+
+                        def _grid(cells_html, n):
+                            return (f'<div style="display:grid;grid-template-columns:'
+                                    f'repeat({n},minmax(96px,1fr));gap:6px;margin:8px 0 4px 0;">'
+                                    f'{cells_html}</div>')
+
                         _no_imp = _d['imp'] <= 0.01
                         _cols = [('pocket', 'Tu bolsillo', _money(_d['pocket'])),
                                  ('bruto', 'Total div. (bruto)', _money(_d['bruto'])),
@@ -2291,61 +2310,80 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _cols.append(('neto', 'Div. neto percibido', _money(_d['neto'])))
                         _cols += [('drip', 'Reinvertidos', _money(_d['drip'])),
                                   ('cash', 'En efectivo', _money(_d['cash'])),
-                                  ('total', 'Tu bolsillo + DRIP', _money(_d['total'])),
-                                  ('hoy', 'Valor hoy', _money(_d['mv']))]
+                                  ('total', 'Tu bolsillo + DRIP', _money(_d['total']))]
                         _has_rend = _d['ret'] is not None and _d['ret_pct'] is not None
-                        if _has_rend:
-                            _cols.append(('rend', 'Resultado real', _money(_d['ret'])))
-                        _step5 = (['pocket', 'total', 'hoy', 'rend'] if _has_rend
-                                  else ['pocket', 'total', 'hoy'])
-                        if _no_imp:
-                            _visible = {0: ['pocket'],
-                                        1: ['pocket', 'bruto'],
-                                        2: ['pocket', 'bruto', 'imp'],
-                                        3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
-                                        4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total'],
-                                        5: _step5}[_step]
-                        else:
-                            _visible = {0: ['pocket'],
-                                        1: ['pocket', 'bruto'],
-                                        2: ['pocket', 'bruto', 'imp', 'neto'],
-                                        3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
-                                        4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash', 'total'],
-                                        5: _step5}[_step]
-                        _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
-                                    3: {'drip', 'cash'}, 4: {'pocket', 'total'},
-                                    5: {'hoy', 'rend'} if _has_rend else {'hoy'}}[_step]
-                        _vcells = ''
-                        for _cid, _clabel, _cval in _cols:
-                            if _cid not in _visible:
-                                continue
-                            _is_cur = _cid in _current
-                            _cst = ('border:2px solid #006497;background:#eef6fb;opacity:1;'
-                                    if _is_cur else
-                                    'border:2px solid transparent;opacity:.55;')
-                            if _cid == 'imp':
-                                _vcol = '#cc6a6a'
-                            elif _cid == 'rend':
-                                _vcol = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
+
+                        if _step != 5:
+                            if _no_imp:
+                                _visible = {0: ['pocket'],
+                                            1: ['pocket', 'bruto'],
+                                            2: ['pocket', 'bruto', 'imp'],
+                                            3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
+                                            4: ['pocket', 'bruto', 'imp', 'drip', 'cash',
+                                                'total']}[_step]
                             else:
-                                _vcol = '#0F172A'
-                            _vsub = ''
-                            if _cid == 'rend':
-                                _vsub = (f'<span style="display:block;font-family:Inter,sans-serif;'
-                                         f'font-size:9px;font-weight:600;color:{_vcol};'
-                                         f'margin-top:2px;">({_pct(_d["ret_pct"])})</span>')
-                            _vcells += (
-                                f'<div style="{_cst}padding:8px 10px;text-align:right;">'
-                                f'<span style="display:block;font-family:Inter,sans-serif;font-size:8px;'
-                                f'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
-                                f'color:#8899aa;margin-bottom:3px;">{_clabel}</span>'
-                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,Consolas,'
-                                f'monospace;font-size:13px;font-weight:700;color:{_vcol};'
-                                f'letter-spacing:-0.01em;">{_cval}</span>{_vsub}</div>')
-                        st.markdown(
-                            f'<div style="display:grid;grid-template-columns:repeat({len(_visible)},'
-                            f'minmax(96px,1fr));gap:6px;margin:8px 0 4px 0;">{_vcells}</div>',
-                            unsafe_allow_html=True)
+                                _visible = {0: ['pocket'],
+                                            1: ['pocket', 'bruto'],
+                                            2: ['pocket', 'bruto', 'imp', 'neto'],
+                                            3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
+                                            4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash',
+                                                'total']}[_step]
+                            _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
+                                        3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
+                            _vcells = ''
+                            for _cid, _clabel, _cval in _cols:
+                                if _cid not in _visible:
+                                    continue
+                                _is_cur = _cid in _current
+                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                                _vcells += _cell(_cid, _clabel, _cval, _is_cur, _vcol)
+                            st.markdown(_grid(_vcells, len(_visible)), unsafe_allow_html=True)
+                        else:
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
+                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                'color:#8899aa;margin:0 0 2px 2px;">EL FLUJO DEL DIVIDENDO</p>',
+                                unsafe_allow_html=True)
+                            _flow_cells = ''
+                            for _cid, _clabel, _cval in _cols:
+                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                                _flow_cells += _cell(_cid, _clabel, _cval, False, _vcol)
+                            st.markdown(_grid(_flow_cells, len(_cols)), unsafe_allow_html=True)
+
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
+                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                'color:#8899aa;margin:8px 0 2px 2px;">EL IMPACTO DEL MERCADO</p>',
+                                unsafe_allow_html=True)
+                            _mkt = _d['mv'] - _d['total']
+                            _mkt_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
+                            _mkt_col = '#1f8a5b' if _mkt >= 0 else '#e05c5c'
+                            _mkt_cells = (
+                                _cell('start', 'Capital trabajando', _money(_d['total']),
+                                      False, '#0F172A', dim=False)
+                                + _cell('mkt', 'Impacto del mercado', _mkt_str, False, _mkt_col,
+                                        dim=False)
+                                + _cell('hoy', 'Valor hoy', _money(_d['mv']), False, '#0F172A',
+                                        dim=False)
+                                + _cell('cash2', '+ En efectivo', '+' + _money(_d['cash']),
+                                        False, '#0F172A', dim=False)
+                                + _cell('pkt2', '− Tu bolsillo', '−' + _money(_d['pocket']),
+                                        False, '#0F172A', dim=False))
+                            _n_mkt_cells = 5
+                            if _has_rend:
+                                _rend_col = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
+                                _rend_sub = (f'<span style="display:block;font-family:Inter,'
+                                             f'sans-serif;font-size:9px;font-weight:600;'
+                                             f'color:{_rend_col};margin-top:2px;">'
+                                             f'({_pct(_d["ret_pct"])})</span>')
+                                _mkt_cells += _cell('rend', 'Resultado real', _money(_d['ret']),
+                                                     True, _rend_col, _rend_sub)
+                                _n_mkt_cells = 6
+                            st.markdown(_grid(_mkt_cells, _n_mkt_cells), unsafe_allow_html=True)
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:9px;'
+                                'color:#8899aa;margin:3px 0 4px 2px;">Resultado real = Valor '
+                                'hoy + En efectivo − Tu bolsillo</p>', unsafe_allow_html=True)
 
                         # Narrativas: un renglón por paso; las previas se atenúan encima.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
@@ -2388,20 +2426,43 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'brutos por tus acciones. Pero antes de que lleguen a ti, el '
                                    f'gobierno de EE.UU. toma una parte…')
                         _ret_paren = f' ({_pct(_d["ret_pct"])})' if _d['ret_pct'] is not None else ''
-                        if _no_drip:
-                            _n5 = (f'Tus {_money(_d["pocket"])} valen hoy {_money(_d["mv"])} en '
-                                   f'el mercado y tus dividendos ({_money(_d["cash"])}) están '
-                                   f'aparte en efectivo. Tu resultado real: '
+                        _mkt = _d['mv'] - _d['total']
+                        _mkt_neg_str = _money(-_mkt) if _mkt < 0 else ''
+                        _mkt_pos_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
+                        if _mkt < 0 and not _no_drip:
+                            _n5 = (f'Aunque tu capital trabajando llegó a {_money(_d["total"])} '
+                                   f'gracias al DRIP, el precio de {_vj_tk} cayó: esas acciones '
+                                   f'valen hoy {_money(_d["mv"])} (<b>−{_mkt_neg_str}</b> de '
+                                   f'impacto del mercado). Sumando tus {_money(_d["cash"])} en '
+                                   f'efectivo y comparando contra los {_money(_d["pocket"])} que '
+                                   f'salieron de tu bolsillo, tu resultado real es '
+                                   f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
+                                   f'total de la portada.')
+                        elif _mkt >= 0 and not _no_drip:
+                            _n5 = (f'Tu capital trabajando de {_money(_d["total"])} además se '
+                                   f'apreció: hoy vale {_money(_d["mv"])} '
+                                   f'(<b>{_mkt_pos_str}</b> de impacto del mercado). Sumando tus '
+                                   f'{_money(_d["cash"])} en efectivo y comparando contra los '
+                                   f'{_money(_d["pocket"])} de tu bolsillo, tu resultado real es '
+                                   f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
+                                   f'total de la portada.')
+                        elif _mkt < 0 and _no_drip:
+                            _n5 = (f'Tus {_money(_d["pocket"])} cayeron con el precio de '
+                                   f'{_vj_tk}: hoy valen {_money(_d["mv"])} '
+                                   f'(<b>−{_mkt_neg_str}</b> de impacto del mercado). Sumando '
+                                   f'tus {_money(_d["cash"])} en efectivo, aparte, y comparando '
+                                   f'contra los {_money(_d["pocket"])} que salieron de tu '
+                                   f'bolsillo, tu resultado real es '
                                    f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
                                    f'total de la portada.')
                         else:
-                            _n5 = (f'Tus {_money(_d["total"])} de capital trabajando valen hoy '
-                                   f'{_money(_d["mv"])} en el mercado, y tienes '
-                                   f'{_money(_d["cash"])} aparte en efectivo. Frente a los '
-                                   f'{_money(_d["pocket"])} que salieron de tu bolsillo, tu '
-                                   f'resultado real es <b>{_money(_d["ret"])}{_ret_paren}</b> — '
-                                   f'el mismo retorno total de la portada. Este es el número que '
-                                   f'manda.')
+                            _n5 = (f'Tus {_money(_d["pocket"])} además se apreciaron: hoy valen '
+                                   f'{_money(_d["mv"])} (<b>{_mkt_pos_str}</b> de impacto del '
+                                   f'mercado). Sumando tus {_money(_d["cash"])} en efectivo, '
+                                   f'aparte, y comparando contra los {_money(_d["pocket"])} de '
+                                   f'tu bolsillo, tu resultado real es '
+                                   f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
+                                   f'total de la portada.')
                         _narr = [
                             f'Este es el capital neto que pusiste de tu propio dinero para '
                             f'comprar {_vj_tk}.',
