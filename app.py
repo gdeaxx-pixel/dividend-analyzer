@@ -2358,6 +2358,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _mkt = _d['mv'] - _d['total']
                             _mkt_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
                             _mkt_col = '#1f8a5b' if _mkt >= 0 else '#e05c5c'
+                            _cat = _d['mv'] + _d['cash']
                             _mkt_cells = (
                                 _cell('start', 'Capital trabajando', _money(_d['total']),
                                       False, '#0F172A', dim=False)
@@ -2367,9 +2368,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                         dim=False)
                                 + _cell('cash2', '+ En efectivo', '+' + _money(_d['cash']),
                                         False, '#0F172A', dim=False)
+                                + _cell('cat', '= Capital actual total', _money(_cat),
+                                        False, '#0F172A', dim=False)
                                 + _cell('pkt2', '− Tu bolsillo', '−' + _money(_d['pocket']),
                                         False, '#0F172A', dim=False))
-                            _n_mkt_cells = 5
+                            _n_mkt_cells = 6
                             if _has_rend:
                                 _rend_col = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
                                 _rend_sub = (f'<span style="display:block;font-family:Inter,'
@@ -2378,12 +2381,14 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                              f'({_pct(_d["ret_pct"])})</span>')
                                 _mkt_cells += _cell('rend', 'Resultado real', _money(_d['ret']),
                                                      True, _rend_col, _rend_sub)
-                                _n_mkt_cells = 6
+                                _n_mkt_cells = 7
                             st.markdown(_grid(_mkt_cells, _n_mkt_cells), unsafe_allow_html=True)
                             st.markdown(
                                 '<p style="font-family:Inter,sans-serif;font-size:9px;'
-                                'color:#8899aa;margin:3px 0 4px 2px;">Resultado real = Valor '
-                                'hoy + En efectivo − Tu bolsillo</p>', unsafe_allow_html=True)
+                                'color:#8899aa;margin:3px 0 4px 2px;">Capital actual total = '
+                                'Valor hoy + En efectivo&nbsp;&nbsp;·&nbsp;&nbsp;Resultado real '
+                                '= Capital actual total − Tu bolsillo</p>',
+                                unsafe_allow_html=True)
 
                         # Narrativas: un renglón por paso; las previas se atenúan encima.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
@@ -2429,38 +2434,47 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _mkt = _d['mv'] - _d['total']
                         _mkt_neg_str = _money(-_mkt) if _mkt < 0 else ''
                         _mkt_pos_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
+                        _cat = _d['mv'] + _d['cash']
                         if _mkt < 0 and not _no_drip:
                             _n5 = (f'Aunque tu capital trabajando llegó a {_money(_d["total"])} '
-                                   f'gracias al DRIP, el precio de {_vj_tk} cayó: esas acciones '
-                                   f'valen hoy {_money(_d["mv"])} (<b>−{_mkt_neg_str}</b> de '
-                                   f'impacto del mercado). Sumando tus {_money(_d["cash"])} en '
-                                   f'efectivo y comparando contra los {_money(_d["pocket"])} que '
-                                   f'salieron de tu bolsillo, tu resultado real es '
+                                   f'gracias al DRIP, el precio de {_vj_tk} cayó '
+                                   f'(<b>−{_mkt_neg_str}</b> de impacto del mercado). Sumando el '
+                                   f'valor actual de tus acciones ({_money(_d["mv"])}) más tu '
+                                   f'dinero disponible en efectivo ({_money(_d["cash"])}), tu '
+                                   f'<b>capital actual total</b> es {_money(_cat)}. Frente a los '
+                                   f'{_money(_d["pocket"])} que pusiste de tu bolsillo, tu '
+                                   f'resultado real es '
                                    f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
                                    f'total de la portada.')
                         elif _mkt >= 0 and not _no_drip:
                             _n5 = (f'Tu capital trabajando de {_money(_d["total"])} además se '
-                                   f'apreció: hoy vale {_money(_d["mv"])} '
-                                   f'(<b>{_mkt_pos_str}</b> de impacto del mercado). Sumando tus '
-                                   f'{_money(_d["cash"])} en efectivo y comparando contra los '
-                                   f'{_money(_d["pocket"])} de tu bolsillo, tu resultado real es '
+                                   f'apreció (<b>{_mkt_pos_str}</b> de impacto del mercado). '
+                                   f'Sumando el valor actual de tus acciones '
+                                   f'({_money(_d["mv"])}) más tu dinero disponible en efectivo '
+                                   f'({_money(_d["cash"])}), tu <b>capital actual total</b> es '
+                                   f'{_money(_cat)}. Frente a los {_money(_d["pocket"])} que '
+                                   f'pusiste de tu bolsillo, tu resultado real es '
                                    f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
                                    f'total de la portada.')
                         elif _mkt < 0 and _no_drip:
                             _n5 = (f'Tus {_money(_d["pocket"])} cayeron con el precio de '
-                                   f'{_vj_tk}: hoy valen {_money(_d["mv"])} '
-                                   f'(<b>−{_mkt_neg_str}</b> de impacto del mercado). Sumando '
-                                   f'tus {_money(_d["cash"])} en efectivo, aparte, y comparando '
-                                   f'contra los {_money(_d["pocket"])} que salieron de tu '
-                                   f'bolsillo, tu resultado real es '
+                                   f'{_vj_tk} (<b>−{_mkt_neg_str}</b> de impacto del mercado). '
+                                   f'Sumando el valor actual de tus acciones '
+                                   f'({_money(_d["mv"])}) más tu dinero disponible en efectivo, '
+                                   f'aparte ({_money(_d["cash"])}), tu <b>capital actual '
+                                   f'total</b> es {_money(_cat)}. Frente a los '
+                                   f'{_money(_d["pocket"])} que pusiste de tu bolsillo, tu '
+                                   f'resultado real es '
                                    f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
                                    f'total de la portada.')
                         else:
-                            _n5 = (f'Tus {_money(_d["pocket"])} además se apreciaron: hoy valen '
-                                   f'{_money(_d["mv"])} (<b>{_mkt_pos_str}</b> de impacto del '
-                                   f'mercado). Sumando tus {_money(_d["cash"])} en efectivo, '
-                                   f'aparte, y comparando contra los {_money(_d["pocket"])} de '
-                                   f'tu bolsillo, tu resultado real es '
+                            _n5 = (f'Tus {_money(_d["pocket"])} además se apreciaron '
+                                   f'(<b>{_mkt_pos_str}</b> de impacto del mercado). Sumando el '
+                                   f'valor actual de tus acciones ({_money(_d["mv"])}) más tu '
+                                   f'dinero disponible en efectivo, aparte '
+                                   f'({_money(_d["cash"])}), tu <b>capital actual total</b> es '
+                                   f'{_money(_cat)}. Frente a los {_money(_d["pocket"])} que '
+                                   f'pusiste de tu bolsillo, tu resultado real es '
                                    f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
                                    f'total de la portada.')
                         _narr = [
