@@ -2224,6 +2224,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         continue
                     _vdr = _vnt - _vch
                     if _vdr < 0:
+                        _vj_excl.append(_vtk)
                         continue
                     _vtc = _vpk + _vdr
                     if abs((_vpk + _vdr) - _vtc) > 1 or abs((_vbr - _vim) - (_vdr + _vch)) > 1:
@@ -2232,7 +2233,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _vj_data[_vtk] = {'pocket': _vpk, 'bruto': _vbr, 'imp': _vim,
                                       'neto': _vnt, 'drip': _vdr, 'cash': _vch, 'total': _vtc,
                                       'mv': r['market_value'] or 0, 'ret': r['total_return'],
-                                      'ret_pct': r['total_return_pct']}
+                                      'ret_pct': r['total_return_pct'], 'nav': r.get('nav_health')}
 
                 if _vj_data:
                     @st.fragment
@@ -2403,6 +2404,17 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 'Valor hoy + En efectivo&nbsp;&nbsp;·&nbsp;&nbsp;Resultado real '
                                 '= Capital actual total − Tu bolsillo</p>',
                                 unsafe_allow_html=True)
+                            if _d.get('nav'):
+                                _nvh = _d['nav']
+                                _nvh_badge = (f'<span style="border:1px solid {_nvh["color"]};'
+                                              f'color:{_nvh["color"]};padding:1px 7px;'
+                                              f'font-size:9px;font-weight:600;'
+                                              f'letter-spacing:0.05em;">{_nvh["label"]}</span>')
+                                st.markdown(
+                                    f'<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                    f'color:#445566;margin:3px 0 4px 2px;line-height:1.5;">'
+                                    f'{_nvh_badge} así etiqueta la portada a {_vj_tk}: '
+                                    f'{_nvh["headline"]}</p>', unsafe_allow_html=True)
 
                         # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
                         _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
