@@ -66,13 +66,19 @@ def snapshot(tickers):
             except Exception:
                 asof_days = None
 
+        # El veredicto anterior se lee ANTES de clasificar: alimenta la histéresis
+        # anti-parpadeo del umbral de ROC alto (entrar >55, salir <45).
+        series = [r for r in (hist.get(tk) or []) if r.get("date") != today]  # idempotente por fecha
+        prev_verdict = series[-1]["verdict"] if series else None
+
         price_cagr, hist_days = _price_cagr_recent(tk)
         verdict = logic.classify_roc_health(
             roc_pct=roc_pct,
             price_cagr=price_cagr,
             total_return_pct=None,        # a nivel fondo no hay portafolio
             history_days=hist_days,
-            roc_asof_days=asof_days)
+            roc_asof_days=asof_days,
+            prev_verdict=prev_verdict)
 
         row = {
             "date": today,
@@ -80,8 +86,6 @@ def snapshot(tickers):
             "roc_pct": round(float(roc_pct), 1) if roc_pct is not None else None,
             "price_cagr": round(float(price_cagr), 1) if price_cagr is not None else None,
         }
-        series = [r for r in (hist.get(tk) or []) if r.get("date") != today]  # idempotente por fecha
-        prev_verdict = series[-1]["verdict"] if series else None
         series.append(row)
         hist[tk] = sorted(series, key=lambda r: r.get("date") or "")
         print(f"{tk}: {verdict['verdict']} (ROC {row['roc_pct']}%, NAV {row['price_cagr']}%/año)")
@@ -92,6 +96,11 @@ def snapshot(tickers):
             if new_v == "destructive":
                 alerts.append(f"🔴 {tk} pasó a ROC DESTRUCTIVO "
                               f"(antes {prev_verdict}): NAV {row['price_cagr']}%/año, ROC {row['roc_pct']}%.")
+            elif row["price_cagr"] is not None and row["price_cagr"] <= -15:
+                # Cambio de etiqueta con el NAV aún desplomándose: no venderlo como buena noticia.
+                alerts.append(f"🟡 {tk} salió de la etiqueta ROC destructivo → {new_v}, PERO el NAV "
+                              f"sigue cayendo {row['price_cagr']}%/año (ROC {row['roc_pct']}%). Es un "
+                              f"cambio de etiqueta por el umbral, no una mejora del fondo.")
             else:
                 alerts.append(f"🟢 {tk} salió de ROC destructivo → {new_v} "
                               f"(NAV {row['price_cagr']}%/año, ROC {row['roc_pct']}%).")
