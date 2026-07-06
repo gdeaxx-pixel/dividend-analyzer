@@ -2271,18 +2271,28 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             st.session_state[_sk] = _step
 
                         # Mini-tabla propia del stepper (no ensancha la tabla honesta).
+                        _no_imp = _d['imp'] <= 0.01
                         _cols = [('pocket', 'Tu bolsillo', _money(_d['pocket'])),
                                  ('bruto', 'Total div. (bruto)', _money(_d['bruto'])),
-                                 ('imp', 'Impuesto NRA', _neg(_d['imp'])),
-                                 ('drip', 'Reinvertidos', _money(_d['drip'])),
-                                 ('cash', 'En efectivo', _money(_d['cash'])),
-                                 ('total', '+ Re invertido', _money(_d['total']))]
-                        _visible = {0: ['pocket'],
-                                    1: ['pocket', 'bruto'],
-                                    2: ['pocket', 'bruto', 'imp'],
-                                    3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
-                                    4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total']}[_step]
-                        _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp'},
+                                 ('imp', 'Impuesto NRA', _neg(_d['imp']))]
+                        if not _no_imp:
+                            _cols.append(('neto', 'Div. neto percibido', _money(_d['neto'])))
+                        _cols += [('drip', 'Reinvertidos', _money(_d['drip'])),
+                                  ('cash', 'En efectivo', _money(_d['cash'])),
+                                  ('total', '+ Re invertido', _money(_d['total']))]
+                        if _no_imp:
+                            _visible = {0: ['pocket'],
+                                        1: ['pocket', 'bruto'],
+                                        2: ['pocket', 'bruto', 'imp'],
+                                        3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
+                                        4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total']}[_step]
+                        else:
+                            _visible = {0: ['pocket'],
+                                        1: ['pocket', 'bruto'],
+                                        2: ['pocket', 'bruto', 'imp', 'neto'],
+                                        3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
+                                        4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash', 'total']}[_step]
+                        _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
                                     3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
                         _vcells = ''
                         for _cid, _clabel, _cval in _cols:
@@ -2308,7 +2318,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                         # Narrativas: un renglón por paso; las previas se atenúan encima.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
-                        _no_imp = _d['imp'] <= 0.01
                         _no_drip = _d['drip'] <= 0.01
                         if _no_imp:
                             _n2 = (f'En este archivo no aparece retención de impuesto para '
@@ -2319,7 +2328,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         else:
                             _n2 = (f'Por ser inversionista extranjero se retiene automáticamente '
                                    f'~30% de impuesto NRA (<b>{_neg(_d["imp"])}</b>). Te quedan '
-                                   f'<b>{_money(_d["neto"])}</b> libres.')
+                                   f'<b>{_money(_d["neto"])}</b> libres: tu <b>dividendo neto '
+                                   f'percibido</b> — el dinero que ya es tuyo y de donde sale todo '
+                                   f'lo demás. Ojo: es neto <i>en origen</i>; los impuestos de tu '
+                                   f'país de residencia, si aplican, van aparte.')
                         if _no_drip:
                             _n3 = (f'Tus dividendos limpios se fueron completos a tu cuenta en '
                                    f'efectivo (<b>{_money(_d["cash"])}</b>) — en esta cuenta no '
@@ -2328,7 +2340,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'<b>{_money(_d["pocket"])}</b> originales; tus dividendos '
                                    f'(<b>{_money(_d["cash"])}</b>) están aparte, en efectivo.')
                         else:
-                            _n3 = (f'De tus dividendos limpios, <b>{_money(_d["cash"])}</b> se '
+                            _n3 = (f'De tu neto percibido, <b>{_money(_d["cash"])}</b> se '
                                    f'fueron a tu cuenta en efectivo (listos para retirar) y '
                                    f'<b>{_money(_d["drip"])}</b> compraron más acciones '
                                    f'automáticamente (DRIP).')
