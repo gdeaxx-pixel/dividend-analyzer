@@ -1674,6 +1674,51 @@ def test_roc_health_simple_layer_fields_present():
     assert "encogiendo" in v["headline"].lower()
 
 
+# ── Histéresis del umbral de ROC alto (anti-parpadeo de alertas) ────────────────
+
+def test_roc_health_hysteresis_regression_prev_none_threshold_50():
+    # Sin veredicto previo, el umbral sigue siendo 50 (comportamiento clásico).
+    assert logic.classify_roc_health(49.9, -40, None, history_days=400)["verdict"] == "mixed"
+    assert logic.classify_roc_health(50.0, -40, None, history_days=400)["verdict"] == "destructive"
+    assert logic.classify_roc_health(50.1, -40, None, history_days=400)["verdict"] == "destructive"
+
+
+def test_roc_health_hysteresis_exit_requires_roc_below_45():
+    # Viniendo de destructivo, un ROC de 47 (bajo 50 pero sobre 45) NO saca al fondo.
+    v = logic.classify_roc_health(47, -40, None, history_days=400, prev_verdict="destructive")
+    assert v["verdict"] == "destructive"
+    # Con ROC 44 (bajo el umbral de salida) ya puede salir.
+    v = logic.classify_roc_health(44, -40, None, history_days=400, prev_verdict="destructive")
+    assert v["verdict"] != "destructive"
+
+
+def test_roc_health_hysteresis_enter_requires_roc_above_55():
+    # Viniendo de mixed, un ROC de 52 (sobre 50 pero bajo 55) NO entra a destructivo.
+    v = logic.classify_roc_health(52, -40, None, history_days=400, prev_verdict="mixed")
+    assert v["verdict"] != "destructive"
+    # Con ROC 56 sí entra.
+    v = logic.classify_roc_health(56, -40, None, history_days=400, prev_verdict="mixed")
+    assert v["verdict"] == "destructive"
+
+
+def test_roc_health_hysteresis_prev_insufficient_behaves_like_none():
+    v_ins = logic.classify_roc_health(52, -40, None, history_days=400, prev_verdict="insufficient")
+    v_none = logic.classify_roc_health(52, -40, None, history_days=400, prev_verdict=None)
+    assert v_ins["verdict"] == v_none["verdict"] == "destructive"
+    v_ins = logic.classify_roc_health(47, -40, None, history_days=400, prev_verdict="insufficient")
+    v_none = logic.classify_roc_health(47, -40, None, history_days=400, prev_verdict=None)
+    assert v_ins["verdict"] == v_none["verdict"] == "mixed"
+
+
+def test_latest_health_verdict_reads_last_entry(monkeypatch):
+    monkeypatch.setattr(logic, "load_roc_health_history", lambda: {
+        "MSTY": [{"date": "2026-06-01", "verdict": "mixed", "roc_pct": 40, "price_cagr": -20},
+                 {"date": "2026-06-28", "verdict": "destructive", "roc_pct": 60, "price_cagr": -35}],
+    })
+    assert logic.latest_health_verdict("msty") == "destructive"
+    assert logic.latest_health_verdict("NOEXISTE") is None
+
+
 def test_roc_health_gauge_none_when_insufficient():
     assert logic.classify_roc_health(95, -50, -30, history_days=60)["gauge_score"] is None
     assert logic.classify_roc_health(None, None)["gauge_score"] is None

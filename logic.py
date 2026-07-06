@@ -2397,6 +2397,16 @@ def load_roc_health_history() -> dict:
     return data
 
 
+def latest_health_verdict(ticker):
+    """Último veredicto registrado del fondo en knowledge/roc_health_history.yaml
+    (para la histéresis de classify_roc_health). None si el ticker no tiene histórico."""
+    series = load_roc_health_history().get(str(ticker).upper()) or []
+    if not series:
+        return None
+    last = sorted(series, key=lambda r: r.get('date') or '')[-1]
+    return last.get('verdict')
+
+
 def _estimate_roc_from_19a(ticker, dist_dated):
     """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
 
@@ -2443,6 +2453,10 @@ def _estimate_roc_from_19a(ticker, dist_dated):
 # como ROC; si ese ROC es alto Y el NAV cae Y el total return ≤0, entonces te están
 # devolviendo tu propio capital (destructivo). Si el NAV aguanta/sube, es contable.
 ROC_HEALTH_HIGH_PCT     = 50.0   # ROC ≥ esto = "alto" (gran parte de la distribución es capital)
+# Histéresis anti-parpadeo del umbral de ROC alto: para SALIR de destructivo el ROC debe caer
+# bajo 45; para ENTRAR debe subir sobre 55 — evita alertas falsas cuando oscila cerca de 50.
+ROC_HEALTH_HIGH_EXIT_PCT  = 45.0
+ROC_HEALTH_HIGH_ENTER_PCT = 55.0
 ROC_HEALTH_NAV_FLAT_PCT = 2.0    # |price_cagr| ≤ esto = NAV prácticamente plano
 ROC_HEALTH_MIN_DAYS     = 180    # < esto de historia de precio = no se puede afirmar nada
 ROC_HEALTH_STALE_DAYS   = 45     # aviso 19a más viejo que esto = dato desactualizado
@@ -2481,7 +2495,8 @@ def _roc_health_gauge(price_cagr):
 
 
 def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
-                        history_days=None, roc_asof_days=None) -> dict:
+                        history_days=None, roc_asof_days=None,
+                        prev_verdict=None) -> dict:
     """Veredicto único de salud del NAV de un YieldMax. Función PURA y testeable.
 
     Parámetros (todos numéricos, None si no disponibles):
@@ -2491,6 +2506,11 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
       total_return_pct Total return honesto (precio + income), % — opcional, prioritario.
       history_days     días de historia de precio observada (guarda anti falso-veredicto).
       roc_asof_days    antigüedad en días del dato 19a (guarda de frescura).
+      prev_verdict     veredicto anterior del fondo (histórico) — activa la histéresis del
+                       umbral de ROC alto: viniendo de 'destructive' se sale solo si el ROC
+                       cae bajo ROC_HEALTH_HIGH_EXIT_PCT (45); viniendo de 'accounting'/
+                       'mixed' se entra solo si sube sobre ROC_HEALTH_HIGH_ENTER_PCT (55).
+                       None o 'insufficient' → umbral simple de 50 (comportamiento clásico).
 
     Devuelve {'verdict','label','color','reason','headline','plain','gauge_score'} con
     verdict ∈ {'destructive','accounting','mixed','insufficient'}.
@@ -2522,7 +2542,13 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
     # La VERDAD sobre destructividad es la tendencia del NAV (señal PRIMARIA). El total
     # return solo MATIZA — si tu income compensó la erosión, sigue siendo ROC destructivo
     # al NAV, solo que aún vas arriba (pero la distribución futura tiende a bajar).
-    roc_high    = roc_pct >= ROC_HEALTH_HIGH_PCT
+    # Umbral de ROC alto con histéresis según el veredicto anterior (anti-parpadeo).
+    if prev_verdict == 'destructive':
+        roc_high = roc_pct >= ROC_HEALTH_HIGH_EXIT_PCT
+    elif prev_verdict in ('accounting', 'mixed'):
+        roc_high = roc_pct >= ROC_HEALTH_HIGH_ENTER_PCT
+    else:
+        roc_high = roc_pct >= ROC_HEALTH_HIGH_PCT
     nav_falling = price_cagr < -ROC_HEALTH_NAV_FLAT_PCT
     nav_rising  = price_cagr >  ROC_HEALTH_NAV_FLAT_PCT
     tr_pos = total_return_pct is not None and total_return_pct > 0
