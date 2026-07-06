@@ -2212,6 +2212,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 # Gate de integridad: solo fondos con todos los campos y ecuaciones
                 # que cuadran (pocket+drip==total y bruto−imp==drip+cash, ±$1).
                 _vj_data = {}
+                _vj_excl = []
                 for r in _rows:
                     _vtk = r['ticker']
                     _vpk = r['investment']
@@ -2226,9 +2227,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         continue
                     _vtc = _vpk + _vdr
                     if abs((_vpk + _vdr) - _vtc) > 1 or abs((_vbr - _vim) - (_vdr + _vch)) > 1:
+                        _vj_excl.append(_vtk)
                         continue
                     _vj_data[_vtk] = {'pocket': _vpk, 'bruto': _vbr, 'imp': _vim,
-                                      'neto': _vnt, 'drip': _vdr, 'cash': _vch, 'total': _vtc}
+                                      'neto': _vnt, 'drip': _vdr, 'cash': _vch, 'total': _vtc,
+                                      'mv': r['market_value'] or 0, 'ret': r['total_return'],
+                                      'ret_pct': r['total_return_pct']}
 
                 if _vj_data:
                     @st.fragment
@@ -2248,12 +2252,20 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                               options=['(ninguno)'] + list(_vj_data.keys()),
                                               horizontal=True, key=f'_vj_fondo_{_fid}')
                             _vj_tk = None if _vj_tk == '(ninguno)' else _vj_tk
+                        if _vj_excl:
+                            st.markdown(
+                                f'<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                f'color:#445566;margin:2px 0 8px 2px;line-height:1.5;">'
+                                f'{", ".join(_vj_excl)} no aparece(n) aquí porque sus '
+                                f'movimientos no cuadran al centavo en el CSV — revísalo(s) '
+                                f'en la tabla de abajo.</p>', unsafe_allow_html=True)
                         if not _vj_tk:
                             return
                         _d = _vj_data[_vj_tk]
 
                         _step_labels = ['Tu bolsillo', 'Total div. (bruto)', 'Impuesto NRA',
-                                        'Reinvertidos y efectivo', '+ Re invertido']
+                                        'Reinvertidos y efectivo', 'Tu bolsillo + DRIP',
+                                        'Resultado real']
                         if hasattr(st, 'pills'):
                             _sel = st.pills('Paso', options=_step_labels, default=_step_labels[0],
                                             selection_mode='single',
@@ -2266,8 +2278,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _cprev, _cnext, _ = st.columns([0.2, 0.2, 0.6])
                             if _cprev.button('← Anterior', key=_sk + '_p', disabled=_step <= 0):
                                 _step = max(0, _step - 1)
-                            if _cnext.button('Siguiente →', key=_sk + '_n', disabled=_step >= 4):
-                                _step = min(4, _step + 1)
+                            if _cnext.button('Siguiente →', key=_sk + '_n', disabled=_step >= 5):
+                                _step = min(5, _step + 1)
                             st.session_state[_sk] = _step
 
                         # Mini-tabla propia del stepper (no ensancha la tabla honesta).
@@ -2279,21 +2291,30 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _cols.append(('neto', 'Div. neto percibido', _money(_d['neto'])))
                         _cols += [('drip', 'Reinvertidos', _money(_d['drip'])),
                                   ('cash', 'En efectivo', _money(_d['cash'])),
-                                  ('total', '+ Re invertido', _money(_d['total']))]
+                                  ('total', 'Tu bolsillo + DRIP', _money(_d['total'])),
+                                  ('hoy', 'Valor hoy', _money(_d['mv']))]
+                        _has_rend = _d['ret'] is not None and _d['ret_pct'] is not None
+                        if _has_rend:
+                            _cols.append(('rend', 'Resultado real', _money(_d['ret'])))
+                        _step5 = (['pocket', 'total', 'hoy', 'rend'] if _has_rend
+                                  else ['pocket', 'total', 'hoy'])
                         if _no_imp:
                             _visible = {0: ['pocket'],
                                         1: ['pocket', 'bruto'],
                                         2: ['pocket', 'bruto', 'imp'],
                                         3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
-                                        4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total']}[_step]
+                                        4: ['pocket', 'bruto', 'imp', 'drip', 'cash', 'total'],
+                                        5: _step5}[_step]
                         else:
                             _visible = {0: ['pocket'],
                                         1: ['pocket', 'bruto'],
                                         2: ['pocket', 'bruto', 'imp', 'neto'],
                                         3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
-                                        4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash', 'total']}[_step]
+                                        4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash', 'total'],
+                                        5: _step5}[_step]
                         _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
-                                    3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
+                                    3: {'drip', 'cash'}, 4: {'pocket', 'total'},
+                                    5: {'hoy', 'rend'} if _has_rend else {'hoy'}}[_step]
                         _vcells = ''
                         for _cid, _clabel, _cval in _cols:
                             if _cid not in _visible:
@@ -2302,7 +2323,17 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _cst = ('border:2px solid #006497;background:#eef6fb;opacity:1;'
                                     if _is_cur else
                                     'border:2px solid transparent;opacity:.55;')
-                            _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                            if _cid == 'imp':
+                                _vcol = '#cc6a6a'
+                            elif _cid == 'rend':
+                                _vcol = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
+                            else:
+                                _vcol = '#0F172A'
+                            _vsub = ''
+                            if _cid == 'rend':
+                                _vsub = (f'<span style="display:block;font-family:Inter,sans-serif;'
+                                         f'font-size:9px;font-weight:600;color:{_vcol};'
+                                         f'margin-top:2px;">({_pct(_d["ret_pct"])})</span>')
                             _vcells += (
                                 f'<div style="{_cst}padding:8px 10px;text-align:right;">'
                                 f'<span style="display:block;font-family:Inter,sans-serif;font-size:8px;'
@@ -2310,7 +2341,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'color:#8899aa;margin-bottom:3px;">{_clabel}</span>'
                                 f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,Consolas,'
                                 f'monospace;font-size:13px;font-weight:700;color:{_vcol};'
-                                f'letter-spacing:-0.01em;">{_cval}</span></div>')
+                                f'letter-spacing:-0.01em;">{_cval}</span>{_vsub}</div>')
                         st.markdown(
                             f'<div style="display:grid;grid-template-columns:repeat({len(_visible)},'
                             f'minmax(96px,1fr));gap:6px;margin:8px 0 4px 0;">{_vcells}</div>',
@@ -2346,7 +2377,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'automáticamente (DRIP).')
                             _n4 = (f'Tus <b>{_money(_d["pocket"])}</b> iniciales + los '
                                    f'<b>{_money(_d["drip"])}</b> que tu propio dinero generó y '
-                                   f'reinvirtió = <b>{_money(_d["total"])}</b> de capital '
+                                   f'reinvirtió (DRIP) = <b>{_money(_d["total"])}</b> de capital '
                                    f'trabajando en {_vj_tk}.')
                         if _no_imp:
                             _n1 = (f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos '
@@ -2356,6 +2387,21 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _n1 = (f'{_vj_tk} generó <b>{_money(_d["bruto"])}</b> en dividendos '
                                    f'brutos por tus acciones. Pero antes de que lleguen a ti, el '
                                    f'gobierno de EE.UU. toma una parte…')
+                        _ret_paren = f' ({_pct(_d["ret_pct"])})' if _d['ret_pct'] is not None else ''
+                        if _no_drip:
+                            _n5 = (f'Tus {_money(_d["pocket"])} valen hoy {_money(_d["mv"])} en '
+                                   f'el mercado y tus dividendos ({_money(_d["cash"])}) están '
+                                   f'aparte en efectivo. Tu resultado real: '
+                                   f'<b>{_money(_d["ret"])}{_ret_paren}</b> — el mismo retorno '
+                                   f'total de la portada.')
+                        else:
+                            _n5 = (f'Tus {_money(_d["total"])} de capital trabajando valen hoy '
+                                   f'{_money(_d["mv"])} en el mercado, y tienes '
+                                   f'{_money(_d["cash"])} aparte en efectivo. Frente a los '
+                                   f'{_money(_d["pocket"])} que salieron de tu bolsillo, tu '
+                                   f'resultado real es <b>{_money(_d["ret"])}{_ret_paren}</b> — '
+                                   f'el mismo retorno total de la portada. Este es el número que '
+                                   f'manda.')
                         _narr = [
                             f'Este es el capital neto que pusiste de tu propio dinero para '
                             f'comprar {_vj_tk}.',
@@ -2363,6 +2409,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _n2,
                             _n3,
                             _n4,
+                            _n5,
                         ]
                         _nhtml = ''
                         for _ni in range(_step):
@@ -2373,14 +2420,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'color:#021C36;line-height:1.55;margin:0;">{_narr[_step]}</p>')
                         if _step == 4:
                             if _no_drip:
-                                _honesty = ('La ganancia real la mide el <b>retorno total</b> '
-                                            'de la portada.')
+                                _honesty = 'La ganancia real está en el siguiente paso →'
                             else:
                                 _honesty = (f'Ojo: {_money(_d["total"])} es <b>capital '
-                                            f'invertido</b>, no ganancia. Las acciones que '
-                                            f'compró el DRIP valen hoy lo que diga el mercado — '
-                                            f'la ganancia real la mide el <b>retorno total</b> '
-                                            f'de la portada.')
+                                            f'invertido</b>, no ganancia. La ganancia real está '
+                                            f'en el siguiente paso →')
                             _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:11px;'
                                        f'color:#445566;line-height:1.55;margin:6px 0 0 0;">'
                                        f'{_honesty}</p>')
