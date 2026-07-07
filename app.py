@@ -2328,6 +2328,160 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   ('total', 'Tu bolsillo + DRIP', _money(_d['total']))]
                         _has_rend = _d['ret'] is not None and _d['ret_pct'] is not None
 
+                        # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
+                        _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
+                        _u = 5000
+                        for _cand in [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]:
+                            if _cand == 0 or _m / _cand <= 90:
+                                _u = _cand
+                                break
+                        _nb = lambda x: max(0, int(round(x / _u)))
+                        _n_pk = _nb(_d['pocket'])
+                        _n_br = _nb(_d['bruto'])
+                        _n_im = _nb(_d['imp'])
+                        _n_dr = _nb(_d['drip'])
+                        _n_ca = _nb(_d['cash'])
+                        _n_mv = _nb(_d['mv'])
+
+                        _SQ = 'width:11px;height:11px;box-sizing:border-box;'
+                        _COL_POCKET = f'{_SQ}background:#021C36;'
+                        _COL_DRIP = f'{_SQ}background:#006497;'
+                        _COL_TRANSITO = f'{_SQ}border:1px solid #006497;background:transparent;'
+                        _COL_IMP = f'{_SQ}background:#e05c5c;'
+                        _COL_CASH = f'{_SQ}background:#1f8a5b;'
+                        _COL_FUNDIDO_PK = f'{_SQ}background:rgba(224,92,92,0.20);border:1px solid rgba(224,92,92,0.55);'
+                        _COL_FUNDIDO_DR = f'{_SQ}background:rgba(224,92,92,0.09);border:1px solid rgba(224,92,92,0.30);'
+
+                        def _blocks(n, style):
+                            if n <= 0:
+                                return ''
+                            return f'<div style="{style}"></div>' * n
+
+                        # Zona izquierda: capital en acciones (montón principal).
+                        _legend_bits = []
+                        _left_html = ''
+                        _right_html = ''
+
+                        if _step == 0:
+                            _left_html = _blocks(_n_pk, _COL_POCKET)
+                            if _n_pk > 0:
+                                _legend_bits.append(('#021C36', 'tu bolsillo'))
+                        elif _step == 1:
+                            _left_html = _blocks(_n_pk, _COL_POCKET)
+                            _right_html = _blocks(_n_br, _COL_TRANSITO)
+                            if _n_pk > 0:
+                                _legend_bits.append(('#021C36', 'tu bolsillo'))
+                            if _n_br > 0:
+                                _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
+                        elif _step == 2:
+                            _left_html = _blocks(_n_pk, _COL_POCKET)
+                            if _no_imp:
+                                _right_html = _blocks(_n_br, _COL_TRANSITO)
+                                if _n_pk > 0:
+                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
+                                if _n_br > 0:
+                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
+                            else:
+                                _n_transito = max(0, _n_br - _n_im)
+                                _right_html = (_blocks(_n_transito, _COL_TRANSITO)
+                                               + _blocks(_n_im, _COL_IMP))
+                                if _n_pk > 0:
+                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
+                                if _n_transito > 0:
+                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
+                                if _n_im > 0:
+                                    _legend_bits.append(('#e05c5c', 'impuesto NRA'))
+                        elif _step in (3, 4):
+                            if _no_drip:
+                                _left_html = _blocks(_n_pk, _COL_POCKET)
+                                if _n_pk > 0:
+                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
+                            else:
+                                _left_html = (_blocks(_n_pk, _COL_POCKET)
+                                              + _blocks(_n_dr, _COL_DRIP))
+                                if _n_pk > 0:
+                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
+                                if _n_dr > 0:
+                                    _legend_bits.append(('#006497', 'DRIP (reinvertido)'))
+                            if _n_ca > 0:
+                                _right_html = _blocks(_n_ca, _COL_CASH)
+                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
+                        else:  # _step == 5
+                            _n_capital = _n_pk + _n_dr
+                            if _n_mv >= _n_capital:
+                                _pk_alive, _dr_alive = _n_pk, _n_dr
+                                _pk_dead, _dr_dead = 0, 0
+                                _n_extra = _n_mv - _n_capital
+                            else:
+                                _frac = (_n_mv / _n_capital) if _n_capital > 0 else 0
+                                _pk_alive = int(round(_n_pk * _frac))
+                                _dr_alive = int(round(_n_dr * _frac))
+                                _pk_dead = _n_pk - _pk_alive
+                                _dr_dead = _n_dr - _dr_alive
+                                _n_extra = 0
+                            _left_html = (_blocks(_pk_alive, _COL_POCKET)
+                                          + _blocks(_pk_dead, _COL_FUNDIDO_PK)
+                                          + _blocks(_dr_alive, _COL_DRIP)
+                                          + _blocks(_dr_dead, _COL_FUNDIDO_DR)
+                                          + _blocks(_n_extra, _COL_CASH))
+                            if _pk_alive > 0:
+                                _legend_bits.append(('#021C36', 'bolsillo vivo'))
+                            if _pk_dead > 0:
+                                _legend_bits.append(('#cf5b5b (borde)', 'bolsillo destruido'))
+                            if _dr_alive > 0:
+                                _legend_bits.append(('#006497', 'DRIP vivo'))
+                            if _dr_dead > 0:
+                                _legend_bits.append(('#e6a6a6 (borde)', 'DRIP destruido'))
+                            if _n_extra > 0:
+                                _legend_bits.append(('#1f8a5b', 'apreciación'))
+                            if _n_ca > 0:
+                                _right_html = _blocks(_n_ca, _COL_CASH)
+                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
+
+                        # Dedupe de leyenda preservando orden.
+                        _seen_leg = set()
+                        _legend_html = ''
+                        for _lcol, _ltxt in _legend_bits:
+                            if _ltxt in _seen_leg:
+                                continue
+                            _seen_leg.add(_ltxt)
+                            _lglyph = '□' if '(borde)' in _lcol else '■'
+                            _legend_html += (f'<span style="color:{_lcol.split(" ")[0]};">'
+                                             f'{_lglyph}</span>&nbsp;{_ltxt}&nbsp;&nbsp;')
+                        _u_str = f'${_u:,}' if _u >= 1000 else f'${_u}'
+
+                        _right_block = ''
+                        if _right_html:
+                            _right_label = ('DIVIDENDOS' if _step in (1, 2) else 'EN EFECTIVO')
+                            _right_block = (
+                                f'<div style="width:160px;flex:0 0 160px;">'
+                                f'<span style="display:block;font-family:Inter,sans-serif;'
+                                f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
+                                f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
+                                f'{_right_label}</span>'
+                                f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
+                                f'{_right_html}</div></div>')
+
+                        st.markdown(
+                            f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
+                            f'display:flex;gap:16px;margin:6px 0 2px 0;align-items:flex-start;'
+                            f'min-height:34px;">'
+                            f'<div style="flex:1 1 auto;min-width:0;">'
+                            f'<span style="display:block;font-family:Inter,sans-serif;'
+                            f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
+                            f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
+                            f'CAPITAL EN ACCIONES</span>'
+                            f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
+                            f'{_left_html}</div></div>'
+                            f'{_right_block}</div>',
+                            unsafe_allow_html=True)
+                        if _legend_html:
+                            st.markdown(
+                                f'<p style="font-family:Inter,sans-serif;font-size:10px;'
+                                f'color:#8899aa;margin:4px 0 2px 2px;">cada cuadrito ≈ {_u_str}'
+                                f'&nbsp;&nbsp;·&nbsp;&nbsp;{_legend_html}</p>',
+                                unsafe_allow_html=True)
+
                         if _step != 5:
                             if _no_imp:
                                 _visible = {0: ['pocket'],
@@ -2415,148 +2569,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'color:#445566;margin:3px 0 4px 2px;line-height:1.5;">'
                                     f'{_nvh_badge} así etiqueta la portada a {_vj_tk}: '
                                     f'{_nvh["headline"]}</p>', unsafe_allow_html=True)
-
-                        # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
-                        _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
-                        _u = 5000
-                        for _cand in [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]:
-                            if _cand == 0 or _m / _cand <= 90:
-                                _u = _cand
-                                break
-                        _nb = lambda x: max(0, int(round(x / _u)))
-                        _n_pk = _nb(_d['pocket'])
-                        _n_br = _nb(_d['bruto'])
-                        _n_im = _nb(_d['imp'])
-                        _n_dr = _nb(_d['drip'])
-                        _n_ca = _nb(_d['cash'])
-                        _n_mv = _nb(_d['mv'])
-
-                        _SQ = 'width:11px;height:11px;box-sizing:border-box;'
-                        _COL_POCKET = f'{_SQ}background:#021C36;'
-                        _COL_DRIP = f'{_SQ}background:#006497;'
-                        _COL_TRANSITO = f'{_SQ}border:1px solid #006497;background:transparent;'
-                        _COL_IMP = f'{_SQ}background:#e05c5c;'
-                        _COL_CASH = f'{_SQ}background:#1f8a5b;'
-                        _COL_FUNDIDO = f'{_SQ}border:1px solid #b9c4cd;background:transparent;'
-
-                        def _blocks(n, style):
-                            if n <= 0:
-                                return ''
-                            return f'<div style="{style}"></div>' * n
-
-                        # Zona izquierda: capital en acciones (montón principal).
-                        _legend_bits = []
-                        _left_html = ''
-                        _right_html = ''
-
-                        if _step == 0:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
-                            if _n_pk > 0:
-                                _legend_bits.append(('#021C36', 'tu bolsillo'))
-                        elif _step == 1:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
-                            _right_html = _blocks(_n_br, _COL_TRANSITO)
-                            if _n_pk > 0:
-                                _legend_bits.append(('#021C36', 'tu bolsillo'))
-                            if _n_br > 0:
-                                _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
-                        elif _step == 2:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
-                            if _no_imp:
-                                _right_html = _blocks(_n_br, _COL_TRANSITO)
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_br > 0:
-                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
-                            else:
-                                _n_transito = max(0, _n_br - _n_im)
-                                _right_html = (_blocks(_n_transito, _COL_TRANSITO)
-                                               + _blocks(_n_im, _COL_IMP))
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_transito > 0:
-                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
-                                if _n_im > 0:
-                                    _legend_bits.append(('#e05c5c', 'impuesto NRA'))
-                        elif _step in (3, 4):
-                            if _no_drip:
-                                _left_html = _blocks(_n_pk, _COL_POCKET)
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                            else:
-                                _left_html = (_blocks(_n_pk, _COL_POCKET)
-                                              + _blocks(_n_dr, _COL_DRIP))
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_dr > 0:
-                                    _legend_bits.append(('#006497', 'DRIP (reinvertido)'))
-                            if _n_ca > 0:
-                                _right_html = _blocks(_n_ca, _COL_CASH)
-                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
-                        else:  # _step == 5
-                            _n_capital = _n_pk + _n_dr
-                            if _n_mv > _n_capital:
-                                _n_extra = _n_mv - _n_capital
-                                _left_html = (_blocks(_n_capital, _COL_POCKET)
-                                              + _blocks(_n_extra, _COL_CASH))
-                                if _n_capital > 0:
-                                    _legend_bits.append(('#021C36', 'capital vivo'))
-                                if _n_extra > 0:
-                                    _legend_bits.append(('#1f8a5b', 'apreciación'))
-                            else:
-                                _n_fundido = max(0, _n_capital - _n_mv)
-                                _left_html = (_blocks(_n_mv, _COL_POCKET)
-                                              + _blocks(_n_fundido, _COL_FUNDIDO))
-                                if _n_mv > 0:
-                                    _legend_bits.append(('#021C36', 'capital vivo'))
-                                if _n_fundido > 0:
-                                    _legend_bits.append(('#b9c4cd (borde)', 'fundido por el mercado'))
-                            if _n_ca > 0:
-                                _right_html = _blocks(_n_ca, _COL_CASH)
-                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
-
-                        # Dedupe de leyenda preservando orden.
-                        _seen_leg = set()
-                        _legend_html = ''
-                        for _lcol, _ltxt in _legend_bits:
-                            if _ltxt in _seen_leg:
-                                continue
-                            _seen_leg.add(_ltxt)
-                            _lglyph = '□' if '(borde)' in _lcol else '■'
-                            _legend_html += (f'<span style="color:{_lcol.split(" ")[0]};">'
-                                             f'{_lglyph}</span>&nbsp;{_ltxt}&nbsp;&nbsp;')
-                        _u_str = f'${_u:,}' if _u >= 1000 else f'${_u}'
-
-                        _right_block = ''
-                        if _right_html:
-                            _right_label = ('DIVIDENDOS' if _step in (1, 2) else 'EN EFECTIVO')
-                            _right_block = (
-                                f'<div style="width:160px;flex:0 0 160px;">'
-                                f'<span style="display:block;font-family:Inter,sans-serif;'
-                                f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
-                                f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
-                                f'{_right_label}</span>'
-                                f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
-                                f'{_right_html}</div></div>')
-
-                        st.markdown(
-                            f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
-                            f'display:flex;gap:16px;margin:6px 0 2px 0;align-items:flex-start;">'
-                            f'<div style="flex:1 1 auto;min-width:0;">'
-                            f'<span style="display:block;font-family:Inter,sans-serif;'
-                            f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
-                            f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
-                            f'CAPITAL EN ACCIONES</span>'
-                            f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
-                            f'{_left_html}</div></div>'
-                            f'{_right_block}</div>',
-                            unsafe_allow_html=True)
-                        if _legend_html:
-                            st.markdown(
-                                f'<p style="font-family:Inter,sans-serif;font-size:10px;'
-                                f'color:#8899aa;margin:4px 0 2px 2px;">cada cuadrito ≈ {_u_str}'
-                                f'&nbsp;&nbsp;·&nbsp;&nbsp;{_legend_html}</p>',
-                                unsafe_allow_html=True)
 
                         # Narrativas: un renglón por paso; las previas se atenúan encima.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
