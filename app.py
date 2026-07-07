@@ -2357,55 +2357,38 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 return ''
                             return f'<div style="{style}"></div>' * n
 
-                        # Zona izquierda: capital en acciones (montón principal).
-                        _legend_bits = []
-                        _left_html = ''
-                        _right_html = ''
-
+                        # ── Cuadritos agrupados en bloques semánticos etiquetados ──
+                        _clusters = []
+                        _pocket_amt = _money(_d['pocket'])
                         if _step == 0:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
-                            if _n_pk > 0:
-                                _legend_bits.append(('#021C36', 'tu bolsillo'))
+                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                         elif _step == 1:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
-                            _right_html = _blocks(_n_br, _COL_TRANSITO)
-                            if _n_pk > 0:
-                                _legend_bits.append(('#021C36', 'tu bolsillo'))
-                            if _n_br > 0:
-                                _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
+                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                            _clusters.append({'label': 'Dividendos', 'amount': _money(_d['bruto']),
+                                              'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
                         elif _step == 2:
-                            _left_html = _blocks(_n_pk, _COL_POCKET)
+                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                             if _no_imp:
-                                _right_html = _blocks(_n_br, _COL_TRANSITO)
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_br > 0:
-                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
+                                _clusters.append({'label': 'Dividendos', 'amount': _money(_d['bruto']),
+                                                  'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
                             else:
                                 _n_transito = max(0, _n_br - _n_im)
-                                _right_html = (_blocks(_n_transito, _COL_TRANSITO)
-                                               + _blocks(_n_im, _COL_IMP))
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_transito > 0:
-                                    _legend_bits.append(('#006497 (borde)', 'dividendos en tránsito'))
-                                if _n_im > 0:
-                                    _legend_bits.append(('#e05c5c', 'impuesto NRA'))
+                                _clusters.append({'label': 'Dividendos', 'amount': _money(_d['neto']),
+                                                  'sub': '', 'segs': [(_n_transito, _COL_TRANSITO)], 'ref': False})
+                                _clusters.append({'label': 'Impuesto NRA', 'amount': _neg(_d['imp']),
+                                                  'sub': '', 'segs': [(_n_im, _COL_IMP)], 'ref': False})
                         elif _step in (3, 4):
-                            if _no_drip:
-                                _left_html = _blocks(_n_pk, _COL_POCKET)
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                            else:
-                                _left_html = (_blocks(_n_pk, _COL_POCKET)
-                                              + _blocks(_n_dr, _COL_DRIP))
-                                if _n_pk > 0:
-                                    _legend_bits.append(('#021C36', 'tu bolsillo'))
-                                if _n_dr > 0:
-                                    _legend_bits.append(('#006497', 'DRIP (reinvertido)'))
+                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                            if not _no_drip:
+                                _clusters.append({'label': 'DRIP', 'amount': _money(_d['drip']),
+                                                  'sub': '', 'segs': [(_n_dr, _COL_DRIP)], 'ref': False})
                             if _n_ca > 0:
-                                _right_html = _blocks(_n_ca, _COL_CASH)
-                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
+                                _clusters.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
+                                                  'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
                         else:  # _step == 5
                             _n_capital = _n_pk + _n_dr
                             if _n_mv >= _n_capital:
@@ -2419,26 +2402,42 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _pk_dead = _n_pk - _pk_alive
                                 _dr_dead = _n_dr - _dr_alive
                                 _n_extra = 0
-                            _left_html = (_blocks(_pk_alive, _COL_POCKET)
-                                          + _blocks(_pk_dead, _COL_FUNDIDO_PK)
-                                          + _blocks(_dr_alive, _COL_DRIP)
-                                          + _blocks(_dr_dead, _COL_FUNDIDO_DR)
-                                          + _blocks(_n_extra, _COL_CASH))
-                            if _pk_alive > 0:
-                                _legend_bits.append(('#021C36', 'bolsillo vivo'))
-                            if _pk_dead > 0:
-                                _legend_bits.append(('#cf5b5b (borde)', 'bolsillo destruido'))
-                            if _dr_alive > 0:
-                                _legend_bits.append(('#006497', 'DRIP vivo'))
-                            if _dr_dead > 0:
-                                _legend_bits.append(('#e6a6a6 (borde)', 'DRIP destruido'))
+                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                              'sub': (f'{_pk_alive} vivos · {_pk_dead} destruidos'
+                                                      if _pk_dead > 0 else f'{_pk_alive} vivos'),
+                                              'segs': [(_pk_alive, _COL_POCKET), (_pk_dead, _COL_FUNDIDO_PK)],
+                                              'ref': True})
+                            if _n_dr > 0:
+                                _clusters.append({'label': 'DRIP', 'amount': _money(_d['drip']),
+                                                  'sub': (f'{_dr_alive} vivos · {_dr_dead} destruidos'
+                                                          if _dr_dead > 0 else f'{_dr_alive} vivos'),
+                                                  'segs': [(_dr_alive, _COL_DRIP), (_dr_dead, _COL_FUNDIDO_DR)],
+                                                  'ref': False})
                             if _n_extra > 0:
-                                _legend_bits.append(('#1f8a5b', 'apreciación'))
+                                _clusters.append({'label': 'Apreciación', 'amount': '',
+                                                  'sub': '', 'segs': [(_n_extra, _COL_CASH)], 'ref': False})
                             if _n_ca > 0:
-                                _right_html = _blocks(_n_ca, _COL_CASH)
-                                _legend_bits.append(('#1f8a5b', 'en efectivo'))
+                                _clusters.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
+                                                  'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
 
-                        # Dedupe de leyenda preservando orden.
+                        # Leyenda derivada de los estilos realmente usados.
+                        _LEGEND = {
+                            _COL_POCKET: ('#021C36', 'tu bolsillo'),
+                            _COL_DRIP: ('#006497', 'DRIP'),
+                            _COL_TRANSITO: ('#006497 (borde)', 'dividendos en tránsito'),
+                            _COL_IMP: ('#e05c5c', 'impuesto NRA'),
+                            _COL_CASH: ('#1f8a5b', 'efectivo'),
+                            _COL_FUNDIDO_PK: ('#cf5b5b (borde)', 'bolsillo destruido'),
+                            _COL_FUNDIDO_DR: ('#e6a6a6 (borde)', 'DRIP destruido'),
+                        }
+                        _legend_bits = []
+                        _seen_style = set()
+                        for _c in _clusters:
+                            for _n, _style in _c['segs']:
+                                if _n > 0 and _style not in _seen_style and _style in _LEGEND:
+                                    _seen_style.add(_style)
+                                    _legend_bits.append(_LEGEND[_style])
+
                         _seen_leg = set()
                         _legend_html = ''
                         for _lcol, _ltxt in _legend_bits:
@@ -2450,30 +2449,72 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                              f'{_lglyph}</span>&nbsp;{_ltxt}&nbsp;&nbsp;')
                         _u_str = f'${_u:,}' if _u >= 1000 else f'${_u}'
 
-                        _right_block = ''
-                        if _right_html:
-                            _right_label = ('DIVIDENDOS' if _step in (1, 2) else 'EN EFECTIVO')
-                            _right_block = (
-                                f'<div style="width:160px;flex:0 0 160px;">'
-                                f'<span style="display:block;font-family:Inter,sans-serif;'
-                                f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
-                                f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
-                                f'{_right_label}</span>'
-                                f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
-                                f'{_right_html}</div></div>')
+                        def _cluster_html(c):
+                            inner = ''.join(_blocks(n, style) for n, style in c['segs'])
+                            total = sum(n for n, _ in c['segs'])
+                            border = '2px solid #445566' if c.get('ref') else '1px solid #d9dee3'
+                            _amt = f' · {c["amount"]}' if c['amount'] else ''
+                            head = (f'<div style="font-family:Inter,sans-serif;font-size:9px;'
+                                    f'font-weight:700;letter-spacing:0.04em;text-transform:uppercase;'
+                                    f'color:#8899aa;margin-bottom:3px;white-space:nowrap;">'
+                                    f'{c["label"]}{_amt} · {total}</div>')
+                            sub = (f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                                   f'color:#8899aa;margin-top:4px;">{c["sub"]}</div>'
+                                   if c.get('sub') else '')
+                            return (f'<div style="min-width:0;">{head}'
+                                    f'<div style="border-top:{border};padding-top:5px;">'
+                                    f'<div style="display:flex;flex-wrap:wrap;gap:3px;'
+                                    f'max-width:168px;">{inner}</div></div>{sub}</div>')
 
+                        _row = ''.join(_cluster_html(c) for c in _clusters
+                                       if sum(n for n, _ in c['segs']) > 0)
+
+                        # Barra de destino: de cada $100 invertidos (solo Resultado real).
+                        _bar_html = ''
+                        if _step == 5 and _d.get('total', 0) and _d['total'] > 0:
+                            _work = _d['total']
+                            _av = max(0.0, _d['mv'] / _work)
+                            _cash_u = int(round(_d['cash'] / _work * 100))
+                            if _av >= 1:
+                                _bar_segs = ('<div style="width:100%;height:100%;'
+                                             'background:#021C36;"></div>')
+                                _gain_u = int(round((_av - 1) * 100))
+                                _bar_cap = ('<span style="color:#021C36;">■</span>&nbsp;'
+                                            '100 USD siguen invertidos')
+                                if _gain_u > 0:
+                                    _bar_cap += ('&nbsp;&nbsp;<span style="color:#1f8a5b;">■'
+                                                 f'</span>&nbsp;+{_gain_u} USD de ganancia')
+                            else:
+                                _alive_u = int(round(_av * 100))
+                                _dead_u = 100 - _alive_u
+                                _bar_segs = (f'<div style="width:{_alive_u}%;height:100%;'
+                                             f'background:#021C36;"></div>'
+                                             f'<div style="flex:1;height:100%;'
+                                             f'background:rgba(224,92,92,0.9);"></div>')
+                                _bar_cap = (f'<span style="color:#021C36;">■</span>&nbsp;'
+                                            f'{_alive_u} USD siguen invertidos'
+                                            f'&nbsp;&nbsp;<span style="color:#e05c5c;">■</span>'
+                                            f'&nbsp;{_dead_u} USD desaparecieron')
+                            if _d['cash'] > 0.01:
+                                _bar_cap += (f'&nbsp;&nbsp;<span style="color:#1f8a5b;">■</span>'
+                                             f'&nbsp;+{_cash_u} USD ya en efectivo')
+                            _bar_html = (
+                                f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
+                                f'margin:2px 0 12px 0;">'
+                                f'<div style="font-family:Inter,sans-serif;font-size:8px;'
+                                f'font-weight:700;letter-spacing:0.06em;text-transform:uppercase;'
+                                f'color:#8899aa;margin-bottom:5px;">'
+                                f'DE CADA $100 INVERTIDOS EN {_vj_tk}</div>'
+                                f'<div style="display:flex;height:26px;border-radius:3px;'
+                                f'overflow:hidden;border:1px solid #d9dee3;">{_bar_segs}</div>'
+                                f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                                f'color:#8899aa;margin-top:5px;">{_bar_cap}</div></div>')
+                        if _bar_html:
+                            st.markdown(_bar_html, unsafe_allow_html=True)
                         st.markdown(
                             f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
-                            f'display:flex;gap:16px;margin:6px 0 2px 0;align-items:flex-start;'
-                            f'min-height:34px;">'
-                            f'<div style="flex:1 1 auto;min-width:0;">'
-                            f'<span style="display:block;font-family:Inter,sans-serif;'
-                            f'font-size:8px;font-weight:600;letter-spacing:0.06em;'
-                            f'text-transform:uppercase;color:#8899aa;margin-bottom:4px;">'
-                            f'CAPITAL EN ACCIONES</span>'
-                            f'<div style="display:flex;flex-wrap:wrap;gap:3px;">'
-                            f'{_left_html}</div></div>'
-                            f'{_right_block}</div>',
+                            f'display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;'
+                            f'margin:6px 0 2px 0;min-height:34px;">{_row}</div>',
                             unsafe_allow_html=True)
                         if _legend_html:
                             st.markdown(
