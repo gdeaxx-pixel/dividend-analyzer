@@ -250,12 +250,6 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
         pdf.ln(2)
 
     # ── Páginas por ticker ───────────────────────────────────────────────────
-    def _risk_fmt(key: str, pct: bool = False) -> str:
-        v = s.get(key)
-        if v is None:
-            return "N/A"
-        return _fmt_pct(float(v), signed=pct) if pct else f"{float(v):.2f}"
-
     for ticker in mode_a + mode_b:
         s = valid[ticker]
         mode_label = "YieldMax" if s.get("ticker_mode") == "mode_a" else "ETF Crecimiento"
@@ -315,17 +309,6 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
             pdf._row(label, value, shade=shade, value_color=r_color)
             shade = not shade
 
-        # Benchmark (solo mode_b)
-        if s.get("ticker_mode") == "mode_b":
-            bench_roi = s.get("benchmark_roi")
-            if bench_roi is not None:
-                diff = t_ret_pct - bench_roi
-                b_color = _GREEN if diff >= 0 else (200, 50, 50)
-                pdf._row("Benchmark VOO (timing real)", _fmt_pct(bench_roi, signed=True), shade=shade)
-                shade = not shade
-                pdf._row("Tu ventaja vs VOO",           _fmt_pct(diff, signed=True), shade=shade, value_color=b_color)
-                shade = not shade
-
         # Posición en acciones
         pdf._section_title("POSICIÓN EN ACCIONES")
         pdf._row("Acciones Compradas", f"{s.get('shares_bought', 0):,.4f}", shade=False)
@@ -345,15 +328,6 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
                 pdf._row(f"Discrepancia precio {d['date']}",
                          f"CSV ${d['csv_price']:.2f} vs yfinance ${d['yf_price']:.2f} (ratio {d['ratio']:.2f}x)",
                          shade=True)
-
-        # Métricas de riesgo
-        pdf._section_title("MÉTRICAS DE RIESGO AJUSTADO")
-        pdf._two_col_row("Sharpe Ratio",    _risk_fmt("sharpe_ratio"),
-                         "Sortino Ratio",   _risk_fmt("sortino_ratio"), shade=False)
-        pdf._two_col_row("Max Drawdown",    _risk_fmt("max_drawdown", pct=True),
-                         "Volatilidad Anual", _risk_fmt("volatilidad_anualizada", pct=True), shade=True)
-        pdf._two_col_row("Beta vs VOO",     _risk_fmt("beta_vs_voo"),
-                         "Alpha Anualizado", _risk_fmt("alpha_anualizado", pct=True), shade=False)
 
         # Ingresos mensuales
         monthly = s.get("monthly_income")

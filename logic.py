@@ -4525,3 +4525,43 @@ def simulate_triple_comparison(buy_flows_json: str) -> dict:
         print(f"simulate_triple_comparison outer error: {e}")
         return {}
 
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def build_yieldmax_total_return_series(tickers: list, start: str = None) -> pd.DataFrame:
+    """
+    Descarga precios ajustados (auto_adjust=True: total return, dividendos/ROC reinvertidos)
+    para una lista de tickers desde `start` (o desde la inception de cada uno si start es None),
+    normalizados a base 100 en la primera fecha común de la serie.
+    Retorna long-format: Fecha, Ticker, Valor. Ignora tickers que fallen la descarga.
+    """
+    frames = []
+    for tk in tickers:
+        try:
+            if start:
+                raw = yf.download(tk, start=start, auto_adjust=True, progress=False)
+            else:
+                raw = yf.download(tk, period="max", auto_adjust=True, progress=False)
+            if raw is None or raw.empty:
+                continue
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            prices = raw['Close'].dropna()
+            if prices.empty:
+                continue
+            if getattr(prices.index, 'tz', None) is not None:
+                prices.index = prices.index.tz_localize(None)
+            prices.index = prices.index.normalize()
+            base = float(prices.iloc[0])
+            if base <= 0:
+                continue
+            norm = (prices / base) * 100.0
+            df = norm.reset_index()
+            df.columns = ['Fecha', 'Valor']
+            df['Ticker'] = tk
+            frames.append(df)
+        except Exception as e:
+            print(f"build_yieldmax_total_return_series error for {tk}: {e}")
+    if not frames:
+        return pd.DataFrame(columns=['Fecha', 'Ticker', 'Valor'])
+    return pd.concat(frames, ignore_index=True)
+
