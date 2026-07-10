@@ -2782,32 +2782,112 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'{_nvh_badge} así etiqueta la portada a {_vj_tk}: '
                                     f'{_nvh["headline"]}</p>', unsafe_allow_html=True)
 
-                    _viaje_dinero()
-
-                # ── Callout: dónde se equivoca el método viejo (con tus números) ──
-                _naive_total = _t['total_inv_naive']
-                _real_total = _t['total_return']
-                _dramatic = ""
-                for r in _rows:
-                    _c = '#4caf82' if (r['total_return'] or 0) >= 0 else '#e05c5c'
-                    _dramatic += (
-                        f'<li style="margin:0 0 5px 0;"><b style="color:#021C36;">{r["ticker"]}</b> — '
-                        f'método viejo: «tienes <b>{_money(r["total_inv_naive"])}</b> invertidos» · '
-                        f'realidad: retorno total <b style="color:{_c};">{_money(r["total_return"])} '
-                        f'({_pct(r["total_return_pct"])})</b>, NAV {r["nav_health"]["label"].lower()}.</li>')
-                st.markdown(f"""
-<div style="border-left:4px solid #c9821f;background:#fbf6ee;padding:14px 18px;margin:2px 0 14px 0;">
-  <p style="font-family:Inter,sans-serif;font-size:11px;font-weight:800;color:#a06a1a;letter-spacing:0.10em;text-transform:uppercase;margin:0 0 8px 0;">Dónde se equivoca el método viejo</p>
-  <ol style="font-family:Inter,sans-serif;font-size:11.5px;color:#4a5568;line-height:1.55;margin:0 0 10px 18px;padding:0;">
-    <li style="margin:0 0 5px 0;"><b>Suma manzanas con peras.</b> «Total Inv = Inversión + Dividendos» trata el retorno recibido como capital aportado. Por eso cualquier fondo «se ve recuperado» aunque hayas perdido.</li>
-    <li style="margin:0 0 5px 0;"><b>Ignora el ROC.</b> En YieldMax buena parte de la distribución es <b>tu propio capital de vuelta</b> (erosiona el NAV). Contarlo como ganancia es doble engaño.</li>
-    <li style="margin:0 0 5px 0;"><b>Ignora el impuesto NRA.</b> Lo que el fondo declara (bruto) no es lo que recibiste: EE.UU. retiene ~30% a extranjeros antes de depositarte.</li>
-    <li style="margin:0 0 5px 0;"><b>El % titular es marketing.</b> Anualiza <b>un solo</b> pago sobre el NAV; con distribuciones que saltan semana a semana, dice poco de lo que rinde de verdad (ver auditoría abajo).</li>
-  </ol>
-  <p style="font-family:Inter,sans-serif;font-size:11.5px;color:#021C36;margin:0 0 6px 0;font-weight:600;">En tu portafolio de dividendos, el método viejo diría «<b style="color:#c9821f;">{_money(_naive_total)}</b> invertidos». Tu retorno total real es <b style="color:{_ttrc};">{_money(_real_total)} ({_pct(_t['total_return_pct'])})</b>.</p>
-  <ul style="font-family:Inter,sans-serif;font-size:11px;color:#4a5568;line-height:1.5;margin:4px 0 0 16px;padding:0;list-style:none;">{_dramatic}</ul>
+                            # ── Conclusión: dos lecturas del mismo portafolio (cierre del
+                            #    ejercicio — reemplaza al callout fijo del método viejo) ──
+                            _cn_naive = _t['total_inv_naive']
+                            _cn_ret = _t['total_return']
+                            _cn_pct = _t['total_return_pct']
+                            _cn_rc = '#1f8a5b' if (_cn_ret or 0) >= 0 else '#e05c5c'
+                            _cn_anchor1 = (f'Lo viste en el paso 5: {_money(_d["total"])} es '
+                                           f'capital trabajando, no ganancia')
+                            if _no_imp:
+                                _cn_anchor3 = ('En este fondo no hubo retención — pero la hoja '
+                                               'vieja igual sumaría el bruto de los que sí')
+                            else:
+                                _cn_anchor3 = (f'Lo viste en el paso 3: −{_money(_d["imp"])} de '
+                                               f'impuesto NRA')
+                            if _d.get('nav'):
+                                _cn_anchor2 = (f'Lo dice el veredicto de salud del NAV: '
+                                               f'<b style="color:{_d["nav"]["color"]};">'
+                                               f'{_d["nav"]["label"]}</b>')
+                            else:
+                                _cn_anchor2 = 'Compruébalo en el paso 7: Salud del NAV'
+                            _cn_items = [
+                                ('Cuenta el mismo dólar dos veces',
+                                 'Cada dividendo reinvertido ya vive dentro del valor de tus '
+                                 'acciones. Sumarlo otra vez como «capital invertido» infla '
+                                 'la base — por eso cualquier fondo «se ve recuperado» '
+                                 'aunque hayas perdido.',
+                                 _cn_anchor1),
+                                ('Llama ganancia a un pago mientras el NAV se erosiona',
+                                 'En YieldMax parte del pago sale del propio fondo. La '
+                                 'prueba no es la etiqueta fiscal (ROC): es la <b>tendencia '
+                                 'del NAV frente a su activo subyacente</b>. Si el fondo cae '
+                                 'más que la acción que sigue, te están devolviendo tu '
+                                 'capital disfrazado de rendimiento.',
+                                 _cn_anchor2),
+                                ('Suma dinero que nunca llegó a tu cuenta',
+                                 'EE.UU. retiene ~30% a extranjeros antes de depositarte. '
+                                 'La hoja de Excel suma el bruto que el fondo declara, no '
+                                 'lo que de verdad entró.',
+                                 _cn_anchor3),
+                                ('Se cree el % del folleto',
+                                 'El yield anunciado toma <b>un solo pago</b> y lo '
+                                 'anualiza. Con pagos que cambian cada semana, es como '
+                                 'estimar tu sueldo anual con la propina de tu mejor '
+                                 'viernes: una foto del mejor día, no tu historial.',
+                                 'La auditoría de abajo lo mide con tus pagos reales →'),
+                            ]
+                            _cn_tr_html = ''
+                            for _ci, (_ct, _cb, _ca) in enumerate(_cn_items):
+                                _cbrd = ('border-bottom:none;' if _ci == len(_cn_items) - 1
+                                         else 'border-bottom:1px solid #edf1f5;')
+                                _cn_tr_html += (
+                                    f'<div style="display:grid;grid-template-columns:26px 1fr;'
+                                    f'gap:12px;padding:12px 2px;{_cbrd}">'
+                                    f'<span style="font-size:15px;font-weight:800;'
+                                    f'color:#c9821f;line-height:1.2;">{_ci + 1}</span>'
+                                    f'<span><span style="display:block;font-size:12px;'
+                                    f'font-weight:700;color:#021C36;margin-bottom:3px;">'
+                                    f'{_ct}</span>'
+                                    f'<span style="display:block;font-size:11.5px;'
+                                    f'color:#4a5568;line-height:1.55;">{_cb}</span>'
+                                    f'<span style="display:inline-block;margin-top:5px;'
+                                    f'font-size:10.5px;font-weight:600;color:#006497;'
+                                    f'background:#eef6fb;padding:2px 8px;">{_ca}</span>'
+                                    f'</span></div>')
+                            _cn_fondos = ''
+                            for _cr in _rows:
+                                _crc = ('#1f8a5b' if (_cr['total_return'] or 0) >= 0
+                                        else '#e05c5c')
+                                _cn_fondos += (
+                                    f'<div style="display:grid;grid-template-columns:'
+                                    f'64px 1fr 1.2fr;gap:10px;align-items:baseline;'
+                                    f'padding:6px 2px;border-bottom:1px solid #edf1f5;'
+                                    f'font-size:11.5px;">'
+                                    f'<span style="font-weight:800;color:#021C36;">'
+                                    f'{_cr["ticker"]}</span>'
+                                    f'<span style="color:#a06a1a;"><s style="color:#b8946a;">'
+                                    f'«{_money(_cr["total_inv_naive"])} invertidos»</s></span>'
+                                    f'<span style="font-weight:700;color:{_crc};">'
+                                    f'{_money(_cr["total_return"])} '
+                                    f'({_pct(_cr["total_return_pct"])}) '
+                                    f'<span style="font-weight:400;color:#8899aa;'
+                                    f'font-size:10.5px;">· NAV '
+                                    f'{_cr["nav_health"]["label"].lower()}</span></span></div>')
+                            st.markdown(f"""
+<div style="border-top:3px solid #021C36;margin:18px 0 6px 0;padding-top:16px;font-family:Inter,sans-serif;animation:_vjin .5s cubic-bezier(0.16,1,0.3,1) both;">
+  <p style="font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#021C36;margin:0 0 12px 0;">Conclusión — <span style="color:#006497;">dos lecturas del mismo portafolio</span></p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;">
+    <div style="background:#fbf6ee;border-left:3px solid #c9821f;padding:14px 16px;">
+      <p style="font-size:9.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#a06a1a;margin:0 0 7px 0;">Lo que dice la hoja de Excel</p>
+      <p style="font-size:24px;font-weight:800;letter-spacing:-0.02em;line-height:1;color:#c9821f;margin:0 0 6px 0;">{_money(_cn_naive)}</p>
+      <p style="font-size:11px;color:#5a6b7a;line-height:1.5;margin:0;">«capital invertido» — suma tu inversión más cada dividendo recibido, como si todo fuera dinero tuyo aportado.</p>
+    </div>
+    <div style="background:#eef6fb;border-left:3px solid #006497;padding:14px 16px;">
+      <p style="font-size:9.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#006497;margin:0 0 7px 0;">Lo que acabas de recorrer</p>
+      <p style="font-size:24px;font-weight:800;letter-spacing:-0.02em;line-height:1;color:{_cn_rc};margin:0 0 6px 0;">{_money(_cn_ret)} <span style="font-size:13px;">({_pct(_cn_pct)})</span></p>
+      <p style="font-size:11px;color:#5a6b7a;line-height:1.5;margin:0;">resultado real — capital actual total menos lo que pusiste de tu bolsillo. El mismo número de la portada.</p>
+    </div>
+  </div>
+  <p style="font-size:12.5px;color:#021C36;line-height:1.6;margin:12px 2px 2px 2px;">Los dos números salen de los <b>mismos pagos y las mismas acciones</b>. La diferencia no está en los datos: está en las cuatro trampas de la lectura vieja — y cada una la acabas de ver con tus propios números.</p>
+  <div style="margin-top:10px;border-top:1px solid #e2e8f0;">{_cn_tr_html}</div>
+  <p style="font-size:8px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#8899aa;margin:12px 0 2px 2px;">El saldo, fondo por fondo</p>
+  {_cn_fondos}
 </div>
 """, unsafe_allow_html=True)
+
+                    _viaje_dinero()
 
                 # ── Auditoría del yield titular: stepper narrativo de 3 preguntas ──
                 # (inline, no en expander: esta sección ya vive dentro del expander del portafolio
