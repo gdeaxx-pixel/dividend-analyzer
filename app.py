@@ -2099,6 +2099,145 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                       'ret_pct': r['total_return_pct'], 'nav': r.get('nav_health')}
 
                 if _vj_data:
+                    def _render_salud_nav(tk, d, results):
+                        """Paso 'Salud del NAV': NAV del fondo vs subyacente, protagonista de la
+                        pestaña — no el % de ROC (eso es etiqueta fiscal, ver logic.py:2453)."""
+                        import altair as alt
+                        s = results.get(tk) or {}
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                            'color:#006497;margin:6px 0 3px 2px;letter-spacing:0.06em;">¿SE ESTÁ '
+                            'DESTRUYENDO TU CAPITAL, O SOLO BAJÓ CON EL MERCADO?</p>',
+                            unsafe_allow_html=True)
+
+                        _fund_close = s.get('fund_close_series')
+                        _under_close = s.get('underlying_close_series')
+                        _under_tk = s.get('underlying_ticker')
+                        if _fund_close is None or _under_close is None or not _under_tk:
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:12.5px;'
+                                'color:#445566;margin:4px 0 10px 2px;line-height:1.5;">Este fondo no '
+                                'tiene un subyacente conocido — no hay con qué contrastar su NAV. '
+                                'Revisa el veredicto de salud más abajo.</p>', unsafe_allow_html=True)
+                        else:
+                            _df = pd.concat(
+                                {tk: _fund_close, _under_tk: _under_close}, axis=1).dropna()
+                            if len(_df) >= 2:
+                                _base = _df.iloc[0]
+                                _norm = _df / _base * 100.0
+                                _plot_df = _norm.rename_axis('Fecha').reset_index().melt(
+                                    id_vars='Fecha', var_name='Serie', value_name='Valor')
+                                _chart = alt.Chart(_plot_df).mark_line(strokeWidth=2).encode(
+                                    x=alt.X('Fecha:T', title=None),
+                                    y=alt.Y('Valor:Q', title='Base 100 (inicio del período común)'),
+                                    color=alt.Color('Serie:N',
+                                        scale=alt.Scale(domain=[tk, _under_tk],
+                                                        range=['#006497', '#2d3748']),
+                                        legend=alt.Legend(title=None, orient='top', labelFontSize=12)),
+                                    tooltip=[alt.Tooltip('Fecha:T'), alt.Tooltip('Serie:N'),
+                                             alt.Tooltip('Valor:Q', format='.1f', title='Índice')]
+                                ).properties(height=280, background=CHART_PALETTE['bg']).configure_view(
+                                    strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                                st.altair_chart(_chart, use_container_width=True)
+                            else:
+                                st.markdown(
+                                    '<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                    'color:#8899aa;margin:4px 0 10px 2px;">No hay suficiente '
+                                    'historia superpuesta entre fondo y subyacente para graficar.</p>',
+                                    unsafe_allow_html=True)
+
+                        # ── Lectura por escenario (fila vigente resaltada) ──
+                        _u_cagr = s.get('underlying_cagr_recent')
+                        _f_cagr = s.get('price_cagr_recent')
+                        if _u_cagr is not None and _f_cagr is not None:
+                            _flat = logic.ROC_HEALTH_NAV_FLAT_PCT
+                            _tol = logic.ROC_HEALTH_REL_TOL_PCT
+                            _gap = _f_cagr - _u_cagr
+                            _under_falling = _u_cagr < -_flat
+                            if _under_falling and _gap >= -_tol:
+                                _regime = 0
+                            elif _under_falling:
+                                _regime = 1
+                            elif _f_cagr < -_flat:
+                                _regime = 3
+                            else:
+                                _regime = 2
+                            _rows = [
+                                ('Cae', 'Cae ~1:1', 'Riesgo de mercado — justificado, NO destrucción'),
+                                ('Cae', 'Cae mucho más', 'Sobre-captura: el fondo amplifica la pérdida'),
+                                ('Plano/sube', 'Sigue el ritmo', 'Contable — dentro de lo esperado'),
+                                ('Plano/sube', 'Cae o no recupera',
+                                 'Destructivo confirmado — no recupera (liquidó capital)'),
+                            ]
+                            _tr = ''
+                            for _i, (_a, _b, _c) in enumerate(_rows):
+                                _hi = _i == _regime
+                                _st_row = ('background:#eef6fb;font-weight:700;' if _hi else 'opacity:.65;')
+                                _tr += (f'<tr style="{_st_row}"><td style="padding:4px 8px;">{_a}</td>'
+                                        f'<td style="padding:4px 8px;">{_b}</td>'
+                                        f'<td style="padding:4px 8px;">{_c}</td></tr>')
+                            st.markdown(
+                                f'<table style="width:100%;border-collapse:collapse;font-family:Inter,'
+                                f'sans-serif;font-size:11.5px;color:#333;margin:8px 0 4px 0;">'
+                                f'<thead><tr style="color:#8899aa;font-size:9px;text-transform:uppercase;'
+                                f'letter-spacing:0.05em;"><th style="text-align:left;padding:4px 8px;">'
+                                f'Subyacente</th><th style="text-align:left;padding:4px 8px;">NAV del '
+                                f'fondo</th><th style="text-align:left;padding:4px 8px;">Lectura</th>'
+                                f'</tr></thead><tbody>{_tr}</tbody></table>'
+                                f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
+                                f'margin:2px 0 8px 2px;">Últimos 12 meses: {_under_tk} '
+                                f'{_u_cagr:+.0f}%/año vs {tk} {_f_cagr:+.0f}%/año (gap {_gap:+.0f} pts).'
+                                f'</p>', unsafe_allow_html=True)
+
+                        # ── Veredicto (ya con el filtro de mercado — mismo objeto que la portada) ──
+                        _nvh = d.get('nav')
+                        if _nvh:
+                            _score = _nvh.get('gauge_score')
+                            if _score is None:
+                                _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
+                                               "font-size:10px;text-align:center;line-height:14px;'>"
+                                               "no medible aún</div>")
+                            else:
+                                _gauge_html = (
+                                    "<div style='position:relative;height:14px;margin:6px 0 2px 0;"
+                                    "background:linear-gradient(90deg,#4caf82 0%,#e0a23c 50%,#e05c5c 100%);'>"
+                                    f"<div style='position:absolute;top:-3px;left:{_score:.0f}%;width:3px;"
+                                    "height:20px;background:#021C36;transform:translateX(-50%);'></div></div>"
+                                    "<div style='display:flex;justify-content:space-between;font-size:10px;"
+                                    "color:#888;'><span>Sano</span><span>Destruyéndose</span></div>")
+                            st.markdown(
+                                f"<div style='margin:10px 0 2px 0;font-weight:700;font-size:15px;"
+                                f"color:{_nvh['color']};'>{_nvh['headline']}</div>"
+                                f"{_gauge_html}"
+                                f"<div style='font-size:12.5px;color:#333;margin:6px 0 8px 0;"
+                                f"line-height:1.5;'>{_nvh['plain']}</div>"
+                                f"<details style='margin:2px 0 10px 0;'>"
+                                f"<summary style='cursor:pointer;font-size:12px;color:#006497;'>"
+                                f"Ver detalle técnico</summary>"
+                                f"<div style='font-size:12.5px;color:#333;line-height:1.5;margin:4px 0;'>"
+                                f"{_nvh['reason']}</div></details>",
+                                unsafe_allow_html=True)
+
+                        # ── Exposición asimétrica al subyacente ──
+                        _exp_lines = logic.build_underlying_exposure(results, tk).get('lines', [])
+                        if _exp_lines:
+                            _items = ''.join(f'<li style="margin:0 0 5px 0;">{_ln}</li>'
+                                              for _ln in _exp_lines)
+                            st.markdown(
+                                '<div style="border-left:4px solid #006497;background:#eef6fb;'
+                                'padding:10px 14px;margin:0 0 10px 0;">'
+                                '<ul style="font-family:Inter,sans-serif;font-size:12px;color:#333333;'
+                                'line-height:1.55;margin:0;padding-left:16px;">'
+                                + _items + '</ul></div>', unsafe_allow_html=True)
+
+                        # ── ROC como nota al pie mínima ──
+                        _roc_pct = s.get('roc_percent')
+                        if _roc_pct is not None:
+                            st.markdown(
+                                f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
+                                f'margin:0 0 4px 2px;">ROC 19a: {_roc_pct:.0f}% — etiqueta fiscal, no '
+                                f'medida de destrucción.</p>', unsafe_allow_html=True)
+
                     @st.fragment
                     def _viaje_dinero():
                         st.markdown(
@@ -2129,7 +2268,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                         _step_labels = ['Tu bolsillo', 'Total div. (bruto)', 'Impuesto NRA',
                                         'Reinvertidos y efectivo', 'Tu bolsillo + DRIP',
-                                        'Resultado real']
+                                        'Resultado real', 'Salud del NAV']
                         if hasattr(st, 'pills'):
                             _sel = st.pills('Paso', options=_step_labels, default=_step_labels[0],
                                             selection_mode='single',
@@ -2142,9 +2281,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _cprev, _cnext, _ = st.columns([0.2, 0.2, 0.6])
                             if _cprev.button('← Anterior', key=_sk + '_p', disabled=_step <= 0):
                                 _step = max(0, _step - 1)
-                            if _cnext.button('Siguiente →', key=_sk + '_n', disabled=_step >= 5):
-                                _step = min(5, _step + 1)
+                            if _cnext.button('Siguiente →', key=_sk + '_n', disabled=_step >= 6):
+                                _step = min(6, _step + 1)
                             st.session_state[_sk] = _step
+
+                        if _step == 6:
+                            _render_salud_nav(_vj_tk, _d, results)
+                            return
 
                         # Micro-transiciones: keyframe único inyectado una vez por render
                         # del fragment (corre en cada cambio de paso — efecto buscado).
@@ -2191,6 +2334,41 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   ('total', 'Tu bolsillo + DRIP', _money(_d['total']))]
                         _has_rend = _d['ret'] is not None and _d['ret_pct'] is not None
 
+                        # ── Migas numéricas: el camino recorrido crece paso a paso ──
+                        _migas_defs = [('Bolsillo', _money(_d['pocket']), False),
+                                       ('Bruto', _money(_d['bruto']), False),
+                                       ('Imp. NRA',
+                                        ('$0.00' if _no_imp else '−' + _money(_d['imp'])),
+                                        not _no_imp),
+                                       ('Reinv + efvo',
+                                        f"{_money(_d['drip'])} + {_money(_d['cash'])}", False),
+                                       ('Capital trabajando', _money(_d['total']), False)]
+                        if _has_rend:
+                            _migas_defs.append(('Resultado real',
+                                                f"{_money(_d['ret'])} ({_pct(_d['ret_pct'])})",
+                                                (_d['ret'] or 0) < 0))
+                        else:
+                            _migas_defs.append(('Resultado real', '—', False))
+                        _migas_html = ''
+                        for _mi, (_mlb, _mvl, _mneg) in enumerate(_migas_defs[:_step + 1]):
+                            _mcur = _mi == _step
+                            _mvc = ('#e05c5c' if _mneg else
+                                    ('#021C36' if _mcur else '#5a6b7a'))
+                            _mlc = '#006497' if _mcur else '#8899aa'
+                            _msep = ('<span style="color:#c3ccd4;margin:0 7px;">→</span>'
+                                     if _mi else '')
+                            _migas_html += (
+                                f'{_msep}<span style="display:inline-block;vertical-align:top;">'
+                                f'<span style="display:block;font-size:9px;font-weight:700;'
+                                f'letter-spacing:0.05em;text-transform:uppercase;'
+                                f'color:{_mlc};">{_mlb}</span>'
+                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,'
+                                f'Consolas,monospace;font-size:12px;font-weight:700;'
+                                f'color:{_mvc};">{_mvl}</span></span>')
+                        st.markdown(
+                            f'<div style="font-family:Inter,sans-serif;margin:4px 0 10px 2px;'
+                            f'line-height:1.3;">{_migas_html}</div>', unsafe_allow_html=True)
+
                         # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
                         _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
                         _u = 5000
@@ -2206,7 +2384,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _n_ca = _nb(_d['cash'])
                         _n_mv = _nb(_d['mv'])
 
-                        _SQ = 'width:11px;height:11px;box-sizing:border-box;'
+                        _SQ = 'width:17px;height:17px;box-sizing:border-box;'
                         _COL_POCKET = f'{_SQ}background:#021C36;'
                         _COL_DRIP = f'{_SQ}background:#006497;'
                         _COL_TRANSITO = f'{_SQ}border:1px solid #006497;background:transparent;'
@@ -2345,8 +2523,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    if c.get('sub') else '')
                             return (f'<div style="min-width:0;">{head}'
                                     f'<div style="border-top:{border};padding-top:5px;">'
-                                    f'<div style="display:flex;flex-wrap:wrap;gap:3px;'
-                                    f'max-width:168px;">{inner}</div></div>{sub}</div>')
+                                    f'<div style="display:flex;flex-wrap:wrap;gap:4px;'
+                                    f'max-width:480px;">{inner}</div></div>{sub}</div>')
 
                         _row = ''.join(_cluster_html(c) for c in _clusters
                                        if sum(n for n, _ in c['segs']) > 0)
@@ -2386,95 +2564,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'&nbsp;&nbsp;·&nbsp;&nbsp;{_legend_html}</p>',
                                 unsafe_allow_html=True)
 
-                        if _step != 5:
-                            if _no_imp:
-                                _visible = {0: ['pocket'],
-                                            1: ['pocket', 'bruto'],
-                                            2: ['pocket', 'bruto', 'imp'],
-                                            3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
-                                            4: ['pocket', 'bruto', 'imp', 'drip', 'cash',
-                                                'total']}[_step]
-                            else:
-                                _visible = {0: ['pocket'],
-                                            1: ['pocket', 'bruto'],
-                                            2: ['pocket', 'bruto', 'imp', 'neto'],
-                                            3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
-                                            4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash',
-                                                'total']}[_step]
-                            _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
-                                        3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
-                            _vcells = ''
-                            for _cid, _clabel, _cval in _cols:
-                                if _cid not in _visible:
-                                    continue
-                                _is_cur = _cid in _current
-                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
-                                _vcells += _cell(_cid, _clabel, _cval, _is_cur, _vcol)
-                            st.markdown(_grid(_vcells, len(_visible)), unsafe_allow_html=True)
-                        else:
-                            st.markdown(
-                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
-                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
-                                'color:#8899aa;margin:0 0 2px 2px;">EL FLUJO DEL DIVIDENDO</p>',
-                                unsafe_allow_html=True)
-                            _flow_cells = ''
-                            for _cid, _clabel, _cval in _cols:
-                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
-                                _flow_cells += _cell(_cid, _clabel, _cval, False, _vcol)
-                            st.markdown(_grid(_flow_cells, len(_cols)), unsafe_allow_html=True)
-
-                            st.markdown(
-                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
-                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
-                                'color:#8899aa;margin:8px 0 2px 2px;">EL IMPACTO DEL MERCADO</p>',
-                                unsafe_allow_html=True)
-                            _mkt = _d['mv'] - _d['total']
-                            _mkt_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
-                            _mkt_col = '#1f8a5b' if _mkt >= 0 else '#e05c5c'
-                            _cat = _d['mv'] + _d['cash']
-                            _mkt_cells = (
-                                _cell('start', 'Capital trabajando', _money(_d['total']),
-                                      False, '#0F172A', dim=False)
-                                + _cell('mkt', 'Impacto del mercado', _mkt_str, False, _mkt_col,
-                                        dim=False)
-                                + _cell('hoy', 'Valor hoy', _money(_d['mv']), False, '#0F172A',
-                                        dim=False)
-                                + _cell('cash2', '+ En efectivo', '+' + _money(_d['cash']),
-                                        False, '#0F172A', dim=False)
-                                + _cell('cat', '= Capital actual total', _money(_cat),
-                                        False, '#0F172A', dim=False)
-                                + _cell('pkt2', '− Tu bolsillo', '−' + _money(_d['pocket']),
-                                        False, '#0F172A', dim=False))
-                            _n_mkt_cells = 6
-                            if _has_rend:
-                                _rend_col = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
-                                _rend_sub = (f'<span style="display:block;font-family:Inter,'
-                                             f'sans-serif;font-size:9px;font-weight:600;'
-                                             f'color:{_rend_col};margin-top:2px;">'
-                                             f'({_pct(_d["ret_pct"])})</span>')
-                                _mkt_cells += _cell('rend', 'Resultado real', _money(_d['ret']),
-                                                     True, _rend_col, _rend_sub)
-                                _n_mkt_cells = 7
-                            st.markdown(_grid(_mkt_cells, _n_mkt_cells), unsafe_allow_html=True)
-                            st.markdown(
-                                '<p style="font-family:Inter,sans-serif;font-size:9px;'
-                                'color:#8899aa;margin:3px 0 4px 2px;">Capital actual total = '
-                                'Valor hoy + En efectivo&nbsp;&nbsp;·&nbsp;&nbsp;Resultado real '
-                                '= Capital actual total − Tu bolsillo</p>',
-                                unsafe_allow_html=True)
-                            if _d.get('nav'):
-                                _nvh = _d['nav']
-                                _nvh_badge = (f'<span style="border:1px solid {_nvh["color"]};'
-                                              f'color:{_nvh["color"]};padding:1px 7px;'
-                                              f'font-size:9px;font-weight:600;'
-                                              f'letter-spacing:0.05em;">{_nvh["label"]}</span>')
-                                st.markdown(
-                                    f'<p style="font-family:Inter,sans-serif;font-size:11px;'
-                                    f'color:#445566;margin:3px 0 4px 2px;line-height:1.5;">'
-                                    f'{_nvh_badge} así etiqueta la portada a {_vj_tk}: '
-                                    f'{_nvh["headline"]}</p>', unsafe_allow_html=True)
-
-                        # Narrativas: un renglón por paso; las previas se atenúan encima.
+                        # Narrativa: callout del paso actual; el camino previo va plegado.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
                         if _no_imp:
                             _n2 = (f'En este archivo no aparece retención de impuesto para '
@@ -2569,13 +2659,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _n4,
                             _n5,
                         ]
-                        _nhtml = ''
-                        for _ni in range(_step):
-                            _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:12px;'
-                                       f'color:#333333;line-height:1.55;margin:0 0 3px 0;'
-                                       f'opacity:.55;">{_narr[_ni]}</p>')
-                        _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:12.5px;'
-                                   f'color:#021C36;line-height:1.55;margin:0;">{_narr[_step]}</p>')
+                        _cur_html = _narr[_step]
                         if _step == 4:
                             if _no_drip:
                                 _honesty = 'La ganancia real está en el siguiente paso →'
@@ -2583,11 +2667,119 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _honesty = (f'Ojo: {_money(_d["total"])} es <b>capital '
                                             f'invertido</b>, no ganancia. La ganancia real está '
                                             f'en el siguiente paso →')
-                            _nhtml += (f'<p style="font-family:Inter,sans-serif;font-size:11px;'
-                                       f'color:#445566;line-height:1.55;margin:6px 0 0 0;">'
-                                       f'{_honesty}</p>')
-                        st.markdown(f'<div style="margin:6px 0 10px 2px;">{_nhtml}</div>',
+                            _cur_html += (f'<span style="display:block;font-size:11px;'
+                                          f'color:#445566;margin-top:6px;">{_honesty}</span>')
+                        _nhtml = (f'<div style="border-left:3px solid #006497;background:#eef6fb;'
+                                  f'padding:10px 14px;font-family:Inter,sans-serif;'
+                                  f'font-size:12.5px;color:#021C36;line-height:1.6;'
+                                  f'animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;">'
+                                  f'{_cur_html}</div>')
+                        if _step > 0:
+                            _prev = ''.join(
+                                f'<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                f'color:#4a5568;line-height:1.55;margin:6px 0 3px 0;'
+                                f'opacity:.75;">{_narr[_ni]}</p>' for _ni in range(_step))
+                            _plural = 's' if _step > 1 else ''
+                            _nhtml += (f'<details style="margin:6px 0 0 0;">'
+                                       f'<summary style="cursor:pointer;font-family:Inter,'
+                                       f'sans-serif;font-size:11.5px;color:#006497;">Ver el '
+                                       f'camino recorrido ({_step} paso{_plural})</summary>'
+                                       f'{_prev}</details>')
+                        st.markdown(f'<div style="margin:8px 0 10px 2px;">{_nhtml}</div>',
                                     unsafe_allow_html=True)
+
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:8px;'
+                            'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                            'color:#8899aa;margin:10px 0 2px 2px;">LOS NÚMEROS DETRÁS DEL '
+                            'DIBUJO</p>', unsafe_allow_html=True)
+                        if _step != 5:
+                            if _no_imp:
+                                _visible = {0: ['pocket'],
+                                            1: ['pocket', 'bruto'],
+                                            2: ['pocket', 'bruto', 'imp'],
+                                            3: ['pocket', 'bruto', 'imp', 'drip', 'cash'],
+                                            4: ['pocket', 'bruto', 'imp', 'drip', 'cash',
+                                                'total']}[_step]
+                            else:
+                                _visible = {0: ['pocket'],
+                                            1: ['pocket', 'bruto'],
+                                            2: ['pocket', 'bruto', 'imp', 'neto'],
+                                            3: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash'],
+                                            4: ['pocket', 'bruto', 'imp', 'neto', 'drip', 'cash',
+                                                'total']}[_step]
+                            _current = {0: {'pocket'}, 1: {'bruto'}, 2: {'imp', 'neto'},
+                                        3: {'drip', 'cash'}, 4: {'pocket', 'total'}}[_step]
+                            _vcells = ''
+                            for _cid, _clabel, _cval in _cols:
+                                if _cid not in _visible:
+                                    continue
+                                _is_cur = _cid in _current
+                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                                _vcells += _cell(_cid, _clabel, _cval, _is_cur, _vcol)
+                            st.markdown(_grid(_vcells, len(_visible)), unsafe_allow_html=True)
+                        else:
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
+                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                'color:#8899aa;margin:0 0 2px 2px;">EL FLUJO DEL DIVIDENDO</p>',
+                                unsafe_allow_html=True)
+                            _flow_cells = ''
+                            for _cid, _clabel, _cval in _cols:
+                                _vcol = '#cc6a6a' if _cid == 'imp' else '#0F172A'
+                                _flow_cells += _cell(_cid, _clabel, _cval, False, _vcol)
+                            st.markdown(_grid(_flow_cells, len(_cols)), unsafe_allow_html=True)
+
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:8px;'
+                                'font-weight:600;letter-spacing:0.06em;text-transform:uppercase;'
+                                'color:#8899aa;margin:8px 0 2px 2px;">EL IMPACTO DEL MERCADO</p>',
+                                unsafe_allow_html=True)
+                            _mkt = _d['mv'] - _d['total']
+                            _mkt_str = ('+' if _mkt >= 0 else '') + _money(_mkt)
+                            _mkt_col = '#1f8a5b' if _mkt >= 0 else '#e05c5c'
+                            _cat = _d['mv'] + _d['cash']
+                            _mkt_cells = (
+                                _cell('start', 'Capital trabajando', _money(_d['total']),
+                                      False, '#0F172A', dim=False)
+                                + _cell('mkt', 'Impacto del mercado', _mkt_str, False, _mkt_col,
+                                        dim=False)
+                                + _cell('hoy', 'Valor hoy', _money(_d['mv']), False, '#0F172A',
+                                        dim=False)
+                                + _cell('cash2', '+ En efectivo', '+' + _money(_d['cash']),
+                                        False, '#0F172A', dim=False)
+                                + _cell('cat', '= Capital actual total', _money(_cat),
+                                        False, '#0F172A', dim=False)
+                                + _cell('pkt2', '− Tu bolsillo', '−' + _money(_d['pocket']),
+                                        False, '#0F172A', dim=False))
+                            _n_mkt_cells = 6
+                            if _has_rend:
+                                _rend_col = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
+                                _rend_sub = (f'<span style="display:block;font-family:Inter,'
+                                             f'sans-serif;font-size:9px;font-weight:600;'
+                                             f'color:{_rend_col};margin-top:2px;">'
+                                             f'({_pct(_d["ret_pct"])})</span>')
+                                _mkt_cells += _cell('rend', 'Resultado real', _money(_d['ret']),
+                                                     True, _rend_col, _rend_sub)
+                                _n_mkt_cells = 7
+                            st.markdown(_grid(_mkt_cells, _n_mkt_cells), unsafe_allow_html=True)
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:9px;'
+                                'color:#8899aa;margin:3px 0 4px 2px;">Capital actual total = '
+                                'Valor hoy + En efectivo&nbsp;&nbsp;·&nbsp;&nbsp;Resultado real '
+                                '= Capital actual total − Tu bolsillo</p>',
+                                unsafe_allow_html=True)
+                            if _d.get('nav'):
+                                _nvh = _d['nav']
+                                _nvh_badge = (f'<span style="border:1px solid {_nvh["color"]};'
+                                              f'color:{_nvh["color"]};padding:1px 7px;'
+                                              f'font-size:9px;font-weight:600;'
+                                              f'letter-spacing:0.05em;">{_nvh["label"]}</span>')
+                                st.markdown(
+                                    f'<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                    f'color:#445566;margin:3px 0 4px 2px;line-height:1.5;">'
+                                    f'{_nvh_badge} así etiqueta la portada a {_vj_tk}: '
+                                    f'{_nvh["headline"]}</p>', unsafe_allow_html=True)
 
                     _viaje_dinero()
 
@@ -2616,41 +2808,157 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 </div>
 """, unsafe_allow_html=True)
 
-                # ── Auditoría del yield titular: ¿YieldMax cumple lo que anuncia? ──
+                # ── Auditoría del yield titular: stepper narrativo de 3 preguntas ──
                 # (inline, no en expander: esta sección ya vive dentro del expander del portafolio
-                #  y Streamlit no permite anidar expanders).
-                st.markdown(
-                    '<p style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;'
-                    'color:#021C36;margin:8px 0 4px 0;letter-spacing:0.03em;">🔍 ¿YieldMax paga lo '
-                    'que anuncia? · auditoría del yield titular</p>', unsafe_allow_html=True)
+                #  y Streamlit no permite anidar expanders; la tabla completa va en <details>.)
                 if _rows:
-                    st.markdown(
-                        '<p style="font-family:Inter,sans-serif;font-size:11.5px;color:#5a6b7a;'
-                        'margin:0 0 8px 0;line-height:1.55;">Tres formas de medir el mismo yield, '
-                        'todas sobre el valor actual: el <b>titular</b> que publica YieldMax, su '
-                        '<b>mecanismo</b> hoy (último pago real anualizado) y lo <b>realizado</b> '
-                        '(lo que de verdad rindió en 12 meses). Reconstruido de tus pagos reales.'
-                        '</p>', unsafe_allow_html=True)
-                    _ab = ""
-                    for r in _rows:
-                        a = r['audit']
+                    _aud_rows = {r['ticker']: r for r in _rows}
+
+                    @st.fragment
+                    def _audit_yield():
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:12px;font-weight:700;'
+                            'color:#021C36;margin:8px 0 4px 0;letter-spacing:0.03em;">🔍 ¿YieldMax '
+                            'paga lo que anuncia?</p>'
+                            '<p style="font-family:Inter,sans-serif;font-size:11.5px;color:#5a6b7a;'
+                            'margin:0 0 8px 0;line-height:1.55;">Tres formas de medir el mismo '
+                            'yield — recórrelas: cada paso es la misma pregunta, medida más '
+                            'honestamente. Reconstruido de tus pagos reales.</p>',
+                            unsafe_allow_html=True)
+                        if hasattr(st, 'pills') and len(_aud_rows) > 1:
+                            _au_tk = st.pills('Fondo a auditar',
+                                              options=list(_aud_rows.keys()),
+                                              default=list(_aud_rows.keys())[0],
+                                              selection_mode='single',
+                                              key=f'_au_fondo_{_fid}')
+                        else:
+                            _au_tk = list(_aud_rows.keys())[0]
+                        _au_tk = _au_tk or list(_aud_rows.keys())[0]
+                        _ar = _aud_rows[_au_tk]
+                        _a = _ar['audit']
+                        _yoc = _ar['yield_on_cost']
+
+                        _au_steps = ['1. Lo que anuncian', '2. Lo que su fórmula paga hoy',
+                                     '3. Lo que de verdad rindió']
+                        if hasattr(st, 'pills'):
+                            _au_sel = st.pills('Paso auditoría', options=_au_steps,
+                                               default=_au_steps[0], selection_mode='single',
+                                               key=f'_au_{_au_tk}_{_fid}',
+                                               label_visibility='collapsed')
+                            _au_i = (_au_steps.index(_au_sel)
+                                     if _au_sel in _au_steps else 0)
+                        else:
+                            _au_i = 2
+
+                        _adv, _fwd, _rzd = _a['advertised'], _a['forward'], _a['realized']
                         _vc = {'match': '#4caf82', 'ahead': '#e0a23c', 'behind': '#3b82f6',
-                               'unknown': '#94a3b8'}.get(a['verdict'], '#94a3b8')
-                        _yoc = r['yield_on_cost']
-                        _ab += (
-                            '<tr style="border-bottom:1px solid #eef2f6;">'
-                            f'<td style="padding:6px 10px;font-weight:700;color:#021C36;">{r["ticker"]}</td>'
-                            f'<td style="padding:6px 10px;text-align:right;color:#c9821f;">{_pct(a["advertised"])}</td>'
-                            f'<td style="padding:6px 10px;text-align:right;">{_pct(a["forward"])}</td>'
-                            f'<td style="padding:6px 10px;text-align:right;">{_pct(a["realized"])}</td>'
-                            f'<td style="padding:6px 10px;text-align:right;color:#0F766E;">{_pct(_yoc)}</td>'
-                            f'<td style="padding:6px 10px;color:{_vc};font-weight:600;">{a["label"]}</td>'
-                            '</tr>')
-                    _hh = ('padding:7px 10px;text-align:right;color:#64748B;font-weight:600;'
-                           'font-size:10px;letter-spacing:0.06em;text-transform:uppercase;')
-                    st.markdown(f"""
+                               'unknown': '#94a3b8'}.get(_a['verdict'], '#94a3b8')
+
+                        if _au_i == 0:
+                            _big, _bigc = _pct(_adv), '#c9821f'
+                            if _adv is not None:
+                                _au_txt = (f'{_au_tk} publica un yield <b>titular</b> de '
+                                           f'{_pct(_adv)}: «por cada $100 en {_au_tk} hoy, te '
+                                           f'pagaría ~${_adv:.0f} al año». Pero ese número '
+                                           f'anualiza <b>un solo pago</b> — es marketing, no una '
+                                           f'promesa.')
+                            else:
+                                _au_txt = (f'No tenemos la tasa titular publicada de {_au_tk} — '
+                                           f'sigue a los pasos 2 y 3, que salen de tus pagos '
+                                           f'reales.')
+                        elif _au_i == 1:
+                            _big, _bigc = _pct(_fwd), '#006497'
+                            _au_txt = (f'Si el <b>último pago real</b> se repitiera 12 meses, el '
+                                       f'mecanismo estaría pagando {_pct(_fwd)} sobre el valor '
+                                       f'actual.')
+                            if _fwd is not None and _adv is not None:
+                                if _fwd > _adv * 1.1:
+                                    _au_txt += (' Va <b>por encima</b> del titular: hoy pagan más '
+                                                'de lo que anuncian. Suena bien… sigue al paso 3.')
+                                elif _fwd < _adv * 0.9:
+                                    _au_txt += (' Va <b>por debajo</b> del titular: hoy su fórmula '
+                                                'paga menos de lo que anuncian.')
+                                else:
+                                    _au_txt += (' Coincide con el titular: anuncian lo que su '
+                                                'fórmula paga hoy.')
+                        else:
+                            _big, _bigc = _pct(_rzd), '#e05c5c'
+                            _au_txt = (f'En los últimos 12 meses {_au_tk} pagó el equivalente a '
+                                       f'{_pct(_rzd)} de su valor actual. <b>Ojo: un número '
+                                       f'disparado aquí NO es buena señal</b> — se infla porque '
+                                       f'divides entre un NAV desplomado; es la erosión hablando. '
+                                       f'Sobre <b>tu costo real</b> el rendimiento fue '
+                                       f'<span style="color:#0F766E;font-weight:700;">'
+                                       f'{_pct(_yoc)}</span>.')
+                            _au_ret = _ar.get('total_return_pct')
+                            if _au_ret is not None:
+                                _au_rc = '#4caf82' if _au_ret >= 0 else '#e05c5c'
+                                _au_txt += (f' Y aun así tu retorno total es <b style="color:'
+                                            f'{_au_rc};">{_pct(_au_ret)}</b> — la cifra honesta '
+                                            f'siempre es el retorno total de la tabla de arriba, '
+                                            f'no el yield.')
+
+                        _au_vals = [(_adv, 'Titular'), (_fwd, 'Mecanismo hoy'),
+                                    (_rzd, 'Realizado s/ valor')]
+                        _au_nums = [v for v, _ in _au_vals if v is not None]
+                        _au_max = max(_au_nums) if _au_nums else 1
+                        _bars = ''
+                        for _bi, (_bv, _bl) in enumerate(_au_vals):
+                            _bon = _bi <= _au_i and _bv is not None
+                            _bh = int(round((_bv or 0) / _au_max * 84)) + 6
+                            _bars += (
+                                f'<div style="display:flex;flex-direction:column;'
+                                f'align-items:center;gap:4px;opacity:{"1" if _bon else ".3"};">'
+                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,'
+                                f'monospace;font-size:12px;font-weight:700;'
+                                f'color:{"#021C36" if _bi == _au_i else "#5a6b7a"};">'
+                                f'{_pct(_bv)}</span>'
+                                f'<div style="width:44px;height:{_bh}px;'
+                                f'background:{"#006497" if _bi == _au_i else "#c3ccd4"};"></div>'
+                                f'<span style="font-family:Inter,sans-serif;font-size:9px;'
+                                f'font-weight:600;letter-spacing:0.05em;text-transform:uppercase;'
+                                f'color:#8899aa;text-align:center;">{_bl}</span></div>')
+                        _au_verdict = (f'<span style="display:inline-block;border:1px solid '
+                                       f'{_vc};color:{_vc};font-size:10px;font-weight:600;'
+                                       f'letter-spacing:0.05em;padding:2px 8px;margin-top:10px;'
+                                       f'text-transform:uppercase;">{_a["label"]}</span>'
+                                       if _au_i == 2 else '')
+                        st.markdown(
+                            f'<div style="border:1px solid #d9dee3;padding:16px 20px;'
+                            f'animation:_vjin .3s ease both;font-family:Inter,sans-serif;">'
+                            f'<span style="font-size:9.5px;font-weight:700;letter-spacing:0.08em;'
+                            f'text-transform:uppercase;color:#8899aa;">'
+                            f'{_au_steps[_au_i][3:]}</span>'
+                            f'<div style="font-family:SFMono-Regular,ui-monospace,Menlo,monospace;'
+                            f'font-size:32px;font-weight:700;letter-spacing:-0.02em;'
+                            f'color:{_bigc};margin:2px 0;">{_big}</div>'
+                            f'<div style="display:flex;align-items:flex-end;gap:30px;'
+                            f'margin:12px 0 4px 0;">{_bars}</div>'
+                            f'<p style="font-size:12.5px;color:#333;line-height:1.6;'
+                            f'margin:8px 0 0 0;max-width:640px;">{_au_txt}</p>'
+                            f'{_au_verdict}</div>', unsafe_allow_html=True)
+
+                        _ab = ""
+                        for r in _aud_rows.values():
+                            a = r['audit']
+                            _tvc = {'match': '#4caf82', 'ahead': '#e0a23c', 'behind': '#3b82f6',
+                                    'unknown': '#94a3b8'}.get(a['verdict'], '#94a3b8')
+                            _ab += (
+                                '<tr style="border-bottom:1px solid #eef2f6;">'
+                                f'<td style="padding:6px 10px;font-weight:700;color:#021C36;">{r["ticker"]}</td>'
+                                f'<td style="padding:6px 10px;text-align:right;color:#c9821f;">{_pct(a["advertised"])}</td>'
+                                f'<td style="padding:6px 10px;text-align:right;">{_pct(a["forward"])}</td>'
+                                f'<td style="padding:6px 10px;text-align:right;">{_pct(a["realized"])}</td>'
+                                f'<td style="padding:6px 10px;text-align:right;color:#0F766E;">{_pct(r["yield_on_cost"])}</td>'
+                                f'<td style="padding:6px 10px;color:{_tvc};font-weight:600;">{a["label"]}</td>'
+                                '</tr>')
+                        _hh = ('padding:7px 10px;text-align:right;color:#64748B;font-weight:600;'
+                               'font-size:10px;letter-spacing:0.06em;text-transform:uppercase;')
+                        st.markdown(f"""
+<details style="margin:8px 0 0 0;">
+<summary style="cursor:pointer;font-family:Inter,sans-serif;font-size:11.5px;color:#006497;">Ver la tabla completa (todos los fondos)</summary>
 <div style="overflow-x:auto;">
-<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#334155;">
+<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;color:#334155;margin-top:8px;">
   <thead><tr style="border-bottom:2px solid #006497;">
     <th style="{_hh.replace('text-align:right','text-align:left')}">Fondo</th>
     <th style="{_hh}">Titular</th><th style="{_hh}">Mecanismo hoy</th>
@@ -2658,8 +2966,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
     <th style="{_hh.replace('text-align:right','text-align:left')}">Veredicto</th>
   </tr></thead><tbody>{_ab}</tbody>
 </table></div>
-<p style="font-family:Inter,sans-serif;font-size:10.5px;color:#64748B;margin:8px 0 0 0;line-height:1.55;"><b>Cómo leerlo:</b> si «titular ≈ mecanismo», anuncian lo que su fórmula paga. Fíjate en <b>«Rend. s/ tu costo»</b>: si se acerca al titular, el fondo sí paga ~lo prometido respecto a tu principal — lo que te empobrece es la <b>caída del NAV</b>, no que paguen poco. Y ojo: cuando el NAV se desploma, el «realizado sobre tu valor actual» se dispara (divides entre un valor más chico) — un yield alto ahí <b>no</b> es buena señal, es la erosión. La cifra honesta es el <b>retorno total</b> de la tabla de arriba, no el yield.</p>
+<p style="font-family:Inter,sans-serif;font-size:10.5px;color:#64748B;margin:8px 0 0 0;line-height:1.55;"><b>Cómo leerlo:</b> si «titular ≈ mecanismo», anuncian lo que su fórmula paga. Fíjate en <b>«Rend. s/ tu costo»</b>: si se acerca al titular, el fondo sí paga ~lo prometido respecto a tu principal — lo que te empobrece es la <b>caída del NAV</b>, no que paguen poco.</p>
+</details>
 """, unsafe_allow_html=True)
+
+                    _audit_yield()
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Helper: tarjeta semáforo de salud del NAV por fondo ────
@@ -2686,7 +2997,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 _verdict = logic.classify_roc_health(
                     roc_pct=_roc_pct, price_cagr=_navc, total_return_pct=_tr_pct,
                     history_days=stats.get('price_history_days'), roc_asof_days=_asof_days,
-                    prev_verdict=_prev_v)
+                    prev_verdict=_prev_v, underlying_cagr=stats.get('underlying_cagr_recent'))
                 _score = _verdict.get('gauge_score')
                 if _score is None:
                     _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
@@ -2900,53 +3211,22 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                 with st.expander("La hoja de Excel que te venden vs la realidad", expanded=False):
                     _render_hoja_excel()
 
-                # Bloque 4 — impuesto NRA
+                # Bloque 4 — cierre honesto en un solo callout (el impuesto NRA ya se
+                # explica dentro del viaje del dinero, paso "Impuesto NRA").
                 st.markdown(
-                    '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
-                    'margin:18px 0 6px 0;">El impuesto que no ves: ~30% para extranjeros</p>',
+                    '<div style="border-left:4px solid #c9821f;background:#fbf6ee;padding:12px 16px;'
+                    'margin:12px 0 12px 0;font-family:Inter,sans-serif;font-size:12px;color:#4a5568;line-height:1.65;">'
+                    '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:800;'
+                    'letter-spacing:0.08em;text-transform:uppercase;color:#a06a1a;margin:0 0 6px 0;">'
+                    'El trato completo, en una línea</p>'
+                    '<b style="color:#021C36;">Cuándo sí:</b> quieres ingreso mensual real hoy y lo '
+                    'entiendes como renta, no crecimiento. &nbsp;·&nbsp; '
+                    '<b style="color:#021C36;">El precio:</b> renuncias a la subida de la acción, el '
+                    "NAV tiende a erosionarse, y parte del 'pago' es tu dinero de vuelta (ROC) menos "
+                    '~30% de impuesto. &nbsp;·&nbsp; '
+                    '<b style="color:#021C36;">Regla de bolsillo:</b> yield alto ≠ ganancia alta — la '
+                    'cifra que manda es el retorno total de la portada.</div>',
                     unsafe_allow_html=True)
-                st.markdown(
-                    '<div style="border-left:4px solid #006497;background:#eef6fb;padding:12px 16px;'
-                    'margin:0 0 12px 0;font-family:Inter,sans-serif;font-size:12px;color:#333333;line-height:1.6;">'
-                    '<b>¿Qué es?</b> Por ser inversionista extranjero (NRA), EE.UU. retiene <b>~30% de cada '
-                    'dividendo</b> antes de que llegue a tu cuenta.'
-                    '<br>· Si el fondo declara $100 de dividendo, a ti te depositan ~$70.'
-                    '<br>· Por eso algunos totales del broker (brutos) no cuadran con lo que ves en tu cuenta '
-                    '(neto). No es un error: son la misma cifra antes y después de impuestos.'
-                    '<br><b>¿Qué hacer?</b> Presupuesta siempre con el neto. Esta calculadora ya te muestra '
-                    'los dividendos netos en la portada.</div>',
-                    unsafe_allow_html=True)
-
-                # Bloque 5 — cierre honesto, dos columnas
-                _ctr_c1, _ctr_c2 = st.columns(2)
-                with _ctr_c1:
-                    st.markdown(
-                        '<div style="border-left:4px solid #4caf82;background:#f0faf5;padding:12px 16px;'
-                        'margin:0 0 12px 0;font-family:Inter,sans-serif;font-size:12px;color:#333333;line-height:1.6;">'
-                        '<p style="font-family:Inter,sans-serif;font-size:12px;font-weight:800;color:#021C36;'
-                        'margin:0 0 6px 0;">Cuándo SÍ tiene sentido</p>'
-                        '· Quieres <b>ingreso mensual real</b> hoy (vives de él o lo reinviertes en otra cosa) '
-                        'y lo entiendes como renta, no como crecimiento.'
-                        '<br>· Aceptas que parte del retorno venga de primas de opciones y toleras ver el '
-                        'precio bajar.'
-                        '<br>· Cuando los pagos acumulados ya cubren la caída del precio, el income es lo que '
-                        'sostiene tu retorno — eso es el diseño funcionando, no un accidente.</div>',
-                        unsafe_allow_html=True)
-                with _ctr_c2:
-                    st.markdown(
-                        '<div style="border-left:4px solid #e0a23c;background:#fbf7ef;padding:12px 16px;'
-                        'margin:0 0 12px 0;font-family:Inter,sans-serif;font-size:12px;color:#333333;line-height:1.6;">'
-                        '<p style="font-family:Inter,sans-serif;font-size:12px;font-weight:800;color:#021C36;'
-                        'margin:0 0 6px 0;">El precio que pagas</p>'
-                        '· <b>Renuncias al crecimiento</b>: si la acción de moda se dispara, tu ETF captura '
-                        'poco de esa subida (la vendió en primas).'
-                        '<br>· <b>Erosión</b>: el precio tiende a bajar; varios de estos fondos han hecho '
-                        'reverse splits para disimularlo.'
-                        "<br>· <b>Impuestos y ROC</b>: parte del 'pago' es tu dinero de vuelta, y del resto "
-                        'EE.UU. retiene ~30%.'
-                        '<br>· Regla de bolsillo: <b>yield alto ≠ ganancia alta</b>. La cifra que manda es el '
-                        'retorno total real de la portada.</div>',
-                        unsafe_allow_html=True)
 
 
             def _render_data_quality_panel():
@@ -4506,7 +4786,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     total_return_pct=_htr,
                                     history_days=_rs.get('price_history_days'),
                                     roc_asof_days=_asof_days,
-                                    prev_verdict=_prev_v)
+                                    prev_verdict=_prev_v,
+                                    underlying_cagr=_rs.get('underlying_cagr_recent'))
                                 _vreason = _verdict['reason']
                                 if _verdict['verdict'] == 'destructive':
                                     _u = _rs.get('underlying_cagr_recent')

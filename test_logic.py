@@ -1710,6 +1710,34 @@ def test_roc_health_hysteresis_prev_insufficient_behaves_like_none():
     assert v_ins["verdict"] == v_none["verdict"] == "mixed"
 
 
+# ── Filtro de justicia de mercado: NAV vs subyacente (underlying_cagr) ──────────
+
+def test_roc_health_market_justified_when_fund_falls_with_underlying():
+    # MSTR -60% / MSTY -62% / ROC 80% -> gap -2 pts, dentro de tolerancia -> NO destructivo
+    v = logic.classify_roc_health(80, -62, None, history_days=400, underlying_cagr=-60)
+    assert v["verdict"] == "mixed"
+    assert "mercado" in v["headline"].lower()
+
+
+def test_roc_health_overcapture_still_destructive():
+    # MSTR -60% / MSTY -85% / ROC 80% -> gap -25 pts, fuera de tolerancia -> destructivo
+    v = logic.classify_roc_health(80, -85, None, history_days=400, underlying_cagr=-60)
+    assert v["verdict"] == "destructive"
+
+
+def test_roc_health_confirmed_destructive_when_underlying_recovers():
+    # MSTR +5% / MSTY -20% / ROC 80% -> subyacente sube, fondo cae -> destructivo confirmado
+    v = logic.classify_roc_health(80, -20, None, history_days=400, underlying_cagr=5)
+    assert v["verdict"] == "destructive"
+
+
+def test_roc_health_underlying_cagr_none_is_regression_safe():
+    # underlying_cagr=None -> comportamiento absoluto clasico, identico al actual
+    with_none = logic.classify_roc_health(95, -40, -25, history_days=400, underlying_cagr=None)
+    without_param = logic.classify_roc_health(95, -40, -25, history_days=400)
+    assert with_none["verdict"] == without_param["verdict"] == "destructive"
+
+
 def test_latest_health_verdict_reads_last_entry(monkeypatch):
     monkeypatch.setattr(logic, "load_roc_health_history", lambda: {
         "MSTY": [{"date": "2026-06-01", "verdict": "mixed", "roc_pct": 40, "price_cagr": -20},

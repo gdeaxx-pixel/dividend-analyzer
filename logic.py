@@ -1383,6 +1383,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _underlying_tk = None
         _underlying_cagr_recent = None
         _underlying_hold_value = None
+        _underlying_close = None
         try:
             _info_u = load_instruments().get(str(ticker).upper(), {})
             _is_ym = ticker_mode == 'mode_a' or (_info_u.get('type') or '').lower() == 'yieldmax'
@@ -1392,6 +1393,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 _udf, _uerr = fetch_market_data(_underlying_tk, first_date)
                 if _udf is not None and not _udf.empty and 'Close' in _udf.columns:
                     _underlying_cagr_recent = _annualized_cagr(_udf['Close'], days=365)
+                    _underlying_close = _udf['Close']
                     # #1: ¿y si hubieras tenido el subyacente directo? (misma plata y timing)
                     _up = _udf['Close'].reindex(daily_history.index).ffill()
                     _ud = (_udf['Dividends'].reindex(daily_history.index).fillna(0)
@@ -1465,6 +1467,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "underlying_ticker": _underlying_tk,
             "underlying_cagr_recent": _underlying_cagr_recent,
             "underlying_hold_value": _underlying_hold_value,
+            "fund_close_series": _close,
+            "underlying_close_series": _underlying_close,
         }
         
     return results
@@ -2460,6 +2464,9 @@ ROC_HEALTH_HIGH_ENTER_PCT = 55.0
 ROC_HEALTH_NAV_FLAT_PCT = 2.0    # |price_cagr| ≤ esto = NAV prácticamente plano
 ROC_HEALTH_MIN_DAYS     = 180    # < esto de historia de precio = no se puede afirmar nada
 ROC_HEALTH_STALE_DAYS   = 45     # aviso 19a más viejo que esto = dato desactualizado
+# Filtro de justicia de mercado: cuánto peor que su subyacente puede caer el NAV del fondo
+# antes de dejar de ser "cae por el mercado" y contar como canibalización adicional.
+ROC_HEALTH_REL_TOL_PCT  = 10.0
 
 _ROC_HEALTH_COLORS = {
     'destructive':  '#e05c5c',   # rojo
@@ -2496,7 +2503,7 @@ def _roc_health_gauge(price_cagr):
 
 def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
                         history_days=None, roc_asof_days=None,
-                        prev_verdict=None) -> dict:
+                        prev_verdict=None, underlying_cagr=None) -> dict:
     """Veredicto único de salud del NAV de un YieldMax. Función PURA y testeable.
 
     Parámetros (todos numéricos, None si no disponibles):
@@ -2511,6 +2518,11 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
                        cae bajo ROC_HEALTH_HIGH_EXIT_PCT (45); viniendo de 'accounting'/
                        'mixed' se entra solo si sube sobre ROC_HEALTH_HIGH_ENTER_PCT (55).
                        None o 'insufficient' → umbral simple de 50 (comportamiento clásico).
+      underlying_cagr  CAGR reciente (12m) del activo subyacente, % — filtro de justicia de
+                       mercado. None → comportamiento absoluto clásico (sin este filtro): un
+                       fondo que cae ~1:1 con un subyacente que también cae NO es destructivo,
+                       solo es riesgo de mercado; se confirma destructivo si el subyacente se
+                       recupera y el fondo no.
 
     Devuelve {'verdict','label','color','reason','headline','plain','gauge_score'} con
     verdict ∈ {'destructive','accounting','mixed','insufficient'}.
@@ -2562,13 +2574,39 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
     plain_nuance = (" Por ahora tus dividendos cobrados compensan la caída, pero el fondo se "
                     "sigue achicando." if tr_pos else "")
 
+    # ── Filtro de justicia de mercado: ¿la caída del NAV es del fondo, o de su subyacente? ──
+    under_falling = underlying_cagr is not None and underlying_cagr < -ROC_HEALTH_NAV_FLAT_PCT
+    nav_gap = (price_cagr - underlying_cagr) if underlying_cagr is not None else None
+    market_justified = under_falling and nav_gap is not None and nav_gap >= -ROC_HEALTH_REL_TOL_PCT
+
     # ── NAV cae ──
     if nav_falling:
         if roc_high:
+            if market_justified:
+                out = _out('mixed',
+                            f"{nav_txt[0].upper()+nav_txt[1:]} pero el subyacente cayó "
+                            f"{underlying_cagr:+.0f}%/año: la caída del NAV (gap {nav_gap:+.0f} pts) es "
+                            f"consistente con el mercado, no con destrucción de capital. El "
+                            f"{roc_pct:.0f}% de ROC es etiqueta fiscal.{tr_nuance or tr_txt}",
+                            "El fondo cae porque su activo base cae, no porque te esté devolviendo tu "
+                            "capital a escondidas. Riesgo de mercado, no destrucción."
+                            + plain_nuance +
+                            " <b>Qué vigilar:</b> si el fondo empieza a caer bastante más que su "
+                            "subyacente, o si el subyacente se recupera y el fondo no.")
+                out['headline'] = '🟠 Cae por el mercado, no por el fondo'
+                return out
+            reason_extra = ""
+            if under_falling and nav_gap is not None and nav_gap < -ROC_HEALTH_REL_TOL_PCT:
+                reason_extra = (f" Además cae {abs(nav_gap):.0f} pts MÁS que su subyacente "
+                                f"({underlying_cagr:+.0f}%/año) — sobre-captura de la pérdida.")
+            elif underlying_cagr is not None and not under_falling:
+                reason_extra = (f" El subyacente está plano/recuperado ({underlying_cagr:+.0f}%/año) y "
+                                f"el fondo sigue cayendo: no recupera porque liquidó capital — "
+                                f"destructivo confirmado.")
             return _out('destructive',
                         f"{nav_txt[0].upper()+nav_txt[1:]} y el {roc_pct:.0f}% de la distribución es "
                         f"ROC: el fondo se sostiene devolviéndote tu propio capital — erosión del NAV."
-                        f"{tr_nuance or tr_txt}",
+                        f"{tr_nuance or tr_txt}{reason_extra}",
                         "El fondo te paga sacando dinero de tu propio bolsillo, no solo de ganancias "
                         "reales. El cheque mensual se ve bien, pero cada mes tu inversión vale menos."
                         + plain_nuance +
@@ -3345,7 +3383,8 @@ def build_hoja_excel(results, classify_map=None):
                 asof_days = None
         nav_health = classify_roc_health(roc_pct, price_cagr, total_return_pct=total_return_pct,
                                          history_days=s.get('price_history_days'),
-                                         roc_asof_days=asof_days)
+                                         roc_asof_days=asof_days,
+                                         underlying_cagr=s.get('underlying_cagr_recent'))
         audit = audit_advertised_yield(s.get('advertised_yield'), s.get('forward_yield'),
                                        s.get('realized_yield'))
         # ROC en dólares = % de retorno de capital × distribución bruta. NO es una resta de

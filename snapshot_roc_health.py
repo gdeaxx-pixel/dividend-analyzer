@@ -72,6 +72,9 @@ def snapshot(tickers):
         prev_verdict = series[-1]["verdict"] if series else None
 
         price_cagr, hist_days = _price_cagr_recent(tk)
+        # Sin underlying_cagr: este snapshot corre a nivel fondo (sin portafolio de Daniel
+        # detrás) y no trae el CAGR del subyacente. La guarda de regresión de
+        # classify_roc_health mantiene el comportamiento absoluto clásico cuando es None.
         verdict = logic.classify_roc_health(
             roc_pct=roc_pct,
             price_cagr=price_cagr,
