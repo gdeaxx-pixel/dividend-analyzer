@@ -4455,89 +4455,41 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                     _render_interpretation(ticker)
 
-                    # Fase 7: IRR + ROI + Yield on Cost + Break-even
-                    _irr_val = stats.get('irr_anual')
-                    _irr_str = f"{_irr_val:+.2f}%" if _irr_val is not None else "N/A"
-                    _be_income = stats.get('monthly_income')
-                    _be_avg = (
-                        _be_income.mean()
-                        if (_be_income is not None and not _be_income.empty and _be_income.mean() > 0)
-                        else None
-                    )
-                    _divs_recv = stats.get('dividends_collected_cash', 0)
-                    if _divs_recv >= stats['pocket_investment']:
-                        _be_str = "Ya recuperado"
-                        _be_help = f"Los dividendos cobrados (${_divs_recv:,.0f}) ya superan tu inversión inicial"
-                    elif _be_avg and _be_avg > 0:
-                        _remaining_to_recover = stats['pocket_investment'] - _divs_recv
-                        _months_left = _remaining_to_recover / _be_avg
-                        _be_date = (datetime.date.today() + datetime.timedelta(days=int(_months_left * 30.44))).strftime('%b %Y')
-                        _be_str = f"{_be_date} (~{int(_months_left)} m)"
-                        _be_help = (
-                            f"Faltan ${_remaining_to_recover:,.0f} en dividendos para recuperar tu inversión. "
-                            f"A ${_be_avg:,.0f}/mes promedio, ~{int(_months_left)} meses más."
+                    if st.checkbox("Ver números crudos", key=f"raw_nums_{ticker}"):
+                        results_data = {
+                            "Indicador": [
+                                "Inversión (el dinero que tu pusiste)",
+                                "Valor de Mercado (valor de tu inversión hoy)",
+                                "Div. Efectivo (dividendos pagados a tu balance)",
+                                "Valor de Div. Reinvertidos",
+                                "Total generado en dividendos (Cash + Reinversión)",
+                                "Acciones Compradas",
+                                "Acciones por DRIP",
+                                "Acciones Totales",
+                                "Ganancia en $",
+                                "Ganancia en %"
+                            ],
+                            "Valor": [
+                                f"${stats['pocket_investment']:,.2f}",
+                                f"${stats['market_value']:,.2f}",
+                                f"${stats['dividends_collected_cash']:,.2f}",
+                                f"${stats['dividends_collected_drip']:,.2f}",
+                                f"${stats['total_dividends']:,.2f}",
+                                f"{stats.get('shares_owned_pocket', 0):.4f}",
+                                f"{stats.get('shares_owned_drip', 0):.4f}",
+                                f"{stats['shares_owned']:.4f}",
+                                f"${stats['net_profit']:,.2f}",
+                                f"{stats['roi_percent']:.2f}%"
+                            ]
+                        }
+                        st.dataframe(
+                            pd.DataFrame(results_data),
+                            column_config={
+                                "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
+                                "Valor": st.column_config.TextColumn("Resultado", width="large"),
+                            },
+                            hide_index=True, use_container_width=True
                         )
-                    else:
-                        _be_str = "N/A"
-                        _be_help = "Sin historial de dividendos suficiente para calcular"
-                    _a1, _a2, _a3, _a4 = st.columns(4)
-                    _a1.metric("ROI Total", f"{stats['roi_percent']:+.2f}%")
-                    _a2.metric("TIR Anualizado", _irr_str, help="Tasa interna de retorno — considera el momento exacto de cada inversión. Más preciso que ROI para compras escalonadas.")
-                    _a3.metric("Yield on Cost", f"{stats.get('yield_on_cost', 0):.2f}%")
-                    _a4.metric("Break-even", _be_str, help=_be_help)
-
-                    results_data = {
-                        "Indicador": [
-                            "Inversión (el dinero que tu pusiste)",
-                            "Valor de Mercado (valor de tu inversión hoy)",
-                            "Div. Efectivo (dividendos pagados a tu balance)",
-                            "Valor de Div. Reinvertidos",
-                            "Total generado en dividendos (Cash + Reinversión)",
-                            "Acciones Compradas",
-                            "Acciones por DRIP",
-                            "Acciones Totales",
-                            "Ganancia en $",
-                            "Ganancia en %"
-                        ],
-                        "Valor": [
-                            f"${stats['pocket_investment']:,.2f}",
-                            f"${stats['market_value']:,.2f}",
-                            f"${stats['dividends_collected_cash']:,.2f}",
-                            f"${stats['dividends_collected_drip']:,.2f}",
-                            f"${stats['total_dividends']:,.2f}",
-                            f"{stats.get('shares_owned_pocket', 0):.4f}",
-                            f"{stats.get('shares_owned_drip', 0):.4f}",
-                            f"{stats['shares_owned']:.4f}",
-                            f"${stats['net_profit']:,.2f}",
-                            f"{stats['roi_percent']:.2f}%"
-                        ]
-                    }
-                    st.dataframe(
-                        pd.DataFrame(results_data),
-                        column_config={
-                            "Indicador": st.column_config.TextColumn("Métrica", width="medium"),
-                            "Valor": st.column_config.TextColumn("Resultado", width="large"),
-                        },
-                        hide_index=True, use_container_width=True
-                    )
-
-                    st.markdown("### VERIFICACIÓN RÁPIDA")
-                    result_color = "green" if stats['net_profit'] >= 0 else "red"
-                    st.latex(r"""
-                    \footnotesize
-                    \begin{array}{r c c c c c}
-                    \text{Ganancia} = & \boxed{(\text{Acciones DRIP} + \text{Acciones Compradas}) \times \text{Precio}} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[0.5em]
-                    & \downarrow & & & & \\[0.5em]
-                    \text{Ganancia} = & \text{Valor de Mercado} & + & \text{Div. Efectivo} & - & \text{Inversión} \\[1.5em]
-                    \textcolor{%s}{%s} = & %s & + & %s & - & %s
-                    \end{array}
-                    """ % (
-                        result_color,
-                        f"\\${stats['net_profit']:,.2f}",
-                        f"{stats['market_value']:,.2f}",
-                        f"{stats['dividends_collected_cash']:,.2f}",
-                        f"{stats['pocket_investment']:,.2f}"
-                    ))
 
                     st.divider()
 
@@ -4546,7 +4498,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         (ticker, stats) for ticker, stats in results.items()
                         if classify_map.get(ticker) == 'mode_a' and 'error' not in stats
                     ]
-                    if _ca_rows:
+                    if len(_ca_rows) >= 2:
                         st.markdown("### RESUMEN CONSOLIDADO — FONDOS DE DIVIDENDOS")
                         _ca_total_inv = sum(s['pocket_investment'] for _, s in _ca_rows)
                         _ca_total_mv  = sum(s['market_value'] for _, s in _ca_rows)
