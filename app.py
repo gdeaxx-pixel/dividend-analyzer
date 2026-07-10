@@ -2154,11 +2154,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _tol = logic.ROC_HEALTH_REL_TOL_PCT
                             _gap = _f_cagr - _u_cagr
                             _under_falling = _u_cagr < -_flat
-                            if _under_falling and _gap >= -_tol:
+                            _fund_falling = _f_cagr < -_flat
+                            if _under_falling and _fund_falling and _gap >= -_tol:
                                 _regime = 0
-                            elif _under_falling:
+                            elif _under_falling and _fund_falling:
                                 _regime = 1
-                            elif _f_cagr < -_flat:
+                            elif _fund_falling:
                                 _regime = 3
                             else:
                                 _regime = 2
