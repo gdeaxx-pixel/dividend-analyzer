@@ -2100,15 +2100,64 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                 if _vj_data:
                     def _render_salud_nav(tk, d, results):
-                        """Paso 'Salud del NAV': NAV del fondo vs subyacente, protagonista de la
-                        pestaña — no el % de ROC (eso es etiqueta fiscal, ver logic.py:2453)."""
+                        """Paso 'Salud del NAV': veredicto primero, luego la prueba de captura
+                        asimétrica (tarjetas + gráficos), protagonista de la pestaña — no el %
+                        de ROC (eso es etiqueta fiscal, ver logic.py:2453)."""
                         import altair as alt
+                        import numpy as np
                         s = results.get(tk) or {}
                         st.markdown(
                             '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
                             'color:#006497;margin:6px 0 3px 2px;letter-spacing:0.06em;">¿SE ESTÁ '
                             'DESTRUYENDO TU CAPITAL, O SOLO BAJÓ CON EL MERCADO?</p>',
                             unsafe_allow_html=True)
+
+                        # ── Veredicto primero ──
+                        _nvh = d.get('nav')
+                        if _nvh:
+                            _verdict = _nvh.get('verdict')
+                            _tint = {'destructive': '#fdeeec', 'accounting': '#edf7f1',
+                                     'mixed': '#fdf3e4'}.get(_verdict, '#f2f2f2')
+                            _score = _nvh.get('gauge_score')
+                            if _score is None:
+                                _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
+                                               "font-size:10px;text-align:center;line-height:14px;'>"
+                                               "no medible aún</div>")
+                            else:
+                                _gauge_html = (
+                                    "<div style='position:relative;height:14px;margin:8px 0 2px 0;"
+                                    "background:linear-gradient(90deg,#4caf82 0%,#e0a23c 50%,#e05c5c 100%);'>"
+                                    f"<div style='position:absolute;top:-3px;left:{_score:.0f}%;width:3px;"
+                                    "height:20px;background:#021C36;transform:translateX(-50%);'></div></div>"
+                                    "<div style='display:flex;justify-content:space-between;font-size:10px;"
+                                    "color:#888;'><span>Sano</span><span>Destruyéndose</span></div>")
+                            st.markdown(
+                                f"<div style='border-left:4px solid {_nvh['color']};background:{_tint};"
+                                f"padding:10px 14px;margin:4px 0 10px 0;'>"
+                                f"<div style='font-weight:700;font-size:15px;color:{_nvh['color']};'>"
+                                f"{_nvh['headline']}</div>"
+                                f"<div style='font-size:12.5px;color:#333;margin:6px 0 2px 0;"
+                                f"line-height:1.5;'>{_nvh['plain']}</div>"
+                                f"{_gauge_html}</div>",
+                                unsafe_allow_html=True)
+
+                        def _mini_detalle():
+                            _mini = ''
+                            if _nvh and _nvh.get('reason'):
+                                _mini += (f"<div style='font-size:12.5px;color:#333;"
+                                          f"line-height:1.5;margin:4px 0;'>{_nvh['reason']}</div>")
+                            _roc_min = s.get('roc_percent')
+                            if _roc_min is not None:
+                                _mini += (f'<p style="font-family:Inter,sans-serif;font-size:10px;'
+                                          f'color:#8899aa;margin:6px 0 4px 2px;">ROC 19a: '
+                                          f'{_roc_min:.0f}% — etiqueta fiscal, no medida de '
+                                          f'destrucción.</p>')
+                            if _mini:
+                                st.markdown(
+                                    f"<details style='margin:2px 0 10px 0;'>"
+                                    f"<summary style='cursor:pointer;font-size:12px;color:#006497;'>"
+                                    f"Ver detalle técnico</summary>{_mini}</details>",
+                                    unsafe_allow_html=True)
 
                         _fund_close = s.get('fund_close_series')
                         _under_close = s.get('underlying_close_series')
@@ -2117,38 +2166,287 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             st.markdown(
                                 '<p style="font-family:Inter,sans-serif;font-size:12.5px;'
                                 'color:#445566;margin:4px 0 10px 2px;line-height:1.5;">Este fondo no '
-                                'tiene un subyacente conocido — no hay con qué contrastar su NAV. '
-                                'Revisa el veredicto de salud más abajo.</p>', unsafe_allow_html=True)
-                        else:
-                            _df = pd.concat(
-                                {tk: _fund_close, _under_tk: _under_close}, axis=1).dropna()
-                            if len(_df) >= 2:
-                                _base = _df.iloc[0]
-                                _norm = _df / _base * 100.0
-                                _plot_df = _norm.rename_axis('Fecha').reset_index().melt(
-                                    id_vars='Fecha', var_name='Serie', value_name='Valor')
-                                _chart = alt.Chart(_plot_df).mark_line(strokeWidth=2).encode(
-                                    x=alt.X('Fecha:T', title=None),
-                                    y=alt.Y('Valor:Q', title='Base 100 (inicio del período común)'),
-                                    color=alt.Color('Serie:N',
-                                        scale=alt.Scale(domain=[tk, _under_tk],
-                                                        range=['#006497', '#2d3748']),
-                                        legend=alt.Legend(title=None, orient='top', labelFontSize=12)),
-                                    tooltip=[alt.Tooltip('Fecha:T'), alt.Tooltip('Serie:N'),
-                                             alt.Tooltip('Valor:Q', format='.1f', title='Índice')]
-                                ).properties(height=280, background=CHART_PALETTE['bg']).configure_view(
-                                    strokeOpacity=0, fill=CHART_PALETTE['bg'])
-                                st.altair_chart(_chart, use_container_width=True)
-                            else:
-                                st.markdown(
-                                    '<p style="font-family:Inter,sans-serif;font-size:12px;'
-                                    'color:#8899aa;margin:4px 0 10px 2px;">No hay suficiente '
-                                    'historia superpuesta entre fondo y subyacente para graficar.</p>',
-                                    unsafe_allow_html=True)
+                                'tiene un subyacente conocido — no hay con qué contrastar su NAV.</p>',
+                                unsafe_allow_html=True)
+                            _mini_detalle()
+                            return
 
-                        # ── Lectura por escenario (fila vigente resaltada) ──
+                        _df = pd.concat(
+                            {tk: _fund_close, _under_tk: _under_close}, axis=1).dropna()
+                        if len(_df) < 2:
+                            st.markdown(
+                                '<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                'color:#8899aa;margin:4px 0 10px 2px;">No hay suficiente '
+                                'historia superpuesta entre fondo y subyacente para graficar.</p>',
+                                unsafe_allow_html=True)
+                            _mini_detalle()
+                            return
+
+                        _base = _df.iloc[0]
+                        _norm = _df / _base * 100.0
+                        _fund_norm = _norm[tk]
+                        _under_norm = _norm[_under_tk]
+
+                        # ── Tarjetas de captura asimétrica ──
+                        _rets = _df.pct_change().dropna()
+                        if len(_rets) >= 30 and (_rets[_under_tk] != 0).any():
+                            _up_mask = _rets[_under_tk] > 0
+                            _down_mask = _rets[_under_tk] < 0
+                            _up_den = _rets.loc[_up_mask, _under_tk].sum()
+                            _down_den = _rets.loc[_down_mask, _under_tk].sum()
+                            _up_cap = (_rets.loc[_up_mask, tk].sum() / _up_den) if _up_den else None
+                            _down_cap = (_rets.loc[_down_mask, tk].sum() / _down_den) if _down_den else None
+                            _ratio_now = (_fund_norm.iloc[-1] / _under_norm.iloc[-1]) * 100.0
+                            if (_up_cap is not None and _down_cap is not None
+                                    and _up_cap > 0 and _down_cap > 0):
+                                _down_color = ('#8f2318' if _down_cap > _up_cap else '#333333')
+                                _cards = [
+                                    (f'Si {_under_tk} sube 10%',
+                                     f'{tk} sube +{_up_cap * 10:.1f}%', '#333333'),
+                                    (f'Si {_under_tk} cae 10%',
+                                     f'{tk} cae −{_down_cap * 10:.1f}%', _down_color),
+                                    (f'De cada $100 en {_under_tk}',
+                                     f'{tk} conserva ${_ratio_now:.0f}', '#333333'),
+                                ]
+                                _cards_html = ''.join(
+                                    f'<div style="flex:1;background:#ffffff;border:1px solid #e3ddd4;'
+                                    f'padding:10px 12px;">'
+                                    f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                                    f'color:#8899aa;text-transform:uppercase;letter-spacing:0.04em;'
+                                    f'margin-bottom:4px;">{_lbl}</div>'
+                                    f'<div style="font-family:Inter,sans-serif;font-size:16px;'
+                                    f'font-weight:700;color:{_clr};">{_val}</div></div>'
+                                    for _lbl, _val, _clr in _cards)
+                                st.markdown(
+                                    f'<div style="display:flex;gap:8px;margin:2px 0 12px 0;">'
+                                    f'{_cards_html}</div>', unsafe_allow_html=True)
+
+                        # ── Gráfico principal: base-100 + sombreado + rebote anotado ──
+                        _plot_df = _norm.rename_axis('Fecha').reset_index().melt(
+                            id_vars='Fecha', var_name='Serie', value_name='Valor')
+                        _lines = alt.Chart(_plot_df).mark_line(strokeWidth=2).encode(
+                            x=alt.X('Fecha:T', title=None),
+                            y=alt.Y('Valor:Q', title='Base 100 (inicio del período común)'),
+                            color=alt.Color('Serie:N',
+                                scale=alt.Scale(domain=[tk, _under_tk],
+                                                range=['#006497', '#2d3748']),
+                                legend=alt.Legend(title=None, orient='top', labelFontSize=12)),
+                            tooltip=[alt.Tooltip('Fecha:T'), alt.Tooltip('Serie:N'),
+                                     alt.Tooltip('Valor:Q', format='.1f', title='Índice')]
+                        )
+                        _area_df = pd.DataFrame({
+                            'Fecha': _norm.index,
+                            'low': np.minimum(_fund_norm.values, _under_norm.values),
+                            'high': _under_norm.values,
+                        })
+                        _area = alt.Chart(_area_df).mark_area(opacity=0.12, color='#c0392b').encode(
+                            x=alt.X('Fecha:T'), y=alt.Y('low:Q'), y2=alt.Y2('high:Q'),
+                            tooltip=alt.value(None))
+                        _layers = [_area, _lines]
+
+                        _u_vals = _under_norm.values
+                        _u_idx = _under_norm.index
+                        _best_gain = -1.0
+                        _best_i0 = _best_i1 = None
+                        _min_i = 0
+                        for _i in range(1, len(_u_vals)):
+                            if _u_vals[_i] < _u_vals[_min_i]:
+                                _min_i = _i
+                            _gain = (_u_vals[_i] / _u_vals[_min_i]) - 1.0 if _u_vals[_min_i] else -1.0
+                            if _gain > _best_gain:
+                                _best_gain = _gain
+                                _best_i0, _best_i1 = _min_i, _i
+                        if _best_gain >= 0.15 and _best_i0 is not None and _best_i0 != _best_i1:
+                            _d0, _d1 = _u_idx[_best_i0], _u_idx[_best_i1]
+                            _und_move = int(round(_best_gain * 100))
+                            _fund_move = int(round(
+                                (_fund_norm.iloc[_best_i1] / _fund_norm.iloc[_best_i0] - 1.0) * 100))
+                            _rule_df = pd.DataFrame({'Fecha': [_d0, _d1]})
+                            _rules = alt.Chart(_rule_df).mark_rule(
+                                color='#c9a86a', strokeDash=[4, 3]).encode(x='Fecha:T')
+                            _txt_df = pd.DataFrame({
+                                'Fecha': [_d1],
+                                'Valor': [float(_norm.loc[_d1:].max().max()
+                                                if not _norm.loc[_d1:].empty else _norm.values.max())],
+                                'label': [f'En este rebote: {_under_tk} +{_und_move}% · {tk} {_fund_move:+d}%'],
+                            })
+                            _text = alt.Chart(_txt_df).mark_text(
+                                align='left', dx=4, dy=-6, fontSize=10, color='#8a6d3b').encode(
+                                x='Fecha:T', y='Valor:Q', text='label:N')
+                            _layers += [_rules, _text]
+
+                        _pct_u = _under_norm - 100.0
+                        _pct_f = _fund_norm - 100.0
+                        _hover_df = pd.DataFrame({
+                            'Fecha': _norm.index,
+                            'u_lbl': [f'{_v:+.0f}% desde el inicio' for _v in _pct_u],
+                            'f_lbl': [f'{_v:+.0f}% desde el inicio' for _v in _pct_f],
+                            'gap_lbl': [f'{_fv - _uv:+.0f} pts'
+                                        for _fv, _uv in zip(_pct_f, _pct_u)],
+                        })
+                        _hover = alt.Chart(_hover_df).mark_rule(
+                            strokeWidth=12, opacity=0.001).encode(
+                            x=alt.X('Fecha:T'),
+                            tooltip=[alt.Tooltip('Fecha:T', format='%d/%m/%y', title='Fecha'),
+                                     alt.Tooltip('u_lbl:N', title=_under_tk),
+                                     alt.Tooltip('f_lbl:N', title=tk),
+                                     alt.Tooltip('gap_lbl:N',
+                                                 title=f'{tk} vs {_under_tk}')])
+                        _layers.append(_hover)
+
+                        _sl_key = f'_nav_win_{tk}_{_fid}'
+                        _dates = list(_norm.index)
+                        _meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+                                  'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+                        _cur_win = st.session_state.get(_sl_key)
+                        if _cur_win and (_cur_win[0] != _dates[0] or _cur_win[1] != _dates[-1]):
+                            _hl_df = pd.DataFrame({'x0': [_cur_win[0]], 'x1': [_cur_win[1]]})
+                            _hl = alt.Chart(_hl_df).mark_rect(
+                                color='#c9a86a', opacity=0.15).encode(x='x0:T', x2='x1:T')
+                            _layers.insert(0, _hl)
+
+                        _chart = alt.layer(*_layers).properties(
+                            height=280, background=CHART_PALETTE['bg']).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                        st.altair_chart(_chart, use_container_width=True)
+
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:12px;color:#6b7683;'
+                            'margin:2px 0 0 2px;">Mide cualquier tramo: mueve los dos extremos y '
+                            'te digo cuánto subió o cayó cada uno (la ventana se resalta en el '
+                            'gráfico).</p>', unsafe_allow_html=True)
+                        _win_sel = st.select_slider(
+                            'Tramo a medir', options=_dates,
+                            value=(_dates[0], _dates[-1]),
+                            format_func=lambda t: f'{t.day} {_meses[t.month - 1]} {str(t.year)[2:]}',
+                            key=_sl_key, label_visibility='collapsed')
+                        if _win_sel and len(_win_sel) == 2:
+                            _t0, _t1 = sorted(_win_sel)
+                            _win = _norm.loc[_t0:_t1]
+                            if len(_win) >= 2:
+                                _um = (_win[_under_tk].iloc[-1] / _win[_under_tk].iloc[0] - 1) * 100
+                                _fm = (_win[tk].iloc[-1] / _win[tk].iloc[0] - 1) * 100
+                                if _um > 1:
+                                    if _fm < 0:
+                                        _interp_clr = '#8f2318'
+                                        _interp = (f'Mientras {_under_tk} subía, {tk} CAYÓ '
+                                                   f'{_fm:.0f}% — no capturó nada de la subida')
+                                    else:
+                                        _cap_pct = _fm / _um * 100
+                                        _interp_clr = '#8f2318' if _cap_pct < 60 else '#333333'
+                                        _interp = (f'{tk} capturó el {_cap_pct:.0f}% de la subida '
+                                                   f'de {_under_tk}')
+                                elif _um < -1:
+                                    if _fm > 0:
+                                        _interp_clr = '#333333'
+                                        _interp = (f'{tk} esquivó la caída de {_under_tk} '
+                                                   f'en este tramo')
+                                    else:
+                                        _cap_pct = _fm / _um * 100
+                                        _interp_clr = '#8f2318' if _cap_pct > 90 else '#333333'
+                                        _interp = f'{tk} tomó el {_cap_pct:.0f}% de la caída'
+                                else:
+                                    _interp_clr = '#333333'
+                                    _interp = 'El subyacente casi no se movió en este tramo.'
+                                _f0 = f'{_t0.day} {_meses[_t0.month - 1]} {_t0.year}'
+                                _f1 = f'{_t1.day} {_meses[_t1.month - 1]} {_t1.year}'
+                                st.markdown(
+                                    f'<div style="background:#ffffff;border:1px solid #e3ddd4;'
+                                    f'padding:10px 14px;margin:2px 0 10px 0;'
+                                    f'font-family:Inter,sans-serif;">'
+                                    f'<div style="font-size:12px;color:#8899aa;'
+                                    f'text-transform:uppercase;letter-spacing:0.04em;">'
+                                    f'Del {_f0} al {_f1}</div>'
+                                    f'<div style="font-size:15px;font-weight:700;color:#021C36;'
+                                    f'margin:3px 0;">{_under_tk} {_um:+.0f}% · {tk} {_fm:+.0f}%</div>'
+                                    f'<div style="font-size:12px;color:{_interp_clr};">{_interp}'
+                                    f'</div></div>', unsafe_allow_html=True)
+
+                        # ── Gráfico de ratio: la prueba en una sola línea ──
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                            f'color:#006497;margin:10px 0 3px 2px;letter-spacing:0.06em;">LA PRUEBA '
+                            f'EN UNA SOLA LÍNEA: ¿CUÁNTO VALE {tk} POR CADA $100 DE {_under_tk}?</p>',
+                            unsafe_allow_html=True)
+                        _ratio_series = (_fund_norm / _under_norm * 100.0).dropna()
+                        _rv = [float(v) for v in _ratio_series.values]
+                        if len(_rv) >= 2:
+                            _rw, _rh, _rp = 700.0, 120.0, 10.0
+                            _rmax = max(110.0, max(_rv) * 1.05)
+                            _n_r = len(_rv)
+                            _pts = ' '.join(
+                                f'{_rp + (_rw - 2 * _rp) * _i / (_n_r - 1):.1f},'
+                                f'{_rh - 24 - (_rh - 34) * (_v / _rmax):.1f}'
+                                for _i, _v in enumerate(_rv))
+                            _y100 = _rh - 24 - (_rh - 34) * (100.0 / _rmax)
+                            _y50 = _rh - 24 - (_rh - 34) * (50.0 / _rmax)
+                            _y0 = _rh - 24
+                            _fill_pts = (f'{_rp:.1f},{_y0:.1f} ' + _pts
+                                         + f' {_rw - _rp:.1f},{_y0:.1f}')
+                            _x_last = _rw - _rp
+                            _y_last = _rh - 24 - (_rh - 34) * (_rv[-1] / _rmax)
+                            _i0, _i1 = _ratio_series.index[0], _ratio_series.index[-1]
+                            _lbl0 = f'{_i0.day} {_meses[_i0.month - 1]} {str(_i0.year)[2:]}'
+                            _lbl1 = f'{_i1.day} {_meses[_i1.month - 1]} {str(_i1.year)[2:]}'
+                            _grid = ''.join(
+                                f'<line x1="{_rp}" y1="{_gy:.1f}" x2="{_rw - _rp}" y2="{_gy:.1f}" '
+                                f'stroke="#e8e0d4" stroke-width="1"/>'
+                                f'<text x="{_rp + 2}" y="{_gy - 3:.1f}" font-size="10" '
+                                f'fill="#8899aa" font-family="Inter,sans-serif">${_gv}</text>'
+                                for _gy, _gv in [(_y100, 100), (_y50, 50)])
+                            st.markdown(
+                                f'<svg viewBox="0 0 {_rw:.0f} {_rh:.0f}" role="img" '
+                                f'style="width:100%;display:block;background:'
+                                f'{CHART_PALETTE["bg"]};">'
+                                f'{_grid}'
+                                f'<line x1="{_rp}" y1="{_y0:.1f}" x2="{_rw - _rp}" y2="{_y0:.1f}" '
+                                f'stroke="#c9c2b6" stroke-width="1"/>'
+                                f'<polygon points="{_fill_pts}" fill="rgba(192,57,43,0.08)"/>'
+                                f'<polyline points="{_pts}" fill="none" stroke="#c0392b" '
+                                f'stroke-width="2.5"/>'
+                                f'<circle cx="{_x_last:.1f}" cy="{_y_last:.1f}" r="3.5" '
+                                f'fill="#c0392b"/>'
+                                f'<text x="{_x_last - 6:.1f}" y="{_y_last - 8:.1f}" '
+                                f'text-anchor="end" font-size="13" font-weight="700" '
+                                f'fill="#8f2318" font-family="Inter,sans-serif">'
+                                f'${_rv[-1]:.0f}</text>'
+                                f'<text x="{_rp}" y="{_rh - 8:.1f}" font-size="10" fill="#8899aa" '
+                                f'font-family="Inter,sans-serif">{_lbl0}</text>'
+                                f'<text x="{_rw - _rp:.1f}" y="{_rh - 8:.1f}" text-anchor="end" '
+                                f'font-size="10" fill="#8899aa" '
+                                f'font-family="Inter,sans-serif">{_lbl1}</text>'
+                                f'</svg>', unsafe_allow_html=True)
+
+                        _ratio_final = float(_ratio_series.iloc[-1])
+                        if _ratio_final < 85:
+                            _ratio_txt = (f'desciende, {tk} está sufriendo una destrucción de '
+                                          f'capital ADICIONAL a la del mercado.')
+                        else:
+                            _ratio_txt = (f'se mantiene, {tk} solo está acompañando al mercado — '
+                                          f'no hay destrucción adicional que la del propio '
+                                          f'subyacente.')
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#6b7683;'
+                            f'margin:4px 0 12px 2px;line-height:1.5;">Si esta línea fuera plana, '
+                            f'{tk} solo estaría siguiendo a {_under_tk} (riesgo de mercado, no '
+                            f'destrucción). Como {_ratio_txt}</p>', unsafe_allow_html=True)
+
+                        # ── Exposición asimétrica al subyacente ──
+                        _exp_lines = logic.build_underlying_exposure(results, tk).get('lines', [])
+                        if _exp_lines:
+                            _items = ''.join(f'<li style="margin:0 0 5px 0;">{_ln}</li>'
+                                              for _ln in _exp_lines)
+                            st.markdown(
+                                '<div style="border-left:4px solid #006497;background:#eef6fb;'
+                                'padding:10px 14px;margin:0 0 10px 0;">'
+                                '<ul style="font-family:Inter,sans-serif;font-size:12px;color:#333333;'
+                                'line-height:1.55;margin:0;padding-left:16px;">'
+                                + _items + '</ul></div>', unsafe_allow_html=True)
+
+                        # ── Detalle técnico colapsado: escenarios, CAGR, reason, ROC 19a ──
                         _u_cagr = s.get('underlying_cagr_recent')
                         _f_cagr = s.get('price_cagr_recent')
+                        _detail_html = ''
                         if _u_cagr is not None and _f_cagr is not None:
                             _flat = logic.ROC_HEALTH_NAV_FLAT_PCT
                             _tol = logic.ROC_HEALTH_REL_TOL_PCT
@@ -2163,7 +2461,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _regime = 3
                             else:
                                 _regime = 2
-                            _rows = [
+                            _scenario_rows = [
                                 ('Cae', 'Cae ~1:1', 'Riesgo de mercado — justificado, NO destrucción'),
                                 ('Cae', 'Cae mucho más', 'Sobre-captura: el fondo amplifica la pérdida'),
                                 ('Plano/sube', 'Sigue el ritmo', 'Contable — dentro de lo esperado'),
@@ -2171,13 +2469,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                  'Destructivo confirmado — no recupera (liquidó capital)'),
                             ]
                             _tr = ''
-                            for _i, (_a, _b, _c) in enumerate(_rows):
+                            for _i, (_a, _b, _c) in enumerate(_scenario_rows):
                                 _hi = _i == _regime
                                 _st_row = ('background:#eef6fb;font-weight:700;' if _hi else 'opacity:.65;')
                                 _tr += (f'<tr style="{_st_row}"><td style="padding:4px 8px;">{_a}</td>'
                                         f'<td style="padding:4px 8px;">{_b}</td>'
                                         f'<td style="padding:4px 8px;">{_c}</td></tr>')
-                            st.markdown(
+                            _detail_html += (
                                 f'<table style="width:100%;border-collapse:collapse;font-family:Inter,'
                                 f'sans-serif;font-size:11.5px;color:#333;margin:8px 0 4px 0;">'
                                 f'<thead><tr style="color:#8899aa;font-size:9px;text-transform:uppercase;'
@@ -2188,56 +2486,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
                                 f'margin:2px 0 8px 2px;">Últimos 12 meses: {_under_tk} '
                                 f'{_u_cagr:+.0f}%/año vs {tk} {_f_cagr:+.0f}%/año (gap {_gap:+.0f} pts).'
-                                f'</p>', unsafe_allow_html=True)
-
-                        # ── Veredicto (ya con el filtro de mercado — mismo objeto que la portada) ──
-                        _nvh = d.get('nav')
+                                f'</p>')
                         if _nvh:
-                            _score = _nvh.get('gauge_score')
-                            if _score is None:
-                                _gauge_html = ("<div style='height:14px;background:#e9ecef;color:#888;"
-                                               "font-size:10px;text-align:center;line-height:14px;'>"
-                                               "no medible aún</div>")
-                            else:
-                                _gauge_html = (
-                                    "<div style='position:relative;height:14px;margin:6px 0 2px 0;"
-                                    "background:linear-gradient(90deg,#4caf82 0%,#e0a23c 50%,#e05c5c 100%);'>"
-                                    f"<div style='position:absolute;top:-3px;left:{_score:.0f}%;width:3px;"
-                                    "height:20px;background:#021C36;transform:translateX(-50%);'></div></div>"
-                                    "<div style='display:flex;justify-content:space-between;font-size:10px;"
-                                    "color:#888;'><span>Sano</span><span>Destruyéndose</span></div>")
-                            st.markdown(
-                                f"<div style='margin:10px 0 2px 0;font-weight:700;font-size:15px;"
-                                f"color:{_nvh['color']};'>{_nvh['headline']}</div>"
-                                f"{_gauge_html}"
-                                f"<div style='font-size:12.5px;color:#333;margin:6px 0 8px 0;"
-                                f"line-height:1.5;'>{_nvh['plain']}</div>"
-                                f"<details style='margin:2px 0 10px 0;'>"
-                                f"<summary style='cursor:pointer;font-size:12px;color:#006497;'>"
-                                f"Ver detalle técnico</summary>"
+                            _detail_html += (
                                 f"<div style='font-size:12.5px;color:#333;line-height:1.5;margin:4px 0;'>"
-                                f"{_nvh['reason']}</div></details>",
-                                unsafe_allow_html=True)
-
-                        # ── Exposición asimétrica al subyacente ──
-                        _exp_lines = logic.build_underlying_exposure(results, tk).get('lines', [])
-                        if _exp_lines:
-                            _items = ''.join(f'<li style="margin:0 0 5px 0;">{_ln}</li>'
-                                              for _ln in _exp_lines)
-                            st.markdown(
-                                '<div style="border-left:4px solid #006497;background:#eef6fb;'
-                                'padding:10px 14px;margin:0 0 10px 0;">'
-                                '<ul style="font-family:Inter,sans-serif;font-size:12px;color:#333333;'
-                                'line-height:1.55;margin:0;padding-left:16px;">'
-                                + _items + '</ul></div>', unsafe_allow_html=True)
-
-                        # ── ROC como nota al pie mínima ──
+                                f"{_nvh['reason']}</div>")
                         _roc_pct = s.get('roc_percent')
                         if _roc_pct is not None:
-                            st.markdown(
+                            _detail_html += (
                                 f'<p style="font-family:Inter,sans-serif;font-size:10px;color:#8899aa;'
-                                f'margin:0 0 4px 2px;">ROC 19a: {_roc_pct:.0f}% — etiqueta fiscal, no '
-                                f'medida de destrucción.</p>', unsafe_allow_html=True)
+                                f'margin:6px 0 4px 2px;">ROC 19a: {_roc_pct:.0f}% — etiqueta fiscal, no '
+                                f'medida de destrucción.</p>')
+                        if _detail_html:
+                            st.markdown(
+                                f"<details style='margin:2px 0 10px 0;'>"
+                                f"<summary style='cursor:pointer;font-size:12px;color:#006497;'>"
+                                f"Ver detalle técnico y escenarios</summary>{_detail_html}</details>",
+                                unsafe_allow_html=True)
 
                     @st.fragment
                     def _viaje_dinero():
