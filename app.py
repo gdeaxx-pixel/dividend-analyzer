@@ -20,6 +20,7 @@ _LOGIC_SENTINELS = (
     "classify_roc_health", "load_roc_health_history", "latest_health_verdict",
     "build_yieldmax_total_return_series",
     "build_total_return_series", "build_roc_aware_withholding", "estimate_roc_refund",
+    "estimate_roc_refund_by_year",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
@@ -3144,6 +3145,23 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _refund_info = logic.estimate_roc_refund(
                                     _d['bruto'], _d['imp'], _roc_pct_nra,
                                     base_rate=_base_rate_pct2 / 100.0)
+                                _roc_lbl = f'ROC {_roc_pct_nra:.0f}%'
+                                _gby = (results.get(_vj_tk) or {}).get(
+                                    'dividends_gross_by_year') or {}
+                                _wby = (results.get(_vj_tk) or {}).get(
+                                    'withheld_by_year') or {}
+                                _years_wh = sorted(y for y, v in _wby.items() if v > 0.01)
+                                _refund_by_year = None
+                                if len(_years_wh) > 1:
+                                    _refund_by_year = logic.estimate_roc_refund_by_year(
+                                        _gby, _wby, _vj_tk, base_rate=_base_rate_pct2 / 100.0,
+                                        roc_fallback_pct=_roc_pct_nra)
+                                    _rby_total = (_refund_by_year or {}).get('total')
+                                    if _rby_total:
+                                        # Tarjetas y tabla anual deben sumar igual: el total
+                                        # sale del ROC de cada año, no del agregado.
+                                        _refund_info = _rby_total
+                                        _roc_lbl = 'ROC por año'
                                 st.markdown(
                                     '<p style="font-family:Inter,sans-serif;font-size:11px;'
                                     'font-weight:700;color:#006497;margin:12px 0 3px 2px;'
@@ -3152,7 +3170,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _rf_cards = [
                                     ('Retenido real', _money(_d['imp']), '#8f2318',
                                      '1px solid #e3ddd4'),
-                                    (f'Retención justa (ROC {_roc_pct_nra:.0f}%)',
+                                    (f'Retención justa ({_roc_lbl})',
                                      _money(_refund_info['fair_withholding']), '#333333',
                                      '1px solid #e3ddd4'),
                                     ('Devolución estimada',
@@ -3173,6 +3191,39 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'<div style="display:flex;gap:8px;flex-wrap:wrap;'
                                     f'margin:2px 0 8px 0;">{_rf_html}</div>',
                                     unsafe_allow_html=True)
+                                # Desglose por año calendario: la reclasificación del broker
+                                # opera por año fiscal, no sobre el acumulado.
+                                if _refund_by_year is not None:
+                                    _cur_year = datetime.date.today().year
+                                    _yr_rows = ''
+                                    for _y in _years_wh:
+                                        _yinfo = _refund_by_year.get(_y, {})
+                                        _estado = (f'vuelve ~feb–mar {_y + 1}' if _y >= _cur_year
+                                                   else 'ya debió volver — verifícalo en tu '
+                                                        '1042-S')
+                                        _yr_rows += (
+                                            f'<tr><td style="padding:4px 8px;">{_y}</td>'
+                                            f'<td style="padding:4px 8px;text-align:right;">'
+                                            f'{_money(_wby.get(_y, 0.0))}</td>'
+                                            f'<td style="padding:4px 8px;text-align:right;'
+                                            f'color:#1d9e75;">'
+                                            f'{_money(_yinfo.get("refund", 0.0))}</td>'
+                                            f'<td style="padding:4px 8px;font-size:11px;'
+                                            f'color:#6b7683;">{_estado}</td></tr>')
+                                    st.markdown(
+                                        '<table style="width:100%;border-collapse:collapse;'
+                                        'font-family:Inter,sans-serif;font-size:12px;'
+                                        'color:#0F172A;margin:2px 0 8px 0;">'
+                                        '<tr style="border-bottom:1px solid #e3ddd4;'
+                                        'font-size:10px;color:#8899aa;'
+                                        'text-transform:uppercase;">'
+                                        '<td style="padding:4px 8px;">Año</td>'
+                                        '<td style="padding:4px 8px;text-align:right;">'
+                                        'Retenido</td>'
+                                        '<td style="padding:4px 8px;text-align:right;">'
+                                        'Devolución estimada</td>'
+                                        '<td style="padding:4px 8px;">Estado</td></tr>'
+                                        f'{_yr_rows}</table>', unsafe_allow_html=True)
                                 if _refund_info['refund'] > 0.01 and _n_im > 0:
                                     _m_destach = min(
                                         _n_im,
@@ -5428,6 +5479,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                                       'Nominal (creías)': f"{_bd['base_rate']:.0f}%",
                                                       'Efectiva (real)': f"{_bd['effective_rate']:.1f}%"})
                                 st.dataframe(pd.DataFrame(_tax_rows), use_container_width=True, hide_index=True)
+                                st.caption("ROC reciente (últimos ~12 avisos 19a) — no el histórico "
+                                           "completo del fondo, para reflejar mejor el escudo fiscal vigente.")
                                 _best = max(_fwd['eligible'], default=None,
                                             key=lambda t: logic._ticker_roc_fraction(t, results))
                                 if _best is not None:

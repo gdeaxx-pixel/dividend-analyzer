@@ -617,6 +617,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
         dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
+        divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
             qty = safe_float(row.get('Quantity', 0))
@@ -696,6 +697,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
                     dist_dated.append((_tx_date, abs(amount)))
+                    _dy = _row_year(_tx_date)
+                    if _dy is not None:
+                        divs_by_year[_dy] += abs(amount)
 
                 # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
                 elif 'dividend' in action or 'dividendo' in action:
@@ -709,12 +713,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     if amount < 0:
                         dividends_collected_drip += abs(amount)
                         dist_dated.append((_tx_date, abs(amount)))
+                        _dy = _row_year(_tx_date)
+                        if _dy is not None:
+                            divs_by_year[_dy] += abs(amount)
 
             elif is_div_payout:
                 # Cash dividend NOT reinvested. Use signed amount so IB correction
                 # entries (negative) reduce the total instead of inflating it.
                 if not is_drip:
                     dividends_collected_cash += amount
+                    _dy = _row_year(_tx_date)
+                    if _dy is not None:
+                        divs_by_year[_dy] += amount
                     irr_flows_dated.append((_tx_date, amount))
                     if amount > 0:
                         dist_dated.append((_tx_date, amount))
@@ -1358,6 +1368,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
         _withheld = withheld_tax_total(ticker_df)
+        _withheld_by_year = withheld_tax_total_by_year(ticker_df)
+        _gross_by_year = {
+            _y: round(divs_by_year.get(_y, 0.0) + _withheld_by_year.get(_y, 0.0), 2)
+            for _y in (set(divs_by_year) | set(_withheld_by_year))
+        }
         _cadence_change = detect_cadence_change(ticker_df)
 
         # CAGR de precio puro (no contaminado por DRIP/aportes): la erosión/apreciación
@@ -1465,6 +1480,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "ttm_income":        _fy['ttm_income'],
             "forward_stale":     _fy.get('stale', False),
             "withheld_tax_total": _withheld,
+            "dividends_gross_by_year": _gross_by_year,
+            "withheld_by_year": dict(_withheld_by_year),
             "price_cagr":        _price_cagr,
             "price_cagr_recent": _price_cagr_recent,
             "price_history_days": _price_history_days,
@@ -1743,6 +1760,19 @@ CUSIP_ALIAS = {
 _INCOME_DESC_HINTS = [
     ("YIELDMAX MSTR", "MSTY"),
 ]
+
+
+def _row_year(dt):
+    """Año calendario de la fecha de una fila de transacción, o None si no es una fecha
+    válida (ausente/NaT). Usado para agrupar dividendos y retención por año fiscal."""
+    if dt is None:
+        return None
+    try:
+        if pd.isna(dt):
+            return None
+        return pd.Timestamp(dt).year
+    except (TypeError, ValueError):
+        return None
 
 
 def _clean_money(raw) -> float:
@@ -3685,10 +3715,81 @@ def estimate_roc_refund(gross, withheld, roc_pct, base_rate=0.30):
             'refund_pct': round(refund_pct, 1)}
 
 
+def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_rate=0.30,
+                                 roc_fallback_pct=None):
+    """`estimate_roc_refund` desglosado por año calendario — la reclasificación del broker
+    opera por año fiscal, así que cada año usa el %ROC promedio de los avisos 19a publicados
+    ESE año (no el histórico completo del fondo). Reutiliza `estimate_roc_refund` por año,
+    no duplica la fórmula.
+
+    Args:
+        gross_by_year / withheld_by_year: dict {año -> monto}, del mismo ticker (ver
+            `dividends_gross_by_year` / `withheld_by_year` en el dict de resultados).
+        roc_fallback_pct: %ROC a usar en años sin avisos 19a en la ventana (normalmente el
+            `roc_percent` ya calculado del holder para ese ticker).
+
+    Devuelve dict {año: {'fair_withholding', 'refund', 'refund_pct', 'roc_pct_usado'}} más
+    la clave 'total' con los mismos tres primeros campos agregados sobre todos los años.
+    """
+    info = load_roc_19a().get(str(ticker).upper()) or {}
+    roc_by_year = defaultdict(list)
+    for rowp in (info.get('per_distribution') or []):
+        try:
+            _y = pd.Timestamp(rowp['date']).year
+            roc_by_year[_y].append(float(rowp['roc_pct']))
+        except Exception:
+            continue
+
+    years = sorted(set(gross_by_year or {}) | set(withheld_by_year or {}))
+    out = {}
+    tot_fair = tot_refund = tot_withheld = 0.0
+    for y in years:
+        gross = (gross_by_year or {}).get(y, 0.0) or 0.0
+        withheld = (withheld_by_year or {}).get(y, 0.0) or 0.0
+        vals = roc_by_year.get(y)
+        roc_pct = (sum(vals) / len(vals)) if vals else (roc_fallback_pct if roc_fallback_pct
+                                                          is not None else 0.0)
+        res = estimate_roc_refund(gross, withheld, roc_pct, base_rate=base_rate)
+        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2))
+        tot_fair += res['fair_withholding']
+        tot_refund += res['refund']
+        tot_withheld += withheld
+    total_refund_pct = round(tot_refund / tot_withheld * 100.0, 1) if tot_withheld > 0 else 0.0
+    out['total'] = {'fair_withholding': round(tot_fair, 2), 'refund': round(tot_refund, 2),
+                     'refund_pct': total_refund_pct}
+    return out
+
+
 def _ticker_roc_fraction(ticker, results=None):
-    """Fracción ROC (%) de un ticker para el módulo fiscal: 19a (weighted_pct) primero,
-    luego el roc_percent ya calculado en results; 0 si no aplica. Acotada a [0, 100]."""
-    wpct = load_roc_19a().get(str(ticker).upper(), {}).get('weighted_pct')
+    """Fracción ROC (%) de un ticker para el módulo fiscal (proyecciones, Monte Carlo,
+    retención NRA forward). Preferencia: (1) promedio de los ÚLTIMOS 12 avisos 19a
+    per_distribution, ordenados por fecha desc (mínimo 3 avisos disponibles, para no fiarse
+    de 1-2 datos); (2) `weighted_pct` histórico completo del fondo; (3) `roc_percent` ya
+    calculado del holder en `results`; (4) 0. Acotada a [0, 100].
+
+    El histórico ponderado sobreestima el escudo fiscal forward cuando el fondo viene
+    reduciendo su ROC recientemente (ej. MSTY: weighted ~72% vs. promedio de los últimos
+    12 avisos ~48%, 2026-07-13) — por eso se prefiere el dato reciente para proyectar hacia
+    adelante. El bloque retrospectivo de Salud del NAV (`build_roc_aware_withholding`) NO usa
+    esta función: ahí interesa el % de CADA distribución de la ventana, no un promedio forward.
+    """
+    info = load_roc_19a().get(str(ticker).upper()) or {}
+    dated = []
+    for rowp in (info.get('per_distribution') or []):
+        try:
+            dated.append((pd.Timestamp(rowp['date']), float(rowp['roc_pct'])))
+        except Exception:
+            continue
+    if len(dated) >= 3:
+        dated.sort(key=lambda dp: dp[0], reverse=True)
+        recent = dated[:12]
+        try:
+            avg = sum(v for _, v in recent) / len(recent)
+            return max(0.0, min(100.0, float(avg)))
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
+    wpct = info.get('weighted_pct')
     if wpct is not None:
         try:
             return max(0.0, min(100.0, float(wpct)))
@@ -3727,6 +3828,32 @@ def withheld_tax_total(history_df) -> float:
             continue
         total += abs(float(amt))
     return round(total, 2)
+
+
+def withheld_tax_total_by_year(history_df) -> dict:
+    """Como `withheld_tax_total` pero agrupada por año calendario de la fila (`Date`).
+
+    La reclasificación anual del broker opera por año fiscal: lo retenido en años pasados
+    ya debió volver, lo del año en curso vuelve en feb-mar del siguiente. Misma detección de
+    filas que `withheld_tax_total`; la suma de todos los años debe cuadrar con esa función.
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return out
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if not is_tax:
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        y = _row_year(row.get('Date'))
+        if y is None:
+            continue
+        out[y] = round(out.get(y, 0.0) + abs(float(amt)), 2)
+    return out
 
 
 # ============================================================

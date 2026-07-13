@@ -2126,3 +2126,130 @@ def test_held_too_briefly_ignora_transfers():
     too_brief, days = logic.is_held_too_briefly(tdf, threshold_days=14)
     assert too_brief is True
     assert days == 4
+
+
+# ── Ronda 3 (2026-07-13): desglose por año de la devolución ROC + ROC forward reciente ──
+
+def test_dividends_gross_and_withheld_by_year_match_totals(monkeypatch):
+    """dividends_gross_by_year / withheld_by_year deben cuadrar exactamente con
+    total_dividends + withheld_tax_total (la reclasificación es por año fiscal). Se sintetiza
+    retención en 2 años calendario distintos (real_examples/ hoy no trae un caso Schwab con
+    NRA Tax Adj multi-año)."""
+    df = _roc_norm_df([
+        ("2024-01-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-06-01", "Dividend", "MSTY", 0, 300.0),
+        ("2024-06-01", "NRA Tax Adj", "MSTY", 0, -90.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 400.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -60.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(df, version="TEST_YEAR_SPLIT")["MSTY"]
+    assert s["total_dividends"] == pytest.approx(700.0, abs=0.01)
+    assert s["withheld_tax_total"] == pytest.approx(150.0, abs=0.01)
+    gby, wby = s["dividends_gross_by_year"], s["withheld_by_year"]
+    assert sum(wby.values()) == pytest.approx(s["withheld_tax_total"], abs=0.05)
+    assert sum(gby.values()) == pytest.approx(
+        s["total_dividends"] + s["withheld_tax_total"], abs=0.05)
+    assert wby[2024] == pytest.approx(90.0, abs=0.01)
+    assert wby[2025] == pytest.approx(60.0, abs=0.01)
+    assert gby[2024] == pytest.approx(390.0, abs=0.01)
+    assert gby[2025] == pytest.approx(460.0, abs=0.01)
+
+
+def test_estimate_roc_refund_by_year_sums_match_total_when_roc_uniform(monkeypatch):
+    """(a) Con el mismo %ROC en ambos años (aquí, sin avisos 19a -> fallback uniforme), la
+    suma de los refunds por año debe coincidir con llamar estimate_roc_refund directo sobre
+    los totales agregados."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    gross_by_year = {2024: 1000.0, 2025: 2000.0}
+    withheld_by_year = {2024: 300.0, 2025: 600.0}
+    result = logic.estimate_roc_refund_by_year(
+        gross_by_year, withheld_by_year, "ZZZY", base_rate=0.30, roc_fallback_pct=50.0)
+    sum_refund = result[2024]["refund"] + result[2025]["refund"]
+    assert result["total"]["refund"] == pytest.approx(sum_refund, abs=0.02)
+    direct = logic.estimate_roc_refund(3000.0, 900.0, 50.0, base_rate=0.30)
+    assert result["total"]["refund"] == pytest.approx(direct["refund"], abs=0.05)
+    assert result["total"]["fair_withholding"] == pytest.approx(direct["fair_withholding"], abs=0.05)
+
+
+def test_estimate_roc_refund_by_year_uses_fallback_for_year_without_19a(monkeypatch):
+    """(b) Un año sin avisos 19a en la ventana cae al roc_fallback_pct (roc_percent del
+    holder); el año con aviso usa el promedio de ESE año."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"per_distribution": [{"date": "2025-03-01", "roc_pct": 80.0}]}})
+    gross_by_year = {2024: 500.0, 2025: 500.0}
+    withheld_by_year = {2024: 150.0, 2025: 150.0}
+    result = logic.estimate_roc_refund_by_year(
+        gross_by_year, withheld_by_year, "MSTY", base_rate=0.30, roc_fallback_pct=10.0)
+    assert result[2024]["roc_pct_usado"] == pytest.approx(10.0)
+    assert result[2025]["roc_pct_usado"] == pytest.approx(80.0)
+
+
+def test_estimate_roc_refund_by_year_different_roc_different_refund(monkeypatch):
+    """(c) Años con %ROC distinto (2 avisos 19a sintéticos) producen devoluciones distintas
+    sobre el mismo gross/withheld."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"per_distribution": [
+            {"date": "2024-06-01", "roc_pct": 10.0},
+            {"date": "2025-06-01", "roc_pct": 90.0},
+        ]}})
+    gross_by_year = {2024: 1000.0, 2025: 1000.0}
+    withheld_by_year = {2024: 300.0, 2025: 300.0}
+    result = logic.estimate_roc_refund_by_year(gross_by_year, withheld_by_year, "MSTY", base_rate=0.30)
+    assert result[2024]["refund"] < result[2025]["refund"]
+
+
+def test_ticker_roc_fraction_uses_average_of_last_12_notices(monkeypatch):
+    """(a) Con 15 avisos disponibles, toma el promedio de los 12 MÁS RECIENTES (no el
+    histórico completo ni weighted_pct)."""
+    # 15 avisos mensuales sintéticos: los 3 más viejos en 30%, los 12 más recientes en 60%.
+    old = [{"date": f"2023-0{i}-01", "roc_pct": 30.0} for i in range(1, 4)]
+    recent = [{"date": f"2024-{i:02d}-01", "roc_pct": 60.0} for i in range(1, 13)]
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 30.0, "per_distribution": old + recent}})
+    frac = logic._ticker_roc_fraction("MSTY")
+    assert frac == pytest.approx(60.0, abs=0.01)
+
+
+def test_ticker_roc_fraction_falls_back_to_weighted_pct_with_few_notices(monkeypatch):
+    """(b) Con solo 2 avisos (< mínimo de 3), cae a weighted_pct en vez del promedio."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 72.0, "per_distribution": [
+            {"date": "2026-01-01", "roc_pct": 10.0},
+            {"date": "2026-02-01", "roc_pct": 20.0}]}})
+    frac = logic._ticker_roc_fraction("MSTY")
+    assert frac == pytest.approx(72.0, abs=0.01)
+
+
+def test_ticker_roc_fraction_falls_back_to_holder_roc_percent_without_19a(monkeypatch):
+    """(c) Sin datos 19a para el ticker, cae al roc_percent ya calculado en results."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    frac = logic._ticker_roc_fraction("ZZZY", results={"ZZZY": {"roc_percent": 45.0}})
+    assert frac == pytest.approx(45.0, abs=0.01)
+    # Sin 19a y sin results tampoco -> 0
+    assert logic._ticker_roc_fraction("ZZZY") == 0.0
+
+
+def test_ticker_roc_fraction_bounded_0_100(monkeypatch):
+    """(d) Acotado a [0, 100] incluso si el YAML trae valores fuera de rango."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 150.0, "per_distribution": [
+            {"date": "2026-01-01", "roc_pct": 200.0},
+            {"date": "2026-02-01", "roc_pct": -50.0}]}})
+    frac = logic._ticker_roc_fraction("MSTY")
+    assert 0.0 <= frac <= 100.0
+
+
+def test_ticker_roc_fraction_msty_recent_average_not_weighted():
+    """Caso de referencia (2026-07-13): MSTY weighted_pct ~72.1% pero el promedio de los
+    últimos 12 avisos 19a es ~48.2% — la retención forward real es menor que el histórico
+    completo sugiere. _ticker_roc_fraction debe reflejar el dato reciente, no ~72."""
+    info = logic.load_roc_19a().get("MSTY")
+    if not info or not info.get("per_distribution") or len(info["per_distribution"]) < 3:
+        pytest.skip("sin knowledge/roc_19a.yaml con per_distribution para MSTY")
+    frac = logic._ticker_roc_fraction("MSTY")
+    assert frac == pytest.approx(48.2, abs=3.0), (
+        f"esperado ~48.2 (promedio 12 avisos recientes), obtenido {frac} "
+        f"(weighted_pct={info.get('weighted_pct')})")
+    assert frac < (info.get("weighted_pct") or 999) - 10, (
+        "el promedio reciente debe quedar bien por debajo del weighted_pct histórico (72%)")
