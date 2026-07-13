@@ -2362,11 +2362,35 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'<div style="font-size:12px;color:{_interp_clr};">{_interp}'
                                     f'</div></div>', unsafe_allow_html=True)
 
-                        # ── Gráfico de ratio: la prueba en una sola línea ──
+                        # ── Series TR en bruto (para el reencuadre del ratio, SIEMPRE en bruto,
+                        # sin importar el radio fiscal del bloque "¿Dónde terminó el dinero?") ──
+                        _fund_close_w = _df[tk]
+                        _under_close_w = _df[_under_tk]
+                        _fund_divs_raw = s.get('fund_dividends_series')
+                        _fund_divs_w = (_fund_divs_raw.reindex(_df.index).fillna(0.0)
+                                        if _fund_divs_raw is not None
+                                        else pd.Series(0.0, index=_df.index))
+                        _under_divs_raw = s.get('underlying_dividends_series')
+                        _under_divs_w = (_under_divs_raw.reindex(_df.index).fillna(0.0)
+                                         if _under_divs_raw is not None
+                                         else pd.Series(0.0, index=_df.index))
+                        _tr_df_bruto = logic.build_total_return_series(
+                            _fund_close_w, _fund_divs_w, None)
+                        _under_tr_df = logic.build_total_return_series(
+                            _under_close_w, _under_divs_w, None)
+                        _drip_bruto_final = (float(_tr_df_bruto['drip'].iloc[-1])
+                                              if len(_tr_df_bruto) else float(_fund_norm.iloc[-1]))
+                        _under_tr_final = (float(_under_tr_df['drip'].iloc[-1])
+                                           if len(_under_tr_df) else float(_under_norm.iloc[-1]))
+                        _ratio_con_div = (_drip_bruto_final / _under_tr_final * 100.0
+                                          if _under_tr_final else None)
+
+                        # ── Gráfico de ratio: el motor en una sola línea ──
                         st.markdown(
                             f'<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
-                            f'color:#006497;margin:10px 0 3px 2px;letter-spacing:0.06em;">LA PRUEBA '
-                            f'EN UNA SOLA LÍNEA: ¿CUÁNTO VALE {tk} POR CADA $100 DE {_under_tk}?</p>',
+                            f'color:#006497;margin:10px 0 3px 2px;letter-spacing:0.06em;">EL MOTOR '
+                            f'EN UNA SOLA LÍNEA: ¿CUÁNTO NAV CONSERVA {tk} POR CADA $100 DE '
+                            f'{_under_tk}?</p>',
                             unsafe_allow_html=True)
                         _ratio_series = (_fund_norm / _under_norm * 100.0).dropna()
                         _rv = [float(v) for v in _ratio_series.values]
@@ -2427,9 +2451,156 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                           f'subyacente.')
                         st.markdown(
                             f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#6b7683;'
-                            f'margin:4px 0 12px 2px;line-height:1.5;">Si esta línea fuera plana, '
+                            f'margin:4px 0 4px 2px;line-height:1.5;">Si esta línea fuera plana, '
                             f'{tk} solo estaría siguiendo a {_under_tk} (riesgo de mercado, no '
-                            f'destrucción). Como {_ratio_txt}</p>', unsafe_allow_html=True)
+                            f'destrucción). Como {_ratio_txt} Esta línea no incluye dividendos a '
+                            f'propósito: mide cuánto NAV queda generando tu próximo cheque, y parte '
+                            f'de su caída es el arrastre natural de cada distribución.</p>',
+                            unsafe_allow_html=True)
+                        if _ratio_con_div is not None:
+                            st.markdown(
+                                f'<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                f'color:#6b7683;margin:0 0 12px 2px;line-height:1.5;">'
+                                f'<span style="color:#0f6e56;font-weight:700;">Contando los '
+                                f'dividendos reinvertidos, por cada $100 en {_under_tk} habrías '
+                                f'tenido ~${_ratio_con_div:.0f}</span>.</p>',
+                                unsafe_allow_html=True)
+
+                        # ── ¿Dónde terminó el dinero? — Total Return (DRIP / efectivo) ──
+                        # Price Return puro (arriba, motor del ratio) sirve para ver si el fondo
+                        # se destruye, pero no es lo que el inversionista se llevó de verdad. Aquí
+                        # se suman los dividendos, con impuesto NRA opcional (bruto / ROC-aware /
+                        # peor caso 30% plano).
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:11px;font-weight:700;'
+                            'color:#006497;margin:14px 0 3px 2px;letter-spacing:0.06em;">¿DÓNDE '
+                            'TERMINÓ EL DINERO? — EL OTRO LADO DE LA MONEDA</p>',
+                            unsafe_allow_html=True)
+                        st.markdown(
+                            '<p style="font-family:Inter,sans-serif;font-size:12px;color:#6b7683;'
+                            'margin:0 0 8px 2px;line-height:1.5;">Arriba solo miramos el precio '
+                            '(Price Return): dice si el fondo se está destruyendo, no lo que tú '
+                            'te llevaste. Sumando los dividendos que cobraste o reinvertiste, esto '
+                            'es lo que quedó de cada $100 — para el resultado completo con tus '
+                            'impuestos reales del CSV, ve la pestaña «Resultado real».</p>',
+                            unsafe_allow_html=True)
+
+                        _roc19a_info = logic.load_roc_19a().get(str(tk).upper())
+                        _country_sel = st.session_state.get('proj_country')
+                        _country = _country_sel if _country_sel in logic.NRA_COUNTRY_RATES else None
+                        _base_rate_pct = (logic.NRA_COUNTRY_RATES[_country][0] if _country
+                                          else logic.NRA_DEFAULT_RATE)
+                        _base_rate = _base_rate_pct / 100.0
+
+                        _worst_lbl = f'Peor caso ({_base_rate_pct:.0f}% plano)'
+                        _tr_options = ['Bruto (0%)', _worst_lbl]
+                        if _roc19a_info:
+                            _tr_options = ['Bruto (0%)', 'Neto estimado (ROC 19a)',
+                                           _worst_lbl]
+                        _tr_mode = st.radio('Escenario fiscal', _tr_options, horizontal=True,
+                                            key=f'_nav_tr_mode_{tk}_{_fid}',
+                                            label_visibility='collapsed')
+
+                        if _tr_mode == 'Neto estimado (ROC 19a)':
+                            _div_dates = _fund_divs_w[_fund_divs_w > 0].index
+                            _schedule = logic.build_roc_aware_withholding(
+                                tk, _div_dates, base_rate=_base_rate)
+                            _tr_df = logic.build_total_return_series(
+                                _fund_close_w, _fund_divs_w, _schedule)
+                        elif _tr_mode == _worst_lbl:
+                            _schedule = _base_rate
+                            _tr_df = logic.build_total_return_series(
+                                _fund_close_w, _fund_divs_w, _schedule)
+                        else:
+                            _schedule = None
+                            _tr_df = _tr_df_bruto
+
+                        _price_final = float(_fund_norm.iloc[-1])
+                        _drip_final = (float(_tr_df['drip'].iloc[-1])
+                                       if len(_tr_df) else _price_final)
+                        _cash_final = (float(_tr_df['cash'].iloc[-1])
+                                       if len(_tr_df) else _price_final)
+                        _under_final = (float(_under_tr_df['drip'].iloc[-1])
+                                        if len(_under_tr_df) else float(_under_norm.iloc[-1]))
+
+                        if _tr_mode == 'Bruto (0%)':
+                            _tr_cap = ('Sin ninguna retención — lo que el fondo pagó de verdad, '
+                                       'antes de cualquier impuesto.')
+                        elif _tr_mode == 'Neto estimado (ROC 19a)':
+                            _avg_rate = (sum(_schedule.values()) / len(_schedule) * 100.0
+                                         if _schedule else _base_rate_pct)
+                            _tr_cap = (f'Retiene {_base_rate_pct:.0f}% solo sobre la porción NO '
+                                       f'clasificada como Retorno de Capital de cada distribución '
+                                       f'— lo que suele quedar tras la reclasificación anual del '
+                                       f'broker (1099-DIV/1042-S). Tasa efectiva estimada en esta '
+                                       f'ventana: ~{_avg_rate:.1f}%.')
+                        else:
+                            _tr_cap = (f'Retención plana de {_base_rate_pct:.0f}% sobre cada '
+                                       f'distribución — lo que normalmente ves al momento del '
+                                       f'cobro, antes de que el broker reclasifique al cierre del '
+                                       f'año fiscal.')
+                        if _country:
+                            _tr_cap += (f' Usa la tasa de tu país en "Proyección a futuro" '
+                                        f'({_country}, {_base_rate_pct:.0f}%) en vez del 30% '
+                                        f'genérico de EE.UU.')
+                        elif _tr_mode != 'Bruto (0%)':
+                            _tr_cap += (' Sin país configurado en "Proyección a futuro" — se usa '
+                                        'el 30% general (EE.UU. sin tratado).')
+                        if not _roc19a_info:
+                            _tr_cap += (f' {tk} no tiene avisos 19a disponibles, así que no hay '
+                                        f'escenario ROC-aware.')
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;color:#8899aa;'
+                            f'margin:2px 0 10px 2px;line-height:1.5;">{_tr_cap}</p>',
+                            unsafe_allow_html=True)
+
+                        _tr_cards = [
+                            ('Solo precio', f'${_price_final:.1f}', '#333333'),
+                            ('Reinvirtiendo (DRIP)', f'${_drip_final:.1f}', '#006497'),
+                            ('Cobrando en efectivo', f'${_cash_final:.1f}', '#006497'),
+                            (f'Subyacente ({_under_tk})', f'${_under_final:.1f}', '#2d3748'),
+                        ]
+                        _tr_cards_html = ''.join(
+                            f'<div style="flex:1;background:#ffffff;border:1px solid #e3ddd4;'
+                            f'padding:10px 12px;min-width:120px;">'
+                            f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                            f'color:#8899aa;text-transform:uppercase;letter-spacing:0.04em;'
+                            f'margin-bottom:4px;">{_lbl}</div>'
+                            f'<div style="font-family:Inter,sans-serif;font-size:16px;'
+                            f'font-weight:700;color:{_clr};">{_val}</div></div>'
+                            for _lbl, _val, _clr in _tr_cards)
+                        st.markdown(
+                            f'<div style="display:flex;gap:8px;flex-wrap:wrap;'
+                            f'margin:2px 0 12px 0;">{_tr_cards_html}</div>',
+                            unsafe_allow_html=True)
+
+                        # Gráfico ESTÁTICO de 4 líneas base 100 — sin on_select (bug conocido:
+                        # on_select no soporta alt.layer).
+                        _lbl_price = f'{tk} solo precio'
+                        _lbl_drip = f'{tk} TR DRIP'
+                        _lbl_cash = f'{tk} TR efectivo'
+                        _lbl_under = f'{_under_tk} TR'
+                        _tr_plot = pd.DataFrame({
+                            'Fecha': _df.index,
+                            _lbl_price: _fund_norm.values,
+                            _lbl_drip: _tr_df['drip'].values,
+                            _lbl_cash: _tr_df['cash'].values,
+                            _lbl_under: _under_tr_df['drip'].values,
+                        }).melt(id_vars='Fecha', var_name='Serie', value_name='Valor')
+                        _tr_chart = alt.Chart(_tr_plot).mark_line(strokeWidth=2).encode(
+                            x=alt.X('Fecha:T', title=None),
+                            y=alt.Y('Valor:Q', title='Base 100'),
+                            color=alt.Color(
+                                'Serie:N',
+                                scale=alt.Scale(
+                                    domain=[_lbl_price, _lbl_drip, _lbl_cash, _lbl_under],
+                                    range=['#c0392b', '#006497', '#1d9e75', '#5f5e5a']),
+                                legend=alt.Legend(title=None, orient='top', labelFontSize=11)),
+                            tooltip=[alt.Tooltip('Fecha:T'), alt.Tooltip('Serie:N'),
+                                     alt.Tooltip('Valor:Q', format='.1f', title='Índice')]
+                        ).properties(height=240, background=CHART_PALETTE['bg']).configure_view(
+                            strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                        st.altair_chart(_tr_chart, use_container_width=True)
 
                         # ── Exposición asimétrica al subyacente ──
                         _exp_lines = logic.build_underlying_exposure(results, tk).get('lines', [])
@@ -2837,14 +3008,20 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                    f'{_vj_tk}. Si eres inversionista extranjero (NRA), '
                                    f'normalmente EE.UU. retiene ~30% de cada dividendo — revisa '
                                    f'tu 1042-S. Aquí el dividendo pasó completo: '
-                                   f'<b>{_money(_d["neto"])}</b>.')
+                                   f'<b>{_money(_d["neto"])}</b>. En algunas cuentas (p. ej. '
+                                   f'Interactive Brokers) la retención ya viene plegada dentro '
+                                   f'del dividendo neto que reportamos, así que no aparece '
+                                   f'aparte.')
                         else:
                             _n2 = (f'Por ser inversionista extranjero se retiene automáticamente '
                                    f'~30% de impuesto NRA (<b>{_neg(_d["imp"])}</b>). Te quedan '
                                    f'<b>{_money(_d["neto"])}</b> libres: tu <b>dividendo neto '
                                    f'percibido</b> — el dinero que ya es tuyo y de donde sale todo '
                                    f'lo demás. Ojo: es neto <i>en origen</i>; los impuestos de tu '
-                                   f'país de residencia, si aplican, van aparte.')
+                                   f'país de residencia, si aplican, van aparte. Parte de esta '
+                                   f'retención puede volver con la reclasificación anual del broker '
+                                   f'si la distribución se cataloga como Retorno de Capital (ROC) — '
+                                   f'ver el módulo fiscal NRA.')
                         if _no_drip:
                             _n3 = (f'Tus dividendos limpios se fueron completos a tu cuenta en '
                                    f'efectivo (<b>{_money(_d["cash"])}</b>) — en esta cuenta no '
@@ -2952,6 +3129,66 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                        f'camino recorrido ({_step} paso{_plural})</summary>'
                                        f'{_prev}</details>')
                         st.markdown(f'<div style="margin:8px 0 10px 2px;">{_nhtml}</div>',
+                                    unsafe_allow_html=True)
+
+                        # ── ¿Cuánto de este impuesto puede volver? — el escudo del ROC ──
+                        if _step == 2 and not _no_imp:
+                            _roc_pct_nra = (results.get(_vj_tk) or {}).get('roc_percent')
+                            if _roc_pct_nra is not None:
+                                _country_sel2 = st.session_state.get('proj_country')
+                                _country2 = (_country_sel2 if _country_sel2
+                                             in logic.NRA_COUNTRY_RATES else None)
+                                _base_rate_pct2 = (logic.NRA_COUNTRY_RATES[_country2][0]
+                                                    if _country2 else logic.NRA_DEFAULT_RATE)
+                                _refund_info = logic.estimate_roc_refund(
+                                    _d['bruto'], _d['imp'], _roc_pct_nra,
+                                    base_rate=_base_rate_pct2 / 100.0)
+                                st.markdown(
+                                    '<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                    'font-weight:700;color:#006497;margin:12px 0 3px 2px;'
+                                    'letter-spacing:0.06em;">¿CUÁNTO DE ESTE IMPUESTO PUEDE '
+                                    'VOLVER? — EL ESCUDO DEL ROC</p>', unsafe_allow_html=True)
+                                _rf_cards = [
+                                    ('Retenido real', _money(_d['imp']), '#8f2318',
+                                     '1px solid #e3ddd4'),
+                                    (f'Retención justa (ROC {_roc_pct_nra:.0f}%)',
+                                     _money(_refund_info['fair_withholding']), '#333333',
+                                     '1px solid #e3ddd4'),
+                                    ('Devolución estimada',
+                                     f"{_money(_refund_info['refund'])} "
+                                     f"({_refund_info['refund_pct']:.0f}%)", '#1d9e75',
+                                     '2px solid #1d9e75'),
+                                ]
+                                _rf_html = ''.join(
+                                    f'<div style="flex:1;background:#ffffff;border:{_bd};'
+                                    f'padding:10px 12px;min-width:130px;">'
+                                    f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                                    f'color:#8899aa;text-transform:uppercase;'
+                                    f'letter-spacing:0.04em;margin-bottom:4px;">{_lbl}</div>'
+                                    f'<div style="font-family:Inter,sans-serif;font-size:16px;'
+                                    f'font-weight:700;color:{_clr};">{_val}</div></div>'
+                                    for _lbl, _val, _clr, _bd in _rf_cards)
+                                st.markdown(
+                                    f'<div style="display:flex;gap:8px;flex-wrap:wrap;'
+                                    f'margin:2px 0 8px 0;">{_rf_html}</div>',
+                                    unsafe_allow_html=True)
+                                if _refund_info['refund'] > 0.01 and _n_im > 0:
+                                    _m_destach = min(
+                                        _n_im,
+                                        round(_n_im * _refund_info['refund_pct'] / 100.0))
+                                    st.markdown(
+                                        f'<p style="font-family:Inter,sans-serif;font-size:12px;'
+                                        f'color:#6b7683;margin:0 0 4px 2px;line-height:1.5;">De '
+                                        f'los ~{_n_im} cuadritos tachados arriba, ~{_m_destach} '
+                                        f'deberían destacharse: esa parte del impuesto no debió '
+                                        f'quedarse retenida.</p>', unsafe_allow_html=True)
+                                st.markdown(
+                                    '<p style="font-family:Inter,sans-serif;font-size:11px;'
+                                    'color:#8899aa;margin:2px 0 10px 2px;line-height:1.5;">'
+                                    'Estimación con el % ROC de tus distribuciones (avisos 19a) — lo '
+                                    'definitivo llega en tu 1042-S, y el broker suele ajustarlo '
+                                    'entre feb y mar del año siguiente. Si para entonces no ha '
+                                    'vuelto, es argumento para reclamarlo.</p>',
                                     unsafe_allow_html=True)
 
                         st.markdown(

@@ -1366,8 +1366,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _price_cagr = None
         _price_cagr_recent = None
         _price_history_days = None     # cuántos días de NAV observamos (guarda anti falso-veredicto)
+        _close = None
+        _fund_divs = None
         try:
             _close = market_data['Close'] if 'Close' in market_data.columns else None
+            _fund_divs = market_data['Dividends'] if 'Dividends' in market_data.columns else None
             if _close is not None:
                 _price_cagr = _annualized_cagr(_close)
                 _price_cagr_recent = _annualized_cagr(_close, days=365)
@@ -1384,6 +1387,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _underlying_cagr_recent = None
         _underlying_hold_value = None
         _underlying_close = None
+        _underlying_divs = None
         try:
             _info_u = load_instruments().get(str(ticker).upper(), {})
             _is_ym = ticker_mode == 'mode_a' or (_info_u.get('type') or '').lower() == 'yieldmax'
@@ -1394,6 +1398,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 if _udf is not None and not _udf.empty and 'Close' in _udf.columns:
                     _underlying_cagr_recent = _annualized_cagr(_udf['Close'], days=365)
                     _underlying_close = _udf['Close']
+                    _underlying_divs = _udf['Dividends'] if 'Dividends' in _udf.columns else None
                     # #1: ¿y si hubieras tenido el subyacente directo? (misma plata y timing)
                     _up = _udf['Close'].reindex(daily_history.index).ffill()
                     _ud = (_udf['Dividends'].reindex(daily_history.index).fillna(0)
@@ -1469,6 +1474,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "underlying_hold_value": _underlying_hold_value,
             "fund_close_series": _close,
             "underlying_close_series": _underlying_close,
+            "fund_dividends_series": _fund_divs,
+            "underlying_dividends_series": _underlying_divs,
         }
         
     return results
@@ -2450,6 +2457,132 @@ def _estimate_roc_from_19a(ticker, dist_dated):
     return roc_sum, (roc_sum / total * 100.0)
 
 
+def build_total_return_series(close, dividends, withhold_schedule=None):
+    """Total Return base 100 de una serie de precios con sus dividendos, en dos escenarios:
+    reinversión (DRIP) y cobro en efectivo sin reinvertir. Función PURA, sin Streamlit.
+
+    Args:
+        close: pd.Series de precios de cierre, indexada por fecha (orden ascendente).
+        dividends: pd.Series de dividendo por acción, mismo tipo de índice que `close`
+            (0 o NaN los días sin pago). Se reindexa contra `close`.
+        withhold_schedule: retención aplicada a cada distribución antes de reinvertir/
+            acumular. None = sin retención (bruto). Puede ser un float plano en fracción
+            0.0–1.0 (0.30 = 30%) o un dict {fecha: tasa} con la tasa efectiva por distribución
+            (ver `build_roc_aware_withholding`). Fechas no presentes en el dict → 0.
+
+    Devuelve un DataFrame indexado como `close` con columnas:
+        'drip' — reinvertir cada dividendo neto al close del día de pago.
+        'cash' — acciones fijas desde el día 0 + caja neta acumulada (NAV restante + caja).
+    Si el fondo no paga dividendos, 'drip' == 'cash' == retorno de solo precio (Price Return).
+    """
+    if close is None or len(close) == 0:
+        return pd.DataFrame(columns=['drip', 'cash'])
+
+    close = close.dropna()
+    if dividends is not None:
+        divs = dividends.reindex(close.index).fillna(0.0)
+    else:
+        divs = pd.Series(0.0, index=close.index)
+
+    close0 = float(close.iloc[0]) if len(close) else 0.0
+    if close0 <= 0:
+        return pd.DataFrame({'drip': [None] * len(close), 'cash': [None] * len(close)},
+                             index=close.index)
+
+    def _rate_for(dt):
+        if withhold_schedule is None:
+            return 0.0
+        if isinstance(withhold_schedule, dict):
+            if dt in withhold_schedule:
+                return float(withhold_schedule[dt] or 0.0)
+            key = pd.Timestamp(dt).normalize()
+            return float(withhold_schedule.get(key, 0.0) or 0.0)
+        try:
+            return float(withhold_schedule)
+        except (TypeError, ValueError):
+            return 0.0
+
+    shares_drip = 100.0 / close0
+    shares_cash = 100.0 / close0
+    cash_accum = 0.0
+    drip_vals, cash_vals = [], []
+    for dt, px in close.items():
+        px = float(px)
+        d = float(divs.loc[dt] or 0.0)
+        if d > 0 and px > 0:
+            rate = max(0.0, min(1.0, _rate_for(dt)))
+            net_div = d * (1.0 - rate)
+            cash_from_div = shares_drip * net_div
+            shares_drip += cash_from_div / px
+            cash_accum += shares_cash * net_div
+        drip_vals.append(shares_drip * px)
+        cash_vals.append(shares_cash * px + cash_accum)
+
+    return pd.DataFrame({'drip': drip_vals, 'cash': cash_vals}, index=close.index)
+
+
+def build_roc_aware_withholding(ticker, dividend_dates, base_rate=0.30):
+    """Tasa de retención NRA efectiva por distribución, usando el escudo fiscal del ROC
+    publicado en los avisos 19a del fondo (`knowledge/roc_19a.yaml`).
+
+    Cada distribución empata con el aviso 19a más cercano en fecha (tolerancia ±6 días);
+    `tasa_efectiva = base_rate × (1 − roc_pct/100)`. Si una fecha no tiene aviso dentro de
+    tolerancia, usa el promedio de roc_pct de los avisos dentro de la ventana de
+    `dividend_dates` (o `weighted_pct` del fondo si no hay ninguno en la ventana).
+
+    Args:
+        ticker: símbolo del fondo (YieldMax u otro con datos 19a).
+        dividend_dates: fechas (ex-date) de las distribuciones recibidas en la ventana.
+        base_rate: tasa de retención NRA sin escudo, en fracción 0.0–1.0 (default 0.30 = 30%;
+            usar la tasa del país del inversor si se conoce — ver NRA_COUNTRY_RATES).
+
+    Devuelve dict {fecha (pd.Timestamp normalizada): tasa efectiva}, o None si el fondo no
+    tiene datos 19a (`load_roc_19a()` sin entrada para el ticker).
+    """
+    dividend_dates = list(dividend_dates) if dividend_dates is not None else []
+    info = load_roc_19a().get(str(ticker).upper())
+    if not info or not dividend_dates:
+        return None
+
+    dts_norm = [pd.Timestamp(dt).normalize() for dt in dividend_dates]
+
+    dated = []
+    for rowp in (info.get('per_distribution') or []):
+        try:
+            dated.append((pd.Timestamp(rowp['date']).normalize(), float(rowp['roc_pct'])))
+        except Exception:
+            continue
+
+    weighted = info.get('weighted_pct')
+    weighted = float(weighted) if weighted is not None else None
+
+    fallback_pct = weighted
+    if dated:
+        win_min, win_max = min(dts_norm), max(dts_norm)
+        window_pcts = [pct for dt, pct in dated if win_min <= dt <= win_max]
+        if window_pcts:
+            fallback_pct = sum(window_pcts) / len(window_pcts)
+
+    if not dated and fallback_pct is None:
+        return None
+
+    result = {}
+    for dt in dts_norm:
+        pct = None
+        if dated:
+            best = min(dated, key=lambda dp: abs((dp[0] - dt).days))
+            if abs((best[0] - dt).days) <= 6:
+                pct = best[1]
+        if pct is None:
+            pct = fallback_pct
+        if pct is None:
+            continue
+        rate = base_rate * (1.0 - pct / 100.0)
+        result[dt] = max(0.0, min(1.0, rate))
+
+    return result if result else None
+
+
 # ── Veredicto de salud del NAV: ¿el ROC es destructivo o contable? ───────────
 # Umbrales del clasificador. La VERDAD sobre destructividad es la tendencia del NAV
 # (price_cagr) + el total return honesto, NO el % del aviso 19a (que salta entre 0% y
@@ -2610,6 +2743,8 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
                         "El fondo te paga sacando dinero de tu propio bolsillo, no solo de ganancias "
                         "reales. El cheque mensual se ve bien, pero cada mes tu inversión vale menos."
                         + plain_nuance +
+                        " Este veredicto mide el motor de los cheques (de dónde sale el pago), no tu "
+                        "resultado final como inversionista — para eso revisa la pestaña «Resultado real»."
                         " <b>Qué vigilar:</b> si el precio del fondo sigue cayendo, el pago futuro también baja.")
         if tr_neg:
             return _out('destructive',
@@ -2617,6 +2752,8 @@ def classify_roc_health(roc_pct, price_cagr, total_return_pct=None,
                         f"{roc_pct:.0f}%, el precio se erosiona y el total return es negativo.",
                         "Aunque casi todo lo que te pagan sea ganancia real, el precio del fondo se "
                         "hunde más rápido: sumando todo, hoy tienes menos de lo que pusiste. "
+                        "Este veredicto mide el motor de los cheques (de dónde sale el pago), no tu "
+                        "resultado final como inversionista — para eso revisa la pestaña «Resultado real». "
                         "<b>Qué vigilar:</b> si el activo que sigue no se recupera, seguirás perdiendo capital.")
         # ROC bajo + NAV cae + (TR positivo o desconocido): la caída viene más del subyacente
         return _out('mixed',
@@ -3463,22 +3600,6 @@ def detect_cadence_change(history_df, window=6):
             'old_label': ol, 'changed': changed, 'note': note}
 
 
-def net_of_withholding(gross, rate_pct):
-    """Ingreso neto tras retención de impuesto. `rate_pct` en porcentaje (30 = 30%).
-
-    Para no-residentes (NRA) el dividendo de fuente EE.UU. suele retener 30% (menos si hay
-    tratado). El cálculo histórico de la app es BRUTO a propósito (cuadra con el income file
-    del broker); esta función es la capa de visualización neta, separada. Defensiva ante None.
-    """
-    if gross is None:
-        return None
-    try:
-        r = max(0.0, min(100.0, float(rate_pct or 0)))
-    except (TypeError, ValueError):
-        r = 0.0
-    return gross * (1 - r / 100.0)
-
-
 # ── Módulo fiscal NRA (no-residente): tasa por país × escudo del ROC ──────────
 # Tasas de retención sobre dividendos de fuente EE.UU. para residentes de cada país
 # (tablas IRS / tratados). (tasa_%, ¿tiene_tratado?). Default 30% sin tratado.
@@ -3543,6 +3664,25 @@ def nra_tax_breakdown(country, roc_fraction_pct, nominal_income=None):
     return {'country': country, 'base_rate': base, 'has_treaty': treaty,
             'roc_fraction': round(roc, 1), 'effective_rate': effective,
             'lines': lines, 'audit_note': audit}
+
+
+def estimate_roc_refund(gross, withheld, roc_pct, base_rate=0.30):
+    """Cuánto de la retención NRA real podría volver con la reclasificación anual (19a).
+
+    `retencion_justa = base_rate × bruto × (1 − roc_pct/100)`; la devolución es la
+    diferencia entre lo retenido de verdad y esa retención justa, acotada a [0, withheld].
+    Es una ESTIMACIÓN (el % 19a puede variar; lo definitivo llega en el 1042-S).
+    """
+    if gross is None or withheld is None or withheld <= 0:
+        return {'fair_withholding': 0.0, 'refund': 0.0, 'refund_pct': 0.0}
+    gross = max(0.0, float(gross))
+    withheld = max(0.0, float(withheld))
+    roc = max(0.0, min(100.0, float(roc_pct or 0)))
+    fair = max(0.0, base_rate * gross * (1 - roc / 100.0))
+    refund = max(0.0, min(withheld, withheld - fair))
+    refund_pct = (refund / withheld * 100.0) if withheld > 0 else 0.0
+    return {'fair_withholding': round(fair, 2), 'refund': round(refund, 2),
+            'refund_pct': round(refund_pct, 1)}
 
 
 def _ticker_roc_fraction(ticker, results=None):

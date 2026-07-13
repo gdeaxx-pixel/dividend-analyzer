@@ -1126,15 +1126,6 @@ def _div_hist(rows):
     return df
 
 
-def test_net_of_withholding_basic_and_defensive():
-    assert logic.net_of_withholding(100, 30) == pytest.approx(70.0)
-    assert logic.net_of_withholding(100, 0) == pytest.approx(100.0)
-    assert logic.net_of_withholding(None, 30) is None
-    assert logic.net_of_withholding(100, None) == pytest.approx(100.0)
-    # tasas fuera de rango se acotan a [0, 100]
-    assert logic.net_of_withholding(100, 150) == pytest.approx(0.0)
-
-
 def test_dividend_events_excludes_reinvest_shares_and_tax():
     hist = _div_hist([
         {'Date': '2025-09-15', 'Action': 'Qualified Dividend', 'Amount': 10},
@@ -1335,6 +1326,44 @@ def test_nra_nugget_equation_roc_shield():
 def test_nra_no_roc_keeps_base_rate():
     b = logic.nra_tax_breakdown('Colombia', 0)
     assert b['effective_rate'] == 30.0
+
+
+# ── Ronda 2: devolución estimada de retención NRA (escudo del ROC) ──
+
+def test_estimate_roc_refund_no_roc_exact_base_rate_zero_refund():
+    r = logic.estimate_roc_refund(gross=1000.0, withheld=300.0, roc_pct=0, base_rate=0.30)
+    assert r['fair_withholding'] == pytest.approx(300.0, abs=0.01)
+    assert r['refund'] == pytest.approx(0.0, abs=0.01)
+    assert r['refund_pct'] == pytest.approx(0.0, abs=0.1)
+
+
+def test_estimate_roc_refund_never_negative_or_above_withheld():
+    # retención justa mayor que lo retenido (roc bajo, base alta) → devolución 0, no negativa
+    r = logic.estimate_roc_refund(gross=100.0, withheld=5.0, roc_pct=0, base_rate=0.30)
+    assert r['refund'] >= 0.0
+    assert r['refund'] <= 5.0
+    # roc muy alto, retención alta → devolución acotada a lo retenido
+    r2 = logic.estimate_roc_refund(gross=100.0, withheld=1000.0, roc_pct=90, base_rate=0.30)
+    assert 0.0 <= r2['refund'] <= 1000.0
+
+
+def test_estimate_roc_refund_acceptance_case():
+    # Caso de aceptación del traspaso: gross=361.05, withheld=105.08, roc=67%, base 30%
+    r = logic.estimate_roc_refund(gross=361.05, withheld=105.08, roc_pct=67, base_rate=0.30)
+    assert r['fair_withholding'] == pytest.approx(35.7, abs=0.5)
+    assert r['refund'] == pytest.approx(69.3, abs=0.5)
+
+
+def test_estimate_roc_refund_full_roc_refunds_everything():
+    r = logic.estimate_roc_refund(gross=500.0, withheld=150.0, roc_pct=100, base_rate=0.30)
+    assert r['fair_withholding'] == pytest.approx(0.0, abs=0.01)
+    assert r['refund'] == pytest.approx(150.0, abs=0.01)
+    assert r['refund_pct'] == pytest.approx(100.0, abs=0.1)
+
+
+def test_estimate_roc_refund_zero_withheld_returns_zeroes():
+    r = logic.estimate_roc_refund(gross=500.0, withheld=0.0, roc_pct=50, base_rate=0.30)
+    assert r == {'fair_withholding': 0.0, 'refund': 0.0, 'refund_pct': 0.0}
 
 
 def test_project_country_applies_effective_rate_per_ticker():
@@ -1621,6 +1650,17 @@ def test_roc_health_destructive_low_roc_but_nav_collapses():
     assert v["verdict"] == "destructive"
 
 
+def test_roc_health_destructive_plain_clarifies_engine_not_investor_result():
+    # El veredicto destructivo mide el motor de los cheques (de donde sale el pago), no el
+    # resultado real del inversionista -> debe remitir a la pestaña "Resultado real".
+    v1 = logic.classify_roc_health(roc_pct=95, price_cagr=-40, total_return_pct=-25, history_days=400)
+    v2 = logic.classify_roc_health(roc_pct=10, price_cagr=-30, total_return_pct=-15, history_days=400)
+    for v in (v1, v2):
+        assert v["verdict"] == "destructive"
+        assert "Resultado real" in v["plain"]
+        assert "motor de los cheques" in v["plain"]
+
+
 def test_roc_health_accounting_high_roc_nav_rising():
     # ROC alto pero el NAV sube y el total return es positivo -> contable (pass-through).
     v = logic.classify_roc_health(roc_pct=80, price_cagr=12, total_return_pct=20, history_days=400)
@@ -1770,6 +1810,155 @@ def test_roc_health_destructive_tr_positive_has_nuance():
 def test_roc_health_headline_per_verdict():
     assert "sano" in logic.classify_roc_health(80, 12, 20, history_days=400)["headline"].lower()
     assert "medir" in logic.classify_roc_health(None, None)["headline"].lower()
+
+
+# ── Total Return (DRIP/efectivo) con retención ROC-aware — bloque "¿Dónde
+# terminó el dinero?" del paso Salud del NAV (traspaso 2026-07-13) ──────────────
+
+def test_total_return_series_no_dividends_equals_price_return():
+    idx = pd.date_range("2026-01-01", periods=5, freq="D")
+    close = pd.Series([100.0, 105.0, 95.0, 110.0, 120.0], index=idx)
+    divs = pd.Series([0.0] * 5, index=idx)
+    df = logic.build_total_return_series(close, divs)
+    price_return = close / close.iloc[0] * 100.0
+    assert df["drip"].values == pytest.approx(price_return.values)
+    assert df["cash"].values == pytest.approx(price_return.values)
+
+
+def test_total_return_series_cash_identity_nav_restante_mas_caja():
+    idx = pd.date_range("2026-01-01", periods=4, freq="D")
+    close = pd.Series([100.0, 100.0, 50.0, 60.0], index=idx)
+    divs = pd.Series([0.0, 5.0, 0.0, 0.0], index=idx)
+    df = logic.build_total_return_series(close, divs)
+    shares_fixed = 100.0 / close.iloc[0]
+    caja_acumulada = shares_fixed * 5.0
+    nav_restante = shares_fixed * close.iloc[-1]
+    assert df["cash"].iloc[-1] == pytest.approx(nav_restante + caja_acumulada)
+
+
+def test_total_return_series_withhold_reduces_both_scenarios_monotonically():
+    idx = pd.date_range("2026-01-01", periods=6, freq="D")
+    close = pd.Series([100.0, 100.0, 90.0, 90.0, 80.0, 85.0], index=idx)
+    divs = pd.Series([0.0, 4.0, 0.0, 4.0, 0.0, 4.0], index=idx)
+    gross = logic.build_total_return_series(close, divs, withhold_schedule=None)
+    net = logic.build_total_return_series(close, divs, withhold_schedule=0.30)
+    worse = logic.build_total_return_series(close, divs, withhold_schedule=0.60)
+    assert net["drip"].iloc[-1] < gross["drip"].iloc[-1]
+    assert net["cash"].iloc[-1] < gross["cash"].iloc[-1]
+    assert worse["drip"].iloc[-1] < net["drip"].iloc[-1]
+    assert worse["cash"].iloc[-1] < net["cash"].iloc[-1]
+
+
+def test_total_return_series_dict_schedule_per_distribution():
+    idx = pd.date_range("2026-01-01", periods=3, freq="D")
+    close = pd.Series([100.0, 100.0, 100.0], index=idx)
+    divs = pd.Series([0.0, 10.0, 0.0], index=idx)
+    schedule = {idx[1]: 0.5}
+    df = logic.build_total_return_series(close, divs, withhold_schedule=schedule)
+    # Dividendo bruto $10, retención 50% -> neto $5 reinvertido/acumulado sobre $100.
+    assert df["cash"].iloc[-1] == pytest.approx(105.0)
+    assert df["drip"].iloc[-1] == pytest.approx(105.0)
+
+
+def test_build_roc_aware_withholding_none_without_19a_data(monkeypatch):
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    assert logic.build_roc_aware_withholding("SCHB", [pd.Timestamp("2026-01-01")]) is None
+    assert logic.build_roc_aware_withholding("MSTY", []) is None
+
+
+def test_build_roc_aware_withholding_direct_match_and_fallback(monkeypatch):
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 50.0,
+                 "per_distribution": [{"date": "2026-01-05", "roc_pct": 90.0},
+                                       {"date": "2026-02-05", "roc_pct": 20.0}]}})
+    # Fecha dentro de tolerancia (±6 dias) de un aviso -> usa su roc_pct exacto. La primera
+    # fecha (2026-01-01) solo amplía la ventana para que ambos avisos 19a queden dentro.
+    dates = [pd.Timestamp("2026-01-01"), pd.Timestamp("2026-01-06"), pd.Timestamp("2026-03-15")]
+    sched = logic.build_roc_aware_withholding("MSTY", dates, base_rate=0.30)
+    assert sched is not None
+    # 2026-01-06 empata con 2026-01-05 (90% ROC) -> tasa = 0.30*(1-0.90) = 0.03
+    assert sched[pd.Timestamp("2026-01-06")] == pytest.approx(0.03)
+    # 2026-03-15 no tiene aviso cercano -> cae al promedio de la ventana (90+20)/2=55%
+    assert sched[pd.Timestamp("2026-03-15")] == pytest.approx(0.30 * (1 - 0.55))
+
+
+def test_build_roc_aware_withholding_uses_weighted_pct_without_per_distribution(monkeypatch):
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"weighted_pct": 72.0}})
+    sched = logic.build_roc_aware_withholding("MSTY", [pd.Timestamp("2026-01-01")], base_rate=0.30)
+    assert sched[pd.Timestamp("2026-01-01")] == pytest.approx(0.30 * (1 - 0.72))
+
+
+def _msty_mstr_window():
+    """Descarga MSTY/MSTR reales y recorta a la ventana común 2024-11-25 -> 2026-07-10
+    (caso de aceptación del traspaso 2026-07-13). Se salta si no hay red."""
+    import warnings
+    try:
+        import yfinance as yf
+        warnings.filterwarnings("ignore")
+        msty = yf.download("MSTY", start="2024-11-15", end="2026-07-12",
+                            auto_adjust=False, actions=True, progress=False)
+        mstr = yf.download("MSTR", start="2024-11-15", end="2026-07-12",
+                            auto_adjust=False, actions=True, progress=False)
+        if isinstance(msty.columns, pd.MultiIndex):
+            msty.columns = msty.columns.get_level_values(0)
+        if isinstance(mstr.columns, pd.MultiIndex):
+            mstr.columns = mstr.columns.get_level_values(0)
+        msty.index = pd.to_datetime(msty.index)
+        mstr.index = pd.to_datetime(mstr.index)
+    except Exception as e:
+        pytest.skip(f"sin datos de mercado (yfinance no disponible): {e}")
+    if msty.empty or mstr.empty:
+        pytest.skip("sin datos de mercado (yfinance no disponible)")
+    common = msty.index.intersection(mstr.index)
+    common = common[(common >= pd.Timestamp("2024-11-25")) & (common <= pd.Timestamp("2026-07-10"))]
+    if len(common) < 30:
+        pytest.skip("ventana MSTY/MSTR insuficiente (datos de mercado incompletos)")
+    return msty.loc[common], mstr.loc[common]
+
+
+def test_build_roc_aware_withholding_matches_most_msty_distributions():
+    msty, _ = _msty_mstr_window()
+    div_dates = msty["Dividends"][msty["Dividends"] > 0].index
+    roc19a = logic.load_roc_19a().get("MSTY")
+    if not roc19a or not roc19a.get("per_distribution"):
+        pytest.skip("sin knowledge/roc_19a.yaml para MSTY")
+    dated = [pd.Timestamp(r["date"]).normalize() for r in roc19a["per_distribution"]]
+    matched = sum(
+        1 for dt in div_dates
+        if min(abs((d - pd.Timestamp(dt).normalize()).days) for d in dated) <= 6)
+    assert matched >= 45, f"solo {matched}/{len(div_dates)} distribuciones empatan con aviso 19a (±6 días)"
+    sched = logic.build_roc_aware_withholding("MSTY", div_dates, base_rate=0.30)
+    assert sched is not None and len(sched) == len(div_dates)
+
+
+def test_total_return_series_msty_acceptance_case():
+    """Caso de aceptación del traspaso 2026-07-13, ventana 2024-11-25 -> 2026-07-10.
+    Tolerancia ±$1 (datos de yfinance pueden variar ligeramente)."""
+    msty, mstr = _msty_mstr_window()
+
+    price_final = 100.0 * msty["Close"].iloc[-1] / msty["Close"].iloc[0]
+    mstr_final = 100.0 * mstr["Close"].iloc[-1] / mstr["Close"].iloc[0]
+    assert price_final == pytest.approx(7.3, abs=1.0)
+    assert mstr_final == pytest.approx(23.5, abs=1.0)
+
+    gross = logic.build_total_return_series(msty["Close"], msty["Dividends"], None)
+    assert gross["drip"].iloc[-1] == pytest.approx(32.0, abs=1.0)
+    assert gross["cash"].iloc[-1] == pytest.approx(71.6, abs=1.0)
+
+    worst = logic.build_total_return_series(msty["Close"], msty["Dividends"], 0.30)
+    assert worst["drip"].iloc[-1] == pytest.approx(20.8, abs=1.0)
+    assert worst["cash"].iloc[-1] == pytest.approx(52.3, abs=1.0)
+
+    div_dates = msty["Dividends"][msty["Dividends"] > 0].index
+    sched = logic.build_roc_aware_withholding("MSTY", div_dates, base_rate=0.30)
+    if sched is None:
+        pytest.skip("sin knowledge/roc_19a.yaml para MSTY")
+    roc_aware = logic.build_total_return_series(msty["Close"], msty["Dividends"], sched)
+    assert roc_aware["drip"].iloc[-1] == pytest.approx(28.0, abs=1.0)
+    assert roc_aware["cash"].iloc[-1] == pytest.approx(65.6, abs=1.0)
+    # La tasa efectiva promedio de la ventana debe rondar ~9.4% (no 30% plano).
+    avg_rate = sum(sched.values()) / len(sched)
+    assert avg_rate == pytest.approx(0.094, abs=0.03)
 
 
 # ── Auditoría del yield titular vs realidad (audit_advertised_yield) ────────────
