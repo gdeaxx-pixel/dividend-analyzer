@@ -19,6 +19,7 @@ _LOGIC_SENTINELS = (
     "nra_tax_breakdown", "build_risk_analysis", "build_interpretation",
     "classify_roc_health", "load_roc_health_history", "latest_health_verdict",
     "build_yieldmax_total_return_series",
+    "build_total_return_series", "build_roc_aware_withholding", "estimate_roc_refund",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
