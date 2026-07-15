@@ -3151,6 +3151,9 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _wby = (results.get(_vj_tk) or {}).get(
                                     'withheld_by_year') or {}
                                 _years_wh = sorted(y for y, v in _wby.items() if v > 0.01)
+                                _obs_by_year = (results.get(_vj_tk) or {}).get(
+                                    'tax_refund_observed_by_year') or {}
+                                _obs_total = round(sum(_obs_by_year.values()), 2)
                                 _refund_by_year = None
                                 if len(_years_wh) > 1:
                                     _refund_by_year = logic.estimate_roc_refund_by_year(
@@ -3191,6 +3194,106 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'<div style="display:flex;gap:8px;flex-wrap:wrap;'
                                     f'margin:2px 0 8px 0;">{_rf_html}</div>',
                                     unsafe_allow_html=True)
+                                # Stepper de 3 niveles de certeza de la devolución del ROC:
+                                # Estimado (19a) → Oficial (1042-S, lo teclea el usuario) →
+                                # Efectivo (crédito real detectado en el CSV). Misma fórmula en los
+                                # tres; sube la calidad del dato. El 1042-S se lee de session_state
+                                # (lo escribe el number_input de abajo en el render previo).
+                                _official_1042s = float(st.session_state.get(
+                                    f'roc_1042s_{_vj_tk}', 0.0) or 0.0)
+                                _est_ref = _refund_info['refund']
+                                _lvl2_done = _official_1042s > 0.01
+                                _lvl3_done = _obs_total > 0.01
+                                _n_done = 1 + int(_lvl2_done) + int(_lvl3_done)
+                                if _lvl3_done:
+                                    _ref_base = _official_1042s if _lvl2_done else _est_ref
+                                    _pend3 = max(0.0, _ref_base - _obs_total)
+                                    _l3_status = ('✓ Ya se te devolvió.' +
+                                                  (f' Faltarían ~{_money(_pend3)}.' if _pend3 > 0.01
+                                                   else ' Ciclo completo.'))
+                                else:
+                                    _l3_status = ('Pendiente. Schwab: jun–sep (3–6 meses tras el '
+                                                  '1042-S) · IB: ene–mar. Si no llega, reclámalo '
+                                                  'con el 1040-NR.')
+                                _levels = [
+                                    {'tag': 'Nivel 1 · Estimado', 'done': True, 'accent': '#006497',
+                                     'amount': _money(_est_ref), 'note': 'aprox. · avisos 19a',
+                                     'desc': 'La app lo calcula con el %ROC provisional del fondo. '
+                                             'Es una cota conservadora.',
+                                     'status': '✓ Disponible ahora. Falta tu número oficial '
+                                               '(1042-S, ~mediados de marzo).',
+                                     'sbg': '#eef4f8', 'sfg': '#006497', 'conn': 'solid'},
+                                    {'tag': 'Nivel 2 · Oficial', 'done': _lvl2_done, 'accent': '#006497',
+                                     'amount': _money(_official_1042s) if _lvl2_done else '—',
+                                     'note': '· 1042-S, casilla 10' if _lvl2_done else 'por completar',
+                                     'desc': 'El número final que el IRS reconoce que te deben, '
+                                             'sin estimar.',
+                                     'status': ('✓ Lo tienes. Falta que el dinero se acredite en tu '
+                                                'cuenta.' if _lvl2_done else 'Ingresa el crédito de '
+                                                'tu 1042-S (casilla 10) en el campo de abajo.'),
+                                     'sbg': '#eef4f8' if _lvl2_done else '#f4f2ee',
+                                     'sfg': '#006497' if _lvl2_done else '#6b7683', 'conn': 'dashed'},
+                                    {'tag': 'Nivel 3 · Efectivo devuelto', 'done': _lvl3_done,
+                                     'accent': '#1d9e75' if _lvl3_done else '#c9821f',
+                                     'amount': _money(_obs_total) if _lvl3_done else '$0',
+                                     'note': '· acreditado' if _lvl3_done else 'hasta hoy',
+                                     'desc': 'El reembolso real depositado en tu cuenta. Cierra el '
+                                             'ciclo y confirma que el bróker pagó.',
+                                     'status': _l3_status,
+                                     'sbg': '#eaf7f1' if _lvl3_done else '#fbf6ea',
+                                     'sfg': '#1d9e75' if _lvl3_done else '#a06a1a', 'conn': None},
+                                ]
+                                _steps_html = ''
+                                for _lv in _levels:
+                                    if _lv['done']:
+                                        _node = (f'<div style="width:26px;height:26px;'
+                                                 f'background:{_lv["accent"]};color:#fff;display:flex;'
+                                                 f'align-items:center;justify-content:center;'
+                                                 f'font-size:14px;">✓</div>')
+                                    else:
+                                        _node = (f'<div style="width:26px;height:26px;'
+                                                 f'background:transparent;border:2px solid '
+                                                 f'{_lv["accent"]};color:{_lv["accent"]};'
+                                                 f'display:flex;align-items:center;'
+                                                 f'justify-content:center;font-size:13px;">○</div>')
+                                    _conn = ''
+                                    if _lv['conn']:
+                                        _cstyle = '#006497' if _lv['conn'] == 'solid' else '#c9cfd6'
+                                        _conn = (f'<div style="width:2px;flex:1;min-height:22px;'
+                                                 f'background:{_cstyle};"></div>')
+                                    _steps_html += (
+                                        f'<div style="display:flex;gap:12px;">'
+                                        f'<div style="display:flex;flex-direction:column;'
+                                        f'align-items:center;">{_node}{_conn}</div>'
+                                        f'<div style="flex:1;padding-bottom:14px;">'
+                                        f'<div style="font-family:Inter,sans-serif;font-size:10px;'
+                                        f'color:{_lv["accent"]};font-weight:700;'
+                                        f'letter-spacing:0.05em;text-transform:uppercase;">'
+                                        f'{_lv["tag"]}</div>'
+                                        f'<div style="font-family:Inter,sans-serif;font-size:18px;'
+                                        f'font-weight:700;color:#0F172A;margin:1px 0;">'
+                                        f'{_lv["amount"]} <span style="font-size:11px;color:#8899aa;'
+                                        f'font-weight:400;">{_lv["note"]}</span></div>'
+                                        f'<div style="font-family:Inter,sans-serif;font-size:12px;'
+                                        f'color:#6b7683;line-height:1.5;margin:1px 0 5px;">'
+                                        f'{_lv["desc"]}</div>'
+                                        f'<div style="font-family:Inter,sans-serif;font-size:11.5px;'
+                                        f'color:{_lv["sfg"]};background:{_lv["sbg"]};padding:5px 9px;'
+                                        f'line-height:1.45;">{_lv["status"]}</div></div></div>')
+                                st.markdown(
+                                    f'<div style="margin:4px 0 4px 0;"><div style="display:flex;'
+                                    f'justify-content:space-between;align-items:baseline;'
+                                    f'margin-bottom:8px;"><span style="font-family:Inter,sans-serif;'
+                                    f'font-size:11px;font-weight:700;color:#006497;'
+                                    f'letter-spacing:0.05em;">TU DEVOLUCIÓN: 3 NIVELES DE '
+                                    f'CERTEZA</span><span style="font-family:Inter,sans-serif;'
+                                    f'font-size:11px;color:#8899aa;">{_n_done} de 3</span></div>'
+                                    f'{_steps_html}</div>', unsafe_allow_html=True)
+                                st.number_input(
+                                    'Si ya tienes tu 1042-S, ingresa el crédito de la casilla 10 '
+                                    '(código 37 · ROC) para ver tu número exacto:',
+                                    min_value=0.0, step=1.0, key=f'roc_1042s_{_vj_tk}',
+                                    format='%.2f')
                                 # Desglose por año calendario: la reclasificación del broker
                                 # opera por año fiscal, no sobre el acumulado.
                                 if _refund_by_year is not None:
@@ -3198,9 +3301,13 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     _yr_rows = ''
                                     for _y in _years_wh:
                                         _yinfo = _refund_by_year.get(_y, {})
-                                        _estado = (f'vuelve ~feb–mar {_y + 1}' if _y >= _cur_year
-                                                   else 'ya debió volver — verifícalo en tu '
-                                                        '1042-S')
+                                        _obs_y = _obs_by_year.get(_y, 0.0)
+                                        if _obs_y > 0.01:
+                                            _estado = f'✓ devuelto {_money(_obs_y)}'
+                                        elif _y >= _cur_year:
+                                            _estado = 'aún no; vuelve tras el 1042-S'
+                                        else:
+                                            _estado = 'pendiente — verifícalo en tu 1042-S / 1040-NR'
                                         _yr_rows += (
                                             f'<tr><td style="padding:4px 8px;">{_y}</td>'
                                             f'<td style="padding:4px 8px;text-align:right;">'
@@ -3237,10 +3344,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 st.markdown(
                                     '<p style="font-family:Inter,sans-serif;font-size:11px;'
                                     'color:#8899aa;margin:2px 0 10px 2px;line-height:1.5;">'
-                                    'Estimación con el % ROC de tus distribuciones (avisos 19a) — lo '
-                                    'definitivo llega en tu 1042-S, y el broker suele ajustarlo '
-                                    'entre feb y mar del año siguiente. Si para entonces no ha '
-                                    'vuelto, es argumento para reclamarlo.</p>',
+                                    'Estimación con el % ROC de tus distribuciones (avisos 19a); lo '
+                                    'definitivo lo fija tu 1042-S. El % ROC real de un mal año suele '
+                                    'ser mayor que el promedio 19a, así que esta cifra tiende a '
+                                    'quedarse corta (conservadora).</p>',
                                     unsafe_allow_html=True)
 
                         st.markdown(

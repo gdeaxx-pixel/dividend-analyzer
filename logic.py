@@ -1369,6 +1369,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
         _withheld = withheld_tax_total(ticker_df)
         _withheld_by_year = withheld_tax_total_by_year(ticker_df)
+        _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)
         _gross_by_year = {
             _y: round(divs_by_year.get(_y, 0.0) + _withheld_by_year.get(_y, 0.0), 2)
             for _y in (set(divs_by_year) | set(_withheld_by_year))
@@ -1482,6 +1483,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "withheld_tax_total": _withheld,
             "dividends_gross_by_year": _gross_by_year,
             "withheld_by_year": dict(_withheld_by_year),
+            "tax_refund_observed_by_year": dict(_refund_obs_by_year),
             "price_cagr":        _price_cagr,
             "price_cagr_recent": _price_cagr_recent,
             "price_history_days": _price_history_days,
@@ -3806,17 +3808,24 @@ def _ticker_roc_fraction(ticker, results=None):
 
 
 def withheld_tax_total(history_df) -> float:
-    """Retención de impuesto REAL registrada en el CSV, monto positivo retenido (≥0).
+    """Retención de impuesto NETA REAL registrada en el CSV (retenciones − reembolsos), ≥0.
 
     Schwab deja la retención en filas aparte ('NRA Tax Adj') que sobreviven en el historial;
     se detectan por palabra clave en la columna Action. (En IB la retención 'Foreign Tax
     Withholding' ya viene plegada como dividendo negativo durante el parseo, así que ahí el
     dividendo del CSV ya es neto y esta función devolverá 0.) Sirve para mostrar la tasa
     efectiva real cuando el dato existe, en vez de la tasa asumida.
+
+    NETEA POR SIGNO: en el CSV la retención es un monto NEGATIVO (sale efectivo) y un
+    reembolso/reclasificación (p.ej. la devolución de la porción ROC) es POSITIVO. Antes se
+    sumaba `abs()` de todas las filas de impuesto, de modo que un reembolso se contaba como
+    MÁS retención (bug: $105 retenidos + $75 devueltos → reportaba $180 en vez de $30 neto).
+    Ahora la retención neta = −Σ(montos con signo), acotada a ≥0. La detección/exhibición del
+    reembolso como movimiento propio vive aparte (objeto fiscal único, ver estimate_roc_refund).
     """
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
         return 0.0
-    total = 0.0
+    signed = 0.0                       # + reembolsos, − retenciones (tal cual el CSV)
     for _, row in history_df.iterrows():
         action = str(row.get('Action', '')).lower()
         is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
@@ -3826,20 +3835,26 @@ def withheld_tax_total(history_df) -> float:
         amt = _clean_money(row.get('Amount', 0))
         if pd.isna(amt):
             continue
-        total += abs(float(amt))
-    return round(total, 2)
+        signed += float(amt)
+    return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
 
 
 def withheld_tax_total_by_year(history_df) -> dict:
     """Como `withheld_tax_total` pero agrupada por año calendario de la fila (`Date`).
 
-    La reclasificación anual del broker opera por año fiscal: lo retenido en años pasados
-    ya debió volver, lo del año en curso vuelve en feb-mar del siguiente. Misma detección de
-    filas que `withheld_tax_total`; la suma de todos los años debe cuadrar con esa función.
+    Netea por signo dentro de cada año (retenciones − reembolsos), acotado a ≥0, igual que
+    `withheld_tax_total`; sin reembolsos la suma de todos los años cuadra con esa función.
+
+    OJO con el supuesto de la reclasificación: opera por año fiscal, PERO en los casos reales
+    observados la devolución de la porción ROC NO aparece como movimiento en el broker (ni un
+    solo crédito 'NRA Tax Adj' positivo en >1 año de historial). Por eso la devolución se
+    ESTIMA (`estimate_roc_refund_by_year`), no se lee de aquí: es una recuperación teórica que
+    el inversor tendría que reclamar (1040-NR), no un reembolso automático garantizado.
     """
     out = {}
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
         return out
+    signed = {}                        # por año: + reembolsos, − retenciones (tal cual el CSV)
     for _, row in history_df.iterrows():
         action = str(row.get('Action', '')).lower()
         is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
@@ -3852,7 +3867,41 @@ def withheld_tax_total_by_year(history_df) -> dict:
         y = _row_year(row.get('Date'))
         if y is None:
             continue
-        out[y] = round(out.get(y, 0.0) + abs(float(amt)), 2)
+        signed[y] = signed.get(y, 0.0) + float(amt)
+    for y, s in signed.items():
+        out[y] = round(max(0.0, -s), 2)  # retención neta del año (≥0)
+    return out
+
+
+def observed_tax_refund_by_year(history_df) -> dict:
+    """Reembolsos de retención NRA REALES ya acreditados en el CSV, por año calendario.
+
+    Espejo POSITIVO de `withheld_tax_total_by_year`: cuando el bróker reclasifica una
+    distribución como ROC (no gravable) y devuelve la retención cobrada de más, ese crédito
+    aparece como una fila de impuesto con monto POSITIVO (p. ej. una 'NRA Tax Adj' positiva en
+    Schwab, o un 'Foreign Tax Withholding' positivo en IB). Sirve para distinguir en la UI
+    "ya te devolvieron $X" (dato real) de "pendiente" (estimado).
+
+    Limitación conocida: en IB los 'Foreign Tax Withholding' —negativos y positivos— se pliegan
+    como dividendo durante el parseo (`action_map`), así que ahí esta función devuelve {} y el
+    reembolso IB queda absorbido en el dividendo neto (pendiente: separarlo, traspaso 2026-07-14).
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return out
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if not is_tax:
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt) or float(amt) <= 0:      # solo reembolsos (montos positivos)
+            continue
+        y = _row_year(row.get('Date'))
+        if y is None:
+            continue
+        out[y] = round(out.get(y, 0.0) + float(amt), 2)
     return out
 
 

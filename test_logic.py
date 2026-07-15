@@ -1150,6 +1150,42 @@ def test_withheld_tax_total_reads_nra_rows():
         [{'Date': '2025-11-15', 'Action': 'Cash Dividend', 'Amount': 12}])) == 0.0
 
 
+def test_withheld_tax_total_nets_refunds_not_abs():
+    # Regresión: un reembolso (monto POSITIVO en fila de impuesto, p.ej. la devolución de la
+    # porción ROC tras la reclasificación) debe NETEAR la retención, no sumarse como más
+    # retención. Antes, con abs(): -100 y +30 → 130 (bug). Ahora → 70.
+    hist = _div_hist([
+        {'Date': '2025-05-15', 'Action': 'NRA Tax Adj', 'Amount': -100},
+        {'Date': '2026-03-01', 'Action': 'NRA Tax Adj', 'Amount': 30},   # reembolso/reclasif.
+    ])
+    assert logic.withheld_tax_total(hist) == pytest.approx(70.0)
+    # reembolso que excede la retención → retención neta acotada a 0 (nunca negativa)
+    hist2 = _div_hist([
+        {'Date': '2025-05-15', 'Action': 'NRA Tax Adj', 'Amount': -20},
+        {'Date': '2026-03-01', 'Action': 'NRA Tax Adj', 'Amount': 50},
+    ])
+    assert logic.withheld_tax_total(hist2) == 0.0
+    # by_year netea por año: 2025 retiene 100, 2026 recibe reembolso → 0 (no negativo)
+    wby = logic.withheld_tax_total_by_year(hist)
+    assert wby.get(2025) == pytest.approx(100.0)
+    assert wby.get(2026) == 0.0
+
+
+def test_observed_tax_refund_by_year_detects_positive_rows():
+    # El reembolso real (fila de impuesto POSITIVA, p.ej. la devolución del ROC) se detecta por
+    # año; la retención (negativa) y las filas que no son de impuesto no cuentan.
+    hist = _div_hist([
+        {'Date': '2025-05-15', 'Action': 'NRA Tax Adj', 'Amount': -100},  # retención
+        {'Date': '2026-06-20', 'Action': 'NRA Tax Adj', 'Amount': 83},    # reembolso del ROC
+        {'Date': '2026-07-01', 'Action': 'Cash Dividend', 'Amount': 40},  # no es impuesto
+    ])
+    obs = logic.observed_tax_refund_by_year(hist)
+    assert obs.get(2026) == pytest.approx(83.0)
+    assert 2025 not in obs               # ese año solo hubo retención, sin reembolso
+    assert logic.observed_tax_refund_by_year(_div_hist(
+        [{'Date': '2025-11-15', 'Action': 'Cash Dividend', 'Amount': 12}])) == {}
+
+
 def test_forward_realized_yield_distinguishes_headline_from_collected():
     # Pagos mensuales decrecientes: último pago anualizado (forward) > lo cobrado en 12m (realizado).
     rows = [{'Date': f'2025-{m:02d}-15', 'Action': 'Cash Dividend', 'Amount': amt}
