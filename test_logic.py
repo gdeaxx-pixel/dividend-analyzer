@@ -2289,3 +2289,96 @@ def test_ticker_roc_fraction_msty_recent_average_not_weighted():
         f"(weighted_pct={info.get('weighted_pct')})")
     assert frac < (info.get("weighted_pct") or 999) - 10, (
         "el promedio reciente debe quedar bien por debajo del weighted_pct histórico (72%)")
+
+
+# ── 1042-S: extracción del crédito ROC (casilla 10, income code 37) ───────────
+
+def test_sum_roc_credit_from_forms_only_code_37():
+    per_form = [
+        {"income_code": "01", "gross_income": 1, "federal_tax_withheld": 0, "withholding_credit": 0},
+        {"income_code": "06", "gross_income": 28, "federal_tax_withheld": 8, "withholding_credit": 8},
+        {"income_code": "37", "gross_income": 276, "federal_tax_withheld": 83, "withholding_credit": 83},
+    ]
+    result = logic._sum_roc_credit_from_forms(per_form)
+    assert result["credit"] == pytest.approx(83.0)
+    assert result["roc_gross"] == pytest.approx(276.0)
+    assert len(result["per_form"]) == 1
+
+
+def test_sum_roc_credit_from_forms_sums_multiple_code_37():
+    per_form = [
+        {"income_code": "37", "gross_income": 100, "withholding_credit": 30},
+        {"income_code": "37", "gross_income": 200, "withholding_credit": 60},
+    ]
+    result = logic._sum_roc_credit_from_forms(per_form)
+    assert result["credit"] == pytest.approx(90.0)
+    assert result["roc_gross"] == pytest.approx(300.0)
+    assert len(result["per_form"]) == 2
+
+
+def test_sum_roc_credit_from_forms_no_code_37():
+    per_form = [
+        {"income_code": "01", "gross_income": 1, "withholding_credit": 0},
+        {"income_code": "06", "gross_income": 28, "withholding_credit": 8},
+    ]
+    result = logic._sum_roc_credit_from_forms(per_form)
+    assert result == {"credit": 0.0, "roc_gross": 0.0, "per_form": []}
+
+
+def test_sum_roc_credit_from_forms_falls_back_to_7a():
+    per_form = [
+        {"income_code": "37", "gross_income": 276, "federal_tax_withheld": 83, "withholding_credit": None},
+    ]
+    result = logic._sum_roc_credit_from_forms(per_form)
+    assert result["credit"] == pytest.approx(83.0)
+
+
+def test_sum_roc_credit_from_forms_int_and_str_code():
+    per_form = [
+        {"income_code": 37, "gross_income": 100, "withholding_credit": 30},
+        {"income_code": "37", "gross_income": 50, "withholding_credit": 10},
+    ]
+    result = logic._sum_roc_credit_from_forms(per_form)
+    assert result["credit"] == pytest.approx(40.0)
+    assert len(result["per_form"]) == 2
+
+
+def test_extract_roc_credit_from_pdf_parses_mixed_forms(monkeypatch):
+    class _FakeResp:
+        text = ('{"forms": ['
+                '{"income_code": "01", "gross_income": 1, "federal_tax_withheld": 0, "withholding_credit": 0},'
+                '{"income_code": "06", "gross_income": 28, "federal_tax_withheld": 8, "withholding_credit": 8},'
+                '{"income_code": "37", "gross_income": 276, "federal_tax_withheld": 83, "withholding_credit": 83}'
+                ']}')
+
+    class _FakeModels:
+        def generate_content(self, model, contents, config):
+            return _FakeResp()
+
+    class _FakeClient:
+        def __init__(self, api_key=None):
+            self.models = _FakeModels()
+
+    from google import genai
+    monkeypatch.setattr(genai, "Client", _FakeClient)
+
+    result = logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key")
+    assert result["credit"] == pytest.approx(83.0)
+    assert result["roc_gross"] == pytest.approx(276.0)
+    assert len(result["per_form"]) == 1
+
+
+def test_extract_roc_credit_from_pdf_returns_none_on_sdk_failure(monkeypatch):
+    class _FakeClient:
+        def __init__(self, api_key=None):
+            raise RuntimeError("no client")
+
+    from google import genai
+    monkeypatch.setattr(genai, "Client", _FakeClient)
+
+    assert logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key") is None
+
+
+def test_extract_roc_credit_from_pdf_none_without_bytes_or_key():
+    assert logic.extract_roc_credit_from_pdf(b"", "fake-key") is None
+    assert logic.extract_roc_credit_from_pdf(b"%PDF", "") is None

@@ -20,7 +20,7 @@ _LOGIC_SENTINELS = (
     "classify_roc_health", "load_roc_health_history", "latest_health_verdict",
     "build_yieldmax_total_return_series",
     "build_total_return_series", "build_roc_aware_withholding", "estimate_roc_refund",
-    "estimate_roc_refund_by_year",
+    "estimate_roc_refund_by_year", "extract_roc_credit_from_pdf",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
@@ -3289,8 +3289,63 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'CERTEZA</span><span style="font-family:Inter,sans-serif;'
                                     f'font-size:11px;color:#8899aa;">{_n_done} de 3</span></div>'
                                     f'{_steps_html}</div>', unsafe_allow_html=True)
+                                _roc_pdf = st.file_uploader(
+                                    'Sube tu 1042-S (PDF) y lo leemos por ti',
+                                    type=['pdf'], key=f'roc_1042s_pdf_{_vj_tk}')
+                                st.caption(
+                                    'El PDF no se guarda: se procesa de forma transitoria con '
+                                    'Gemini (Google) solo para leer el número y luego se descarta.')
+                                if _roc_pdf is not None:
+                                    _roc_pdf_sig = (_roc_pdf.name, _roc_pdf.size)
+                                    _roc_pdf_cache_key = f'_roc_pdf_extract_{_vj_tk}'
+                                    if st.session_state.get(f'{_roc_pdf_cache_key}_sig') != _roc_pdf_sig:
+                                        _gem_key_pdf = _get_gemini_key()
+                                        with st.spinner('Leyendo tu 1042-S…'):
+                                            _roc_pdf_result = logic.extract_roc_credit_from_pdf(
+                                                _roc_pdf.getvalue(), _gem_key_pdf)
+                                        st.session_state[_roc_pdf_cache_key] = _roc_pdf_result
+                                        st.session_state[f'{_roc_pdf_cache_key}_sig'] = _roc_pdf_sig
+                                        st.session_state.pop(f'{_roc_pdf_cache_key}_confirmed', None)
+                                    _roc_pdf_result = st.session_state.get(_roc_pdf_cache_key)
+                                    _roc_pdf_confirmed = st.session_state.get(
+                                        f'{_roc_pdf_cache_key}_confirmed')
+                                    if _roc_pdf_result is None:
+                                        st.warning(
+                                            'No pudimos procesar el PDF en este momento — '
+                                            'intenta de nuevo en unos minutos o teclea el '
+                                            'valor manualmente abajo.')
+                                    elif not _roc_pdf_result.get('per_form'):
+                                        st.warning(
+                                            'No encontré un crédito ROC (código 37) en ese PDF — '
+                                            'verifica que sea tu 1042-S o teclea el valor manualmente.')
+                                    elif _roc_pdf_confirmed:
+                                        _roc_manual_now = float(
+                                            st.session_state.get(f'roc_1042s_{_vj_tk}', 0.0) or 0.0)
+                                        if abs(_roc_manual_now - _roc_pdf_result['credit']) < 0.005:
+                                            st.success(
+                                                f'Crédito {_money(_roc_pdf_result["credit"])} '
+                                                f'tomado de tu 1042-S y aplicado al campo de abajo.')
+                                    else:
+                                        st.markdown(
+                                            f'Leí en tu 1042-S: crédito ROC '
+                                            f'**{_money(_roc_pdf_result["credit"])}** '
+                                            f'(sobre {_money(_roc_pdf_result["roc_gross"])} brutos '
+                                            f'código 37) — ¿es correcto?')
+                                        _cc1, _cc2 = st.columns(2)
+                                        with _cc1:
+                                            if st.button('Confirmar', type='primary',
+                                                         key=f'_roc_pdf_ok_{_vj_tk}'):
+                                                st.session_state[f'roc_1042s_{_vj_tk}'] = \
+                                                    _roc_pdf_result['credit']
+                                                st.session_state[f'{_roc_pdf_cache_key}_confirmed'] = True
+                                                st.rerun()
+                                        with _cc2:
+                                            if st.button('Corregir', key=f'_roc_pdf_no_{_vj_tk}'):
+                                                st.session_state.pop(_roc_pdf_cache_key, None)
+                                                st.session_state.pop(f'{_roc_pdf_cache_key}_sig', None)
+                                                st.rerun()
                                 st.number_input(
-                                    'Si ya tienes tu 1042-S, ingresa el crédito de la casilla 10 '
+                                    '…o ingresa manualmente el crédito de la casilla 10 '
                                     '(código 37 · ROC) para ver tu número exacto:',
                                     min_value=0.0, step=1.0, key=f'roc_1042s_{_vj_tk}',
                                     format='%.2f')

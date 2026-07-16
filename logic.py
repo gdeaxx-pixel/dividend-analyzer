@@ -144,6 +144,122 @@ def extract_cost_basis_from_images(images, candidate_tickers, api_key):
     return {t: v["cost_basis"] for t, v in rich.items() if v.get("cost_basis")}
 
 
+def _sum_roc_credit_from_forms(per_form):
+    """Suma el credito de retencion (casilla 10) de los formularios 1042-S con
+    income code 37 (Return of Capital). Los codigos 01 (interes) y 06 (dividendo)
+    nunca se suman. Si falta withholding_credit usa federal_tax_withheld (7a) de respaldo.
+    Devuelve {'credit': float, 'roc_gross': float, 'per_form': [...]} (vacio si no hay code 37).
+    """
+    def _code37(v):
+        m = re.search(r"\d+", str(v or ""))
+        return m is not None and int(m.group()) == 37
+
+    def _num(v):
+        try:
+            f = float(v)
+            return f
+        except (TypeError, ValueError):
+            return 0.0
+
+    matched = []
+    credit_total = 0.0
+    gross_total = 0.0
+    for row in per_form or []:
+        if not isinstance(row, dict) or not _code37(row.get("income_code")):
+            continue
+        credit = _num(row.get("withholding_credit"))
+        if not credit:
+            credit = _num(row.get("federal_tax_withheld"))
+        gross = _num(row.get("gross_income"))
+        credit_total += credit
+        gross_total += gross
+        matched.append(row)
+
+    if not matched:
+        return {"credit": 0.0, "roc_gross": 0.0, "per_form": []}
+    return {"credit": credit_total, "roc_gross": gross_total, "per_form": matched}
+
+
+def extract_roc_credit_from_pdf(pdf_bytes, api_key):
+    """Lee un 1042-S en PDF con Gemini y devuelve el credito ROC (income code 37, casilla 10).
+
+    Devuelve {'credit': float, 'roc_gross': float, 'per_form': [...]} o None ante cualquier
+    fallo (sin SDK/red/cuota/JSON invalido). El PDF nunca se guarda; se procesa en memoria.
+    """
+    if not pdf_bytes or not api_key:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+        import json as _json
+        import time as _time
+    except Exception:
+        return None
+
+    prompt = (
+        "Este es un formulario fiscal IRS 1042-S (puede contener varios formularios o paginas, "
+        "uno por cada income code). Por cada formulario que encuentres, extrae: "
+        "1) 'income_code' = Box 1 (Income code); "
+        "2) 'gross_income' = Box 2 (Gross income); "
+        "3) 'federal_tax_withheld' = Box 7a (Federal tax withheld); "
+        "4) 'withholding_credit' = Box 10 (Total withholding credit). "
+        "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
+        "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
+        "el filtrado lo hace otro sistema."
+    )
+
+    schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "forms": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "income_code": types.Schema(type=types.Type.STRING),
+                        "gross_income": types.Schema(type=types.Type.NUMBER),
+                        "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
+                        "withholding_credit": types.Schema(type=types.Type.NUMBER),
+                    },
+                    required=["income_code"],
+                ),
+            )
+        },
+        required=["forms"],
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception:
+        return None
+
+    contents = [types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"), prompt]
+    cfg = types.GenerateContentConfig(
+        temperature=0,
+        response_mime_type="application/json",
+        response_schema=schema,
+    )
+    for _model in [GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS:
+        for _attempt in range(2):
+            try:
+                resp = client.models.generate_content(model=_model, contents=contents, config=cfg)
+                data = _json.loads(resp.text)
+                return _sum_roc_credit_from_forms(data.get("forms", []))
+            except Exception as _e:
+                _msg = str(_e)
+                _transient = any(s in _msg for s in (
+                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
+                if _transient and _attempt == 0:
+                    try:
+                        _time.sleep(2)
+                    except Exception:
+                        pass
+                    continue
+                break
+
+    return None
+
+
 def get_session():
     """
     Creates a curl_cffi session mimicking Chrome to bypass bot detection.
