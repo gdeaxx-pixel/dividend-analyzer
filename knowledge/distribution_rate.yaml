@@ -2,53 +2,53 @@
 # Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.
 AMDY:
   rate_pct: 86.08
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/amdy/
 AMZY:
   rate_pct: 30.8
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/amzy/
 CONY:
   rate_pct: 71.59
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/cony/
 GOOY:
   rate_pct: 28.65
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/gooy/
 JPMO:
   rate_pct: 33.52
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/jpmo/
 MSFO:
   rate_pct: 28.04
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/msfo/
 MSTY:
   rate_pct: 80.64
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/msty/
 NFLY:
   rate_pct: 30.73
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/nfly/
 NVDY:
   rate_pct: 41.15
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/nvdy/
 PLTY:
   rate_pct: 45.42
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/plty/
 TSLY:
   rate_pct: 52.55
-  as_of: '2026-07-09'
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/tsly/
 YMAG:
-  rate_pct: 33.97
-  as_of: '2026-07-09'
+  rate_pct: 34.23
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/ymag/
 YMAX:
-  rate_pct: 45.44
-  as_of: '2026-07-09'
+  rate_pct: 48.28
+  as_of: '2026-07-16'
   source_url: https://yieldmaxetfs.com/our-etfs/ymax/
