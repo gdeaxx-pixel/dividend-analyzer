@@ -2664,38 +2664,38 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _mvc = ('#e05c5c' if _mneg else
                                     ('#021C36' if _mcur else '#5a6b7a'))
                             _mlc = '#006497' if _mcur else '#8899aa'
-                            _mtick = ('' if _mi == 0 else
-                                      f'border-left:2px solid '
-                                      f'{"#006497" if _mcur else "#c9d6e0"};'
-                                      f'padding-left:18px;margin-left:18px;')
+                            _mdiv = ('' if _mi == 0 else
+                                     f'border-left:1px solid '
+                                     f'{"#006497" if _mcur else "#dbe3ea"};')
                             if _mcur:
-                                _mbox = ('background:#ffffff;box-shadow:0 0 0 1px #006497;'
-                                         'padding:8px 16px;')
+                                _mbg = 'background:#ffffff;box-shadow:0 0 0 1px #006497;'
                             elif _mneg:
-                                _mbox = ('background:#fdecea;padding-top:6px;'
-                                         'padding-bottom:6px;padding-right:12px;')
+                                _mbg = 'background:#fdecea;'
                             else:
-                                _mbox = ''
+                                _mbg = ''
                             _msub_html = (
-                                f'<span style="display:block;font-family:Inter,sans-serif;'
-                                f'font-size:8px;color:#8899aa;margin-top:3px;">{_msub}</span>'
+                                f'<span style="display:block;text-align:center;'
+                                f'font-family:Inter,sans-serif;font-size:8px;color:#8899aa;'
+                                f'margin-top:3px;">{_msub}</span>'
                                 if _msub else '')
                             _migas_html += (
-                                f'<span style="display:inline-block;vertical-align:top;'
-                                f'{_mtick}{_mbox}">'
+                                f'<div style="{_mdiv}{_mbg}padding:12px 10px;'
+                                f'text-align:center;min-width:0;">'
                                 f'<span style="display:block;font-size:9px;font-weight:700;'
                                 f'letter-spacing:0.05em;text-transform:uppercase;'
                                 f'color:{_mlc};">{_mlb}</span>'
                                 f'<span style="display:block;margin-top:2px;font-family:'
                                 f'SFMono-Regular,ui-monospace,Menlo,'
                                 f'Consolas,monospace;font-size:12px;font-weight:700;'
-                                f'color:{_mvc};">{_mvl}</span>{_msub_html}</span>')
+                                f'color:{_mvc};">{_mvl}</span>{_msub_html}</div>')
                             _mi += 1
                         st.markdown(
                             f'<div style="border-left:3px solid #006497;background:#eef6fb;'
                             f'font-family:Inter,sans-serif;margin:6px 0 12px 2px;'
-                            f'padding:22px 26px;display:flex;flex-wrap:wrap;row-gap:20px;'
-                            f'line-height:1.3;">{_migas_html}</div>', unsafe_allow_html=True)
+                            f'padding:20px 24px;display:grid;'
+                            f'grid-template-columns:repeat(auto-fit,minmax(132px,1fr));'
+                            f'row-gap:18px;line-height:1.3;">{_migas_html}</div>',
+                            unsafe_allow_html=True)
 
                         # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
                         _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
