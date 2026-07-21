@@ -2643,10 +2643,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         if not _no_imp:
                             _migas_defs.append(
                                 (2, 'Div. neto percibido', _money(_d['neto']), False, False,
-                                 '= Reinv + Efvo'))
+                                 '= Reinv + Efectivo'))
                         _migas_defs.append(
-                            (3, 'Reinv + efvo',
-                             f"{_money(_d['drip'])} + {_money(_d['cash'])}", False, True, ''))
+                            (3, 'Reinv + Efectivo', '', False, True,
+                             f"{_money(_d['drip'])} + {_money(_d['cash'])}"))
                         _migas_defs.append(
                             (4, 'Capital trabajando', _money(_d['total']), False, True,
                              '= Bolsillo + Reinvertido'))
@@ -2662,9 +2662,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         _mi = 0
                         for _mstep, _mlb, _mvl, _mneg, _melig, _msub in _migas_defs:
                             if _mstep > _step:
-                                continue
-                            if _mstep == 5 and _step == 5:
-                                # Se reemplaza por la cadena expandida de abajo.
                                 continue
                             _mcur = _melig and _mstep == _step
                             _mvc = ('#e05c5c' if _mneg else
@@ -2688,42 +2685,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         st.markdown(
                             f'<div style="font-family:Inter,sans-serif;margin:4px 0 10px 2px;'
                             f'line-height:1.3;">{_migas_html}</div>', unsafe_allow_html=True)
-
-                        # ── Paso 5: expandir Resultado real a la cadena completa ──
-                        # (mismo cálculo que "El impacto del mercado" más abajo, mostrado
-                        # aquí arriba también por pedido explícito de más espacio/detalle).
-                        if _step == 5 and _has_rend:
-                            _mkt_top = _d['mv'] - _d['total']
-                            _mkt_top_str = ('+' if _mkt_top >= 0 else '') + _money(_mkt_top)
-                            _mkt_top_col = '#1f8a5b' if _mkt_top >= 0 else '#e05c5c'
-                            _cat_top = _d['mv'] + _d['cash']
-                            _rend_top_col = '#1f8a5b' if (_d['ret'] or 0) >= 0 else '#e05c5c'
-                            _rend_top_sub = (
-                                f'<span style="display:block;font-family:Inter,sans-serif;'
-                                f'font-size:9px;font-weight:600;color:{_rend_top_col};'
-                                f'margin-top:2px;">({_pct(_d["ret_pct"])})</span>')
-                            _top_cells = (
-                                _cell('start2', 'Capital trabajando', _money(_d['total']),
-                                      False, '#0F172A', dim=False)
-                                + _cell('mkt2', 'Impacto del mercado', _mkt_top_str, False,
-                                        _mkt_top_col, dim=False)
-                                + _cell('hoy2', 'Valor hoy', _money(_d['mv']), False,
-                                        '#0F172A', dim=False)
-                                + _cell('cash3', '+ En efectivo', '+' + _money(_d['cash']),
-                                        False, '#0F172A', dim=False)
-                                + _cell('cat2', '= Capital actual total', _money(_cat_top),
-                                        False, '#0F172A', dim=False)
-                                + _cell('pkt3', '− Tu bolsillo', '−' + _money(_d['pocket']),
-                                        False, '#0F172A', dim=False)
-                                + _cell('rend2', 'Resultado real', _money(_d['ret']),
-                                        True, _rend_top_col, _rend_top_sub))
-                            st.markdown(_grid(_top_cells, 7), unsafe_allow_html=True)
-                            st.markdown(
-                                '<p style="font-family:Inter,sans-serif;font-size:9px;'
-                                'color:#8899aa;margin:3px 0 8px 2px;">Capital actual total = '
-                                'Valor hoy + En efectivo&nbsp;&nbsp;·&nbsp;&nbsp;Resultado real '
-                                '= Capital actual total − Tu bolsillo</p>',
-                                unsafe_allow_html=True)
 
                         # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
                         _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
