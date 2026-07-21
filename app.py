@@ -2667,12 +2667,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _mtick = ('' if _mi == 0 else
                                       f'border-left:2px solid '
                                       f'{"#006497" if _mcur else "#c9d6e0"};'
-                                      f'padding-left:14px;margin-left:14px;')
-                            _mbox = ('background:#ffffff;box-shadow:0 0 0 1px #006497;'
-                                     'padding:6px 12px;' if _mcur else '')
+                                      f'padding-left:18px;margin-left:18px;')
+                            if _mcur:
+                                _mbox = ('background:#ffffff;box-shadow:0 0 0 1px #006497;'
+                                         'padding:8px 16px;')
+                            elif _mneg:
+                                _mbox = ('background:#fdecea;padding-top:6px;'
+                                         'padding-bottom:6px;padding-right:12px;')
+                            else:
+                                _mbox = ''
                             _msub_html = (
                                 f'<span style="display:block;font-family:Inter,sans-serif;'
-                                f'font-size:8px;color:#8899aa;margin-top:1px;">{_msub}</span>'
+                                f'font-size:8px;color:#8899aa;margin-top:3px;">{_msub}</span>'
                                 if _msub else '')
                             _migas_html += (
                                 f'<span style="display:inline-block;vertical-align:top;'
@@ -2680,14 +2686,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'<span style="display:block;font-size:9px;font-weight:700;'
                                 f'letter-spacing:0.05em;text-transform:uppercase;'
                                 f'color:{_mlc};">{_mlb}</span>'
-                                f'<span style="font-family:SFMono-Regular,ui-monospace,Menlo,'
+                                f'<span style="display:block;margin-top:2px;font-family:'
+                                f'SFMono-Regular,ui-monospace,Menlo,'
                                 f'Consolas,monospace;font-size:12px;font-weight:700;'
                                 f'color:{_mvc};">{_mvl}</span>{_msub_html}</span>')
                             _mi += 1
                         st.markdown(
                             f'<div style="border-left:3px solid #006497;background:#eef6fb;'
                             f'font-family:Inter,sans-serif;margin:6px 0 12px 2px;'
-                            f'padding:16px 20px;display:flex;flex-wrap:wrap;row-gap:14px;'
+                            f'padding:22px 26px;display:flex;flex-wrap:wrap;row-gap:20px;'
                             f'line-height:1.3;">{_migas_html}</div>', unsafe_allow_html=True)
 
                         # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
