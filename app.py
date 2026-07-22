@@ -2656,10 +2656,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         # flecha — una flecha que abre una línea envuelta no apunta a nada;
                         # el tick lee como continuación caiga donde caiga el salto de línea.
                         _migas_html = ''
-                        _mi = 0
-                        for _mstep, _mlb, _mvl, _mneg, _melig, _msub in _migas_defs:
-                            if _mstep > _step:
-                                continue
+                        for _mi, (_mstep, _mlb, _mvl, _mneg, _melig, _msub) in enumerate(_migas_defs):
+                            _mfuture = _mstep > _step
                             _mcur = _melig and _mstep == _step
                             _mvc = ('#e05c5c' if _mneg else
                                     ('#021C36' if _mcur else '#5a6b7a'))
@@ -2673,13 +2671,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _mbg = 'background:#fdecea;'
                             else:
                                 _mbg = ''
+                            # Nodos de pasos futuros: se reservan invisibles (visibility, no
+                            # display) para que el grid nunca cambie de alto al avanzar de
+                            # paso — evita que los cuadritos y la lista de abajo salten de
+                            # posición (Fix 2, feedback Daniel 2026-07-22).
+                            _mvis = 'visibility:hidden;' if _mfuture else ''
                             _msub_html = (
                                 f'<span style="display:block;text-align:center;'
                                 f'font-family:Inter,sans-serif;font-size:8px;color:#8899aa;'
                                 f'margin-top:3px;">{_msub}</span>'
                                 if _msub else '')
                             _migas_html += (
-                                f'<div style="{_mdiv}{_mbg}padding:12px 10px;'
+                                f'<div style="{_mdiv}{_mbg}{_mvis}padding:12px 10px;'
                                 f'text-align:center;min-width:0;">'
                                 f'<span style="display:block;font-size:9px;font-weight:700;'
                                 f'letter-spacing:0.05em;text-transform:uppercase;'
@@ -2688,7 +2691,6 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 f'SFMono-Regular,ui-monospace,Menlo,'
                                 f'Consolas,monospace;font-size:12px;font-weight:700;'
                                 f'color:{_mvc};">{_mvl}</span>{_msub_html}</div>')
-                            _mi += 1
                         st.markdown(
                             f'<div style="border-left:3px solid #006497;background:#eef6fb;'
                             f'font-family:Inter,sans-serif;margin:6px 0 12px 2px;'
@@ -2846,9 +2848,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'font-weight:700;letter-spacing:0.04em;text-transform:uppercase;'
                                     f'color:#8899aa;margin-bottom:3px;white-space:nowrap;">'
                                     f'{c["label"]}{_amt} · {total}</div>')
+                            # El sub-texto ("N vivos · M destruidos") solo existe en el paso
+                            # "Resultado real" — se reserva su línea siempre (oculta con
+                            # visibility en los demás pasos) para que ese cluster no crezca de
+                            # alto justo ahí y empuje la lista de pasos de abajo (Fix 2, cont. —
+                            # feedback Daniel 2026-07-22).
                             sub = (f'<div style="font-family:Inter,sans-serif;font-size:10px;'
-                                   f'color:#8899aa;margin-top:4px;">{c["sub"]}</div>'
-                                   if c.get('sub') else '')
+                                   f'color:#8899aa;margin-top:4px;'
+                                   f'{"" if c.get("sub") else "visibility:hidden;"}">'
+                                   f'{c.get("sub") or "&nbsp;"}</div>')
                             return (f'<div style="min-width:0;">{head}'
                                     f'<div style="border-top:{border};padding-top:5px;">'
                                     f'<div style="display:flex;flex-wrap:wrap;gap:4px;'
@@ -2875,22 +2883,31 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                              f'y {_dead_u} se destruyeron')
                             if _d['cash'] > 0.01:
                                 _surv_cap += f' · +{_cash_u} ya en efectivo'
+                        # Reserva de espacio (Fix 2, cont. — feedback Daniel 2026-07-22): en
+                        # "Resultado real" los cuadritos envuelven a 2 líneas (vivos+destruidos)
+                        # y aparecen 2 renglones de texto que en pasos previos no existen
+                        # (supervivencia + leyenda). Se reserva alto fijo para las 3 piezas y se
+                        # ocultan con visibility (no display) cuando no aplican, para que la
+                        # lista de pasos de abajo no salte de posición al avanzar.
                         st.markdown(
                             f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
                             f'display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;'
-                            f'margin:6px 0 2px 0;min-height:34px;">{_row}</div>',
+                            f'margin:6px 0 2px 0;min-height:78px;">{_row}</div>',
                             unsafe_allow_html=True)
-                        if _surv_cap:
-                            st.markdown(
-                                f'<p style="font-family:Inter,sans-serif;font-size:11px;'
-                                f'font-weight:600;color:#556677;margin:3px 0 2px 2px;">{_surv_cap}</p>',
-                                unsafe_allow_html=True)
-                        if _legend_html:
-                            st.markdown(
-                                f'<p style="font-family:Inter,sans-serif;font-size:10px;'
-                                f'color:#8899aa;margin:4px 0 2px 2px;">cada cuadrito ≈ {_u_str}'
-                                f'&nbsp;&nbsp;·&nbsp;&nbsp;{_legend_html}</p>',
-                                unsafe_allow_html=True)
+                        _surv_vis = '' if _surv_cap else 'visibility:hidden;'
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:11px;'
+                            f'font-weight:600;color:#556677;margin:3px 0 2px 2px;'
+                            f'{_surv_vis}">{_surv_cap or "&nbsp;"}</p>',
+                            unsafe_allow_html=True)
+                        _legend_vis = '' if _legend_html else 'visibility:hidden;'
+                        _legend_body = (f'cada cuadrito ≈ {_u_str}&nbsp;&nbsp;·&nbsp;&nbsp;'
+                                        f'{_legend_html}') if _legend_html else '&nbsp;'
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:10px;'
+                            f'color:#8899aa;margin:4px 0 2px 2px;{_legend_vis}">'
+                            f'{_legend_body}</p>',
+                            unsafe_allow_html=True)
 
                         # Narrativa: callout del paso actual; el camino previo va plegado.
                         # Adaptativas: sin retención (imp≈0) y sin reinversión (drip≈0).
@@ -3004,22 +3021,31 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                           f'SFMono-Regular,ui-monospace,Menlo,Consolas,'
                                           f'monospace;font-size:10.5px;color:#5a6b7a;'
                                           f'margin-top:6px;">{_formulas[_step]}</span>')
-                        _nhtml = (f'<div style="border-left:3px solid #006497;background:#eef6fb;'
-                                  f'padding:10px 14px;font-family:Inter,sans-serif;'
-                                  f'font-size:12.5px;color:#021C36;line-height:1.6;'
-                                  f'animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;">'
-                                  f'{_cur_html}</div>')
+                        # Lista única del camino recorrido: el paso actual va resaltado y de
+                        # primero, los anteriores debajo en orden inverso con el brillo
+                        # bajado — sin toggle, siempre visible, cada uno numerado
+                        # (Fix 1, feedback Daniel 2026-07-22).
+                        _nhtml = (
+                            f'<div style="border-left:3px solid #006497;background:#eef6fb;'
+                            f'padding:10px 14px;font-family:Inter,sans-serif;'
+                            f'animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;">'
+                            f'<span style="display:block;font-size:10px;font-weight:700;'
+                            f'letter-spacing:0.06em;text-transform:uppercase;color:#006497;'
+                            f'margin-bottom:3px;">Paso {_step + 1}</span>'
+                            f'<span style="display:block;font-size:12.5px;color:#021C36;'
+                            f'line-height:1.6;">{_cur_html}</span></div>')
                         if _step > 0:
-                            _prev = ''.join(
-                                f'<p style="font-family:Inter,sans-serif;font-size:12px;'
-                                f'color:#4a5568;line-height:1.55;margin:6px 0 3px 0;'
-                                f'opacity:.75;">{_narr[_ni]}</p>' for _ni in range(_step))
-                            _plural = 's' if _step > 1 else ''
-                            _nhtml += (f'<details style="margin:6px 0 0 0;">'
-                                       f'<summary style="cursor:pointer;font-family:Inter,'
-                                       f'sans-serif;font-size:11.5px;color:#006497;">Ver el '
-                                       f'camino recorrido ({_step} paso{_plural})</summary>'
-                                       f'{_prev}</details>')
+                            _prev_items = ''.join(
+                                f'<div style="padding:8px 14px;opacity:.6;">'
+                                f'<span style="display:block;font-size:9px;font-weight:700;'
+                                f'letter-spacing:0.06em;text-transform:uppercase;'
+                                f'color:#8899aa;margin-bottom:2px;">Paso {_ni + 1}</span>'
+                                f'<span style="display:block;font-family:Inter,sans-serif;'
+                                f'font-size:12px;color:#4a5568;line-height:1.55;">'
+                                f'{_narr[_ni]}</span></div>'
+                                for _ni in range(_step - 1, -1, -1))
+                            _nhtml += (f'<div style="border-left:3px solid #dbe3ea;'
+                                       f'margin-top:2px;">{_prev_items}</div>')
                         st.markdown(f'<div style="margin:8px 0 10px 2px;">{_nhtml}</div>',
                                     unsafe_allow_html=True)
 
