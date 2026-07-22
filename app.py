@@ -2563,6 +2563,22 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             return
                         _d = _vj_data[_vj_tk]
 
+                        # ── Prototipo: mosaico de 100 cuadritos como % del pico de capital
+                        # (concepto de Daniel, 2026-07-22). El pico NO es un solo valor de la
+                        # miga: como el mosaico suma varias categorías a la vez por paso
+                        # (bolsillo+bruto, o bolsillo+DRIP+efectivo), el pico debe ser la mayor
+                        # SUMA COMBINADA que se llega a mostrar en cualquier paso — si no, un
+                        # paso con varias categorías puede superar el "100%" de otro paso con
+                        # una sola (bug detectado por Daniel comparando Tu bolsillo vs Impacto
+                        # del mercado: éste último sumaba más cuadritos que el pico). Puramente
+                        # aditivo: no toca los clusters por categoría existentes.
+                        _mosaic_peak = max(
+                            _d['pocket'],
+                            _d['pocket'] + _d['bruto'],
+                            _d['pocket'] + _d['drip'] + _d['cash'],
+                            _d['cat'],
+                        ) or 1
+
                         _step_labels = ['Tu bolsillo', 'Total div. (bruto)', 'Impuesto NRA',
                                         'Reinvertidos y efectivo', 'Tu bolsillo + DRIP',
                                         'Impacto del mercado', 'Capital actual total',
@@ -2699,29 +2715,19 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             f'row-gap:18px;line-height:1.3;">{_migas_html}</div>',
                             unsafe_allow_html=True)
 
-                        # ── Tu dinero en cuadritos — icon array, espejo visual del grid ──
-                        _m = max(_d['total'], _d['bruto'], _d['mv'] + _d['cash'])
-                        _u = 5000
-                        for _cand in [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000]:
-                            if _cand == 0 or _m / _cand <= 90:
-                                _u = _cand
-                                break
-                        _nb = lambda x: max(0, int(round(x / _u)))
-                        _n_pk = _nb(_d['pocket'])
-                        _n_br = _nb(_d['bruto'])
-                        _n_im = _nb(_d['imp'])
-                        _n_dr = _nb(_d['drip'])
-                        _n_ca = _nb(_d['cash'])
-                        _n_mv = _nb(_d['mv'])
+                        # ── Tu dinero en cuadritos — mosaico de 100 = % de tu pico de capital.
+                        # Reemplaza al icon-array original (unidad dinámica $5-$5000 por fondo,
+                        # sin referencia estable entre pasos) por un mosaico anclado siempre al
+                        # mismo pico — feedback Daniel 2026-07-22: "reemplázalo, y dale más
+                        # protagonismo".
+                        _mosaic_unit = _mosaic_peak / 100
+                        _nb_peak = lambda x: max(0, int(round(x / _mosaic_unit)))
 
-                        _SQ = 'width:17px;height:17px;box-sizing:border-box;'
+                        _SQ = 'width:18px;height:18px;box-sizing:border-box;'
                         _COL_POCKET = f'{_SQ}background:#021C36;'
                         _COL_DRIP = f'{_SQ}background:#006497;'
                         _COL_TRANSITO = f'{_SQ}border:1px solid #006497;background:transparent;'
-                        _COL_IMP = f'{_SQ}background:#e05c5c;'
                         _COL_CASH = f'{_SQ}background:#1f8a5b;'
-                        _COL_FUNDIDO_PK = f'{_SQ}background:rgba(224,92,92,0.20);border:1px solid rgba(224,92,92,0.55);'
-                        _COL_FUNDIDO_DR = f'{_SQ}background:rgba(224,92,92,0.09);border:1px solid rgba(224,92,92,0.30);'
                         _COL_TAX_STRUCK = (f'{_SQ}background:linear-gradient(to top right,'
                                            f'transparent calc(50% - 1px),#A32D2D calc(50% - 1px),'
                                            f'#A32D2D calc(50% + 1px),transparent calc(50% + 1px)),'
@@ -2734,138 +2740,106 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                               f'rgba(224,92,92,0.09);'
                                               f'border:1px solid rgba(224,92,92,0.30);')
 
-                        def _blocks(n, style):
-                            if n <= 0:
-                                return ''
-                            return f'<div style="{style}"></div>' * n
-
                         # ── Cuadritos agrupados en bloques semánticos etiquetados ──
-                        _clusters = []
-                        _pocket_amt = _money(_d['pocket'])
-                        if _step == 0:
-                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
-                        elif _step == 1:
-                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
-                            _clusters.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                              'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
-                        elif _step == 2:
-                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
-                            if _no_imp:
-                                _clusters.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                                  'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
-                            else:
-                                _n_transito = max(0, _n_br - _n_im)
-                                _clusters.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                                  'sub': (f'El fisco cobra {_money(_d["imp"])} · te quedan {_money(_d["neto"])} (div. neto percibido)'
-                                                          if _n_im > 0 else ''),
-                                                  'segs': [(_n_im, _COL_TAX_STRUCK), (_n_transito, _COL_TRANSITO)],
-                                                  'ref': False})
-                        elif _step in (3, 4, 5, 6):
-                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                              'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
-                            if not _no_drip:
-                                _clusters.append({'label': 'DRIP', 'amount': _money(_d['drip']),
-                                                  'sub': '', 'segs': [(_n_dr, _COL_DRIP)], 'ref': False})
-                            if _n_ca > 0:
-                                _clusters.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
-                                                  'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
-                        else:  # _step == 7 (Resultado real)
-                            _n_capital = _n_pk + _n_dr
-                            if _n_mv >= _n_capital:
-                                _pk_alive, _dr_alive = _n_pk, _n_dr
-                                _pk_dead, _dr_dead = 0, 0
-                                _n_extra = _n_mv - _n_capital
-                            else:
-                                _frac = (_n_mv / _n_capital) if _n_capital > 0 else 0
-                                _pk_alive = int(round(_n_pk * _frac))
-                                _dr_alive = int(round(_n_dr * _frac))
-                                _pk_dead = _n_pk - _pk_alive
-                                _dr_dead = _n_dr - _dr_alive
-                                _n_extra = 0
-                            _clusters.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                              'sub': (f'{_pk_alive} vivos · {_pk_dead} destruidos'
-                                                      if _pk_dead > 0 else f'{_pk_alive} vivos'),
-                                              'segs': [(_pk_alive, _COL_POCKET), (_pk_dead, _COL_NAV_STRUCK_PK)],
-                                              'ref': True})
-                            if _n_dr > 0:
-                                _clusters.append({'label': 'DRIP', 'amount': _money(_d['drip']),
-                                                  'sub': (f'{_dr_alive} vivos · {_dr_dead} destruidos'
-                                                          if _dr_dead > 0 else f'{_dr_alive} vivos'),
-                                                  'segs': [(_dr_alive, _COL_DRIP), (_dr_dead, _COL_NAV_STRUCK_DR)],
-                                                  'ref': False})
-                            if _n_extra > 0:
-                                _clusters.append({'label': 'Apreciación', 'amount': '',
-                                                  'sub': '', 'segs': [(_n_extra, _COL_CASH)], 'ref': False})
-                            if _n_ca > 0:
-                                _clusters.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
-                                                  'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
+                        def _build_clusters(_nbf):
+                            _n_pk = _nbf(_d['pocket'])
+                            _n_br = _nbf(_d['bruto'])
+                            _n_im = _nbf(_d['imp'])
+                            _n_dr = _nbf(_d['drip'])
+                            _n_ca = _nbf(_d['cash'])
+                            _n_mv = _nbf(_d['mv'])
+                            _cl = []
+                            _pocket_amt = _money(_d['pocket'])
+                            if _step == 0:
+                                _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                            elif _step == 1:
+                                _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
+                                            'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
+                            elif _step == 2:
+                                _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                if _no_imp:
+                                    _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
+                                                'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
+                                else:
+                                    _n_transito = max(0, _n_br - _n_im)
+                                    _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
+                                                'sub': (f'El fisco cobra {_money(_d["imp"])} · te quedan {_money(_d["neto"])} (div. neto percibido)'
+                                                        if _n_im > 0 else ''),
+                                                'segs': [(_n_im, _COL_TAX_STRUCK), (_n_transito, _COL_TRANSITO)],
+                                                'ref': False})
+                            elif _step in (3, 4, 5, 6):
+                                _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                if not _no_drip:
+                                    _cl.append({'label': 'DRIP', 'amount': _money(_d['drip']),
+                                                'sub': '', 'segs': [(_n_dr, _COL_DRIP)], 'ref': False})
+                                if _n_ca > 0:
+                                    _cl.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
+                                                'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
+                            else:  # _step == 7 (Resultado real)
+                                _n_capital = _n_pk + _n_dr
+                                if _n_mv >= _n_capital:
+                                    _pk_alive, _dr_alive = _n_pk, _n_dr
+                                    _pk_dead, _dr_dead = 0, 0
+                                    _n_extra = _n_mv - _n_capital
+                                else:
+                                    _frac = (_n_mv / _n_capital) if _n_capital > 0 else 0
+                                    _pk_alive = int(round(_n_pk * _frac))
+                                    _dr_alive = int(round(_n_dr * _frac))
+                                    _pk_dead = _n_pk - _pk_alive
+                                    _dr_dead = _n_dr - _dr_alive
+                                    _n_extra = 0
+                                _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
+                                            'sub': (f'{_pk_alive} vivos · {_pk_dead} destruidos'
+                                                    if _pk_dead > 0 else f'{_pk_alive} vivos'),
+                                            'segs': [(_pk_alive, _COL_POCKET), (_pk_dead, _COL_NAV_STRUCK_PK)],
+                                            'ref': True})
+                                if _n_dr > 0:
+                                    _cl.append({'label': 'DRIP', 'amount': _money(_d['drip']),
+                                                'sub': (f'{_dr_alive} vivos · {_dr_dead} destruidos'
+                                                        if _dr_dead > 0 else f'{_dr_alive} vivos'),
+                                                'segs': [(_dr_alive, _COL_DRIP), (_dr_dead, _COL_NAV_STRUCK_DR)],
+                                                'ref': False})
+                                if _n_extra > 0:
+                                    _cl.append({'label': 'Apreciación', 'amount': '',
+                                                'sub': '', 'segs': [(_n_extra, _COL_CASH)], 'ref': False})
+                                if _n_ca > 0:
+                                    _cl.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
+                                                'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
+                            return _cl
 
-                        # Leyenda derivada de los estilos realmente usados.
-                        _LEGEND = {
-                            _COL_POCKET: ('#021C36', 'tu bolsillo'),
-                            _COL_DRIP: ('#006497', 'DRIP'),
-                            _COL_TRANSITO: ('#006497 (borde)', 'dividendos en tránsito'),
-                            _COL_IMP: ('#e05c5c', 'impuesto NRA'),
-                            _COL_CASH: ('#1f8a5b', 'efectivo'),
-                            _COL_FUNDIDO_PK: ('#cf5b5b (borde)', 'bolsillo destruido'),
-                            _COL_FUNDIDO_DR: ('#e6a6a6 (borde)', 'DRIP destruido'),
-                            _COL_TAX_STRUCK: ('#A32D2D (tachado)', 'destruido / impuesto'),
-                            _COL_NAV_STRUCK_DR: ('#c98b8b (tachado)', 'DRIP destruido'),
-                        }
-                        _legend_bits = []
-                        _seen_style = set()
-                        for _c in _clusters:
-                            for _n, _style in _c['segs']:
-                                if _n > 0 and _style not in _seen_style and _style in _LEGEND:
-                                    _seen_style.add(_style)
-                                    _legend_bits.append(_LEGEND[_style])
+                        _clusters_peak = _build_clusters(_nb_peak)
+                        _moff_color = '#e4e8ec'
+                        _mosaic_lit = sum(_n for _c in _clusters_peak for _n, _ in _c['segs'])
+                        _mosaic_sq = ''.join(
+                            f'<div style="{_style}"></div>' * _n
+                            for _c in _clusters_peak for _n, _style in _c['segs'] if _n > 0)
+                        _mosaic_sq += (f'<div style="{_SQ}background:{_moff_color};"></div>'
+                                       * max(0, 100 - _mosaic_lit))
 
-                        _seen_leg = set()
-                        _legend_html = ''
-                        for _lcol, _ltxt in _legend_bits:
-                            if _ltxt in _seen_leg:
-                                continue
-                            _seen_leg.add(_ltxt)
-                            if '(tachado)' in _lcol:
-                                _lglyph = '⊠'
-                            elif '(borde)' in _lcol:
-                                _lglyph = '□'
-                            else:
-                                _lglyph = '■'
-                            _legend_html += (f'<span style="color:{_lcol.split(" ")[0]};">'
-                                             f'{_lglyph}</span>&nbsp;{_ltxt}&nbsp;&nbsp;')
-                        _u_str = f'${_u:,}' if _u >= 1000 else f'${_u}'
+                        # Leyenda: texto + cuadrito del mismo tono, pegada al mosaico para que
+                        # se lea sola (feedback Daniel 2026-07-22: "que aparezca Tu bolsillo
+                        # $605.43 y luego un cuadrito con el tono que representa..."). Reserva 4
+                        # filas (máximo: paso 8 con bolsillo+DRIP+apreciación+efectivo) para que
+                        # la lista de pasos de abajo no salte al pasar de 1 a 4 categorías.
+                        def _mosaic_legend_row(_c):
+                            _amt_txt = f' · {_c["amount"]}' if _c['amount'] else ''
+                            _swatches = ''.join(
+                                f'<span style="{_style}width:14px;height:14px;'
+                                f'display:inline-block;flex-shrink:0;"></span>'
+                                for _n, _style in _c['segs'] if _n > 0)
+                            return (f'<div style="display:flex;align-items:center;gap:6px;'
+                                    f'margin:3px 0;"><span style="font-family:Inter,sans-serif;'
+                                    f'font-size:12px;color:#333;">{_c["label"]}{_amt_txt}'
+                                    f'</span>{_swatches}</div>')
+                        _mosaic_legend = ''.join(_mosaic_legend_row(_c) for _c in _clusters_peak)
 
-                        def _cluster_html(c):
-                            inner = ''.join(_blocks(n, style) for n, style in c['segs'])
-                            total = sum(n for n, _ in c['segs'])
-                            border = '2px solid #445566' if c.get('ref') else '1px solid #d9dee3'
-                            _amt = f' · {c["amount"]}' if c['amount'] else ''
-                            head = (f'<div style="font-family:Inter,sans-serif;font-size:9px;'
-                                    f'font-weight:700;letter-spacing:0.04em;text-transform:uppercase;'
-                                    f'color:#8899aa;margin-bottom:3px;white-space:nowrap;">'
-                                    f'{c["label"]}{_amt} · {total}</div>')
-                            # El sub-texto ("N vivos · M destruidos") solo existe en el paso
-                            # "Resultado real" — se reserva su línea siempre (oculta con
-                            # visibility en los demás pasos) para que ese cluster no crezca de
-                            # alto justo ahí y empuje la lista de pasos de abajo (Fix 2, cont. —
-                            # feedback Daniel 2026-07-22).
-                            sub = (f'<div style="font-family:Inter,sans-serif;font-size:10px;'
-                                   f'color:#8899aa;margin-top:4px;'
-                                   f'{"" if c.get("sub") else "visibility:hidden;"}">'
-                                   f'{c.get("sub") or "&nbsp;"}</div>')
-                            return (f'<div style="min-width:0;">{head}'
-                                    f'<div style="border-top:{border};padding-top:5px;">'
-                                    f'<div style="display:flex;flex-wrap:wrap;gap:4px;'
-                                    f'max-width:480px;">{inner}</div></div>{sub}</div>')
-
-                        _row = ''.join(_cluster_html(c) for c in _clusters
-                                       if sum(n for n, _ in c['segs']) > 0)
-
-                        # Supervivencia por cada $100 invertidos (solo Resultado real) — integrada bajo los cuadros.
+                        # Supervivencia por cada $100 invertidos (solo Resultado real) —
+                        # reservada (Fix 2) para que no mueva nada al aparecer/desaparecer.
                         _surv_cap = ''
                         if _step == 7 and _d.get('total', 0) and _d['total'] > 0:
                             _work = _d['total']
@@ -2883,30 +2857,32 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                              f'y {_dead_u} se destruyeron')
                             if _d['cash'] > 0.01:
                                 _surv_cap += f' · +{_cash_u} ya en efectivo'
-                        # Reserva de espacio (Fix 2, cont. — feedback Daniel 2026-07-22): en
-                        # "Resultado real" los cuadritos envuelven a 2 líneas (vivos+destruidos)
-                        # y aparecen 2 renglones de texto que en pasos previos no existen
-                        # (supervivencia + leyenda). Se reserva alto fijo para las 3 piezas y se
-                        # ocultan con visibility (no display) cuando no aplican, para que la
-                        # lista de pasos de abajo no salte de posición al avanzar.
+                        _surv_html = (f'<p style="font-family:Inter,sans-serif;font-size:12.5px;'
+                                      f'font-weight:600;color:#021C36;margin:10px 0 0 0;'
+                                      f'{"" if _surv_cap else "visibility:hidden;"}">'
+                                      f'{_surv_cap or "&nbsp;"}</p>')
+
+                        # Header con más peso visual que el resto de sub-secciones — este
+                        # mosaico reemplaza al icon-array original y es ahora el protagonista
+                        # de "el viaje del dinero" (feedback Daniel 2026-07-22: "reemplázalo, y
+                        # dale más protagonismo").
                         st.markdown(
-                            f'<div style="animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;'
-                            f'display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;'
-                            f'margin:6px 0 2px 0;min-height:78px;">{_row}</div>',
-                            unsafe_allow_html=True)
-                        _surv_vis = '' if _surv_cap else 'visibility:hidden;'
+                            '<p style="font-family:Inter,sans-serif;font-size:13px;'
+                            'font-weight:800;letter-spacing:0.04em;text-transform:uppercase;'
+                            'color:#006497;margin:18px 0 8px 2px;">Tu dinero en cuadritos — '
+                            '% de tu pico de capital</p>', unsafe_allow_html=True)
                         st.markdown(
-                            f'<p style="font-family:Inter,sans-serif;font-size:11px;'
-                            f'font-weight:600;color:#556677;margin:3px 0 2px 2px;'
-                            f'{_surv_vis}">{_surv_cap or "&nbsp;"}</p>',
-                            unsafe_allow_html=True)
-                        _legend_vis = '' if _legend_html else 'visibility:hidden;'
-                        _legend_body = (f'cada cuadrito ≈ {_u_str}&nbsp;&nbsp;·&nbsp;&nbsp;'
-                                        f'{_legend_html}') if _legend_html else '&nbsp;'
-                        st.markdown(
-                            f'<p style="font-family:Inter,sans-serif;font-size:10px;'
-                            f'color:#8899aa;margin:4px 0 2px 2px;{_legend_vis}">'
-                            f'{_legend_body}</p>',
+                            f'<div style="border-left:4px solid #006497;background:#eef6fb;'
+                            f'padding:20px 24px 18px;margin:0 0 12px 2px;'
+                            f'animation:_vjin .35s cubic-bezier(0.16,1,0.3,1) both;">'
+                            f'<div style="display:grid;grid-template-columns:repeat(10,18px);'
+                            f'gap:3px;margin:0 0 14px 0;">{_mosaic_sq}</div>'
+                            f'<div style="min-height:96px;">{_mosaic_legend}</div>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:11.5px;'
+                            f'color:#5a6b7a;margin:6px 0 0 0;">cada cuadrito ≈ '
+                            f'{_money(_mosaic_unit)} de tu pico ({_money(_mosaic_peak)}, la '
+                            f'mayor suma de categorías que verás en este recorrido)</p>'
+                            f'{_surv_html}</div>',
                             unsafe_allow_html=True)
 
                         # Narrativa: callout del paso actual; el camino previo va plegado.
@@ -3302,14 +3278,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                         'Devolución estimada</td>'
                                         '<td style="padding:4px 8px;">Estado</td></tr>'
                                         f'{_yr_rows}</table>', unsafe_allow_html=True)
-                                if _refund_info['refund'] > 0.01 and _n_im > 0:
+                                _n_im_disp = _nb_peak(_d['imp'])
+                                if _refund_info['refund'] > 0.01 and _n_im_disp > 0:
                                     _m_destach = min(
-                                        _n_im,
-                                        round(_n_im * _refund_info['refund_pct'] / 100.0))
+                                        _n_im_disp,
+                                        round(_n_im_disp * _refund_info['refund_pct'] / 100.0))
                                     st.markdown(
                                         f'<p style="font-family:Inter,sans-serif;font-size:12px;'
                                         f'color:#6b7683;margin:0 0 4px 2px;line-height:1.5;">De '
-                                        f'los ~{_n_im} cuadritos tachados arriba, ~{_m_destach} '
+                                        f'los ~{_n_im_disp} cuadritos tachados arriba, ~{_m_destach} '
                                         f'deberían destacharse: esa parte del impuesto no debió '
                                         f'quedarse retenida.</p>', unsafe_allow_html=True)
                                 st.markdown(
