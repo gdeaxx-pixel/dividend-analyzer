@@ -2425,17 +2425,35 @@ def test_ticker_roc_fraction_msty_recent_average_not_weighted():
     knowledge/roc_19a.yaml — NO se fija un valor exacto aquí (eso rompía cada 1-2 semanas sin
     que hubiera ningún bug real, ver historial del commit que introdujo este comentario).
 
-    Lo que sí es un invariante estable: el weighted_pct histórico de MSTY es alto (fondo con
-    mucho ROC acumulado desde su lanzamiento) y consistentemente MAYOR que el promedio reciente
-    de 12 avisos — _ticker_roc_fraction debe reflejar el dato reciente (forward), no diluirlo
-    con todo el histórico. Si algún día deja de haber esa brecha, o el fondo cambia de perfil,
-    este test debe revisarse — no ensancharle la tolerancia sin mirar por qué."""
+    En vez de un número fijo se recalcula aquí el promedio esperado desde el MISMO YAML que lee
+    la función: eso sobrevive a cualquier refresh de datos y aun así falla si la función deja de
+    promediar bien (una aserción de rango tipo `frac < weighted` no sirve: pasaría igual con
+    0% o 5%, que serían valores rotos).
+
+    Segundo invariante, este sí de negocio: el weighted_pct histórico de MSTY es alto (mucho ROC
+    acumulado desde su lanzamiento) y consistentemente MAYOR que el promedio reciente — la
+    función debe reflejar el dato reciente (forward), no diluirlo con todo el histórico. Si algún
+    día desaparece esa brecha, revisar el perfil del fondo, no relajar el test."""
     info = logic.load_roc_19a().get("MSTY")
     if not info or not info.get("per_distribution") or len(info["per_distribution"]) < 3:
         pytest.skip("sin knowledge/roc_19a.yaml con per_distribution para MSTY")
+
+    dated = []
+    for rowp in info["per_distribution"]:
+        try:
+            dated.append((pd.Timestamp(rowp["date"]), float(rowp["roc_pct"])))
+        except Exception:
+            continue
+    dated.sort(key=lambda dp: dp[0], reverse=True)
+    recent = dated[:12]
+    expected = sum(v for _, v in recent) / len(recent)
+
     frac = logic._ticker_roc_fraction("MSTY")
+    assert frac == pytest.approx(expected, abs=0.01), (
+        f"debe ser el promedio de los {len(recent)} avisos 19a más recientes "
+        f"({expected:.2f}%), obtenido {frac:.2f}%")
+
     weighted = info.get("weighted_pct") or 0.0
-    assert 0.0 <= frac <= 100.0
     assert frac < weighted - 10, (
         f"el promedio reciente ({frac:.1f}%) debe quedar bien por debajo del weighted_pct "
         f"histórico ({weighted:.1f}%) — si ya no es así, el perfil de MSTY cambió de verdad.")
