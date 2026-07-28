@@ -2420,18 +2420,25 @@ def test_ticker_roc_fraction_bounded_0_100(monkeypatch):
 
 
 def test_ticker_roc_fraction_msty_recent_average_not_weighted():
-    """Caso de referencia (2026-07-13): MSTY weighted_pct ~72.1% pero el promedio de los
-    últimos 12 avisos 19a es ~48.2% — la retención forward real es menor que el histórico
-    completo sugiere. _ticker_roc_fraction debe reflejar el dato reciente, no ~72."""
+    """MSTY reporta 19a semanal con ROC% muy volátil semana a semana (0% a 99%), así que el
+    promedio de los últimos 12 avisos se MUEVE con cada refresh automático de
+    knowledge/roc_19a.yaml — NO se fija un valor exacto aquí (eso rompía cada 1-2 semanas sin
+    que hubiera ningún bug real, ver historial del commit que introdujo este comentario).
+
+    Lo que sí es un invariante estable: el weighted_pct histórico de MSTY es alto (fondo con
+    mucho ROC acumulado desde su lanzamiento) y consistentemente MAYOR que el promedio reciente
+    de 12 avisos — _ticker_roc_fraction debe reflejar el dato reciente (forward), no diluirlo
+    con todo el histórico. Si algún día deja de haber esa brecha, o el fondo cambia de perfil,
+    este test debe revisarse — no ensancharle la tolerancia sin mirar por qué."""
     info = logic.load_roc_19a().get("MSTY")
     if not info or not info.get("per_distribution") or len(info["per_distribution"]) < 3:
         pytest.skip("sin knowledge/roc_19a.yaml con per_distribution para MSTY")
     frac = logic._ticker_roc_fraction("MSTY")
-    assert frac == pytest.approx(48.2, abs=3.0), (
-        f"esperado ~48.2 (promedio 12 avisos recientes), obtenido {frac} "
-        f"(weighted_pct={info.get('weighted_pct')})")
-    assert frac < (info.get("weighted_pct") or 999) - 10, (
-        "el promedio reciente debe quedar bien por debajo del weighted_pct histórico (72%)")
+    weighted = info.get("weighted_pct") or 0.0
+    assert 0.0 <= frac <= 100.0
+    assert frac < weighted - 10, (
+        f"el promedio reciente ({frac:.1f}%) debe quedar bien por debajo del weighted_pct "
+        f"histórico ({weighted:.1f}%) — si ya no es así, el perfil de MSTY cambió de verdad.")
 
 
 # ── 1042-S: extracción del crédito ROC (casilla 10, income code 37) ───────────
