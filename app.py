@@ -1875,7 +1875,8 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             else None)
             _nra_rate_pct = (logic.NRA_COUNTRY_RATES[_nra_country][0] if _nra_country
                               else logic.NRA_DEFAULT_RATE)
-            _tax_sums = logic.build_tax_summaries(results, base_rate_pct=_nra_rate_pct)
+            _tax_sums = logic.build_tax_summaries(results, base_rate_pct=_nra_rate_pct,
+                                                  country=_nra_country)
 
             def _tax_sum(_tk):
                 return _tax_sums.get(_tk) or (results.get(_tk) or {}).get('tax_summary')
@@ -2782,42 +2783,32 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             _pocket_amt = _money(_d['pocket'])
                             if _step == 0:
                                 _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                            'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                             elif _step == 1:
                                 _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                            'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                                 _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                            'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
+                                            'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
                             elif _step == 2:
                                 _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                            'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                                 if _no_imp:
                                     _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                                'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
+                                                'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
                                 else:
                                     _n_transito = max(0, _n_br - _n_im)
-                                    # Anotación del escudo del ROC (Regla 3): lee el objeto
-                                    # fiscal único, no recalcula. La segmentación de cuadritos
-                                    # (_COL_TAX_STRUCK) sigue basada en el retenido real.
-                                    _ts_cl = _tax_sum(_vj_tk)
-                                    _refund_sub_cl = ''
-                                    if _ts_cl and (_ts_cl.get('refund_estimated') or 0) > 0.01:
-                                        _refund_sub_cl = (f' · ~{_money(_ts_cl["refund_estimated"])} '
-                                                           f'est. vuelve (ROC)')
                                     _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                                'sub': (f'El fisco cobra {_money(_d["imp"])} · te quedan {_money(_d["neto"])} (div. neto percibido){_refund_sub_cl}'
-                                                        if _n_im > 0 else ''),
                                                 'segs': [(_n_im, _COL_TAX_STRUCK), (_n_transito, _COL_TRANSITO)],
                                                 'ref': False})
                             elif _step in (3, 4, 5, 6):
                                 _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                            'sub': '', 'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
+                                            'segs': [(_n_pk, _COL_POCKET)], 'ref': True})
                                 if not _no_drip:
                                     _cl.append({'label': 'DRIP', 'amount': _money(_d['drip']),
-                                                'sub': '', 'segs': [(_n_dr, _COL_DRIP)], 'ref': False})
+                                                'segs': [(_n_dr, _COL_DRIP)], 'ref': False})
                                 if _n_ca > 0:
                                     _cl.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
-                                                'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
+                                                'segs': [(_n_ca, _COL_CASH)], 'ref': False})
                             else:  # _step == 7 (Resultado real)
                                 _n_capital = _n_pk + _n_dr
                                 if _n_mv >= _n_capital:
@@ -2832,22 +2823,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     _dr_dead = _n_dr - _dr_alive
                                     _n_extra = 0
                                 _cl.append({'label': 'Tu bolsillo', 'amount': _pocket_amt,
-                                            'sub': (f'{_pk_alive} vivos · {_pk_dead} destruidos'
-                                                    if _pk_dead > 0 else f'{_pk_alive} vivos'),
                                             'segs': [(_pk_alive, _COL_POCKET), (_pk_dead, _COL_NAV_STRUCK_PK)],
                                             'ref': True})
                                 if _n_dr > 0:
                                     _cl.append({'label': 'DRIP', 'amount': _money(_d['drip']),
-                                                'sub': (f'{_dr_alive} vivos · {_dr_dead} destruidos'
-                                                        if _dr_dead > 0 else f'{_dr_alive} vivos'),
                                                 'segs': [(_dr_alive, _COL_DRIP), (_dr_dead, _COL_NAV_STRUCK_DR)],
                                                 'ref': False})
                                 if _n_extra > 0:
                                     _cl.append({'label': 'Apreciación', 'amount': '',
-                                                'sub': '', 'segs': [(_n_extra, _COL_CASH)], 'ref': False})
+                                                'segs': [(_n_extra, _COL_CASH)], 'ref': False})
                                 if _n_ca > 0:
                                     _cl.append({'label': 'Efectivo', 'amount': _money(_d['cash']),
-                                                'sub': '', 'segs': [(_n_ca, _COL_CASH)], 'ref': False})
+                                                'segs': [(_n_ca, _COL_CASH)], 'ref': False})
                             return _cl
 
                         _clusters_peak = _build_clusters(_nb_peak)
@@ -2865,6 +2852,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         # filas (máximo: paso 8 con bolsillo+DRIP+apreciación+efectivo) para que
                         # la lista de pasos de abajo no salte al pasar de 1 a 4 categorías.
                         def _mosaic_legend_row(_c):
+                            # Renderiza SOLO label · amount + swatches. No hay sub-texto por
+                            # clúster: el alto reservado (min-height:96px) no da para una
+                            # segunda línea en el paso 7 (4 clústers), y todo lo que se quiso
+                            # poner ahí ya se muestra en su propio bloque — el reembolso ROC en
+                            # «de los ~N cuadritos tachados, ~M deberían destacharse», y los
+                            # vivos/destruidos en `_surv_cap`. Añadir texto aquí es código muerto.
                             _amt_txt = f' · {_c["amount"]}' if _c['amount'] else ''
                             _swatches = ''.join(
                                 f'<span style="{_style}width:14px;height:14px;'

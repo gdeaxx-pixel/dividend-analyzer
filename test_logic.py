@@ -2355,6 +2355,33 @@ def test_build_tax_summaries_respeta_tasa_de_tratado(monkeypatch):
     assert treaty_ts["net_estimated"] < default_ts["net_estimated"]
 
 
+def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
+    """El campo `country` debe traer la etiqueta del país cuyo tratado se aplicó (antes quedaba
+    siempre en None). Y la reutilización por identidad tiene que mirar el país, no solo la
+    tasa: si no, un objeto de capa 1 (country=None) se reusaría para un país con tratado y la
+    vista mostraría la etiqueta equivocada."""
+    results = _tax_summary_multi_year_setup(monkeypatch)
+    default_ts = results["MSTY"]["tax_summary"]
+    assert default_ts["country"] is None          # capa 1: tasa por defecto, sin país
+
+    treaty_rate = logic.NRA_COUNTRY_RATES["México"][0]
+    sums = logic.build_tax_summaries(results, base_rate_pct=treaty_rate, country="México")
+    assert sums["MSTY"]["country"] == "México"
+    assert sums["MSTY"]["base_rate_pct"] == pytest.approx(treaty_rate)
+
+    # Sin país explícito pero con la MISMA tasa por defecto → sí reusa por identidad (capa 1).
+    assert logic.build_tax_summaries(results)["MSTY"] is default_ts
+
+    # Misma tasa por defecto pero con país declarado → NO puede reusar el de capa 1, porque
+    # su etiqueta de país no coincide.
+    same_rate_named = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")
+    assert same_rate_named["MSTY"] is not default_ts
+    assert same_rate_named["MSTY"]["country"] == "Colombia"
+    assert same_rate_named["MSTY"]["refund_estimated"] == pytest.approx(
+        default_ts["refund_estimated"], abs=0.01)   # la etiqueta no altera la aritmética
+
+
 def test_build_hoja_excel_sin_tax_summary_no_rompe():
     """Fixture legado (dict a mano sin tax_summary, igual que usan los tests preexistentes de
     build_hoja_excel — test_build_hoja_excel_roc_dollars_trap y vecino) no debe lanzar

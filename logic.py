@@ -3898,7 +3898,8 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     return out
 
 
-def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> dict:
+def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
+                      country: str = None) -> dict:
     """Objeto fiscal único por ticker (Regla 3 del invariante ROC/NRA,
     `specs/roc-nra-invariants.md`): retenido real, retención justa y devolución estimada por
     reclasificación anual ROC (19a). Es la ÚNICA fuente que cualquier vista de la app debe
@@ -3924,6 +3925,11 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> 
     Envuelta en try/except: cualquier fallo degrada a un summary nulo válido — nunca debe
     tumbar el loop de `analyze_portfolio` (ETFs de crecimiento, fondos sin 19a, etc.).
 
+    `country` es solo la ETIQUETA del país cuya tasa de tratado se aplicó (None = tasa por
+    defecto); quien decide la aritmética es `base_rate_pct`. Sirve para que una vista pueda
+    decir "retención de X% por el tratado con {país}" sin volver a resolver el país por su
+    cuenta.
+
     Campos: ticker, base_rate_pct, country, roc_pct_used, roc_source, withheld_real,
     fair_withholding, refund_estimated, refund_pct, net_estimated, refund_observed,
     refund_pending, by_year, withheld_by_year, refund_observed_by_year, refund_by_year
@@ -3936,7 +3942,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> 
     def _null(withheld_real=0.0, label_long='Sin retención NRA o sin % ROC calculado para '
               'este fondo: no aplica devolución estimada.'):
         return {
-            'ticker': ticker, 'base_rate_pct': _rate, 'country': None,
+            'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'roc_pct_used': None, 'roc_source': None,
             'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
@@ -3994,7 +4000,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> 
             'Con el % ROC de este fondo, la reclasificación anual no reduce la retención real.'
         )
         return {
-            'ticker': ticker, 'base_rate_pct': _rate, 'country': None,
+            'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'roc_pct_used': roc_pct, 'roc_source': stats.get('roc_source'),
             'withheld_real': round(withheld_real, 2),
             'fair_withholding': refund_info['fair_withholding'],
@@ -4018,7 +4024,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> 
             return _null(0.0)
 
 
-def build_tax_summaries(results, base_rate_pct: float = None) -> dict:
+def build_tax_summaries(results, base_rate_pct: float = None, country: str = None) -> dict:
     """Agregador `{ticker: tax_summary}` — capa 2 del objeto fiscal único (Regla 3). Reusa por
     IDENTIDAD el `tax_summary` que `analyze_portfolio` ya calculó y cacheó por ticker (capa 1,
     tasa `NRA_DEFAULT_RATE`) cuando la tasa pedida coincide; si el usuario eligió en la UI un
@@ -4032,10 +4038,12 @@ def build_tax_summaries(results, base_rate_pct: float = None) -> dict:
         if not isinstance(s, dict) or 'error' in s:
             continue
         cached = s.get('tax_summary')
-        if cached is not None and abs((cached.get('base_rate_pct') or 0.0) - _rate) < 0.001:
+        if (cached is not None
+                and abs((cached.get('base_rate_pct') or 0.0) - _rate) < 0.001
+                and cached.get('country') == country):
             out[tk] = cached
         else:
-            out[tk] = build_tax_summary(s, tk, base_rate_pct=_rate)
+            out[tk] = build_tax_summary(s, tk, base_rate_pct=_rate, country=country)
     return out
 
 
