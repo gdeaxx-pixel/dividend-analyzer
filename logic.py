@@ -5205,3 +5205,77 @@ def build_yieldmax_total_return_series(tickers: list, start: str = None) -> pd.D
         return pd.DataFrame(columns=['Fecha', 'Ticker', 'Valor'])
     return pd.concat(frames, ignore_index=True)
 
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def build_drip_comparison_series(base_ticker: str, compare_tickers: tuple, mode: str = 'bruto',
+                                 base_rate: float = 0.30):
+    """Series comparativas de rendimiento total con DRIP para el Total Return Graph:
+    un fondo base (YieldMax) contra comparadores de crecimiento u otros YieldMax.
+
+    Metodología Morningstar TRI aplicada por evento (build_total_return_series): cada
+    distribución se reinvierte NETA de la retención del modo, a su propio precio de cierre
+    del día ex-dividendo (convención yfinance; Morningstar reinvierte en fecha de pago).
+    Precios y dividendos de yfinance ya vienen ajustados por splits.
+
+    Todas las series arrancan en la incepción del fondo base — o en la suya propia si es
+    posterior — como índice base 100 en su punto de arranque.
+
+    Args:
+        base_ticker: fondo base; su incepción define el inicio de la línea de tiempo.
+        compare_tickers: tupla de tickers a superponer.
+        mode: 'bruto' (sin retención), 'plano' (base_rate sobre toda la distribución) o
+            'roc' (base_rate solo sobre la porción no-ROC según avisos 19a; fondos sin
+            avisos 19a — p. ej. ETFs de crecimiento — retienen base_rate plano).
+        base_rate: retención NRA sin escudo, en fracción 0.0–1.0.
+
+    Returns:
+        (df, meta): df long-format con Fecha, Ticker, Valor (índice base 100) y meta
+        {ticker: {'start': Timestamp, 'late': bool}}. (df vacío, {}) si el base falla.
+    """
+    empty = pd.DataFrame(columns=['Fecha', 'Ticker', 'Valor'])
+    base_data, _ = fetch_market_data(base_ticker, '2000-01-01')
+    if base_data is None or base_data.empty or 'Close' not in base_data.columns:
+        return empty, {}
+    base_start = base_data.sort_index().index.min()
+
+    frames, meta = [], {}
+    for tk in [base_ticker] + [t for t in compare_tickers if t != base_ticker]:
+        try:
+            data = base_data if tk == base_ticker else fetch_market_data(tk, '2000-01-01')[0]
+            if data is None or data.empty or 'Close' not in data.columns:
+                continue
+            data = data.sort_index()
+            close = data['Close'].replace(0, pd.NA).ffill().dropna().astype(float)
+            close = close[close.index >= base_start]
+            if len(close) < 2:
+                continue
+            divs = (data['Dividends'] if 'Dividends' in data.columns
+                    else pd.Series(0.0, index=data.index))
+            divs = divs.reindex(close.index).fillna(0.0)
+
+            schedule = None
+            if mode == 'plano':
+                schedule = base_rate
+            elif mode == 'roc':
+                div_dates = divs[divs > 0].index
+                schedule = build_roc_aware_withholding(tk, div_dates, base_rate=base_rate)
+                if schedule is None:
+                    schedule = base_rate
+
+            tr = build_total_return_series(close, divs, schedule)
+            if tr.empty or 'drip' not in tr.columns:
+                continue
+            df = tr['drip'].reset_index()
+            df.columns = ['Fecha', 'Valor']
+            df['Ticker'] = tk
+            frames.append(df)
+            start = close.index.min()
+            meta[tk] = {'start': start,
+                        'late': bool(start > base_start + pd.Timedelta(days=7))}
+        except Exception as e:
+            print(f"build_drip_comparison_series error for {tk}: {e}")
+
+    if not frames:
+        return empty, {}
+    return pd.concat(frames, ignore_index=True), meta
+

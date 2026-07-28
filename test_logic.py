@@ -1924,6 +1924,90 @@ def test_build_roc_aware_withholding_uses_weighted_pct_without_per_distribution(
     assert sched[pd.Timestamp("2026-01-01")] == pytest.approx(0.30 * (1 - 0.72))
 
 
+# ── Total Return Graph — build_drip_comparison_series (comparador DRIP por
+# evento, metodología Morningstar TRI; sección "YieldMax vs Crecimiento") ──────
+
+def _trg_fake_frames():
+    # Índice semanal: separa la incepción de CHPY (idx[3], +21 días) más allá de la
+    # tolerancia de 7 días con que build_drip_comparison_series marca 'late'.
+    idx = pd.date_range("2026-01-01", periods=6, freq="W-THU")
+    base = pd.DataFrame({"Close": [10.0, 10.0, 9.0, 9.0, 8.0, 8.5],
+                         "Dividends": [0.0, 1.0, 0.0, 1.0, 0.0, 0.0]}, index=idx)
+    growth = pd.DataFrame({"Close": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0],
+                           "Dividends": [0.0] * 6}, index=idx)
+    late = pd.DataFrame({"Close": [20.0, 21.0, 22.0],
+                         "Dividends": [0.0] * 3}, index=idx[3:])
+    return {"MSTY": base, "SCHB": growth, "CHPY": late}
+
+
+def _trg_patch(monkeypatch, frames):
+    logic.build_drip_comparison_series.clear()
+    monkeypatch.setattr(logic, "fetch_market_data",
+                        lambda tk, start: (frames.get(tk, pd.DataFrame()), None))
+
+
+def test_drip_comparison_bruto_reinvests_per_event_and_normalizes_base_100(monkeypatch):
+    _trg_patch(monkeypatch, _trg_fake_frames())
+    df, meta = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="bruto")
+    # MSTY: 10 acciones; +1.0/acción a $10 -> 11; +1.0/acción a $9 -> 12.2222; cierre $8.5.
+    msty = df[df["Ticker"] == "MSTY"]["Valor"]
+    assert msty.iloc[0] == pytest.approx(100.0)
+    assert msty.iloc[-1] == pytest.approx((10 + 1 + 11 / 9) * 8.5)
+    schb = df[df["Ticker"] == "SCHB"]["Valor"]
+    assert schb.iloc[-1] == pytest.approx(105.0)
+    assert meta["MSTY"]["late"] is False and meta["SCHB"]["late"] is False
+
+
+def test_drip_comparison_late_inception_starts_at_own_base_100(monkeypatch):
+    frames = _trg_fake_frames()
+    _trg_patch(monkeypatch, frames)
+    df, meta = logic.build_drip_comparison_series("MSTY", ("CHPY",), mode="bruto")
+    chpy = df[df["Ticker"] == "CHPY"]["Valor"]
+    assert len(chpy) == 3
+    assert chpy.iloc[0] == pytest.approx(100.0)
+    assert chpy.iloc[-1] == pytest.approx(110.0)
+    assert meta["CHPY"]["late"] is True
+    assert meta["CHPY"]["start"] == frames["CHPY"].index[0]
+
+
+def test_drip_comparison_plano_reduces_yieldmax_but_not_growth_sin_dividendos(monkeypatch):
+    _trg_patch(monkeypatch, _trg_fake_frames())
+    bruto, _ = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="bruto")
+    logic.build_drip_comparison_series.clear()
+    plano, _ = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="plano", base_rate=0.30)
+    _f = lambda d, tk: d[d["Ticker"] == tk]["Valor"].iloc[-1]
+    assert _f(plano, "MSTY") < _f(bruto, "MSTY")
+    assert _f(plano, "SCHB") == pytest.approx(_f(bruto, "SCHB"))
+
+
+def test_drip_comparison_roc_mode_between_bruto_and_plano_with_flat_fallback(monkeypatch):
+    _trg_patch(monkeypatch, _trg_fake_frames())
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"weighted_pct": 90.0}})
+    roc, _ = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="roc", base_rate=0.30)
+    logic.build_drip_comparison_series.clear()
+    bruto, _ = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="bruto")
+    logic.build_drip_comparison_series.clear()
+    plano, _ = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="plano", base_rate=0.30)
+    _f = lambda d, tk: d[d["Ticker"] == tk]["Valor"].iloc[-1]
+    assert _f(plano, "MSTY") < _f(roc, "MSTY") < _f(bruto, "MSTY")
+    # SCHB sin avisos 19a cae al plano; sin dividendos, su serie no cambia entre modos.
+    assert _f(roc, "SCHB") == pytest.approx(_f(bruto, "SCHB"))
+
+
+def test_drip_comparison_base_download_failure_returns_empty(monkeypatch):
+    _trg_patch(monkeypatch, {"SCHB": _trg_fake_frames()["SCHB"]})
+    df, meta = logic.build_drip_comparison_series("MSTY", ("SCHB",), mode="bruto")
+    assert df.empty and meta == {}
+
+
+def test_drip_comparison_skips_failed_comparator_and_dedupes_base(monkeypatch):
+    _trg_patch(monkeypatch, _trg_fake_frames())
+    df, meta = logic.build_drip_comparison_series("MSTY", ("MSTY", "SCHB", "XLK"), mode="bruto")
+    assert sorted(meta.keys()) == ["MSTY", "SCHB"]
+    assert (df.groupby("Ticker").size() > 0).all()
+    assert len(df[df["Ticker"] == "MSTY"]) == 6
+
+
 def _msty_mstr_window():
     """Descarga MSTY/MSTR reales y recorta a la ventana común 2024-11-25 -> 2026-07-10
     (caso de aceptación del traspaso 2026-07-13). Se salta si no hay red."""

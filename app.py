@@ -18,7 +18,7 @@ _LOGIC_SENTINELS = (
     "monte_carlo_projection", "build_factor_concentration", "build_underlying_exposure",
     "nra_tax_breakdown", "build_risk_analysis", "build_interpretation",
     "classify_roc_health", "load_roc_health_history", "latest_health_verdict",
-    "build_yieldmax_total_return_series",
+    "build_yieldmax_total_return_series", "build_drip_comparison_series",
     "build_total_return_series", "build_roc_aware_withholding", "estimate_roc_refund",
     "estimate_roc_refund_by_year", "extract_roc_credit_from_pdf",
     "build_tax_summary", "build_tax_summaries",
@@ -5911,71 +5911,141 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     st.altair_chart(_chart, use_container_width=True)
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
-            # ── YieldMax vs Crecimiento — total return desde inception ──
+            # ── Total Return Graph — YieldMax vs Crecimiento (DRIP por evento) ──
             if mode_a_tickers:
                 import altair as alt
-                _YMAX_COMPARE = ['MSTY', 'CONY', 'TSLY', 'NVDY']
-                _GROWTH_COMPARE = ['XLK', 'SMH', 'SCHB']
-                _da_section("YieldMax vs Crecimiento — total return desde inception",
-                            "Precio + todas las distribuciones reinvertidas, normalizado a base 100")
+                _TRG_YM = ['NVDY', 'TSLY', 'CONY', 'MSTY', 'CHPY']
+                _TRG_GROWTH = ['SCHB', 'XLK', 'SMH']
+                _TRG_COLORS = {'NVDY': '#006497', 'TSLY': '#C05621', 'CONY': '#A84C9E',
+                               'MSTY': '#98A000', 'CHPY': '#058E7B', 'SCHB': '#9C5B33',
+                               'XLK': '#7B61C4', 'SMH': '#B08514'}
+                _da_section("Total Return Graph — YieldMax vs Crecimiento",
+                            "Una sola gráfica en igualdad de condiciones: precio + distribuciones "
+                            "reinvertidas (DRIP), desde la incepción del fondo base")
 
-                st.markdown(
-                    '<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
-                    'margin:6px 0 4px 0;">MSTY · CONY · TSLY · NVDY — entre sí (base 100)</p>',
-                    unsafe_allow_html=True)
-                _ymax_incep = logic.build_yieldmax_total_return_series(_YMAX_COMPARE)
-                if not _ymax_incep.empty:
-                    _latest_start = _ymax_incep.groupby('Ticker')['Fecha'].min().max()
-                    _ymax_df = logic.build_yieldmax_total_return_series(
-                        _YMAX_COMPARE, start=_latest_start.strftime('%Y-%m-%d'))
-                    if not _ymax_df.empty:
-                        _ymax_chart = alt.Chart(_ymax_df).mark_line(strokeWidth=2.2).encode(
-                            x=alt.X('Fecha:T', title=None, axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
-                            y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt=',.0f', title='Base 100')),
-                            color=alt.Color('Ticker:N', legend=alt.Legend(orient='bottom', title=None, labelFontSize=12)),
-                            tooltip=[alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
-                                     alt.Tooltip('Ticker:N', title='Fondo'),
-                                     alt.Tooltip('Valor:Q', title='Índice (base 100)', format=',.1f')]
-                        ).properties(height=360, background=CHART_PALETTE['bg']).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE['bg'])
-                        st.altair_chart(_ymax_chart, use_container_width=True)
-                        st.caption(f"Las 4 arrancan en {_latest_start.strftime('%d %b %Y')} — la inception más "
-                                   "reciente de las cuatro — para comparar en la misma ventana. Base 100.")
-                else:
-                    st.caption("No se pudieron descargar precios de MSTY/CONY/TSLY/NVDY (yfinance).")
+                _ym_in_port = [t for t in _TRG_YM if t in mode_a_tickers]
+                _trg_default = (max(_ym_in_port,
+                                    key=lambda t: (results.get(t, {}) or {}).get('market_value') or 0)
+                                if _ym_in_port else 'NVDY')
+                _trg_country = st.session_state.get('proj_country')
+                _trg_country = _trg_country if _trg_country in logic.NRA_COUNTRY_RATES else None
+                _trg_rate_pct = (logic.NRA_COUNTRY_RATES[_trg_country][0] if _trg_country
+                                 else logic.NRA_DEFAULT_RATE)
+                _trg_rate = _trg_rate_pct / 100.0
 
-                _ymax_in_port = [t for t in _YMAX_COMPARE if t in mode_a_tickers]
-                _anchor_default = (max(_ymax_in_port,
-                                       key=lambda t: (results.get(t, {}) or {}).get('market_value') or 0)
-                                   if _ymax_in_port else 'MSTY')
-                _anchor_idx = _YMAX_COMPARE.index(_anchor_default) if _anchor_default in _YMAX_COMPARE else 0
-                _anchor_tk = st.selectbox("Fondo YieldMax ancla", _YMAX_COMPARE, index=_anchor_idx,
-                                          key="_ymax_anchor_select")
-                st.markdown(
-                    f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
-                    f'margin:14px 0 4px 0;">{_anchor_tk} vs XLK · SMH · SCHB — desde la inception de '
-                    f'{_anchor_tk} (base 100)</p>',
-                    unsafe_allow_html=True)
-                _anchor_series = logic.build_yieldmax_total_return_series([_anchor_tk])
-                if not _anchor_series.empty:
-                    _anchor_start = _anchor_series['Fecha'].min()
-                    _vs_growth_df = logic.build_yieldmax_total_return_series(
-                        [_anchor_tk] + _GROWTH_COMPARE, start=_anchor_start.strftime('%Y-%m-%d'))
-                    if not _vs_growth_df.empty:
-                        _vs_chart = alt.Chart(_vs_growth_df).mark_line(strokeWidth=2.2).encode(
-                            x=alt.X('Fecha:T', title=None, axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
-                            y=alt.Y('Valor:Q', axis=_ed_axis('y', fmt=',.0f', title='Base 100')),
-                            color=alt.Color('Ticker:N', legend=alt.Legend(orient='bottom', title=None, labelFontSize=12)),
-                            tooltip=[alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
-                                     alt.Tooltip('Ticker:N', title='Activo'),
-                                     alt.Tooltip('Valor:Q', title='Índice (base 100)', format=',.1f')]
-                        ).properties(height=360, background=CHART_PALETTE['bg']).configure_view(
-                            strokeOpacity=0, fill=CHART_PALETTE['bg'])
-                        st.altair_chart(_vs_chart, use_container_width=True)
-                        st.caption(f"Todas arrancan en {_anchor_start.strftime('%d %b %Y')} — inception de "
-                                   f"{_anchor_tk} — base 100. Incluye distribuciones reinvertidas.")
+                _cb, _cm = st.columns([1, 2])
+                with _cb:
+                    _trg_base = st.selectbox('Fondo base (YieldMax)', _TRG_YM,
+                                             index=_TRG_YM.index(_trg_default), key='_trg_base')
+                with _cm:
+                    _trg_worst = f'Peor caso ({_trg_rate_pct:.0f}% plano)'
+                    _trg_mode_lbl = st.radio(
+                        'Supuesto de reinversión',
+                        ['DRIP bruto (0%)', 'Neto estimado (ROC 19a)', _trg_worst],
+                        horizontal=True, key='_trg_mode')
+                _trg_mode = ('bruto' if _trg_mode_lbl.startswith('DRIP') else
+                             'roc' if 'ROC' in _trg_mode_lbl else 'plano')
+
+                _cg, _cy = st.columns(2)
+                with _cg:
+                    _trg_sel_growth = st.pills('Crecimiento', _TRG_GROWTH, default=_TRG_GROWTH,
+                                               selection_mode='multi', key='_trg_pills_growth')
+                with _cy:
+                    _trg_ym_others = [t for t in _TRG_YM if t != _trg_base]
+                    _trg_sel_ym = st.pills('Otros YieldMax', _trg_ym_others, default=[],
+                                           selection_mode='multi',
+                                           key=f'_trg_pills_ym_{_trg_base}')
+                _trg_compare = tuple((_trg_sel_growth or []) + (_trg_sel_ym or []))
+
+                _trg_df, _trg_meta = logic.build_drip_comparison_series(
+                    _trg_base, _trg_compare, mode=_trg_mode, base_rate=_trg_rate)
+                if not _trg_df.empty and _trg_base in _trg_meta:
+                    _trg_df = _trg_df.copy()
+                    _trg_df['Pct'] = _trg_df['Valor'] - 100.0
+                    _trg_df['Grupo'] = _trg_df['Ticker'].map(
+                        lambda t: 'Crecimiento' if t in _TRG_GROWTH else 'YieldMax')
+                    _trg_start = _trg_meta[_trg_base]['start']
+                    # Dominio restringido a lo graficado (la leyenda no lista fondos apagados)
+                    # pero con el color fijo de cada ticker: el color sigue a la entidad.
+                    _trg_shown = [t for t in _TRG_COLORS if t in set(_trg_df['Ticker'])]
+                    _trg_scale = alt.Scale(domain=_trg_shown,
+                                           range=[_TRG_COLORS[t] for t in _trg_shown])
+                    _trg_color = alt.Color('Ticker:N', scale=_trg_scale, legend=alt.Legend(
+                        orient='bottom', title=None, labelFontSize=12))
+                    _trg_dash = alt.StrokeDash('Grupo:N', scale=alt.Scale(
+                        domain=['YieldMax', 'Crecimiento'], range=[[1, 0], [6, 4]]), legend=None)
+                    _trg_tip = [alt.Tooltip('Fecha:T', title='Fecha', format='%d %b %Y'),
+                                alt.Tooltip('Ticker:N', title='Activo'),
+                                alt.Tooltip('Pct:Q', title='Rendimiento total', format='+,.1f')]
+                    _trg_lines = alt.Chart(_trg_df).mark_line().encode(
+                        x=alt.X('Fecha:T', title=None,
+                                axis=_ed_axis('x', fmt='%b %Y', label_angle=0, year_ticks=True)),
+                        y=alt.Y('Pct:Q', axis=_ed_axis('y', fmt='+,.0f', title='Rendimiento total (%)')),
+                        color=_trg_color, strokeDash=_trg_dash,
+                        strokeWidth=alt.condition(alt.datum.Ticker == _trg_base,
+                                                  alt.value(3.2), alt.value(2)),
+                        tooltip=_trg_tip)
+                    # Etiquetas finales con de-colisión vertical (mismo patrón que el
+                    # comparador de estrategias de arriba).
+                    _trg_last = _trg_df.loc[_trg_df.groupby('Ticker')['Fecha'].idxmax()].copy()
+                    _trg_last['lbl'] = _trg_last.apply(
+                        lambda r: f"{r['Ticker']}{'*' if _trg_meta.get(r['Ticker'], {}).get('late') else ''} "
+                                  f"{r['Pct']:+.0f}%", axis=1)
+                    _trg_span = max(float(_trg_df['Pct'].max()) - min(float(_trg_df['Pct'].min()), 0.0), 1.0)
+                    _trg_gap = _trg_span * (20.0 / 420.0)
+                    _trg_last = _trg_last.sort_values('Pct', ascending=False).reset_index(drop=True)
+                    _tly, _tprev = [], None
+                    for _tv in _trg_last['Pct']:
+                        _ty = float(_tv)
+                        if _tprev is not None and (_tprev - _ty) < _trg_gap:
+                            _ty = _tprev - _trg_gap
+                        _tly.append(_ty); _tprev = _ty
+                    _trg_last['lbl_y'] = _tly
+                    _trg_lab = alt.Chart(_trg_last).mark_text(align='left', dx=8, fontSize=10,
+                        font=_MONO_FONT, fontWeight='bold', clip=False).encode(
+                        x=alt.X('Fecha:T'), y=alt.Y('lbl_y:Q'), text='lbl:N',
+                        color=alt.Color('Ticker:N', scale=_trg_scale, legend=None))
+                    _trg_chart = (_trg_lines + _trg_lab).properties(
+                        height=420, background=CHART_PALETTE['bg'],
+                        padding={'left': 14, 'top': 8, 'right': 104, 'bottom': 4}
+                    ).configure_view(strokeOpacity=0, fill=CHART_PALETTE['bg'])
+                    st.altair_chart(_trg_chart, use_container_width=True)
+
+                    _trg_finals = {r['Ticker']: float(r['Pct'])
+                                   for _, r in _trg_last.iterrows()}
+                    _trg_base_f = _trg_finals.get(_trg_base)
+                    _trg_rivals = {t: v for t, v in _trg_finals.items() if t != _trg_base}
+                    if _trg_base_f is not None and _trg_rivals:
+                        _trg_best = max(_trg_rivals, key=_trg_rivals.get)
+                        _trg_dpp = _trg_base_f - _trg_rivals[_trg_best]
+                        st.markdown(
+                            f'<p style="font-family:Inter,sans-serif;font-size:13px;color:#021C36;'
+                            f'margin:2px 0 0 2px;"><b>{_trg_base} {_trg_base_f:+.0f}%</b> vs mejor '
+                            f'comparador <b>{_trg_best} {_trg_rivals[_trg_best]:+.0f}%</b> → '
+                            f'diferencia <b>{_trg_dpp:+.0f} pp</b> en el mismo horizonte y con el '
+                            f'mismo supuesto de reinversión.</p>', unsafe_allow_html=True)
+                    _trg_late = [t for t, m in _trg_meta.items() if m.get('late')]
+                    _trg_notes = [
+                        f"Todas las series arrancan el {_trg_start.strftime('%d %b %Y')} (incepción de "
+                        f"{_trg_base}) en 0%. Líneas punteadas = ETFs de crecimiento.",
+                        "Cada distribución se reinvierte neta al cierre de su día ex-dividendo "
+                        "(convención yfinance; Morningstar reinvierte en fecha de pago). Sin "
+                        "comisiones ni spread — metodología del Total Return Index de Morningstar, "
+                        "la base del «growth of $10,000».",
+                    ]
+                    if _trg_mode == 'roc':
+                        _trg_notes.append(
+                            f"Neto ROC 19a: retiene {_trg_rate_pct:.0f}% solo sobre la porción no "
+                            f"clasificada como retorno de capital; fondos sin avisos 19a (crecimiento, "
+                            f"CHPY) retienen {_trg_rate_pct:.0f}% plano.")
+                    if _trg_late:
+                        _trg_notes.append(
+                            f"* {', '.join(_trg_late)}: incepción posterior al fondo base — arranca en "
+                            f"0% en su propia fecha; su cifra final no cubre el mismo horizonte.")
+                    st.caption(' '.join(_trg_notes))
                 else:
-                    st.caption(f"No se pudo descargar precio de {_anchor_tk} (yfinance).")
+                    st.caption(f"No se pudieron descargar precios de {_trg_base} (yfinance). "
+                               "Intenta de nuevo en unos minutos.")
                 st.markdown('<hr class="da-section-rule">', unsafe_allow_html=True)
 
             # ── Confianza de datos (la sección "En corto · ingreso" se eliminó) ──
