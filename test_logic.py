@@ -2235,6 +2235,149 @@ def test_estimate_roc_refund_by_year_different_roc_different_refund(monkeypatch)
     assert result[2024]["refund"] < result[2025]["refund"]
 
 
+# ── Objeto fiscal único `tax_summary` (Regla 3, specs/roc-nra-invariants.md) ────────────────
+# Tolerancia $0.01 en todas las comparaciones (más estricta que el ±$0.05 de la spec, la
+# satisface).
+
+def _tax_summary_multi_year_setup(monkeypatch):
+    """CSV sintético MSTY con retención NRA en 2 años calendario y %ROC distinto cada año
+    (avisos 19a mockeados) — mismo fixture base de
+    test_dividends_gross_and_withheld_by_year_match_totals, reusado aquí para el objeto
+    fiscal único. Sin ib_cost_basis_map: roc_percent se estima vía los 19a (empate por fecha),
+    igual que test_roc_estimated_from_19a_when_no_basis."""
+    df = _roc_norm_df([
+        ("2024-01-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-06-01", "Dividend", "MSTY", 0, 300.0),
+        ("2024-06-01", "NRA Tax Adj", "MSTY", 0, -90.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 400.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -60.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"per_distribution": [
+            {"date": "2024-06-01", "roc_pct": 40.0},
+            {"date": "2025-06-01", "roc_pct": 80.0},
+        ]}})
+    return logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY")
+
+
+def test_tax_summary_is_single_source_across_views(monkeypatch):
+    """Regla 3: tax_summary reusa estimate_roc_refund_by_year tal cual (no reimplementa su
+    matemática), declara base/momento como estimado (Regla 2), y build_tax_summaries /
+    build_hoja_excel lo consumen por IDENTIDAD — no una copia recalculada."""
+    results = _tax_summary_multi_year_setup(monkeypatch)
+    s = results["MSTY"]
+    ts = s["tax_summary"]
+    assert ts is not None
+
+    # (a) devolución estimada + neto estimado deben sumar exactamente el retenido real.
+    assert ts["refund_estimated"] + ts["net_estimated"] == pytest.approx(
+        ts["withheld_real"], abs=0.01)
+    assert ts["withheld_real"] == pytest.approx(s["withheld_tax_total"], abs=0.01)
+
+    # (b) coincide con llamar estimate_roc_refund_by_year directamente — misma tasa (capa 1 =
+    # NRA_DEFAULT_RATE) y mismo roc_fallback_pct (roc_percent del holder) que usa build_tax_summary.
+    direct = logic.estimate_roc_refund_by_year(
+        s["dividends_gross_by_year"], s["withheld_by_year"], "MSTY",
+        base_rate=logic.NRA_DEFAULT_RATE / 100.0, roc_fallback_pct=s["roc_percent"])
+    assert ts["refund_estimated"] == pytest.approx(direct["total"]["refund"], abs=0.01)
+    assert ts["fair_withholding"] == pytest.approx(direct["total"]["fair_withholding"], abs=0.01)
+    assert ts["by_year"] is True
+
+    # (c) toda cifra declara base y momento (Regla 2): es una proyección, no efectivo recibido.
+    assert ts["is_estimate"] is True
+    assert ts["moment"] == "annual_reclass_estimate"
+    assert ts["basis"] == "gross_withheld"
+
+    # (d) build_tax_summaries reusa por IDENTIDAD el tax_summary cacheado en capa 1 (misma
+    # tasa) — no lo recalcula ni lo copia; build_hoja_excel propaga esa misma identidad.
+    sums = logic.build_tax_summaries(results)
+    assert sums["MSTY"] is s["tax_summary"]
+
+    he = logic.build_hoja_excel(results, classify_map={"MSTY": "mode_a"}, tax_summaries=sums)
+    assert he["rows"][0]["tax_summary"] is sums["MSTY"]
+
+
+def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
+    """Regla 1 (capital invariante) + Regla 4 (carriles del ROC que no se cruzan): agregar
+    tax_summary no mueve pocket_investment/market_value/total_dividends, y roc_dollars de
+    build_hoja_excel sigue viniendo de _roc_pct_for (19a ponderado histórico del fondo) —
+    NUNCA de tax_summary['roc_pct_used'] (roc_percent, ROC realizado del holder). Son 2 de
+    las 3 fuentes de %ROC que divergen a propósito; no se deben unificar."""
+    df = _roc_norm_df([
+        ("2024-01-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-06-01", "Dividend", "MSTY", 0, 300.0),
+        ("2024-06-01", "NRA Tax Adj", "MSTY", 0, -90.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 400.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -60.0),
+    ])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"weighted_pct": 65.0, "per_distribution": [
+            {"date": "2024-06-01", "roc_pct": 40.0},
+            {"date": "2025-06-01", "roc_pct": 80.0},
+        ]}})
+    results = logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY_CAPITAL")
+    s = results["MSTY"]
+
+    assert s["pocket_investment"] == pytest.approx(2000.0, abs=0.01)
+    assert s["total_dividends"] == pytest.approx(700.0, abs=0.01)
+    assert s["market_value"] == pytest.approx(2000.0, abs=1.0)  # 100 acciones × $20 (mock plano)
+
+    he = logic.build_hoja_excel(results, classify_map={"MSTY": "mode_a"})
+    r = he["rows"][0]
+    gross = s["total_dividends"] + s["withheld_tax_total"]
+    # roc_dollars sigue viniendo de _roc_pct_for (weighted_pct 19a) — no del tax_summary.
+    assert r["roc_pct"] == pytest.approx(65.0, abs=0.01)
+    assert round(r["roc_dollars"], 2) == round(0.65 * gross, 2)
+    ts = s["tax_summary"]
+    assert ts["roc_pct_used"] == pytest.approx(s["roc_percent"], abs=0.01)
+    assert ts["roc_pct_used"] != pytest.approx(r["roc_pct"], abs=0.01)  # carriles distintos
+
+
+def test_build_tax_summaries_respeta_tasa_de_tratado(monkeypatch):
+    """Capa 2: build_tax_summaries re-deriva con la tasa de tratado del país (México, 10%) en
+    vez de la NRA_DEFAULT_RATE (30%) de capa 1 — la retención justa baja, la devolución
+    estimada sube, y el objeto declara la tasa usada."""
+    results = _tax_summary_multi_year_setup(monkeypatch)
+    s = results["MSTY"]
+    default_ts = s["tax_summary"]
+    assert default_ts["base_rate_pct"] == pytest.approx(logic.NRA_DEFAULT_RATE)
+
+    treaty_rate = logic.NRA_COUNTRY_RATES["México"][0]  # 10.0, con tratado
+    sums = logic.build_tax_summaries(results, base_rate_pct=treaty_rate)
+    treaty_ts = sums["MSTY"]
+
+    assert treaty_ts is not default_ts   # tasa distinta → no reusa por identidad, re-deriva
+    assert treaty_ts["base_rate_pct"] == pytest.approx(treaty_rate)
+    assert treaty_ts["fair_withholding"] < default_ts["fair_withholding"]
+    assert treaty_ts["refund_estimated"] > default_ts["refund_estimated"]
+    assert treaty_ts["net_estimated"] < default_ts["net_estimated"]
+
+
+def test_build_hoja_excel_sin_tax_summary_no_rompe():
+    """Fixture legado (dict a mano sin tax_summary, igual que usan los tests preexistentes de
+    build_hoja_excel — test_build_hoja_excel_roc_dollars_trap y vecino) no debe lanzar
+    KeyError: nra_refund_est/nra_net_est siempre tienen default seguro."""
+    results = {
+        "ZZZZ": {
+            "pocket_investment": 4197.2, "total_dividends": 2574.54,
+            "withheld_tax_total": 120.0, "market_value": 1131.78,
+            "dividends_collected_cash": 2574.54, "last_payment": 28.85,
+            "price_cagr": -81.5, "roc_percent": 90.0, "price_history_days": 500,
+            "advertised_yield": 66.67, "forward_yield": 132.6, "realized_yield": 227.5,
+            "yield_on_cost": 61.0,
+        },
+    }
+    out = logic.build_hoja_excel(results, classify_map={"ZZZZ": "mode_a"})
+    r = out["rows"][0]
+    assert r["tax_summary"] is None
+    assert r["nra_refund_est"] == 0.0
+    assert r["nra_net_est"] == r["nra_tax"]
+    assert out["totals"]["nra_refund_est"] == 0.0
+    assert out["totals"]["nra_net_est"] == out["totals"]["nra_tax"]
+
+
 def test_ticker_roc_fraction_uses_average_of_last_12_notices(monkeypatch):
     """(a) Con 15 avisos disponibles, toma el promedio de los 12 MÁS RECIENTES (no el
     histórico completo ni weighted_pct)."""

@@ -21,6 +21,7 @@ _LOGIC_SENTINELS = (
     "build_yieldmax_total_return_series",
     "build_total_return_series", "build_roc_aware_withholding", "estimate_roc_refund",
     "estimate_roc_refund_by_year", "extract_roc_credit_from_pdf",
+    "build_tax_summary", "build_tax_summaries",
 )
 if not all(hasattr(logic, _s) for _s in _LOGIC_SENTINELS):
     logic = importlib.reload(logic)
@@ -1862,11 +1863,28 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
             # Eventos técnicos consolidados → acordeón al pie (se llenan en los loops de detalle)
             _tech_events = []
 
+            # ── Objeto fiscal único por ticker (Regla 3, specs/roc-nra-invariants.md) ──
+            # Fuente compartida, una vez por render: todas las vistas fiscales (Hoja Excel,
+            # migas, cuadritos, tabla honesta, Cuadrícula B) deben LEER este dict — nunca
+            # recalcular el concepto con su propia lógica. `analyze_portfolio` ya calculó y
+            # cacheó `tax_summary` por ticker con NRA_DEFAULT_RATE (capa 1, no puede depender
+            # del país porque esa función está cacheada con @st.cache_data); aquí se re-deriva
+            # barato por el país elegido en la UI (capa 2, aritmética pura, sin red/YAML).
+            _nra_country_sel = st.session_state.get('proj_country')
+            _nra_country = (_nra_country_sel if _nra_country_sel in logic.NRA_COUNTRY_RATES
+                            else None)
+            _nra_rate_pct = (logic.NRA_COUNTRY_RATES[_nra_country][0] if _nra_country
+                              else logic.NRA_DEFAULT_RATE)
+            _tax_sums = logic.build_tax_summaries(results, base_rate_pct=_nra_rate_pct)
+
+            def _tax_sum(_tk):
+                return _tax_sums.get(_tk) or (results.get(_tk) or {}).get('tax_summary')
+
             # ── HOJA EXCEL — método tradicional vs realidad ────────────
             def _render_hoja_excel():
                 """Sección educativa: replica la 'hoja de Excel' tradicional (con sus errores) y
                 la contrasta con la vista honesta + auditoría del yield titular de YieldMax."""
-                _he = logic.build_hoja_excel(results, classify_map)
+                _he = logic.build_hoja_excel(results, classify_map, tax_summaries=_tax_sums)
                 _rows = _he['rows']
                 if not _rows:
                     return
@@ -1890,7 +1908,11 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     'bruto': 'El dividendo <b>bruto</b>: lo que el fondo declaró, <b>antes</b> de la '
                              'retención de impuesto a extranjeros.',
                     'nra': 'El impuesto que EE.UU. retiene a extranjeros (~30%) <b>antes</b> de '
-                           'depositarte el dividendo. Por eso el neto es menor que el bruto.',
+                           'depositarte el dividendo. Por eso el neto es menor que el bruto. Si '
+                           'ves una segunda línea "~$X est. vuelve (ROC)": es una '
+                           '<b>proyección</b> — parte de esta retención podría volver en la '
+                           'reclasificación anual del broker (19a); no es efectivo ya recibido, '
+                           'lo definitivo lo fija tu 1042-S.',
                     'totalinv': '⚠ El método viejo: <b>Inversión + Dividendos</b>, como si los '
                                 'dividendos fueran capital que aportaste. <b>No lo son</b>: son '
                                 'retorno —y en YieldMax buena parte es tu propio capital de vuelta '
@@ -2628,12 +2650,20 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         # comparte el paso 5 con "Impacto del mercado"; "Capital actual total"
                         # comparte el paso 6 con "+ En efectivo" (aparecen junto al nodo del
                         # paso, sin pill propio y nunca como nodo "actual").
+                        # Anotación del escudo del ROC en el slot _msub del chip "Imp. NRA" —
+                        # lee el objeto fiscal único (Regla 3), nunca recalcula. El número
+                        # tachado principal (_d['imp'], retenido real) no cambia.
+                        _ts_migas = _tax_sum(_vj_tk)
+                        _migas_refund_sub = ''
+                        if _ts_migas and (_ts_migas.get('refund_estimated') or 0) > 0.01:
+                            _migas_refund_sub = (f"~{_money(_ts_migas['refund_estimated'])} "
+                                                  f"est. vuelve (ROC)")
                         _migas_defs = [
                             (0, 'Bolsillo', _money(_d['pocket']), False, True, ''),
                             (1, 'Div. bruto', _money(_d['bruto']), False, True, ''),
                             (2, 'Imp. NRA',
                              ('$0.00' if _no_imp else '−' + _money(_d['imp'])),
-                             not _no_imp, True, ''),
+                             not _no_imp, True, _migas_refund_sub),
                         ]
                         if not _no_imp:
                             _migas_defs.append(
@@ -2766,8 +2796,16 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                                 'sub': '', 'segs': [(_n_br, _COL_TRANSITO)], 'ref': False})
                                 else:
                                     _n_transito = max(0, _n_br - _n_im)
+                                    # Anotación del escudo del ROC (Regla 3): lee el objeto
+                                    # fiscal único, no recalcula. La segmentación de cuadritos
+                                    # (_COL_TAX_STRUCK) sigue basada en el retenido real.
+                                    _ts_cl = _tax_sum(_vj_tk)
+                                    _refund_sub_cl = ''
+                                    if _ts_cl and (_ts_cl.get('refund_estimated') or 0) > 0.01:
+                                        _refund_sub_cl = (f' · ~{_money(_ts_cl["refund_estimated"])} '
+                                                           f'est. vuelve (ROC)')
                                     _cl.append({'label': 'Dividendos brutos', 'amount': _money(_d['bruto']),
-                                                'sub': (f'El fisco cobra {_money(_d["imp"])} · te quedan {_money(_d["neto"])} (div. neto percibido)'
+                                                'sub': (f'El fisco cobra {_money(_d["imp"])} · te quedan {_money(_d["neto"])} (div. neto percibido){_refund_sub_cl}'
                                                         if _n_im > 0 else ''),
                                                 'segs': [(_n_im, _COL_TAX_STRUCK), (_n_transito, _COL_TRANSITO)],
                                                 'ref': False})
@@ -3026,37 +3064,22 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     unsafe_allow_html=True)
 
                         # ── ¿Cuánto de este impuesto puede volver? — el escudo del ROC ──
+                        # Refactor (Regla 3, specs/roc-nra-invariants.md): antes calculaba
+                        # inline aquí mismo, aislado de las otras 3 vistas fiscales. Ahora SOLO
+                        # lee el objeto fiscal único `_tax_sum(_vj_tk)` — no recalcula nada.
                         if _step == 2 and not _no_imp:
-                            _roc_pct_nra = (results.get(_vj_tk) or {}).get('roc_percent')
+                            _ts_vj = _tax_sum(_vj_tk)
+                            _roc_pct_nra = _ts_vj.get('roc_pct_used') if _ts_vj else None
                             if _roc_pct_nra is not None:
-                                _country_sel2 = st.session_state.get('proj_country')
-                                _country2 = (_country_sel2 if _country_sel2
-                                             in logic.NRA_COUNTRY_RATES else None)
-                                _base_rate_pct2 = (logic.NRA_COUNTRY_RATES[_country2][0]
-                                                    if _country2 else logic.NRA_DEFAULT_RATE)
-                                _refund_info = logic.estimate_roc_refund(
-                                    _d['bruto'], _d['imp'], _roc_pct_nra,
-                                    base_rate=_base_rate_pct2 / 100.0)
-                                _roc_lbl = f'ROC {_roc_pct_nra:.0f}%'
-                                _gby = (results.get(_vj_tk) or {}).get(
-                                    'dividends_gross_by_year') or {}
-                                _wby = (results.get(_vj_tk) or {}).get(
-                                    'withheld_by_year') or {}
+                                _refund_info = {'fair_withholding': _ts_vj['fair_withholding'],
+                                                 'refund': _ts_vj['refund_estimated'],
+                                                 'refund_pct': _ts_vj['refund_pct']}
+                                _roc_lbl = _ts_vj['method']
+                                _wby = _ts_vj.get('withheld_by_year') or {}
                                 _years_wh = sorted(y for y, v in _wby.items() if v > 0.01)
-                                _obs_by_year = (results.get(_vj_tk) or {}).get(
-                                    'tax_refund_observed_by_year') or {}
-                                _obs_total = round(sum(_obs_by_year.values()), 2)
-                                _refund_by_year = None
-                                if len(_years_wh) > 1:
-                                    _refund_by_year = logic.estimate_roc_refund_by_year(
-                                        _gby, _wby, _vj_tk, base_rate=_base_rate_pct2 / 100.0,
-                                        roc_fallback_pct=_roc_pct_nra)
-                                    _rby_total = (_refund_by_year or {}).get('total')
-                                    if _rby_total:
-                                        # Tarjetas y tabla anual deben sumar igual: el total
-                                        # sale del ROC de cada año, no del agregado.
-                                        _refund_info = _rby_total
-                                        _roc_lbl = 'ROC por año'
+                                _obs_by_year = _ts_vj.get('refund_observed_by_year') or {}
+                                _obs_total = _ts_vj.get('refund_observed', 0.0)
+                                _refund_by_year = _ts_vj.get('refund_by_year')
                                 st.markdown(
                                     '<p style="font-family:Inter,sans-serif;font-size:11px;'
                                     'font-weight:700;color:#006497;margin:12px 0 3px 2px;'
@@ -3511,8 +3534,15 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                   + _sp(r['ticker'], 'tk')
                                   + _sp(_money(r['investment'])))
                         if _sd:
+                            # Anotación del escudo del ROC (Regla 3, objeto fiscal único):
+                            # segunda línea pequeña bajo el retenido real — nunca lo sustituye.
+                            _nra_cell = _neg(r['nra_tax'])
+                            if (r.get('nra_refund_est') or 0) > 0.01:
+                                _nra_cell += (
+                                    '<br><span style="font-size:10px;color:#1d9e75;">~'
+                                    + _money(r['nra_refund_est']) + ' est. vuelve</span>')
                             _cells += (_sp(_money(r['dividends_gross']), 'muted')
-                                       + _sp(_neg(r['nra_tax']), 'nra'))
+                                       + _sp(_nra_cell, 'nra'))
                         _cells += (_sp(_money(r['dividends_net']))
                                    + _sp(_money(r['total_inv_naive']), 'naive'))
                         if _strap:
@@ -3526,7 +3556,12 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                     _trct = 'pos' if (_t['total_return'] or 0) >= 0 else 'neg'
                     _tc = _sp('', 'l') + _sp('Total', 'l') + _sp(_money(_t['investment']))
                     if _sd:
-                        _tc += _sp(_money(_t['dividends_gross']), 'muted') + _sp(_neg(_t['nra_tax']), 'nra')
+                        _tnra_cell = _neg(_t['nra_tax'])
+                        if (_t.get('nra_refund_est') or 0) > 0.01:
+                            _tnra_cell += (
+                                '<br><span style="font-size:10px;color:#1d9e75;">~'
+                                + _money(_t['nra_refund_est']) + ' est. vuelve</span>')
+                        _tc += _sp(_money(_t['dividends_gross']), 'muted') + _sp(_tnra_cell, 'nra')
                     _tc += _sp(_money(_t['dividends_net'])) + _sp(_money(_t['total_inv_naive']), 'naive')
                     if _strap:
                         _tcap = _t['total_inv_naive'] - (_t['roc_dollars'] or 0)
@@ -3622,7 +3657,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                         unsafe_allow_html=True)
 
             def _render_yield_audit(results, classify_map):
-                _he = logic.build_hoja_excel(results, classify_map)
+                _he = logic.build_hoja_excel(results, classify_map, tax_summaries=_tax_sums)
                 _rows = _he['rows']
                 if not _rows:
                     return
@@ -4711,7 +4746,10 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                         'de <b>0%</b> = tu CSV está completo.')
                         _TIP_B_TAX = ('<b>2. Lo que te retienen.</b> El impuesto a extranjeros (<b>NRA</b>, ~30%) que EE.UU. '
                                       'descuenta del bruto antes de depositártelo. <b>No es un cargo extra:</b> ya venía '
-                                      'restado. <b>Bruto − Impuesto = tu dinero limpio.</b>')
+                                      'restado. <b>Bruto − Impuesto = tu dinero limpio.</b> Aquí siempre se muestra el '
+                                      '<b>bruto retenido real</b> — parte puede volver por la reclasificación anual del '
+                                      'ROC (19a); ver la nota debajo de la cuadrícula (es una proyección, no se resta '
+                                      'aquí).')
                         _TIP_B_DRIP = ('<b>3. Destino #1 de tu dinero limpio.</b> La parte que el <b>DRIP</b> reinvirtió '
                                        'automáticamente en más acciones. (En el CSV ya viene <b>neta</b> de impuesto.) Sale de '
                                        'tu CSV, por eso su Δ vs Schwab es 0%.')
@@ -4752,6 +4790,18 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                          "recalcula ese neto restando el impuesto al bruto. Ambos deberían coincidir; si difieren "
                                          "unos dólares es porque el CSV registra el reinvertido ya neto y el efectivo en bruto — no "
                                          "es un error, es un chequeo de que tus datos están completos.")
+                        # Anotación del escudo del ROC (Regla 3, objeto fiscal único): NO se resta
+                        # al «Impuesto NRA» ni al «Neto teórico» de la cuadrícula de arriba (rompería
+                        # el chequeo Bruto−Impuesto=Neto) — solo se declara aparte como proyección.
+                        _refund_total_b = sum((_tax_sums.get(t, {}) or {}).get('refund_estimated')
+                                               or 0.0 for t in _divtks)
+                        if _refund_total_b > 0.01:
+                            _cmp_exp.caption(
+                                f"Estimado: ~${_refund_total_b:,.2f} de la retención NRA del portafolio "
+                                "(cuadrícula de arriba) podría volver por la reclasificación anual del "
+                                "ROC (19a). Es una proyección, no efectivo ya recibido — el «Impuesto "
+                                "NRA» y el «Neto teórico» de arriba siguen mostrando el bruto retenido "
+                                "real, sin restar esta estimación.")
 
                     # Cuadrícula C — Retorno de Capital (ROC)
                     _roctks = [t for t in _cmp_valid

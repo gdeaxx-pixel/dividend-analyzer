@@ -1612,7 +1612,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "fund_dividends_series": _fund_divs,
             "underlying_dividends_series": _underlying_divs,
         }
-        
+        # Objeto fiscal único (Regla 3, specs/roc-nra-invariants.md): capa 1, tasa base
+        # NRA_DEFAULT_RATE (no depende del país elegido en la UI — analyze_portfolio está
+        # cacheada con @st.cache_data y el país vive en session_state). app.py re-deriva por
+        # país vía build_tax_summaries cuando corresponde (capa 2, aritmética pura barata).
+        results[ticker]['tax_summary'] = build_tax_summary(results[ticker], ticker)
+
     return results
 
 def get_params_from_csv(df):
@@ -3604,7 +3609,7 @@ def _roc_pct_for(ticker, stats):
     return stats.get('roc_percent')
 
 
-def build_hoja_excel(results, classify_map=None):
+def build_hoja_excel(results, classify_map=None, tax_summaries=None):
     """Filas de la sección educativa 'Hoja Excel' (solo fondos de income): el método tradicional
     de la hoja de cálculo —con sus errores— contra la vista honesta corregida.
 
@@ -3617,6 +3622,13 @@ def build_hoja_excel(results, classify_map=None):
       dividendos: bruto = neto + impuesto NRA  (total_dividends ya viene neto de NRA).
       nav_health = classify_roc_health(...)  → veredicto honesto por tendencia del NAV.
       audit = audit_advertised_yield(...)    → titular vs mecanismo vs realizado.
+
+    `tax_summaries` (opcional): `{ticker: tax_summary}` de `build_tax_summaries` — objeto fiscal
+    único (Regla 3, specs/roc-nra-invariants.md). Si no se pasa, cada fila cae al `tax_summary`
+    ya cacheado en `results[ticker]` (capa 1 de `analyze_portfolio`). Solo se ANOTA vía
+    `nra_refund_est`/`nra_net_est`; `nra_tax` (retenido real) NUNCA se sustituye ni se resta —
+    ambos campos siempre presentes con default seguro para no romper fixtures legado sin
+    `tax_summary`.
 
     Devuelve {'rows': [...], 'totals': {...}} ordenado por valor de mercado desc.
     """
@@ -3676,6 +3688,10 @@ def build_hoja_excel(results, classify_map=None):
         # costos (Inv+Reinv−Costo): es la porción de lo distribuido que era tu propio capital
         # de vuelta. Sirve para «desinflar» el total_inv_naive en la revelación de la trampa.
         roc_dollars = (roc_pct / 100.0 * gross_div) if roc_pct is not None else None
+        # Objeto fiscal único (Regla 3): NUNCA se recalcula aquí — se lee del que ya calculó
+        # `analyze_portfolio` (capa 1) o del que pasó el caller por país (capa 2). `nra_tax`
+        # sigue siendo el retenido real crudo; `nra_refund_est`/`nra_net_est` solo anotan.
+        _ts = (tax_summaries or {}).get(tk) or s.get('tax_summary')
         rows.append({
             'ticker': tk, 'inicio': inicio, 'advertised': s.get('advertised_yield'),
             'investment': pocket, 'dividends_net': net_div, 'dividends_gross': gross_div,
@@ -3685,12 +3701,16 @@ def build_hoja_excel(results, classify_map=None):
             'roc_pct': roc_pct, 'roc_dollars': roc_dollars,
             'yield_on_cost': s.get('yield_on_cost'), 'realized_yield': s.get('realized_yield'),
             'forward_yield': s.get('forward_yield'), 'nav_health': nav_health, 'audit': audit,
+            'tax_summary': _ts,
+            'nra_refund_est': _ts['refund_estimated'] if _ts else 0.0,
+            'nra_net_est': _ts['net_estimated'] if _ts else nra,
         })
 
     rows.sort(key=lambda r: -(r['market_value'] or 0))
     totals = {k: sum((r[k] or 0) for r in rows) for k in
               ('investment', 'dividends_net', 'dividends_gross', 'nra_tax',
-               'total_inv_naive', 'market_value', 'total_return', 'roc_dollars')}
+               'total_inv_naive', 'market_value', 'total_return', 'roc_dollars',
+               'nra_refund_est', 'nra_net_est')}
     totals['total_return_pct'] = (totals['total_return'] / totals['investment'] * 100
                                   if totals['investment'] > 0 else None)
     return {'rows': rows, 'totals': totals}
@@ -3875,6 +3895,147 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     total_refund_pct = round(tot_refund / tot_withheld * 100.0, 1) if tot_withheld > 0 else 0.0
     out['total'] = {'fair_withholding': round(tot_fair, 2), 'refund': round(tot_refund, 2),
                      'refund_pct': total_refund_pct}
+    return out
+
+
+def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None) -> dict:
+    """Objeto fiscal único por ticker (Regla 3 del invariante ROC/NRA,
+    `specs/roc-nra-invariants.md`): retenido real, retención justa y devolución estimada por
+    reclasificación anual ROC (19a). Es la ÚNICA fuente que cualquier vista de la app debe
+    RENDERIZAR — ninguna vista debe recalcular el concepto con su propia lógica (esa
+    duplicación fue la causa raíz del caso origen del 2026-07-14: $105 mostrados como pérdida
+    total en dos vistas mientras una tercera decía correctamente que ~$75 vuelven).
+
+    Replica exactamente la lógica que antes vivía inline solo en el paso "Impuesto NRA" del
+    viaje del dinero (`app.py`, bloque `_step == 2`): mismo filtro de años con retención
+    (`> 0.01`), misma rama `by_year` vs `aggregate`. Reusa `estimate_roc_refund` /
+    `estimate_roc_refund_by_year` tal cual — NO reimplementa su matemática (Regla 3).
+
+    `roc_pct_used` es `stats['roc_percent']` (ROC realizado del holder) — deliberadamente
+    DISTINTO del `roc_pct` que usa `build_hoja_excel` vía `_roc_pct_for` (19a ponderado
+    histórico). Son 2 de las 3 fuentes de %ROC que divergen a propósito (Regla 4: "carriles
+    que no se cruzan" — NAV health vs. palanca fiscal). No unificar.
+
+    El resultado es una ESTIMACIÓN/proyección (`is_estimate=True`,
+    `moment='annual_reclass_estimate'`, `basis='gross_withheld'`) — nunca sustituye
+    silenciosamente la retención real (`withheld_real`); toda vista debe mostrar ambas cifras
+    por separado, con la devolución rotulada como estimado (Regla 2).
+
+    Envuelta en try/except: cualquier fallo degrada a un summary nulo válido — nunca debe
+    tumbar el loop de `analyze_portfolio` (ETFs de crecimiento, fondos sin 19a, etc.).
+
+    Campos: ticker, base_rate_pct, country, roc_pct_used, roc_source, withheld_real,
+    fair_withholding, refund_estimated, refund_pct, net_estimated, refund_observed,
+    refund_pending, by_year, withheld_by_year, refund_observed_by_year, refund_by_year
+    (desglose año a año de `estimate_roc_refund_by_year`, o None), method,
+    basis='gross_withheld', moment='annual_reclass_estimate', is_estimate=True, label_short,
+    label_long.
+    """
+    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+
+    def _null(withheld_real=0.0, label_long='Sin retención NRA o sin % ROC calculado para '
+              'este fondo: no aplica devolución estimada.'):
+        return {
+            'ticker': ticker, 'base_rate_pct': _rate, 'country': None,
+            'roc_pct_used': None, 'roc_source': None,
+            'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
+            'refund_estimated': 0.0, 'refund_pct': 0.0,
+            'net_estimated': round(withheld_real, 2),
+            'refund_observed': 0.0, 'refund_pending': 0.0,
+            'by_year': False, 'withheld_by_year': {}, 'refund_observed_by_year': {},
+            'refund_by_year': None,
+            'method': None, 'basis': 'gross_withheld', 'moment': 'annual_reclass_estimate',
+            'is_estimate': True, 'label_short': '', 'label_long': label_long,
+        }
+
+    try:
+        withheld_real = float(stats.get('withheld_tax_total') or 0.0)
+        if withheld_real <= 0.01:
+            return _null(withheld_real, 'No hay retención NRA registrada para este fondo.')
+
+        roc_pct = stats.get('roc_percent')
+        if roc_pct is None:
+            return _null(withheld_real)
+
+        net_div = float(stats.get('total_dividends') or 0.0)
+        gross = net_div + withheld_real
+        gross_by_year = stats.get('dividends_gross_by_year') or {}
+        withheld_by_year = stats.get('withheld_by_year') or {}
+        years_wh = sorted(y for y, v in (withheld_by_year or {}).items() if v > 0.01)
+        obs_by_year = stats.get('tax_refund_observed_by_year') or {}
+        obs_total = round(sum(obs_by_year.values()), 2)
+
+        refund_info = estimate_roc_refund(gross, withheld_real, roc_pct, base_rate=_rate / 100.0)
+        method = f'ROC {roc_pct:.0f}%'
+        by_year = False
+        refund_by_year = None
+        if len(years_wh) > 1:
+            rby = estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker,
+                                               base_rate=_rate / 100.0, roc_fallback_pct=roc_pct)
+            rby_total = (rby or {}).get('total')
+            if rby_total:
+                # Tarjetas y tabla anual deben sumar igual: el total sale del ROC de cada
+                # año, no del agregado (mismo criterio que el bloque original en app.py).
+                refund_info = rby_total
+                method = 'ROC por año'
+                by_year = True
+                refund_by_year = rby
+
+        refund_estimated = refund_info['refund']
+        net_estimated = round(withheld_real - refund_estimated, 2)
+        refund_pending = max(0.0, round(refund_estimated - obs_total, 2))
+        label_short = (f'~${refund_estimated:,.0f} est. vuelve (ROC)'
+                       if refund_estimated > 0.01 else '')
+        label_long = (
+            f'Estimado: ~${refund_estimated:,.2f} ({refund_info["refund_pct"]:.0f}%) de lo '
+            f'retenido podría volver por la reclasificación anual del ROC (19a), con {method}. '
+            f'No es efectivo ya recibido — es una proyección; lo definitivo lo fija tu 1042-S.'
+            if refund_estimated > 0.01 else
+            'Con el % ROC de este fondo, la reclasificación anual no reduce la retención real.'
+        )
+        return {
+            'ticker': ticker, 'base_rate_pct': _rate, 'country': None,
+            'roc_pct_used': roc_pct, 'roc_source': stats.get('roc_source'),
+            'withheld_real': round(withheld_real, 2),
+            'fair_withholding': refund_info['fair_withholding'],
+            'refund_estimated': refund_estimated, 'refund_pct': refund_info['refund_pct'],
+            'net_estimated': net_estimated,
+            'refund_observed': obs_total, 'refund_pending': refund_pending,
+            'by_year': by_year, 'withheld_by_year': dict(withheld_by_year),
+            'refund_observed_by_year': dict(obs_by_year),
+            # Desglose año a año (dict {año: {fair_withholding, refund, refund_pct,
+            # roc_pct_usado}} + 'total'), tal cual lo devuelve estimate_roc_refund_by_year —
+            # None si no hay >1 año con retención. Se guarda para que la tabla anual del paso
+            # "Impuesto NRA" LEA este objeto en vez de recalcularlo (Regla 3).
+            'refund_by_year': refund_by_year,
+            'method': method, 'basis': 'gross_withheld', 'moment': 'annual_reclass_estimate',
+            'is_estimate': True, 'label_short': label_short, 'label_long': label_long,
+        }
+    except Exception:
+        try:
+            return _null(float(stats.get('withheld_tax_total') or 0.0))
+        except Exception:
+            return _null(0.0)
+
+
+def build_tax_summaries(results, base_rate_pct: float = None) -> dict:
+    """Agregador `{ticker: tax_summary}` — capa 2 del objeto fiscal único (Regla 3). Reusa por
+    IDENTIDAD el `tax_summary` que `analyze_portfolio` ya calculó y cacheó por ticker (capa 1,
+    tasa `NRA_DEFAULT_RATE`) cuando la tasa pedida coincide; si el usuario eligió en la UI un
+    país con tasa de tratado distinta, re-deriva con `build_tax_summary` — aritmética pura
+    sobre dicts ya calculados en memoria, sin tocar red ni YAML, así que es barato llamarlo
+    una vez por render aunque `analyze_portfolio` esté cacheada con `@st.cache_data`.
+    """
+    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+    out = {}
+    for tk, s in (results or {}).items():
+        if not isinstance(s, dict) or 'error' in s:
+            continue
+        cached = s.get('tax_summary')
+        if cached is not None and abs((cached.get('base_rate_pct') or 0.0) - _rate) < 0.001:
+            out[tk] = cached
+        else:
+            out[tk] = build_tax_summary(s, tk, base_rate_pct=_rate)
     return out
 
 
