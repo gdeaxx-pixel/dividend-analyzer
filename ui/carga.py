@@ -18,14 +18,27 @@ import logic
 
 
 def _clave_gemini():
-    """Misma resolución que `app.py:1219`: secrets primero, entorno de respaldo."""
+    """Resuelve la clave de Gemini sin ensuciar la interfaz.
+
+    Invierte el orden de `app.py:1219` (que mira `st.secrets` primero) por dos motivos
+    prácticos de este árbol: aquí la clave llega por entorno, porque `secrets.toml` es
+    del repo canónico y no se copia al worktree; y **tocar `st.secrets` sin archivo pinta
+    un recuadro de error rojo en la página** aunque se capture la excepción — Streamlit lo
+    renderiza por su cuenta. Por eso se comprueba que exista el archivo antes de leerlo.
+    """
+    clave = os.getenv("GEMINI_API_KEY")
+    if clave:
+        return clave
+
+    rutas = (os.path.expanduser("~/.streamlit/secrets.toml"),
+             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          ".streamlit", "secrets.toml"))
+    if not any(os.path.exists(r) for r in rutas):
+        return None
     try:
-        clave = st.secrets.get("GEMINI_API_KEY")
-        if clave:
-            return clave
+        return st.secrets.get("GEMINI_API_KEY")
     except Exception:                                              # noqa: BLE001
-        pass
-    return os.getenv("GEMINI_API_KEY")
+        return None
 
 
 # ── Componentes de presentación ───────────────────────────────────────────────
@@ -249,9 +262,13 @@ def render_bloque_posiciones() -> bool:
         'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
         'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
 
+    # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
+    # el bloque. Mismo tratamiento que `app.py:6289`.
     if excluidos:
-        st.caption(f"Fuera del análisis: {', '.join(excluidos)} "
-                   "(acciones individuales o instrumentos no soportados)")
+        with st.expander(f"{len(excluidos)} instrumentos fuera del análisis"):
+            st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
+                       "la calculadora no sabe interpretar todavía.")
+            st.write(", ".join(excluidos))
 
     if st.button("Confirmar posiciones", key="_vd_confirm_pos", type="primary"):
         st.session_state["_wizard_positions"] = posiciones
