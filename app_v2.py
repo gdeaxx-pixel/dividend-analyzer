@@ -8,7 +8,8 @@ traspaso § Arquitectura: `st.components.v1.html()` no puede devolver interaccio
 import streamlit as st
 
 from ui.carga import render_carga
-from ui.chrome import inyectar_estilos, render_crumb, render_placeholder, render_ruta
+from ui.chrome import inyectar_estilos, render_crumb, render_ruta
+from ui.vistas import render_vista
 
 st.set_page_config(
     page_title="Viaje del dinero · Invierte & Gana",
@@ -26,6 +27,6 @@ inyectar_estilos(ruta.tema)
 
 if con_datos:
     render_crumb(ruta)
-    render_placeholder(ruta)
+    render_vista(ruta)
 else:
     render_carga()
