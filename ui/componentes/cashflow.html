@@ -1,0 +1,451 @@
+<!-- GENERADO POR tools/extract_cashflow.py — NO EDITAR A MANO.
+     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<meta charset="utf-8">
+<style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style>
+<style>
+  /* El componente vive dentro de un iframe con su propio fondo: sin esto se ve un
+     rectángulo blanco recortado sobre la superficie de la página. */
+  body { margin: 0; background: var(--ground); }
+  .rail { display: none; }  /* el rail es nativo en el port, no del componente */
+</style>
+<main class="wrap" style="padding-top:0">
+<div class="panel" id="panel-viaje" role="tabpanel">
+  <nav class="rail" id="rail" aria-label="Pasos del recorrido"></nav>
+
+  <!-- ============ COCKPIT: lo que cambia por paso, sin scroll ============ -->
+  <section class="sec cockpit" style="margin-top:14px">
+    <!-- VERDICT -->
+    <div class="verdict" id="verdictCard">
+      <div>
+        <p class="v-kick" id="vKick">Tu punto de partida</p>
+        <div class="v-big num" id="vBig">$605.43</div>
+        <div class="v-pct" id="vPct"><span class="v-pct-lab">Rendimiento</span> <span class="num">+0.0%</span> <span class="v-pct-sep">·</span> <span class="num">+$0.00</span></div>
+      </div>
+      <div class="io">
+        <div class="io-row io-in">
+          <span class="io-lab">Pusiste</span>
+          <div class="io-track"><div class="io-fill" style="width:62.65%"><span>$605.43</span></div></div>
+        </div>
+        <div class="io-row io-out">
+          <span class="io-lab" id="ioOutLab">Ahora</span>
+          <div class="io-track"><div class="io-fill" id="ioOutFill" style="width:62.65%"></div><div class="io-ghost" id="ioOutGhostWrap" style="padding-left:10px"><span class="num" id="ioOutGhost" style="margin-left:0">$605.43</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Explicación única del paso -->
+    <p class="step-note" id="stepNote"></p>
+
+    <!-- WATERFALL -->
+    <div class="fall-scroll">
+      <div class="fall" id="fall"></div>
+    </div>
+  </section>
+
+  <!-- ============ CIERRE: el remate, scroll deliberado ============ -->
+  <div class="closer-divider" aria-hidden="true"></div>
+
+  <!-- WAFFLE -->
+  <section class="sec closer">
+    <p class="eyebrow">Tu dinero en cuadritos</p>
+    <div class="waffle-wrap">
+      <div class="grid" id="grid" role="img" aria-label="Mosaico de 100 cuadritos"></div>
+      <div>
+        <div class="legend" id="legend"></div>
+        <div class="surv" id="surv"></div>
+        <p class="waffle-note">Cada cuadrito ≈ <span class="num">$9.66</span> de tu pico (<span class="num">$966.48</span>, la mayor suma de categorías del recorrido).</p>
+      </div>
+    </div>
+  </section>
+  </div><!-- /panel-viaje -->
+</main>
+<div id="tip" role="status"></div>
+<script>
+(function () {
+  "use strict";
+  "use strict";
+
+  // ---------- constants (Schwab caso 2 · MSTY) ----------
+  var D = {{DATA_JSON}};
+  var POCKET = D.POCKET, BRUTO = D.BRUTO, IMPUESTO = D.IMPUESTO, NETO = D.NETO, DRIP = D.DRIP, CASH = D.CASH, TOTAL_TRABAJANDO = D.TOTAL_TRABAJANDO, MERCADO = D.MERCADO, VALOR_HOY = D.VALOR_HOY, CAPITAL_ACTUAL = D.CAPITAL_ACTUAL, RESULTADO = D.RESULTADO, PICO = D.PICO;
+
+  // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Etiquetas
+  // abreviadas para columnas de ancho igual — el nombre completo va en la caption.
+  var STEP_LABELS = ["Bolsillo","Div. bruto","Imp. NRA","Reinv + Efvo",
+                      "Bols + DRIP","Mercado","Cap. actual","Resultado"];
+
+  var PLOT_H = 300, MAXV = PICO, sc = PLOT_H / MAXV;
+  var pasoActual = {{PASO}}; // arranca en el estado final ya aprobado; se puede retroceder
+
+  // ---------- tooltip ----------
+  var tip = document.getElementById("tip");
+  function showTip(html, x, y) {
+    tip.innerHTML = html; tip.classList.add("on");
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = x + 14, top = y - h - 12;
+    if (left + w > window.innerWidth - 8) left = x - w - 14;
+    if (top < 8) top = y + 18;
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  function hideTip() { tip.classList.remove("on"); }
+  function tipHtml(c) {
+    return '<div class="t-h">' + c.th + '</div><div class="t-v">' + c.tv + '</div>' +
+           '<div style="margin-top:4px;opacity:.85">' + c.td + '</div>';
+  }
+
+  // ---------- verdict card (portada) ----------
+  var STEP_VALUES = [POCKET, PICO, PICO - IMPUESTO, TOTAL_TRABAJANDO, TOTAL_TRABAJANDO, VALOR_HOY, CAPITAL_ACTUAL];
+  var VERDICT_KICKERS = ["Tu punto de partida", "Dividendo bruto acumulado", "Después del impuesto NRA",
+                          "Capital listo para trabajar", "Capital expuesto al mercado",
+                          "Después del impacto del mercado", "Capital actual total"];
+
+  var vKick = document.getElementById("vKick"), vBig = document.getElementById("vBig"),
+      vPct = document.getElementById("vPct"),
+      ioOutLab = document.getElementById("ioOutLab"), ioOutFill = document.getElementById("ioOutFill"),
+      ioOutGhost = document.getElementById("ioOutGhost"), ioOutGhostWrap = document.getElementById("ioOutGhostWrap"),
+      verdictCard = document.getElementById("verdictCard");
+
+  // El label del monto nunca debe quedar a caballo entre el relleno y el track vacío:
+  // si hay espacio, vive DENTRO del relleno (texto claro); si no, justo DESPUÉS de su borde (texto mudo).
+  function placeGhost(ratio) {
+    var inside = ratio >= 0.55;
+    ioOutGhostWrap.style.paddingLeft = inside ? "10px" : (Math.min(ratio, 0.9) * 100).toFixed(2) + "%";
+    ioOutGhost.style.color = inside ? "var(--panel)" : "var(--ink-mut)";
+    ioOutGhost.style.marginLeft = inside ? "0" : "8px";
+  }
+
+  function updateVerdict(step) {
+    var isFinal = step === 7;
+    var val = isFinal ? CAPITAL_ACTUAL : STEP_VALUES[step];
+    var pct = (val / POCKET - 1) * 100;
+    var deltaUsd = val - POCKET;
+    var state = (!isFinal && step === 0) ? "base" : (deltaUsd >= 0 ? "up" : "loss");
+    var colorVar = state === "up" ? "var(--accent)" : state === "loss" ? "var(--loss)" : "var(--ink-mut)";
+    var fillRatio = val / MAXV;
+
+    vKick.textContent = isFinal ? "Tu resultado real" : VERDICT_KICKERS[step];
+    vBig.textContent = isFinal
+      ? ((deltaUsd >= 0 ? "+" : "−") + "$" + Math.abs(deltaUsd).toFixed(2))
+      : ("$" + val.toFixed(2));
+    vBig.className = "v-big num" + (state === "base" ? "" : " " + state);
+    vPct.innerHTML = '<span class="v-pct-lab">Rendimiento</span> <span class="num">' +
+                      (pct >= 0 ? "+" : "−") + Math.abs(pct).toFixed(1) + "%</span>" +
+                      ' <span class="v-pct-sep">·</span> <span class="num">' +
+                      (deltaUsd >= 0 ? "+" : "−") + "$" + Math.abs(deltaUsd).toFixed(2) + "</span>";
+    vPct.className = "v-pct" + (state === "base" ? "" : " " + state);
+    ioOutLab.textContent = isFinal ? "Tienes hoy" : "Ahora";
+    ioOutFill.style.width = (fillRatio * 100).toFixed(2) + "%";
+    ioOutFill.style.background = colorVar;
+    ioOutGhost.textContent = "$" + val.toFixed(2);
+    placeGhost(fillRatio);
+    verdictCard.style.borderLeftColor = colorVar;
+  }
+
+  // ---------- columns (un solo carril de 8, 1:1 con los pasos) ----------
+  var resultadoAmt = (RESULTADO >= 0 ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2);
+  var resultadoCap = RESULTADO >= 0 ? "up" : "dn";
+  var COLS = [
+    { segs:[{cls:"s-anchor", lo:0, hi:POCKET}],
+      amt:"$" + POCKET.toFixed(2), cap:"base", lab:"Tu bolsillo", run:POCKET,
+      th:"Tu bolsillo", tv:"+$" + POCKET.toFixed(2),
+      td:"Lo que pusiste de tu propio dinero. Es tu costo — la vara con la que se mide todo el recorrido." },
+    { segs:[{cls:"s-transito", lo:POCKET, hi:PICO}],
+      amt:"+$" + BRUTO.toFixed(2), cap:"up", lab:"Dividendo bruto", run:PICO,
+      th:"Dividendo bruto", tv:"+$" + BRUTO.toFixed(2),
+      td:"Lo que el fondo repartió antes de impuestos. Este es tu pico de capital: $" + PICO.toFixed(2) + "." },
+    { segs:[{cls:"s-loss", lo:TOTAL_TRABAJANDO + CASH, hi:PICO}],
+      amt:"−$" + IMPUESTO.toFixed(2), cap:"dn", lab:"Impuesto NRA", run:PICO - IMPUESTO,
+      th:"Impuesto NRA", tv:"−$" + IMPUESTO.toFixed(2),
+      td:"Retención automática de EE.UU. sobre dividendos a extranjeros. Sale del sistema — no vuelve." },
+    { segs:[{cls:"s-cash", lo:TOTAL_TRABAJANDO, hi:TOTAL_TRABAJANDO + CASH}],
+      amt:"−$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo apartado", run:TOTAL_TRABAJANDO,
+      th:"Efectivo apartado", tv:"−$" + CASH.toFixed(2),
+      td:"La parte del dividendo neto que NO reinviertes. No se pierde — se aparta, a salvo, del mercado." },
+    { segs:[{cls:"s-anchor", lo:0, hi:POCKET}, {cls:"s-drip", lo:POCKET, hi:TOTAL_TRABAJANDO}],
+      amt:"$" + TOTAL_TRABAJANDO.toFixed(2), cap:"base", lab:"Capital trabajando", sub:"= Bolsillo + DRIP", run:null,
+      th:"Capital trabajando", tv:"$" + TOTAL_TRABAJANDO.toFixed(2),
+      td:"Tu bolsillo ($" + POCKET.toFixed(2) + ") + lo reinvertido ($" + DRIP.toFixed(2) + "). Esto es lo que queda expuesto al mercado." },
+    { segs:[{cls:"s-loss", lo:VALOR_HOY, hi:TOTAL_TRABAJANDO}],
+      amt:"−$" + Math.abs(MERCADO).toFixed(2), cap:"dn", lab:"Impacto del mercado", run:VALOR_HOY,
+      th:"Impacto del mercado", tv:"−$" + Math.abs(MERCADO).toFixed(2),
+      td:"La caída del precio del fondo. Tu capital de trabajo pasa de $" + TOTAL_TRABAJANDO.toFixed(2) + " a $" + VALOR_HOY.toFixed(2) + "." },
+    { segs:[{cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
+      amt:"+$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo cobrado", run:CAPITAL_ACTUAL,
+      th:"Efectivo cobrado", tv:"+$" + CASH.toFixed(2),
+      td:"El mismo efectivo que apartaste en el paso 4 vuelve a sumar. Total: $" + CAPITAL_ACTUAL.toFixed(2) + "." },
+    { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}, {cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
+      amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:"vs. tu bolsillo", run:null,
+      th:"Resultado real", tv:resultadoAmt,
+      td:"Lo que tienes hoy ($" + CAPITAL_ACTUAL.toFixed(2) + ") frente a lo que pusiste ($" + POCKET.toFixed(2) + "). La diferencia es lo que el mercado se llevó." }
+  ];
+  function colsForStep(step) { return COLS.slice(0, step + 1); }
+  var SLOT_COUNT = 8;
+  function newColIndex(step) { return step; }   // 1:1 rail ↔ columna
+
+  // ---------- render waterfall ----------
+  // Un solo carril de 8 slots reservados, 1:1 con los 8 pasos del rail. Las
+  // columnas se llenan de izquierda a derecha; nunca se borran, nunca cambian
+  // de ancho ni de posición entre pasos — el número de slots es fijo (8) desde
+  // el primer render. Los slots futuros quedan reservados mostrando en fantasma
+  // el nombre del paso que viene (STEP_LABELS). Solo la columna NUEVA se anima;
+  // las anteriores quedan "settled" (quietas).
+
+  var fall = document.getElementById("fall");
+  function render(step) {
+    pasoActual = step;
+    updateRailStates();
+    updateVerdict(step);
+
+    var cols = colsForStep(step);
+    var newIdx = newColIndex(step);
+    var lastRealIdx = cols.length - 1;
+
+    fall.innerHTML = "";
+    var plot = document.createElement("div");
+    plot.className = "plot";
+
+    var slots = [];
+    var maxSlots = SLOT_COUNT;
+    for (var i = 0; i < maxSlots; i++) slots.push(cols[i] || null);
+
+    slots.forEach(function (c, ci) {
+      var col = document.createElement("div");
+      col.className = "col" + (c ? "" : " reserved");
+      if (!c) {
+        col.innerHTML = '<div class="slot-tick"></div><div class="slot-ghost">' + STEP_LABELS[ci] + '</div>';
+        plot.appendChild(col); return;
+      }
+
+      var animate = (ci === newIdx);
+      c.segs.forEach(function (seg) {
+        var lo = Math.min(seg.lo, seg.hi), hi = Math.max(seg.lo, seg.hi);
+        var el = document.createElement("div");
+        el.className = "seg " + seg.cls + (animate ? "" : " settled");
+        el.style.bottom = (lo * sc) + "px";
+        el.style.height = ((hi - lo) * sc) + "px";
+        el.style.cursor = "pointer";
+        function move(e) {
+          var pt = e.touches ? e.touches[0] : e;
+          showTip(tipHtml(c), pt.clientX, pt.clientY);
+        }
+        el.addEventListener("mouseenter", move);
+        el.addEventListener("mousemove", move);
+        el.addEventListener("mouseleave", hideTip);
+        col.appendChild(el);
+      });
+
+      var cap = document.createElement("div");
+      cap.className = "col-cap";
+      var runHtml = c.run != null ? '<div class="cap-run num">$' + c.run.toFixed(2) + "</div>" : "";
+      var subHtml = c.sub ? '<div class="cap-sub">' + c.sub + "</div>" : "";
+      cap.innerHTML = '<div class="cap-amt ' + c.cap + ' num">' + c.amt + '</div>' +
+                      '<div class="cap-lab">' + c.lab + "</div>" + subHtml + runHtml;
+      col.appendChild(cap);
+
+      if (step === 7 && ci === 7) {
+        var gap = document.createElement("div");
+        gap.className = "gap-band";
+        gap.style.bottom = (CAPITAL_ACTUAL * sc) + "px";
+        gap.style.height = ((POCKET - CAPITAL_ACTUAL) * sc) + "px";
+        gap.innerHTML = "<span>−$" + Math.abs(RESULTADO).toFixed(2) + "</span>";
+        col.appendChild(gap);
+      }
+
+      plot.appendChild(col);
+    });
+
+    if (step === 7) {
+      var cl = document.createElement("div");
+      cl.className = "costline";
+      cl.style.bottom = (POCKET * sc) + "px";
+      cl.innerHTML = '<span class="cl-lab">Lo que pusiste<br>$' + POCKET.toFixed(2) + "</span>";
+      plot.appendChild(cl);
+    }
+
+    fall.appendChild(plot);
+
+    if (step === 7) {
+      document.getElementById("stepNote").innerHTML =
+        "<b>Resultado real</b> · La franja rayada mide el hueco entre lo que pusiste " +
+        "(la línea roja) y lo que te queda hoy: eso es lo que el mercado se llevó.";
+    } else {
+      var last = cols[lastRealIdx];
+      document.getElementById("stepNote").innerHTML = "<b>" + last.th + "</b> · " + last.td;
+    }
+
+    renderWaffle(step);
+  }
+
+  // ---------- rail ----------
+  var railEl = document.getElementById("rail");
+  STEP_LABELS.forEach(function (s, i) {
+    var el = document.createElement("div");
+    el.className = "step clickable";
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
+    el.innerHTML = '<div class="step-bar"></div><div class="step-lab">' + s + "</div>";
+    el.addEventListener("click", function () { render(i); });
+    el.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); render(i); }
+    });
+    railEl.appendChild(el);
+  });
+  function updateRailStates() {
+    var steps = railEl.querySelectorAll(".step");
+    steps.forEach(function (el, i) {
+      el.classList.remove("done", "now");
+      if (i < pasoActual) el.classList.add("done");
+      else if (i === pasoActual) el.classList.add("now");
+    });
+  }
+
+  // ---------- waffle: 100 cuadritos = % del pico, progresivo por paso ----------
+  // Port fiel de _build_clusters (app.py) — mismo cálculo, mismo redondeo por
+  // categoría. Verificado: el estado final da 10/53/3/20/4/10, idéntico al
+  // mosaico fijo que reemplaza.
+  var MOSAIC_UNIT = PICO / 100;
+  function nb(x) { return Math.max(0, Math.round(x / MOSAIC_UNIT)); }
+  var N_PK = nb(POCKET), N_BR = nb(BRUTO), N_IM = nb(IMPUESTO), N_DR = nb(DRIP), N_CA = nb(CASH), N_MV = nb(VALOR_HOY);
+
+  // Cada segmento carga su monto REAL (amt) además del conteo de cuadritos (n).
+  // La leyenda usa amt, nunca n*unit — n*unit es una aproximación visual (el
+  // redondeo por categoría no cierra exacto a los centavos) y mostrarla como
+  // si fuera el monto real desalinea la cifra (ej. $608.88 en vez de $605.43).
+  function segsForStep(step) {
+    if (step === 0) {
+      return [{ n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital, recién puesto — todavía no expuesto a nada." }];
+    }
+    if (step === 1) {
+      return [
+        { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado." },
+        { n: N_BR, amt: BRUTO, cls: "q-transito", cat: "Dividendo bruto", note: "Repartido, pero aún sin clasificar entre impuesto, DRIP y efectivo." }
+      ];
+    }
+    if (step === 2) {
+      var nTransito = Math.max(0, N_BR - N_IM);
+      return [
+        { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado." },
+        { n: N_IM, amt: IMPUESTO, cls: "q-sd", cat: "Impuesto NRA", note: "Retenido automáticamente. Sale del sistema — no vuelve." },
+        { n: nTransito, amt: BRUTO - IMPUESTO, cls: "q-transito", cat: "Dividendo bruto", note: "Lo que queda del bruto, aún sin repartir entre DRIP y efectivo." }
+      ];
+    }
+    if (step >= 3 && step <= 6) {
+      return [
+        { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado — expuesto al mercado junto con el DRIP." },
+        { n: N_DR, amt: DRIP, cls: "q-drip", cat: "DRIP", note: "Dividendos reinvertidos — la misma suerte que tu bolsillo." },
+        { n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Ya cobrado, a salvo del mercado." }
+      ];
+    }
+    // step 7 — se revela qué sobrevivió. El monto real de cada categoría (POCKET,
+    // DRIP) se le asigna SOLO a la pieza "vivo" — la pieza "destruido" lleva
+    // amt:0 — así al sumar ambas piezas en la leyenda el total no se duplica.
+    var nCapital = N_PK + N_DR, pkAlive, drAlive, nExtra = 0;
+    if (N_MV >= nCapital) {
+      pkAlive = N_PK; drAlive = N_DR; nExtra = N_MV - nCapital;
+    } else {
+      var frac = nCapital > 0 ? N_MV / nCapital : 0;
+      pkAlive = Math.round(N_PK * frac);
+      drAlive = Math.round(N_DR * frac);
+    }
+    var pkDead = N_PK - pkAlive, drDead = N_DR - drAlive;
+    var out = [
+      { n: pkAlive, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo — vivo", note: "Capital tuyo que sobrevivió." },
+      { n: pkDead, amt: 0, cls: "q-sd", cat: "Tu bolsillo — destruido", note: "Capital tuyo que el mercado borró." },
+      { n: drAlive, amt: DRIP, cls: "q-drip", cat: "DRIP — vivo", note: "Dividendo reinvertido que sobrevivió." },
+      { n: drDead, amt: 0, cls: "q-sl", cat: "DRIP — destruido", note: "Dividendo reinvertido, borrado." }
+    ];
+    if (nExtra > 0) out.push({ n: nExtra, amt: 0, cls: "q-cash", cat: "Apreciación", note: "Ganancia por encima de tu capital + DRIP." });
+    if (N_CA > 0) out.push({ n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Dividendos ya cobrados, a salvo." });
+    return out;
+  }
+
+  var SWATCH = {
+    "q-anchor":   '<i class="sw-anchor"></i>',
+    "q-transito": '<i class="sw-anchor" style="background:var(--accent-tint);border:1px solid var(--accent);"></i>',
+    "q-sd":       '<i class="sw-anchor" style="background:var(--loss-bg);border:1px solid var(--loss-soft);"></i>',
+    "q-drip":     '<i class="sw-drip"></i>',
+    "q-cash":     '<i class="sw-cash"></i>'
+  };
+  var SWATCH_SPLIT = { "Tu bolsillo": '<i class="sw-anchor"></i><i class="sw-struck"></i>', "DRIP": '<i class="sw-drip"></i><i class="sw-struck"></i>' };
+
+  // Agrupa "X — vivo" + "X — destruido" (misma fuente) en 1 fila. La nota
+  // NUNCA se queda solo con la mitad de la historia: si hay split, dice
+  // cuántos viven y cuántos se destruyeron, en vez de heredar la nota del
+  // primer segmento (bug real: se perdía la mención del destruido). El
+  // swatch doble (vivo+tachado) SOLO aplica cuando de verdad hay split —
+  // en los pasos 0-6 el bolsillo usa su swatch simple, no tachado.
+  function legendHtml(segs) {
+    var byCat = {}, order = [];
+    segs.forEach(function (s) {
+      var isAlive = / — vivo$/.test(s.cat), isDead = / — destruido$/.test(s.cat);
+      var key = s.cat.replace(/ — (vivo|destruido)$/, "");
+      if (!byCat[key]) { byCat[key] = { n: 0, amt: 0, note: s.note, cls: s.cls, alive: null, dead: null }; order.push(key); }
+      byCat[key].n += s.n;
+      byCat[key].amt += s.amt;
+      if (isAlive) byCat[key].alive = s.n;
+      if (isDead) byCat[key].dead = s.n;
+    });
+    return order.map(function (key) {
+      var g = byCat[key];
+      var hasSplit = g.alive != null && g.dead != null;
+      var note = g.note;
+      if (hasSplit) {
+        note = g.dead > 0
+          ? (g.alive + (g.alive === 1 ? ' cuadrito vivo' : ' cuadritos vivos') + ' · ' + g.dead + ' destruidos')
+          : 'Los ' + g.alive + ' siguen vivos.';
+      }
+      var sw = hasSplit ? (SWATCH_SPLIT[key] || SWATCH["q-anchor"]) : SWATCH[g.cls];
+      var amt = "$" + g.amt.toFixed(2);
+      return '<div class="leg-row"><span class="leg-sw">' + sw + '</span>' +
+             '<span class="leg-txt"><strong>' + key + ' · <span class="leg-amt">' + amt + '</span></strong>' +
+             '<small>' + note + '</small></span></div>';
+    }).join("");
+  }
+
+  var grid = document.getElementById("grid");
+  function renderWaffle(step) {
+    var segs = segsForStep(step);
+    var lit = segs.reduce(function (a, s) { return a + s.n; }, 0);
+    var off = Math.max(0, 100 - lit);
+
+    grid.innerHTML = "";
+    var idx = 0;
+    segs.concat(off > 0 ? [{ n: off, cls: "q-off", cat: "Sin usar", note: "Espacio hasta tu pico de capital." }] : [])
+      .forEach(function (s) {
+        for (var k = 0; k < s.n; k++) {
+          var sq = document.createElement("div");
+          sq.className = "sq " + s.cls;
+          sq.style.animationDelay = (idx * 6) + "ms";
+          (function (seg) {
+            function m(e) {
+              var pt = e.touches ? e.touches[0] : e;
+              showTip('<div class="t-h">' + seg.cat + '</div><div style="opacity:.85">' + seg.note + '</div><div class="t-v" style="margin-top:3px">≈ $' + MOSAIC_UNIT.toFixed(2) + '</div>', pt.clientX, pt.clientY);
+            }
+            sq.addEventListener("mouseenter", m);
+            sq.addEventListener("mousemove", m);
+            sq.addEventListener("mouseleave", hideTip);
+          })(s);
+          grid.appendChild(sq);
+          idx++;
+        }
+      });
+    grid.setAttribute("aria-label", "Mosaico de 100 cuadritos, paso " + (step + 1) + " de 9");
+
+    document.getElementById("legend").innerHTML = legendHtml(segs);
+
+    var surv = document.getElementById("surv");
+    if (step === 7) {
+      var pctAlive = Math.round(((segs[0].n + segs[2].n) / (N_PK + N_DR)) * 100);
+      var pctDead = 100 - pctAlive;
+      surv.innerHTML = 'De cada $100 invertidos, <b class="alive">' + pctAlive +
+                        ' siguen vivos</b> y <b class="dead">' + pctDead +
+                        ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.';
+    } else {
+      surv.innerHTML = 'Todavía no sabemos cuánto sobrevive — eso se revela en el <b>paso 8</b>, cuando se conoce el impacto del mercado.';
+    }
+  }
+
+  render(pasoActual);
+  render(pasoActual);
+})();
+</script>
