@@ -10,9 +10,22 @@ Ningún color se escribe a mano aquí: se usan las variables CSS que inyecta `ui
 
 from __future__ import annotations
 
+import os
+
 import streamlit as st
 
 import logic
+
+
+def _clave_gemini():
+    """Misma resolución que `app.py:1219`: secrets primero, entorno de respaldo."""
+    try:
+        clave = st.secrets.get("GEMINI_API_KEY")
+        if clave:
+            return clave
+    except Exception:                                              # noqa: BLE001
+        pass
+    return os.getenv("GEMINI_API_KEY")
 
 
 # ── Componentes de presentación ───────────────────────────────────────────────
@@ -175,17 +188,59 @@ def render_bloque_posiciones() -> bool:
         st.warning("No encontramos ETFs analizables en este archivo.")
         return False
 
+    # ── Lectura de fotos con Gemini ───────────────────────────────────────────
+    # Rellena la tabla desde capturas del bróker, igual que `app.py:1455`. Reusa
+    # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
+    # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
+    # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde.
+    clave = _clave_gemini()
+    leido = st.session_state.get("_wizard_ocr_positions") or {}
+    if clave and analizables:
+        fotos = st.file_uploader(
+            "Fotos del portafolio", type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True, label_visibility="collapsed",
+            key="_vd_fotos",
+            help="Sube capturas donde se vean «Acciones/Posición» y «Base de coste / Cost "
+                 "Basis» y rellenamos la tabla por ti.")
+        st.caption("Opcional · PNG o JPG · también puedes escribir los valores a mano")
+        if fotos:
+            firma = tuple((f.name, f.size) for f in fotos)
+            if firma != st.session_state.get("_wizard_photo_sig"):
+                with st.spinner("Leyendo tus capturas…"):
+                    payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
+                    leido = logic.extract_positions_from_images(
+                        payload, analizables, clave) or {}
+                st.session_state["_wizard_ocr_positions"] = leido
+                st.session_state["_wizard_photo_sig"] = firma
+                st.rerun()
+        if leido:
+            st.markdown(bloque_resumen("Capturas leídas",
+                                       f"{len(leido)} de {len(analizables)} instrumentos"),
+                        unsafe_allow_html=True)
+
     previa = st.session_state.get("_wizard_csv_ticker_data") or {}
     posiciones = {}
     for ticker in analizables:
         fila = previa.get(ticker, {})
+        ocr = leido.get(ticker) or {}
+
+        # Lo leído de la captura MANDA sobre la vista previa del CSV: la captura muestra la
+        # posición real del bróker (con reinversiones y ventas ya aplicadas), mientras el
+        # CSV solo suma compras. Ese es el motivo de subir la foto.
+        acciones_def = ocr.get("shares")
+        if acciones_def is None:
+            acciones_def = fila.get("shares", 0.0)
+        costo_def = ocr.get("cost_basis") or fila.get("invested", 0.0)
+
         col_t, col_a, col_c = st.columns([1.2, 1, 1.4])
-        col_t.markdown(f'<p class="vd-ticker">{ticker}</p>', unsafe_allow_html=True)
+        marca = '<span class="vd-ocr">captura</span>' if ocr else ""
+        col_t.markdown(f'<p class="vd-ticker">{ticker} {marca}</p>',
+                       unsafe_allow_html=True)
         acciones = col_a.number_input(
-            "Acciones", min_value=0.0, value=float(fila.get("shares", 0.0)),
+            "Acciones", min_value=0.0, value=float(acciones_def),
             step=0.0001, format="%.4f", key=f"_vd_sh_{ticker}", label_visibility="collapsed")
         costo = col_c.number_input(
-            "Costo base", min_value=0.0, value=float(fila.get("invested", 0.0)),
+            "Costo base", min_value=0.0, value=float(costo_def),
             step=0.01, format="%.2f", key=f"_vd_cb_{ticker}", label_visibility="collapsed")
         posiciones[ticker] = {"shares": acciones, "cost_basis": costo}
 
@@ -284,6 +339,12 @@ ESTILOS_CARGA = """
         .vd-ticker {
           font-family: var(--font-mono); font-size: 14px; font-weight: 700;
           color: var(--ink); margin: .35rem 0 0;
+        }
+        .vd-ocr {
+          font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+          letter-spacing: .08em; text-transform: uppercase; color: var(--cash);
+          border: 1px solid var(--cash); padding: 1px 5px; margin-left: 6px;
+          vertical-align: middle;
         }
         .vd-nota {
           font-size: 12px; line-height: 1.5; color: var(--ink-2); background: var(--panel-tint);
