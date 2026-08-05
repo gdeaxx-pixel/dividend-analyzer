@@ -14,6 +14,9 @@ Uso:
 
 Vocabulario replicado de los exports reales:
   Schwab  Action:           Buy · Sell · Cash Dividend · Qualified Dividend ·
+     OJO: `Qual Div Reinvest` lleva importe POSITIVO (es la fila de ingreso) y su
+     `Reinvest Shares` pareja lo lleva negativo — verificado contra el export real.
+     Ponerlo negativo hace que logic.py lo cuente dos veces; no es un bug del código.
                             Reinvest Shares · Reinvest Dividend · Qual Div Reinvest ·
                             NRA Tax Adj · Foreign Tax Paid · Cash In Lieu ·
                             Credit Interest · MoneyLink Transfer · Stock Split
@@ -49,7 +52,7 @@ SCHWAB_ROWS = [
     ("02/28/2025", "Cash Dividend", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "", "", "", "$80.00"),
     ("02/28/2025", "NRA Tax Adj", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "", "", "", "-$24.00"),
     ("03/01/2025", "Reinvest Dividend", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "", "", "", "-$40.00"),
-    ("03/01/2025", "Reinvest Shares", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "1.8182", "$22.00", "", ""),
+    ("03/01/2025", "Reinvest Shares", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "1.8182", "$22.00", "", "-$40.00"),
 
     ("03/31/2025", "Cash Dividend", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "", "", "", "$76.00"),
     ("03/31/2025", "NRA Tax Adj", "MSTY", "YIELDMAX MSTR OPTION INCOME ETF", "", "", "", "-$22.80"),
@@ -60,8 +63,8 @@ SCHWAB_ROWS = [
     ("03/31/2025", "Qualified Dividend", "SCHB", "SCHWAB US BROAD MARKET ETF", "", "", "", "$1.50"),
     ("03/31/2025", "NRA Tax Adj", "SCHB", "SCHWAB US BROAD MARKET ETF", "", "", "", "-$0.45"),
 
-    ("04/15/2025", "Qual Div Reinvest", "SCHB", "SCHWAB US BROAD MARKET ETF", "", "", "", "-$1.05"),
-    ("04/15/2025", "Reinvest Shares", "SCHB", "SCHWAB US BROAD MARKET ETF", "0.0500", "$21.00", "", ""),
+    ("04/15/2025", "Qual Div Reinvest", "SCHB", "SCHWAB US BROAD MARKET ETF", "", "", "", "$1.05"),
+    ("04/15/2025", "Reinvest Shares", "SCHB", "SCHWAB US BROAD MARKET ETF", "0.0500", "$21.00", "", "-$1.05"),
 
     # Ruido que el parser debe ignorar sin romperse
     ("04/20/2025", "Credit Interest", "", "SCHWAB BANK INTEREST", "", "", "", "$0.12"),
