@@ -3,6 +3,13 @@
 > Se entrega al ejecutor a propósito: debe saber contra qué se le mide antes de escribir
 > la primera línea. La auditoría la corre Claude en el repo canónico (con acceso a los
 > casos reales), no en el worktree.
+>
+> **Si eres el ejecutor: los comandos de abajo dicen `.venv/bin/python` porque son del
+> repo canónico.** En tu worktree ese venv no existe — fue eliminado del control de
+> versiones en el commit de saneamiento `e7fd033`. Traduce siempre a `.venv-port/bin/python`,
+> y no intentes crear un `.venv/`. Los pasos 3 y 4 no puedes correrlos: necesitan los casos
+> reales, que están fuera de tu árbol a propósito. Tu receta de verificación es la del
+> traspaso, § Verificación.
 
 Cada fase cierra con un veredicto escrito en el traspaso:
 **pasa** · **pasa con correcciones** (lista exacta) · **se devuelve**.
