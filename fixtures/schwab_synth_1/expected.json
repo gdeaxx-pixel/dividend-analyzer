@@ -1,0 +1,75 @@
+{
+  "case_id": "schwab_synth_1",
+  "broker": "schwab",
+  "csv_glob": "schwab_synth_1/synthetic_transactions.csv",
+  "income_glob": "schwab_synth_1/synthetic_investment_income.csv",
+  "source": "SINTETICO — cifras inventadas, estructura real del export de Charles Schwab.",
+  "notes": "No es un caso real. Sirve para desarrollo y validacion de UI sin acceso a real_examples/. La validacion contra datos reales corre aparte, con DIVIDEND_REAL_EXAMPLES_DIR.",
+  "tickers": {
+    "MSTY": {
+      "shares": 41.8182,
+      "cost_basis": 1040.0,
+      "market_value": null,
+      "reliability": "high",
+      "note": "40 compradas @ $25.00 + 1.8182 reinvertidas @ $22.00."
+    },
+    "TSLY": {
+      "shares": 50.0,
+      "cost_basis": 600.0,
+      "market_value": null,
+      "reliability": "high",
+      "note": "50 compradas @ $12.00, sin reinversion."
+    },
+    "SCHB": {
+      "shares": 10.05,
+      "cost_basis": 201.05,
+      "market_value": null,
+      "reliability": "high",
+      "note": "10 compradas @ $20.00 + 0.05 reinvertidas @ $21.00."
+    }
+  },
+  "csv_preview_expected": {
+    "source": "app.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
+    "shares": {
+      "MSTY": 40.0,
+      "TSLY": 50.0,
+      "SCHB": 10.0,
+      "AAPL": 5.0
+    },
+    "invested": {
+      "MSTY": 1000.0,
+      "TSLY": 600.0,
+      "SCHB": 200.0,
+      "AAPL": 900.0
+    },
+    "note": "Vista previa del Bloque 1, NO la posicion. Ignora 'Reinvest Shares' (MSTY +1.8182, SCHB +0.05) y no resta la venta de AAPL (-2). Verificado contra el codigo, no estimado."
+  },
+  "income_expected": {
+    "source": "synthetic_investment_income.csv",
+    "cusip_folds": {},
+    "received": {
+      "MSTY": 156.0,
+      "TSLY": 45.0,
+      "SCHB": 1.5
+    },
+    "expected_status": {
+      "MSTY": "match",
+      "TSLY": "match",
+      "SCHB": "match"
+    },
+    "note": "Dividendos BRUTOS. La retencion NRA va aparte, en las filas 'NRA Tax Adj'."
+  },
+  "tax_expected": {
+    "basis": "gross_withheld",
+    "moment": "al cobro",
+    "withheld_real": {
+      "MSTY": 46.8,
+      "TSLY": 13.5,
+      "SCHB": 0.45
+    },
+    "note": "Retencion al cobro, tasa plana del 30%. NO confundir con `refund_estimated` de build_tax_summary, que es una estimacion post-reclasificacion anual (momento distinto — Regla 2)."
+  },
+  "excluded_tickers": {
+    "AAPL": "mode_skip — accion individual, fuera del analisis."
+  }
+}

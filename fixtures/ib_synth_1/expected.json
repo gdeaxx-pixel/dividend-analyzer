@@ -1,0 +1,71 @@
+{
+  "case_id": "ib_synth_1",
+  "broker": "ibkr",
+  "csv_glob": "ib_synth_1/synthetic_transactions.csv",
+  "income_glob": null,
+  "source": "SINTETICO — cifras inventadas, estructura real del export de Interactive Brokers.",
+  "notes": "No es un caso real. El export de IB trae la retencion como filas 'Foreign Tax Withholding' separadas de las filas 'Dividend'.",
+  "tickers": {
+    "NVDY": {
+      "shares": 50.0,
+      "cost_basis": 750.0,
+      "market_value": null,
+      "reliability": "high",
+      "note": "60 compradas @ $15.00, 10 vendidas. Costo base proporcional a las 50 vivas."
+    },
+    "CONY": {
+      "shares": 80.0,
+      "cost_basis": 800.0,
+      "market_value": null,
+      "reliability": "high",
+      "note": "80 compradas @ $10.00."
+    },
+    "SMH": {
+      "shares": 4.0,
+      "cost_basis": 1000.0,
+      "market_value": null,
+      "reliability": "high",
+      "note": "4 compradas @ $250.00."
+    }
+  },
+  "csv_preview_expected": {
+    "source": "app.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
+    "shares": {
+      "NVDY": 60.0,
+      "CONY": 80.0,
+      "SMH": 4.0
+    },
+    "invested": {
+      "NVDY": 900.0,
+      "CONY": 800.0,
+      "SMH": 1000.0
+    },
+    "note": "Vista previa del Bloque 1, NO la posicion: no resta la venta de 10 NVDY. Verificado contra el codigo, no estimado."
+  },
+  "income_expected": {
+    "source": "filas Dividend del propio archivo de transacciones",
+    "cusip_folds": {},
+    "received": {
+      "NVDY": 60.0,
+      "CONY": 60.0,
+      "SMH": 2.0
+    },
+    "expected_status": {
+      "NVDY": "match",
+      "CONY": "match",
+      "SMH": "match"
+    },
+    "note": "Dividendos BRUTOS, sin el 'Payment in Lieu' de $1.20 de NVDY."
+  },
+  "tax_expected": {
+    "basis": "gross_withheld",
+    "moment": "al cobro",
+    "withheld_real": {
+      "NVDY": 18.0,
+      "CONY": 18.0,
+      "SMH": 0.6
+    },
+    "note": "Filas 'Foreign Tax Withholding'. Tasa plana del 30% sobre el bruto."
+  },
+  "excluded_tickers": {}
+}
