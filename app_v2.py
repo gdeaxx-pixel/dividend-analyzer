@@ -7,6 +7,7 @@ traspaso § Arquitectura: `st.components.v1.html()` no puede devolver interaccio
 
 import streamlit as st
 
+from ui.carga import render_carga
 from ui.chrome import inyectar_estilos, render_crumb, render_placeholder, render_ruta
 
 st.set_page_config(
@@ -16,7 +17,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-ruta = render_ruta()
+# Sin posiciones confirmadas no hay recorrido que enseñar: la hoja de carga ocupa toda la
+# superficie y la navegación se reduce al tema.
+con_datos = bool(st.session_state.get("_wizard_pos_confirmed"))
+
+ruta = render_ruta(con_datos=con_datos)
 inyectar_estilos(ruta.tema)
-render_crumb(ruta)
-render_placeholder(ruta)
+
+if con_datos:
+    render_crumb(ruta)
+    render_placeholder(ruta)
+else:
+    render_carga()

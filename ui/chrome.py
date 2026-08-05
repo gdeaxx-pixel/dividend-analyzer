@@ -55,15 +55,37 @@ def _orden(categoria: str) -> tuple:
 
 
 def inyectar_estilos(tema: str) -> None:
-    """Inyecta los tokens del artifact para el tema activo."""
-    st.markdown(f"<style>\n        {css_variables(tema)}\n{_ESTILOS}</style>",
+    """Inyecta los tokens del artifact para el tema activo, más los estilos del chrome
+    y de la hoja de carga."""
+    from ui.carga import ESTILOS_CARGA
+
+    st.markdown(f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}</style>",
                 unsafe_allow_html=True)
 
 
-def render_ruta() -> Ruta:
-    """Dibuja la navegación de tres niveles y devuelve la posición actual."""
+def _solo_tema() -> Ruta:
+    """Barra lateral mínima mientras no hay datos: elegir categoría, vista o ETF antes de
+    cargar nada no significa nada, así que solo se ofrece el tema."""
+    with st.sidebar:
+        st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
+        st.markdown('<p class="vd-brand-sub">Viaje del dinero</p>', unsafe_allow_html=True)
+        st.markdown('<p class="vd-lab">Tema</p>', unsafe_allow_html=True)
+        tema = st.radio("Tema", ("Claro", "Oscuro"), key="vd_tema",
+                        label_visibility="collapsed", horizontal=True)
+    categoria = nav.CAT_ORDER[0]
+    return Ruta(categoria=categoria, vista=_orden(categoria)[0], etf=None, tema=tema)
+
+
+def render_ruta(con_datos: bool = True) -> Ruta:
+    """Dibuja la navegación de tres niveles y devuelve la posición actual.
+
+    `con_datos=False` colapsa la barra lateral al selector de tema (hoja de carga).
+    """
     st.session_state.setdefault("vd_tema", "Claro")
     st.session_state.setdefault("vd_categoria", nav.CAT_ORDER[0])
+
+    if not con_datos:
+        return _solo_tema()
 
     if st.session_state.get("vd_vista") not in _orden(st.session_state.vd_categoria):
         st.session_state.vd_vista = _orden(st.session_state.vd_categoria)[0]
