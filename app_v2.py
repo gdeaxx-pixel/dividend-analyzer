@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown(base_css(), unsafe_allow_html=True)
-selected_page = render_navigation()
-render_header(selected_page)
-render_stage(selected_page)
+selection = render_navigation()
+st.markdown(base_css(selection.theme), unsafe_allow_html=True)
+render_header(selection)
+render_stage(selection)

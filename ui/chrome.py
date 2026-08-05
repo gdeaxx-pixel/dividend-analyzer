@@ -1,72 +1,125 @@
-"""Chrome compartido: encabezado y navegación del port de Viaje del dinero."""
+"""Chrome compartido: navegación y jerarquía del port de Viaje del dinero.
+
+La Fase 1 solo define el cascarón de interfaz. No carga datos ni contiene cálculos.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import streamlit as st
 
-NAV_ITEMS = (
-    "Inicio",
-    "Flujo de dinero",
-    "Salud NAV",
-    "Comparación",
-    "Método tradicional",
-    "Metodología",
-)
+
+NAVIGATION: dict[str, tuple[str, ...]] = {
+    "Dividendos": ("Cash flow", "Salud NAV", "Hoja Excel"),
+    "Largo Plazo": ("Proyección",),
+    "Comparación": ("Real", "Simulación"),
+    "Método tradicional": (
+        "La hoja",
+        "Reinversión",
+        "Escalera de honestidad",
+        "Yield anunciado",
+        "Total return",
+    ),
+    "Metodología": ("Cómo funciona",),
+}
 
 
-def render_navigation() -> str:
-    """Renderiza la navegación inicial y devuelve la vista seleccionada."""
-    st.sidebar.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
-    st.sidebar.markdown(
-        '<p class="vd-brand-subtitle">Viaje del dinero<br>Lectura forense de dividendos</p>',
+@dataclass(frozen=True)
+class NavigationState:
+    """Selección de navegación de Fase 1, sin estado financiero asociado."""
+
+    category: str
+    view: str
+    etf: str | None
+    theme: str
+
+
+def _reset_view_if_needed(category: str) -> None:
+    """Mantiene la vista seleccionada dentro de la categoría activa."""
+    available_views = NAVIGATION[category]
+    if st.session_state.get("vd_view") not in available_views:
+        st.session_state.vd_view = available_views[0]
+
+
+def render_navigation() -> NavigationState:
+    """Renderiza navegación nativa Categoría › Vista › ETF y tema persistente."""
+    if "vd_theme" not in st.session_state:
+        st.session_state.vd_theme = "Claro"
+    if "vd_category" not in st.session_state:
+        st.session_state.vd_category = "Dividendos"
+    _reset_view_if_needed(st.session_state.vd_category)
+
+    with st.sidebar:
+        st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="vd-brand-subtitle">Viaje del dinero<br>Lectura forense de dividendos</p>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<p class="vd-nav-label">Categoría</p>', unsafe_allow_html=True)
+        category = st.selectbox(
+            "Categoría",
+            tuple(NAVIGATION),
+            key="vd_category",
+            label_visibility="collapsed",
+        )
+        _reset_view_if_needed(category)
+        st.markdown('<p class="vd-nav-label">Vista</p>', unsafe_allow_html=True)
+        view = st.radio(
+            "Vista",
+            NAVIGATION[category],
+            key="vd_view",
+            label_visibility="collapsed",
+        )
+
+        etf: str | None = None
+        if view == "Cash flow":
+            st.markdown('<p class="vd-nav-label">ETF</p>', unsafe_allow_html=True)
+            etf = st.selectbox(
+                "ETF",
+                ("MSTY",),
+                key="vd_etf",
+                label_visibility="collapsed",
+            )
+
+        st.divider()
+        st.markdown('<p class="vd-nav-label">Tema</p>', unsafe_allow_html=True)
+        theme = st.radio(
+            "Tema",
+            ("Claro", "Oscuro"),
+            key="vd_theme",
+            label_visibility="collapsed",
+            horizontal=True,
+        )
+
+    return NavigationState(category=category, view=view, etf=etf, theme=theme)
+
+
+def render_header(selection: NavigationState) -> None:
+    """Muestra breadcrumb y jerarquía visual de la vista seleccionada."""
+    trail = [selection.category, selection.view]
+    if selection.etf:
+        trail.append(selection.etf)
+    breadcrumb = "<span class=\"vd-home\">Viaje del dinero</span>" + "".join(
+        f'<span class="vd-crumb-separator">›</span><span>{item}</span>' for item in trail
+    )
+    st.markdown(f'<nav class="vd-breadcrumb" aria-label="Ruta">{breadcrumb}</nav>', unsafe_allow_html=True)
+    st.markdown(f'<p class="vd-eyebrow">{selection.category}</p>', unsafe_allow_html=True)
+    st.markdown(f'<h1 class="vd-title">{selection.view}</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="vd-lede">Navegación y sistema visual listos para el port de Streamlit.</p>',
         unsafe_allow_html=True,
     )
-    if "vd_page" not in st.session_state:
-        st.session_state.vd_page = NAV_ITEMS[0]
-    return st.sidebar.radio(
-        "Navegación principal",
-        NAV_ITEMS,
-        key="vd_page",
-        label_visibility="collapsed",
-    )
 
 
-def render_header(page: str) -> None:
-    """Muestra el encabezado consistente de la vista seleccionada."""
-    if page == "Inicio":
-        eyebrow = "Port de Streamlit · Fase 1"
-        title = "El viaje de tu dinero"
-        lede = (
-            "Una nueva lectura visual para seguir el capital aportado, los dividendos, "
-            "la retención y el valor actual sin alterar los cálculos fiscales existentes."
-        )
-    else:
-        eyebrow = "Viaje del dinero"
-        title = page
-        lede = "Esta sección queda preparada en la navegación para las fases posteriores del port."
-
-    st.markdown(f'<p class="vd-eyebrow">{eyebrow}</p>', unsafe_allow_html=True)
-    st.markdown(f'<h1 class="vd-title">{title}</h1>', unsafe_allow_html=True)
-    st.markdown(f'<p class="vd-lede">{lede}</p>', unsafe_allow_html=True)
-
-
-def render_stage(page: str) -> None:
-    """Mantiene una superficie honesta mientras las vistas aún no se portan."""
-    if page == "Inicio":
-        heading = "Comienza con el recorrido"
-        detail = (
-            "Usa la navegación lateral para conocer las áreas que compondrán el artifact. "
-            "La carga de datos y las visualizaciones se incorporarán en fases posteriores."
-        )
-    else:
-        heading = f"{page}: estructura inicial"
-        detail = (
-            "La navegación y el sistema visual ya están activos. "
-            "El contenido funcional de esta vista no forma parte de la Fase 1."
-        )
-
+def render_stage(selection: NavigationState) -> None:
+    """Renderiza un esqueleto explícito de Fase 1, sin datos ni lógica de negocio."""
+    context = f" · {selection.etf}" if selection.etf else ""
     st.markdown("<hr class=\"vd-divider\">", unsafe_allow_html=True)
     st.markdown(
-        f'<section class="vd-stage"><h2>{heading}</h2><p>{detail}</p></section>',
+        f'<section class="vd-stage"><p class="vd-stage-kicker">Fase 1{context}</p>'
+        f'<h2>{selection.category} › {selection.view}</h2>'
+        '<p>Esta superficie conserva la ruta, el tema y la jerarquía de la interfaz. '
+        'Los datos, cálculos y visualizaciones se incorporarán en fases posteriores.</p></section>',
         unsafe_allow_html=True,
     )
