@@ -15,6 +15,9 @@ Uso:
 El ground truth vive en real_examples/<broker>_data/<N>/expected.json (privado, gitignored).
 Agregar un caso nuevo = soltar CSV + fotos + expected.json; el runner lo descubre solo.
 
+Si los casos reales viven fuera del repo (worktree sanitizado para un ejecutor externo),
+apuntar la validacion con DIVIDEND_REAL_EXAMPLES_DIR=/ruta/a/real_examples.
+
 Codigo de salida: 0 si no hay FAIL; 1 si algun ticker confiable no coincide.
 Los casos sin red (yfinance caido) se marcan SKIP y no fallan.
 """
@@ -27,7 +30,11 @@ import os
 import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-REAL = os.path.join(BASE, "real_examples")
+# Los casos reales viven fuera del repo cuando un ejecutor externo trabaja sobre un
+# worktree sanitizado: DIVIDEND_REAL_EXAMPLES_DIR apunta la validacion a su ruta real.
+# Sin la variable, se comporta como siempre (real_examples/ junto al codigo).
+REAL = os.environ.get("DIVIDEND_REAL_EXAMPLES_DIR",
+                      os.path.join(BASE, "real_examples"))
 OBSIDIAN_DIR = ("/Users/danielzambrano/Desktop/Habilidades de agentes/"
                 "Obsidian/APPs/Dividend-Analyzer")
 PROTOCOL_NOTE = os.path.join(OBSIDIAN_DIR, "protocolo-revision-calculadora.md")
