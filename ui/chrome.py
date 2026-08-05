@@ -1,9 +1,14 @@
-"""Chrome del port: ruta Categoría › Vista › ETF y superficie visual del artifact.
+"""Chrome del port: encabezado + ruta funcional Categoría › Vista › ETF.
 
 Toda la taxonomía y todos los colores vienen de `ui/nav.py` y `ui/tokens.py`, que se
 GENERAN del demo (`tools/extract_design_system.py`). Aquí no se escribe a mano ni un
 nombre de vista ni un color: si algo no coincide con el artifact, se corrige en el demo
 y se regenera.
+
+Fase 3b: la barra lateral desaparece. La ruta pasa a ser el único navegador — cada
+segmento (Categoría / Vista / ETF) es un `st.popover` con botones nativos dentro, que sí
+devuelven estado a Python (a diferencia del HTML del artifact). El tema se mueve al
+encabezado, arriba a la derecha.
 
 Solo presentación — sin datos ni cálculos.
 """
@@ -63,88 +68,118 @@ def inyectar_estilos(tema: str) -> None:
                 unsafe_allow_html=True)
 
 
-def _solo_tema() -> Ruta:
-    """Barra lateral mínima mientras no hay datos: elegir categoría, vista o ETF antes de
-    cargar nada no significa nada, así que solo se ofrece el tema."""
-    with st.sidebar:
-        st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
-        st.markdown('<p class="vd-brand-sub">Viaje del dinero</p>', unsafe_allow_html=True)
-        st.markdown('<p class="vd-lab">Tema</p>', unsafe_allow_html=True)
-        tema = st.radio("Tema", ("Claro", "Oscuro"), key="vd_tema",
-                        label_visibility="collapsed", horizontal=True)
-    categoria = nav.CAT_ORDER[0]
-    return Ruta(categoria=categoria, vista=_orden(categoria)[0], etf=None, tema=tema)
+def render_encabezado(con_datos: bool) -> str:
+    """Fila superior: marca (o el eyebrow de la carga) a la izquierda, tema a la derecha.
 
-
-def render_ruta(con_datos: bool = True) -> Ruta:
-    """Dibuja la navegación de tres niveles y devuelve la posición actual.
-
-    `con_datos=False` colapsa la barra lateral al selector de tema (hoja de carga).
+    En `con_datos=False` la marca no se dibuja aquí: la dibuja `ui/carga.py` como `<h2>`,
+    porque ahí es el título de la pantalla. Devuelve el tema activo — nunca `None`, aunque
+    `st.segmented_control` se deseleccione (modo `single` lo permite).
     """
     st.session_state.setdefault("vd_tema", "Claro")
+    anterior = st.session_state["vd_tema"]
+
+    col_izq, col_der = st.columns([4, 2])
+    with col_izq:
+        if con_datos:
+            st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="vd-badge">Paso 1 de 2 · Carga</span>',
+                        unsafe_allow_html=True)
+    with col_der:
+        st.segmented_control(
+            "Tema", ("Claro", "Oscuro"), key="vd_tema", label_visibility="collapsed",
+        )
+
+    tema = st.session_state.get("vd_tema")
+    if tema is None:
+        # single-select deseleccionado: se conserva el valor anterior, nunca queda vacío.
+        st.session_state["vd_tema"] = anterior
+        tema = anterior
+    return tema
+
+
+def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actual: str,
+                       prefijo: str, on_select) -> None:
+    """Un segmento de la ruta: botón que muestra la selección activa y abre un popover
+    con las alternativas. Es lo más cercano al `crumb-btn` del demo que devuelve estado
+    a Python — a diferencia del HTML, que no puede."""
+    with columna:
+        with st.popover(f"{etiqueta_actual} ▾", use_container_width=True):
+            for clave, texto in opciones.items():
+                marca = " ●" if clave == clave_actual else ""
+                if st.button(f"{texto}{marca}", key=f"{prefijo}_{clave}",
+                             use_container_width=True):
+                    on_select(clave)
+                    st.session_state["vd_metodologia"] = False
+                    st.rerun()
+
+
+def render_ruta() -> Ruta:
+    """Ruta horizontal funcional Categoría › Vista › ETF, un popover por segmento.
+
+    Sustituye a `render_crumb` (decorativo) y a la barra lateral: es el único navegador.
+    El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
+    (Dividendos · Largo Plazo); Comparación y Método tradicional no lo llevan.
+    """
     st.session_state.setdefault("vd_categoria", nav.CAT_ORDER[0])
+    categoria = st.session_state.vd_categoria
 
-    if not con_datos:
-        return _solo_tema()
+    orden = _orden(categoria)
+    if st.session_state.get("vd_vista") not in orden:
+        st.session_state.vd_vista = orden[0]
+    vista = st.session_state.vd_vista
+    vistas = _vistas(categoria)
 
-    if st.session_state.get("vd_vista") not in _orden(st.session_state.vd_categoria):
-        st.session_state.vd_vista = _orden(st.session_state.vd_categoria)[0]
+    con_etf = vista == nav.VISTA_CON_ETF and categoria in nav.CATS
+    etf = None
+    clave_etf = f"vd_etf_{categoria}"
+    if con_etf:
+        etfs = nav.CATS[categoria]
+        if st.session_state.get(clave_etf) not in etfs:
+            st.session_state[clave_etf] = etfs[0]
+        etf = st.session_state[clave_etf]
 
-    with st.sidebar:
-        st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
-        st.markdown('<p class="vd-brand-sub">Viaje del dinero</p>', unsafe_allow_html=True)
+    kinds = ["cat", "sep", "vista"]
+    if con_etf:
+        kinds += ["sep", "etf"]
+    kinds += ["ayuda"]
+    columnas = st.columns(len(kinds))
 
-        st.markdown('<p class="vd-lab">Categoría</p>', unsafe_allow_html=True)
-        categoria = st.selectbox(
-            "Categoría", nav.CAT_ORDER, key="vd_categoria",
-            format_func=lambda c: nav.CAT_LABELS[c], label_visibility="collapsed",
-        )
+    for columna, kind in zip(columnas, kinds):
+        if kind == "sep":
+            with columna:
+                st.markdown('<span class="vd-sep">|</span>', unsafe_allow_html=True)
+        elif kind == "cat":
+            def _elegir_categoria(clave):
+                st.session_state.vd_categoria = clave
+            _popover_segmento(columna, nav.CAT_LABELS[categoria], nav.CAT_LABELS,
+                              categoria, "vd_pop_cat", _elegir_categoria)
+        elif kind == "vista":
+            def _elegir_vista(clave):
+                st.session_state.vd_vista = clave
+            _popover_segmento(columna, vistas[vista], vistas, vista,
+                              f"vd_pop_vis_{categoria}", _elegir_vista)
+        elif kind == "etf":
+            def _elegir_etf(clave, _clave_etf=clave_etf):
+                st.session_state[_clave_etf] = clave
+            _popover_segmento(columna, etf, {e: e for e in nav.CATS[categoria]}, etf,
+                              f"vd_pop_etf_{categoria}", _elegir_etf)
+        elif kind == "ayuda":
+            with columna:
+                if st.button("¿CÓMO FUNCIONA? →", key="vd_ayuda"):
+                    st.session_state["vd_metodologia"] = True
+                    st.rerun()
 
-        orden = _orden(categoria)
-        if st.session_state.get("vd_vista") not in orden:
-            st.session_state.vd_vista = orden[0]
-        vistas = _vistas(categoria)
-
-        st.markdown('<p class="vd-lab">Vista</p>', unsafe_allow_html=True)
-        vista = st.radio(
-            "Vista", orden, key="vd_vista",
-            format_func=lambda v: vistas[v], label_visibility="collapsed",
-        )
-
-        # El ETF es el ÚLTIMO segmento y solo existe en Cash flow: Salud NAV y Hoja Excel
-        # van a una vista consolidada, sin ETF que elegir (igual que `showTab` en el demo).
-        etf = None
-        if vista == nav.VISTA_CON_ETF and categoria in nav.CATS:
-            st.markdown('<p class="vd-lab">ETF</p>', unsafe_allow_html=True)
-            etf = st.selectbox(
-                "ETF", nav.CATS[categoria], key=f"vd_etf_{categoria}",
-                label_visibility="collapsed",
-            )
-
-        st.markdown('<p class="vd-lab">Tema</p>', unsafe_allow_html=True)
-        tema = st.radio("Tema", ("Claro", "Oscuro"), key="vd_tema",
-                        label_visibility="collapsed", horizontal=True)
-
-    return Ruta(categoria=categoria, vista=vista, etf=etf, tema=tema)
-
-
-def render_crumb(ruta: Ruta) -> None:
-    """La ruta superior: misma superficie que la página, borde dashed y mono en
-    mayúsculas como único acento — el tratamiento del demo."""
-    segmentos = [ruta.categoria_label, ruta.vista_label]
-    if ruta.etf:
-        segmentos.append(ruta.etf)
-    partes = '<span class="vd-sep">|</span>'.join(
-        f'<span class="vd-seg">{s}</span>' for s in segmentos)
-    st.markdown(f'<nav class="vd-crumb" aria-label="Ubicación">{partes}'
-                f'<span class="vd-help">¿Cómo funciona? →</span></nav>',
-                unsafe_allow_html=True)
+    return Ruta(categoria=categoria, vista=vista, etf=etf,
+                tema=st.session_state.get("vd_tema", "Claro"))
 
 
-def render_placeholder(ruta: Ruta) -> None:
-    """Superficie honesta mientras la vista no se porta (Fases 3-5)."""
+def render_placeholder(ruta: "Ruta | None" = None, titulo: str | None = None) -> None:
+    """Superficie honesta mientras la vista no se porta (Fases 3-5), o para Metodología
+    (fuera de alcance en esta entrega: título fijo, sin depender de una Ruta válida)."""
     st.markdown('<span class="vd-badge">En construcción</span>', unsafe_allow_html=True)
-    st.markdown(f'<h2 class="vd-title">{ruta.vista_label}</h2>', unsafe_allow_html=True)
+    titulo = titulo if titulo is not None else (ruta.vista_label if ruta else "")
+    st.markdown(f'<h2 class="vd-title">{titulo}</h2>', unsafe_allow_html=True)
     st.markdown(
         '<p class="vd-lede">La navegación y el sistema visual del artifact ya están '
         'activos. El contenido de esta vista llega en fases posteriores del port.</p>',
@@ -160,39 +195,61 @@ _ESTILOS = """
         }
         [data-testid="stHeader"], [data-testid="stToolbar"], footer { visibility: hidden; }
         .block-container { max-width: 940px; padding-top: 2rem; padding-bottom: 4rem; }
-        section[data-testid="stSidebar"] {
-          background: var(--ground); border-right: 1px dashed var(--hair);
-        }
-        section[data-testid="stSidebar"] * { color: var(--ink); }
 
         .vd-brand {
-          font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+          font-family: var(--font-mono); font-size: 13px; font-weight: 700;
           letter-spacing: .12em; text-transform: uppercase; color: var(--ink); margin: 0;
         }
-        .vd-brand-sub { font-size: 11.5px; color: var(--ink-mut); margin: 2px 0 1.5rem; }
-        .vd-lab {
-          font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
-          letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mut);
-          margin: 1.1rem 0 .3rem;
+        .vd-wordmark {
+          text-transform: uppercase; letter-spacing: .10em;
+          font-size: clamp(20px, 3vw, 27px);
         }
 
-        /* La ruta es la misma superficie que la página, no una caja aparte:
-           fondo --ground exacto, borde dashed, mono en mayúsculas. */
-        .vd-crumb {
-          display: flex; align-items: center; gap: 0; margin: 0 0 26px;
-          padding: 13px 16px; background: var(--ground);
-          border: 1px dashed var(--hair); flex-wrap: wrap;
-        }
-        .vd-seg {
-          font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-          letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
-          padding: 6px 10px;
-        }
         .vd-sep { color: var(--ink-mut); opacity: .6; font-size: 13px; margin: 0 6px; }
-        .vd-help {
-          margin-left: auto; font-family: var(--font-mono); font-size: 11px;
-          font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-          color: var(--ink-mut);
+
+        /* ---- Ruta funcional: un st.popover por segmento. La fila de columnas es la
+           misma superficie que la página — fondo --ground exacto, borde dashed — y las
+           columnas abrazan su contenido en vez de repartirse el ancho, como el .crumb
+           del demo. ---- */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
+          border: 1px dashed var(--hair); background: var(--ground);
+          padding: 13px 16px; flex-wrap: wrap; align-items: center;
+        }
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
+          flex: 0 0 auto; width: auto; min-width: 0;
+        }
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child {
+          margin-left: auto;
+        }
+        /* El botón «¿Cómo funciona? →» es un st.button sin popover: por defecto
+           Streamlit envuelve su texto, y con la columna a flex-basis:auto eso colapsa
+           el ancho al carácter más angosto (una letra por línea). nowrap le da al
+           flex-basis su medida real. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
+          white-space: nowrap;
+        }
+
+        [data-testid="stPopoverButton"] {
+          font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em;
+          text-transform: uppercase; background: none; border: 1px solid transparent;
+          border-radius: 0; color: var(--ink);
+        }
+        [data-testid="stPopoverButton"]:hover { border-color: var(--accent); }
+        [data-testid="stPopoverButton"][aria-expanded="true"] {
+          background: var(--accent-tint); border-color: var(--accent); color: var(--accent);
+        }
+
+        [data-testid="stPopoverBody"] button {
+          font-family: var(--font-mono); font-size: 12px; letter-spacing: .05em;
+          text-transform: uppercase; border: none; border-bottom: 1px dashed var(--hair);
+          border-radius: 0; background: var(--panel); color: var(--ink);
+        }
+        [data-testid="stPopoverBody"] button:hover {
+          background: var(--accent-tint); color: var(--accent);
+        }
+
+        [data-testid="stPopover"] button, [data-testid="stPopover"] div {
+          border-radius: 0 !important;
         }
 
         .vd-badge {
@@ -221,8 +278,7 @@ _ESTILOS = """
            comparte con producción, así que no se toca: se sobreescribe aquí. Sin esto los
            selectores salen rosados sobre el azul frío del artifact. */
         [data-baseweb="select"] > div,
-        [data-baseweb="input"] > div,
-        [data-testid="stSidebar"] [data-baseweb="select"] > div {
+        [data-baseweb="input"] > div {
           background: var(--panel) !important;
           border: 1px solid var(--hair) !important;
           color: var(--ink) !important;
@@ -236,8 +292,11 @@ _ESTILOS = """
 
         @media (max-width: 640px) {
           .block-container { padding-top: 1.25rem; }
-          .vd-crumb { padding: 10px 12px; }
-          .vd-seg { font-size: 11px; padding: 4px 6px; }
-          .vd-help { margin-left: 0; width: 100%; padding-top: 6px; }
+          [data-testid="stHorizontalBlock"]:has([data-testid="stButtonGroup"]) {
+            flex-wrap: wrap;
+          }
+          [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
+            padding: 10px 12px;
+          }
         }
 """

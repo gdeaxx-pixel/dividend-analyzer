@@ -67,7 +67,15 @@ def render_cash_flow(ruta: Ruta) -> None:
 
 
 def render_vista(ruta: Ruta) -> None:
-    """Punto único de entrada: decide qué vista toca según la ruta."""
+    """Punto único de entrada: decide qué vista toca según la ruta.
+
+    Metodología (fuera de alcance en esta entrega) se activa desde el botón «¿Cómo
+    funciona? →» de la ruta y se sale de ella con cualquier otra selección — mismo
+    criterio que `showCat()` en el demo (línea 2643).
+    """
+    if st.session_state.get("vd_metodologia"):
+        render_placeholder(titulo="Metodología")
+        return
     if ruta.categoria in nav.CATS and ruta.vista == nav.VISTA_CON_ETF and ruta.etf:
         render_cash_flow(ruta)
         return

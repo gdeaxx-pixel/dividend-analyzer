@@ -297,9 +297,12 @@ def render_bloque_ingresos() -> None:
 
 
 def render_carga() -> bool:
-    """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados."""
-    st.markdown('<span class="vd-badge">Paso 1 de 2 · Carga</span>', unsafe_allow_html=True)
-    st.markdown('<h2 class="vd-title">Tu portafolio, tal como lo exporta tu bróker</h2>',
+    """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
+
+    El eyebrow «Paso 1 de 2 · Carga» vive ahora en el encabezado (`ui.chrome`). El título
+    de esta pantalla es el wordmark de la marca — la frase vieja y el subtítulo «Viaje del
+    dinero» se eliminan, no se mueven a otro sitio (decidido con Daniel, Fase 3b)."""
+    st.markdown('<h2 class="vd-title vd-wordmark">INVIERTE &amp; GANA</h2>',
                 unsafe_allow_html=True)
     st.markdown(
         '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
