@@ -16,11 +16,12 @@ import streamlit.components.v1 as components
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 
-# Alto del iframe. `components.html` no se adapta al contenido, así que hay que fijarlo:
-# medido sobre el componente real con los 8 pasos (el waterfall reserva 300px de trazado
-# + ~88px de rótulos, y el mosaico añade su bloque). Si se queda corto, el remate del
-# mosaico se corta sin avisar.
-ALTO_CASHFLOW = 1180
+# Alto del iframe. `components.html` no se adapta al contenido, así que hay que fijarlo.
+# NO estimar: medido en el navegador sobre el componente real en el paso 8 (el más alto),
+# `document.body.scrollHeight` = 2095px, con el mosaico terminando en 1642px. La primera
+# estimación fue 1180 y habría cortado el mosaico por la mitad — que es el remate
+# narrativo de la vista— sin ningún aviso.
+ALTO_CASHFLOW = 2150
 
 
 def _plantilla(nombre: str) -> str:

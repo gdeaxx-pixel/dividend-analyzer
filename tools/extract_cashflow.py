@@ -55,7 +55,19 @@ def extraer(html: str) -> str:
     # 1 · Hoja de estilo completa. Va entera a propósito: el componente vive en un iframe,
     #     así que no hay conflicto con Streamlit, y recortar reglas es la vía rápida a que
     #     se caiga un detalle del waterfall sin que nadie lo note.
-    css = _entre(html, "<style>", "</style>", "el bloque de estilos")
+    #
+    #     OJO: no vale buscar el primer `<style>`. La línea 1 del demo trae el runtime del
+    #     artifact con su propio bloque diminuto (`:root{color-scheme:light}body{margin:0}`),
+    #     y quedarse con ese deja el componente SIN layout ni color — con el DOM entero
+    #     construido, así que inspeccionarlo no delata el fallo; solo se ve al abrirlo.
+    #     Se ancla al bloque que declara los tokens, que es el del diseño por definición.
+    css = ""
+    for m in re.finditer(r"<style>.*?</style>", html, re.S):
+        if "--ground:" in m.group(0):
+            css = m.group(0)
+            break
+    if not css:
+        sys.exit("No encontré el bloque de estilos del diseño (el que declara --ground).")
 
     # 2 · El panel del recorrido, delimitado por su propio comentario de cierre.
     panel = _entre(html, '<div class="panel" id="panel-viaje"',
