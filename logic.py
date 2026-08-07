@@ -144,10 +144,88 @@ def extract_cost_basis_from_images(images, candidate_tickers, api_key):
     return {t: v["cost_basis"] for t, v in rich.items() if v.get("cost_basis")}
 
 
+def parse_1042s_pdf(pdf_bytes):
+    """Extraccion determinista (sin LLM) de un Formulario 1042-S en PDF via pdfplumber.
+
+    Deduplica por UNIQUE FORM IDENTIFIER: cada formulario trae 3 copias (B/C/D) con
+    los mismos numeros, y un parser ingenuo los sumaria 3 veces. Devuelve:
+    {'tax_year': int, 'forms': [{'unique_form_id', 'income_code', 'gross_income',
+    'federal_tax_withheld', 'withholding_credit', 'conflict'}, ...], 'source': 'pdfplumber'}
+    o None si el documento no parece un 1042-S o ante cualquier excepcion.
+    """
+    try:
+        import pdfplumber
+        text = ""
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                text += (page.extract_text() or "") + "\n"
+
+        if "1042-S" not in text:
+            return None
+
+        id_pattern = re.compile(r"((?:\d\s){9}\d)\s*UNIQUE FORM IDENTIFIER")
+        matches = list(id_pattern.finditer(text))
+        if not matches:
+            return None
+
+        forms = []
+        seen = {}
+        for i, m in enumerate(matches):
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            block = text[start:end]
+            unique_form_id = re.sub(r"\s+", "", m.group(1))
+
+            code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate", block)
+            if not code_m:
+                continue
+            income_code = code_m.group(1)
+            gross_income = float(code_m.group(2).replace(",", ""))
+
+            fed_m = re.search(r"7a Federal tax withheld\s+([\d,]+\.\d{2})", block)
+            federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else 0.0
+
+            cred_m = re.search(r"10 Total withholding credit[^\n]*\n\s*([\d,]+\.\d{2})", block)
+            withholding_credit = float(cred_m.group(1).replace(",", "")) if cred_m else 0.0
+
+            row = {
+                "unique_form_id": unique_form_id,
+                "income_code": income_code,
+                "gross_income": gross_income,
+                "federal_tax_withheld": federal_tax_withheld,
+                "withholding_credit": withholding_credit,
+                "conflict": False,
+            }
+
+            if unique_form_id in seen:
+                prev = seen[unique_form_id]
+                prev_key = (prev["income_code"], prev["gross_income"],
+                            prev["federal_tax_withheld"], prev["withholding_credit"])
+                row_key = (row["income_code"], row["gross_income"],
+                           row["federal_tax_withheld"], row["withholding_credit"])
+                if prev_key != row_key:
+                    prev["conflict"] = True
+                continue
+
+            seen[unique_form_id] = row
+            forms.append(row)
+
+        if not forms:
+            return None
+
+        tax_year = int(forms[0]["unique_form_id"][:4])
+        return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber"}
+    except Exception:
+        return None
+
+
 def _sum_roc_credit_from_forms(per_form):
     """Suma el credito de retencion (casilla 10) de los formularios 1042-S con
     income code 37 (Return of Capital). Los codigos 01 (interes) y 06 (dividendo)
     nunca se suman. Si falta withholding_credit usa federal_tax_withheld (7a) de respaldo.
+    Deduplica antes de sumar: por 'unique_form_id' si las filas lo traen, o si no por la
+    tupla (income_code, gross_income, federal_tax_withheld, withholding_credit) — evita
+    sumar 2x/3x cuando el mismo formulario aparece repetido (copias B/C/D).
     Devuelve {'credit': float, 'roc_gross': float, 'per_form': [...]} (vacio si no hay code 37).
     """
     def _code37(v):
@@ -164,6 +242,7 @@ def _sum_roc_credit_from_forms(per_form):
     matched = []
     credit_total = 0.0
     gross_total = 0.0
+    seen_keys = set()
     for row in per_form or []:
         if not isinstance(row, dict) or not _code37(row.get("income_code")):
             continue
@@ -171,6 +250,17 @@ def _sum_roc_credit_from_forms(per_form):
         if not credit:
             credit = _num(row.get("federal_tax_withheld"))
         gross = _num(row.get("gross_income"))
+
+        form_id = row.get("unique_form_id")
+        if form_id:
+            dedupe_key = ("id", str(form_id))
+        else:
+            dedupe_key = ("tuple", row.get("income_code"), gross,
+                          _num(row.get("federal_tax_withheld")), credit)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
         credit_total += credit
         gross_total += gross
         matched.append(row)
@@ -202,7 +292,10 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
         "1) 'income_code' = Box 1 (Income code); "
         "2) 'gross_income' = Box 2 (Gross income); "
         "3) 'federal_tax_withheld' = Box 7a (Federal tax withheld); "
-        "4) 'withholding_credit' = Box 10 (Total withholding credit). "
+        "4) 'withholding_credit' = Box 10 (Total withholding credit); "
+        "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
+        "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
+        "no deben contarse dos veces. "
         "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
         "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
         "el filtrado lo hace otro sistema."
@@ -220,6 +313,7 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
                         "gross_income": types.Schema(type=types.Type.NUMBER),
                         "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
                         "withholding_credit": types.Schema(type=types.Type.NUMBER),
+                        "unique_form_id": types.Schema(type=types.Type.STRING),
                     },
                     required=["income_code"],
                 ),
@@ -258,6 +352,258 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
                 break
 
     return None
+
+
+def extract_1042s(pdf_bytes, api_key):
+    """Punto de entrada unico del Bloque 3: intenta primero el camino determinista
+    (pdfplumber, sin red) y solo cae a Gemini si ese falla y hay api_key.
+
+    Devuelve el dict de parse_1042s_pdf (source='pdfplumber') o, si Gemini resuelve,
+    {'tax_year': None, 'forms': [...], 'source': 'gemini'} construido a partir de
+    _sum_roc_credit_from_forms. None si ambos caminos fallan.
+    """
+    result = parse_1042s_pdf(pdf_bytes)
+    if result is not None:
+        return result
+
+    if not api_key:
+        return None
+
+    try:
+        from google import genai
+        from google.genai import types
+        import json as _json
+    except Exception:
+        return None
+
+    if not pdf_bytes:
+        return None
+
+    prompt = (
+        "Este es un formulario fiscal IRS 1042-S (puede contener varios formularios o paginas, "
+        "uno por cada income code). Por cada formulario que encuentres, extrae: "
+        "1) 'income_code' = Box 1 (Income code); "
+        "2) 'gross_income' = Box 2 (Gross income); "
+        "3) 'federal_tax_withheld' = Box 7a (Federal tax withheld); "
+        "4) 'withholding_credit' = Box 10 (Total withholding credit); "
+        "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
+        "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
+        "no deben contarse dos veces; "
+        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario. "
+        "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
+        "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
+        "el filtrado lo hace otro sistema."
+    )
+
+    schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "forms": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "income_code": types.Schema(type=types.Type.STRING),
+                        "gross_income": types.Schema(type=types.Type.NUMBER),
+                        "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
+                        "withholding_credit": types.Schema(type=types.Type.NUMBER),
+                        "unique_form_id": types.Schema(type=types.Type.STRING),
+                        "tax_year": types.Schema(type=types.Type.INTEGER),
+                    },
+                    required=["income_code"],
+                ),
+            )
+        },
+        required=["forms"],
+    )
+
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception:
+        return None
+
+    contents = [types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"), prompt]
+    cfg = types.GenerateContentConfig(
+        temperature=0,
+        response_mime_type="application/json",
+        response_schema=schema,
+    )
+    for _model in [GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS:
+        for _attempt in range(2):
+            try:
+                resp = client.models.generate_content(model=_model, contents=contents, config=cfg)
+                data = _json.loads(resp.text)
+                raw_forms = data.get("forms", [])
+                if not raw_forms:
+                    return None
+                forms = []
+                seen_keys = set()
+                tax_year = None
+                for row in raw_forms:
+                    if not isinstance(row, dict):
+                        continue
+                    # Dedupe por identificador si Gemini lo entrega; si no, por la tupla de
+                    # valores. Sin este segundo camino las copias B/C/D del mismo formulario
+                    # entran 3 veces y todo consumidor que sume `gross_income` triplica el
+                    # bruto (304 -> 912). _sum_roc_credit_from_forms ya se protege sola, pero
+                    # el resto de la app consume esta lista directamente.
+                    fid = row.get("unique_form_id")
+                    if fid:
+                        dedupe_key = ("id", str(fid))
+                    else:
+                        dedupe_key = ("tuple", row.get("income_code"), row.get("gross_income"),
+                                      row.get("federal_tax_withheld"), row.get("withholding_credit"))
+                    if dedupe_key in seen_keys:
+                        continue
+                    seen_keys.add(dedupe_key)
+                    ty = row.get("tax_year")
+                    if ty and tax_year is None:
+                        try:
+                            tax_year = int(ty)
+                        except (TypeError, ValueError):
+                            pass
+                    forms.append({
+                        "unique_form_id": fid,
+                        "income_code": row.get("income_code"),
+                        "gross_income": row.get("gross_income"),
+                        "federal_tax_withheld": row.get("federal_tax_withheld"),
+                        "withholding_credit": row.get("withholding_credit"),
+                        "conflict": False,
+                    })
+                if not forms:
+                    return None
+                return {"tax_year": tax_year, "forms": forms, "source": "gemini"}
+            except Exception as _e:
+                _msg = str(_e)
+                _transient = any(s in _msg for s in (
+                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
+                if _transient and _attempt == 0:
+                    try:
+                        import time as _time
+                        _time.sleep(2)
+                    except Exception:
+                        pass
+                    continue
+                break
+
+    return None
+
+
+def build_1042s_validation(results: dict, parsed: dict):
+    """Cruza el Formulario 1042-S contra el analisis del portafolio, a nivel cuenta.
+
+    Es PURAMENTE INFORMATIVO: no muta `results`, no recalcula impuestos, ROC ni
+    devoluciones, y no toca assess_ticker_quality. Es una segunda fuente de lectura.
+    Mismo espiritu que reconcile_income, pero el 1042-S no tiene detalle por ticker:
+    son totales anuales de toda la cuenta.
+
+    Bases declaradas (specs/roc-nra-invariants.md):
+      - Todo monto del 1042-S es BRUTO, del ano fiscal `tax_year`, redondeado a dolares.
+      - `bruto_portafolio` sale de _csv_dividends_in_window, que tambien es BRUTO
+        (antes de la retencion NRA). Misma base a ambos lados: la comparacion es valida.
+      - El codigo 01 (interes de cash) NO entra en el bruto: no proviene de un ETF.
+
+    Devuelve el dict de validacion, o None si `parsed` no trae formularios.
+    """
+    if not parsed:
+        return None
+    forms = parsed.get('forms') or []
+    if not forms:
+        return None
+
+    # Dedupe defensivo. parse_1042s_pdf y extract_1042s ya deduplican, pero esta es la
+    # invariante que define toda la lectura del 1042-S (las copias B/C/D traen los mismos
+    # numeros y triplicarlas inventa dinero), asi que se vuelve a garantizar aqui.
+    unique = []
+    seen_keys = set()
+    for f in forms:
+        if not isinstance(f, dict):
+            continue
+        fid = f.get('unique_form_id')
+        key = ("id", str(fid)) if fid else (
+            "tuple", f.get('income_code'), f.get('gross_income'),
+            f.get('federal_tax_withheld'), f.get('withholding_credit'))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique.append(f)
+
+    def _num(v):
+        try:
+            return float(v or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _code(f):
+        m = re.search(r"\d+", str(f.get('income_code') or ""))
+        return f"{int(m.group()):02d}" if m else ""
+
+    div_forms = [f for f in unique if _code(f) in ('06', '37')]
+    roc_forms = [f for f in unique if _code(f) == '37']
+
+    bruto_1042s    = sum(_num(f.get('gross_income')) for f in div_forms)
+    retenido_1042s = sum(_num(f.get('federal_tax_withheld')) for f in div_forms)
+    roc_1042s      = sum(_num(f.get('gross_income')) for f in roc_forms)
+    interes_cash   = sum(_num(f.get('gross_income')) for f in unique if _code(f) == '01')
+    roc_pct        = (roc_1042s / bruto_1042s * 100.0) if bruto_1042s else 0.0
+
+    year = parsed.get('tax_year')
+    out = {
+        'tax_year': year,
+        'bruto_1042s': round(bruto_1042s, 2),
+        'retenido_1042s': round(retenido_1042s, 2),
+        'roc_1042s': round(roc_1042s, 2),
+        'interes_cash': round(interes_cash, 2),
+        'bruto_portafolio': 0.0,
+        'delta': 0.0,
+        'status': 'no_overlap',
+        'roc_pct': round(roc_pct, 2),
+        'note': '',
+    }
+
+    if not year:
+        out['note'] = ('El formulario no declara ano fiscal, asi que no se puede acotar la '
+                       'comparacion a un ano. Se muestran solo las cifras del 1042-S.')
+        return out
+
+    start = pd.Timestamp(year=int(year), month=1, day=1)
+    end = pd.Timestamp(year=int(year), month=12, day=31, hour=23, minute=59, second=59)
+
+    bruto_portafolio = 0.0
+    for _tk, s in (results or {}).items():
+        if not isinstance(s, dict) or s.get('skipped') or 'error' in s:
+            continue
+        bruto_portafolio += _csv_dividends_in_window(s.get('history'), start=start, end=end)
+
+    out['bruto_portafolio'] = round(bruto_portafolio, 2)
+
+    if bruto_portafolio <= 0.005:
+        out['note'] = (f'Tu archivo de transacciones no registra dividendos en {year}, el ano '
+                       f'del formulario. No hay solapamiento que comparar — no es un error.')
+        return out
+
+    delta = bruto_portafolio - bruto_1042s
+    out['delta'] = round(delta, 2)
+
+    # El 1042-S redondea a dolares enteros: un dolar de holgura por formulario, o 1% del
+    # bruto, lo que sea mayor.
+    tol = max(1.0 * len(div_forms), 0.01 * bruto_1042s)
+
+    if abs(delta) <= tol:
+        out['status'] = 'match'
+        out['note'] = (f'Tu analisis y el 1042-S de {year} coinciden en el dividendo bruto '
+                       f'(diferencia de {abs(delta):.2f} dolares, dentro del redondeo).')
+    elif delta > 0:
+        out['status'] = 'portfolio_higher'
+        out['note'] = (f'Tu analisis registra {delta:.2f} dolares mas de dividendo bruto en {year} '
+                       f'que el 1042-S. Suele pasar si el formulario cubre una sola cuenta y tu '
+                       f'archivo de transacciones trae varias.')
+    else:
+        out['status'] = 'form_higher'
+        out['note'] = (f'El 1042-S de {year} declara {abs(delta):.2f} dolares mas de dividendo '
+                       f'bruto que tu analisis. Suele pasar si tu archivo de transacciones no '
+                       f'cubre el ano completo.')
+    return out
 
 
 def get_session():
