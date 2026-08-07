@@ -1585,7 +1585,7 @@ if input_method == "Subir CSV/Excel":
                 _r1042s = st.session_state.get('_wizard_1042s') or {}
                 _forms_1042s = _r1042s.get('forms') or []
                 _roc_credit_done = sum(float(f.get('withholding_credit') or 0.0)
-                                        for f in _forms_1042s if str(f.get('income_code')) == '37')
+                                        for f in _forms_1042s if logic.income_code_str(f.get('income_code')) == '37')
                 _detail_1042s = f"{len(_forms_1042s)} formularios"
                 if _roc_credit_done:
                     _detail_1042s += f" · crédito ROC {_money2(_roc_credit_done)}"
@@ -1649,14 +1649,14 @@ if input_method == "Subir CSV/Excel":
                     else:
                         _forms_1042s_new = _1042s_result.get('forms') or []
                         _relevant_new = [f for f in _forms_1042s_new
-                                         if str(f.get('income_code')) in ('06', '37')]
+                                         if logic.income_code_str(f.get('income_code')) in ('06', '37')]
                         if not _relevant_new:
                             st.warning(
                                 "Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
                                 "(código 37) en tus formularios.")
                         else:
                             _roc_new = sum(float(f.get('withholding_credit') or 0.0)
-                                           for f in _relevant_new if str(f.get('income_code')) == '37')
+                                           for f in _relevant_new if logic.income_code_str(f.get('income_code')) == '37')
                             _bruto_new = sum(float(f.get('gross_income') or 0.0) for f in _relevant_new)
                             _detail_new = f"{len(_forms_1042s_new)} formularios · bruto {_money2(_bruto_new)}"
                             if _roc_new:
@@ -3297,7 +3297,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                 _wizard_1042s_vj = st.session_state.get('_wizard_1042s')
                                 _forms_1042s_vj = (_wizard_1042s_vj or {}).get('forms') or []
                                 _roc_forms_vj = [f for f in _forms_1042s_vj
-                                                  if str(f.get('income_code')) == '37']
+                                                  if logic.income_code_str(f.get('income_code')) == '37']
                                 if _roc_forms_vj:
                                     _roc_credit_vj = sum(float(f.get('withholding_credit') or 0.0)
                                                           for f in _roc_forms_vj)

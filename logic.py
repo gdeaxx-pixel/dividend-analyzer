@@ -144,6 +144,18 @@ def extract_cost_basis_from_images(images, candidate_tickers, api_key):
     return {t: v["cost_basis"] for t, v in rich.items() if v.get("cost_basis")}
 
 
+def income_code_str(value):
+    """Normaliza el income code de un 1042-S a dos digitos ('37', '06', '01').
+
+    El camino determinista siempre entrega la cadena de dos digitos, pero Gemini puede
+    devolver el entero 37, '037' o '37 '. Comparar crudo contra '37' hace que un ROC
+    valido cuente como cero. Toda la app compara codigos a traves de esta funcion.
+    Devuelve '' si no hay ningun digito.
+    """
+    m = re.search(r"\d+", str(value if value is not None else ""))
+    return f"{int(m.group()):02d}" if m else ""
+
+
 def parse_1042s_pdf(pdf_bytes):
     """Extraccion determinista (sin LLM) de un Formulario 1042-S en PDF via pdfplumber.
 
@@ -535,8 +547,7 @@ def build_1042s_validation(results: dict, parsed: dict):
             return 0.0
 
     def _code(f):
-        m = re.search(r"\d+", str(f.get('income_code') or ""))
-        return f"{int(m.group()):02d}" if m else ""
+        return income_code_str(f.get('income_code'))
 
     div_forms = [f for f in unique if _code(f) in ('06', '37')]
     roc_forms = [f for f in unique if _code(f) == '37']

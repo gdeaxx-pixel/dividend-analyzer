@@ -243,6 +243,29 @@ def test_validation_ignora_tickers_descartados():
     assert v["bruto_portafolio"] == 304.0
 
 
+def test_income_code_str_normaliza_lo_que_devuelve_gemini():
+    """El camino determinista da '37', pero Gemini puede dar 37, '037' o '37 '.
+    Comparar crudo contra '37' haría que un ROC válido contara como cero."""
+    assert logic.income_code_str("37") == "37"
+    assert logic.income_code_str(37) == "37"
+    assert logic.income_code_str("037") == "37"
+    assert logic.income_code_str(" 37 ") == "37"
+    assert logic.income_code_str(6) == "06"
+    assert logic.income_code_str(None) == ""
+    assert logic.income_code_str("") == ""
+
+
+def test_validation_acepta_codigos_no_normalizados():
+    """Un 1042-S leído por Gemini con códigos enteros debe dar el mismo bruto y ROC."""
+    forms = [{"unique_form_id": fid, "income_code": int(code), "gross_income": gross,
+              "federal_tax_withheld": wh, "withholding_credit": cr}
+             for fid, code, gross, wh, cr in GROUND_TRUTH]
+    v = logic.build_1042s_validation(_results_con_dividendos(304.0), _parsed(forms))
+    assert v["bruto_1042s"] == 304.0
+    assert v["roc_1042s"] == 276.0
+    assert v["interes_cash"] == 1.0
+
+
 def test_validation_sin_formularios_devuelve_none():
     assert logic.build_1042s_validation({}, None) is None
     assert logic.build_1042s_validation({}, {"tax_year": 2025, "forms": []}) is None
