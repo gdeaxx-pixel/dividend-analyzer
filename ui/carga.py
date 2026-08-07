@@ -289,7 +289,8 @@ def render_bloque_ingresos() -> None:
         return
 
     st.markdown(bloque_header(3, "Archivo de ingresos · opcional", "activo",
-                              "Validación extra contra el reporte de tu bróker."),
+                              "Schwab: busca «Investment Income». En Interactive Brokers "
+                              "ya viene incluido en el archivo del Bloque 1."),
                 unsafe_allow_html=True)
     archivo = st.file_uploader("Archivo de ingresos", type=["csv", "xlsx"],
                                label_visibility="collapsed", key="_vd_upload_inc",
