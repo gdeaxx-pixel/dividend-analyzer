@@ -18,6 +18,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── Modo demo local, SOLO para QA visual (`?demo=schwab`) ──────────────────────
+# Carga el fixture sintético directo a resultados, sin pasar por el wizard. Usa
+# EXCLUSIVAMENTE `fixtures/` (datos sintéticos versionados, nunca reales — los casos
+# reales viven fuera de este worktree por diseño). No es parte del spec del traspaso:
+# es un atajo temporal para revisar la UI sin depender de subir un archivo por el
+# navegador. Quitar antes de dar la Fase 4 por cerrada.
+_demo = st.query_params.get("demo")
+if _demo and st.session_state.get("_wizard_df_clean") is None:
+    import pandas as pd
+    import logic
+    _RUTAS_DEMO = {
+        "schwab": "fixtures/schwab_synth_1/synthetic_transactions.csv",
+        "ib": "fixtures/ib_synth_1/synthetic_transactions.csv",
+    }
+    _ruta_demo = _RUTAS_DEMO.get(_demo)
+    if _ruta_demo:
+        st.session_state["_wizard_df_clean"] = logic.normalize_csv(pd.read_csv(_ruta_demo))
+        st.session_state["_wizard_listo"] = True
+
 # Hasta que el usuario pulsa «Ver resultados →» (al final del Bloque 3, opcional) no hay
 # recorrido que enseñar: la hoja de carga ocupa toda la superficie y la ruta no se dibuja —
 # solo el tema, en el encabezado. Confirmar posiciones (Bloque 2) NO basta por sí solo:

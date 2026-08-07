@@ -262,18 +262,37 @@ _ESTILOS = """
            `app.py` (bg #fcf9f8, radio 12px, sombra suave) — es el propio contenedor de
            Streamlit, no algo que este archivo escribiera, así que `[data-baseweb="popover"]
            div` no lo alcanzaba. Aquí se sobreescribe con el `.crumb-menu` del demo:
-           `background: var(--ground); border: 1px dashed var(--hair); border-radius: 0`. */
+           `background: var(--ground); border: 1px dashed var(--hair); border-radius: 0`.
+
+           Un solo contenedor, sin marco anidado: `stPopoverBody` envuelve un `div` propio
+           de BaseWeb (sin `data-testid`, medido en el navegador) que trae su fondo cálido
+           de fábrica — ese es el "segundo marco" que se veía. Se sobreescribe con `> div`
+           en vez de perseguir su clase generada (`st-be st-c9…`, cambia entre builds). Sin
+           esto, el hueco de 16px entre botones (`stVerticalBlock` gap) deja ver ese fondo
+           claro como una barra sólida entre cada fila — el defecto en modo oscuro. */
         [data-testid="stPopoverBody"] {
           background: var(--ground) !important;
           border: 1px dashed var(--hair) !important;
           border-radius: 0 !important;
           box-shadow: 0 4px 20px rgba(0, 0, 0, .25) !important;
+          padding: 4px !important;
+        }
+        [data-testid="stPopoverBody"] > div {
+          background: var(--ground) !important;
+        }
+        /* El gap por defecto entre botones (16px, de `stVerticalBlock`) es lo que hacía
+           ver cada opción como una fila alta y separada — se reduce a un solo trazo fino,
+           sin bordes individuales por botón (interacción sutil en vez de recuadros). */
+        [data-testid="stPopoverBody"] [data-testid="stVerticalBlock"] {
+          gap: 1px !important;
         }
         [data-testid="stPopoverBody"] button {
           font-family: var(--font-mono); font-size: 12px; letter-spacing: .05em;
-          text-transform: uppercase; border: none; border-bottom: 1px dashed var(--hair);
-          border-radius: 0; background: var(--panel); color: var(--ink);
+          text-transform: uppercase; text-align: left; justify-content: flex-start;
+          border: none; border-radius: 0; background: var(--panel); color: var(--ink);
+          min-height: 0; height: auto; padding: 9px 12px; line-height: 1.3;
         }
+        /* Estado sutil: solo cambia texto/fondo, sin borde grueso alrededor de la opción. */
         [data-testid="stPopoverBody"] button:hover {
           background: var(--accent-tint); color: var(--accent);
         }
@@ -302,6 +321,17 @@ _ESTILOS = """
           border-radius: 0 !important;
           font-family: var(--font-mono) !important; font-size: 11px !important;
           letter-spacing: .06em; text-transform: uppercase;
+        }
+        /* La opción NO seleccionada (`kind=segmented_control`, sin el sufijo `Active`)
+           trae de fábrica el fondo cálido/casi blanco de `app.py` con texto casi blanco
+           encima — ilegible en modo oscuro. La seleccionada (`…Active`) ya usa el azul de
+           marca de `.streamlit/config.toml` y no se toca. */
+        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"] {
+          background: var(--panel) !important; color: var(--ink) !important;
+          border-color: var(--hair) !important;
+        }
+        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"]:hover {
+          background: var(--accent-tint) !important; color: var(--accent) !important;
         }
 
         .vd-badge {
