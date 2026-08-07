@@ -68,15 +68,31 @@ def inyectar_estilos(tema: str) -> None:
                 unsafe_allow_html=True)
 
 
+def _sync_tema() -> None:
+    """`on_change` del control de tema: corre ANTES de que el script vuelva a dibujar el
+    widget, así que aquí sí se puede tocar `st.session_state["vd_tema_w"]` (a diferencia de
+    hacerlo en el cuerpo del script, donde Streamlit lo rechaza por ya estar instanciado —
+    ese fue el bug que tumbaba la app al deseleccionar el pill activo).
+
+    `st.segmented_control` en modo `single` deja deseleccionar la opción activa con un
+    segundo clic, y entonces `vd_tema_w` llega en `None`. Ese caso reafirma el valor
+    anterior tanto en el espejo (`vd_tema`, lo que lee el resto de la app) como en el
+    propio widget (para que el pill se vea seleccionado en el siguiente render)."""
+    seleccion = st.session_state.get("vd_tema_w")
+    if seleccion is None:
+        st.session_state["vd_tema_w"] = st.session_state["vd_tema"]
+    else:
+        st.session_state["vd_tema"] = seleccion
+
+
 def render_encabezado(con_datos: bool) -> str:
     """Fila superior: marca (o el eyebrow de la carga) a la izquierda, tema a la derecha.
 
     En `con_datos=False` la marca no se dibuja aquí: la dibuja `ui/carga.py` como `<h2>`,
-    porque ahí es el título de la pantalla. Devuelve el tema activo — nunca `None`, aunque
-    `st.segmented_control` se deseleccione (modo `single` lo permite).
+    porque ahí es el título de la pantalla. Devuelve el tema activo — nunca `None`.
     """
     st.session_state.setdefault("vd_tema", "Claro")
-    anterior = st.session_state["vd_tema"]
+    st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
 
     col_izq, col_der = st.columns([4, 2])
     with col_izq:
@@ -87,24 +103,23 @@ def render_encabezado(con_datos: bool) -> str:
                         unsafe_allow_html=True)
     with col_der:
         st.segmented_control(
-            "Tema", ("Claro", "Oscuro"), key="vd_tema", label_visibility="collapsed",
+            "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
+            label_visibility="collapsed",
         )
 
-    tema = st.session_state.get("vd_tema")
-    if tema is None:
-        # single-select deseleccionado: se conserva el valor anterior, nunca queda vacío.
-        st.session_state["vd_tema"] = anterior
-        tema = anterior
-    return tema
+    return st.session_state["vd_tema"]
 
 
 def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actual: str,
                        prefijo: str, on_select) -> None:
     """Un segmento de la ruta: botón que muestra la selección activa y abre un popover
     con las alternativas. Es lo más cercano al `crumb-btn` del demo que devuelve estado
-    a Python — a diferencia del HTML, que no puede."""
+    a Python — a diferencia del HTML, que no puede.
+
+    Sin flecha en el label: Streamlit ya dibuja su propio chevron en `st.popover`, y el
+    `▾` del demo (que es texto, no un ícono nativo) duplicaba el símbolo."""
     with columna:
-        with st.popover(f"{etiqueta_actual} ▾", use_container_width=True):
+        with st.popover(etiqueta_actual, use_container_width=True):
             for clave, texto in opciones.items():
                 marca = " ●" if clave == clave_actual else ""
                 if st.button(f"{texto}{marca}", key=f"{prefijo}_{clave}",
@@ -235,10 +250,21 @@ _ESTILOS = """
           border-radius: 0; color: var(--ink);
         }
         [data-testid="stPopoverButton"]:hover { border-color: var(--accent); }
-        [data-testid="stPopoverButton"][aria-expanded="true"] {
-          background: var(--accent-tint); border-color: var(--accent); color: var(--accent);
-        }
+        /* Streamlit 1.42.0 no expone aria-expanded en este botón (verificado en el
+           bundle): el estado "abierto" solo se distingue por el hover, no hay forma de
+           engancharlo por CSS puro sin JS. */
 
+        /* La superficie del menú: `stPopoverBody` trae de fábrica la paleta cálida de
+           `app.py` (bg #fcf9f8, radio 12px, sombra suave) — es el propio contenedor de
+           Streamlit, no algo que este archivo escribiera, así que `[data-baseweb="popover"]
+           div` no lo alcanzaba. Aquí se sobreescribe con el `.crumb-menu` del demo:
+           `background: var(--ground); border: 1px dashed var(--hair); border-radius: 0`. */
+        [data-testid="stPopoverBody"] {
+          background: var(--ground) !important;
+          border: 1px dashed var(--hair) !important;
+          border-radius: 0 !important;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, .25) !important;
+        }
         [data-testid="stPopoverBody"] button {
           font-family: var(--font-mono); font-size: 12px; letter-spacing: .05em;
           text-transform: uppercase; border: none; border-bottom: 1px dashed var(--hair);
@@ -250,6 +276,28 @@ _ESTILOS = """
 
         [data-testid="stPopover"] button, [data-testid="stPopover"] div {
           border-radius: 0 !important;
+        }
+
+        /* «¿Cómo funciona? →»: enlace fantasma como `.crumb-help` en el demo — sin caja,
+           solo colorea en hover. Es la última columna de la fila de la ruta (no lleva
+           popover), así que se distingue por posición: `div:last-child` en esa fila. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button {
+          background: none !important; border: none !important; box-shadow: none !important;
+          color: var(--ink-mut) !important; padding: 6px 2px !important;
+          font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+          letter-spacing: .04em; text-transform: uppercase;
+        }
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button:hover {
+          color: var(--accent) !important; text-decoration: underline;
+        }
+
+        /* Control de tema: `stButtonGroup` trae radio redondeado (8px en los extremos) y
+           tipografía `system-ui` de fábrica — igual que el popover, es CSS propio de
+           Streamlit y solo se ve midiendo el DOM, no con `grep` sobre este archivo. */
+        [data-testid="stButtonGroup"] button {
+          border-radius: 0 !important;
+          font-family: var(--font-mono) !important; font-size: 11px !important;
+          letter-spacing: .06em; text-transform: uppercase;
         }
 
         .vd-badge {
