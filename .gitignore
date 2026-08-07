@@ -57,3 +57,7 @@ roc_health_alerts.txt
 
 # Material de diseño local (no versionar)
 design/
+
+# Fixtures con datos reales de Daniel (1042-S, PDFs de broker, capturas de posiciones).
+# Traen TIN, fecha de nacimiento, dirección y número de cuenta — NUNCA versionar.
+tests/daniel_zambrano/

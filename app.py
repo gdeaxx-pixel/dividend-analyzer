@@ -1,3 +1,15 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  PRODUCCIÓN. Esta es la app desplegada en Streamlit Cloud.
+#
+#  El REDISEÑO de la interfaz NO se hace aquí: vive en el worktree
+#  `~/agents-worktrees/dividend-port-artifact` (rama `port-artifact`),
+#  en `app_v2.py` + `ui/`. Ese es el árbol activo para cualquier cambio de UI.
+#
+#  Antes de tocar la interfaz de este archivo, confirmar con Daniel que el cambio
+#  va a producción y no al port — si no, se rehace dos veces y el port queda con
+#  el hueco. `logic.py` sí es compartido y se puede tocar desde cualquiera de los dos.
+#  Ver Obsidian/Sesion-Activa.md § Árbol de trabajo activo.
+# ══════════════════════════════════════════════════════════════════════════════
 import streamlit as st
 import pandas as pd
 
@@ -1155,7 +1167,7 @@ def _ed_axis(kind="x", fmt=None, title=None, label_angle=None, year_ticks=False,
     return alt.Axis(**kw)
 
 # Wizard session state defaults
-for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_prev_step', 1), ('_wizard_csv_name', None), ('_wizard_pos_confirmed', False), ('_prev_active_pill', 1)]:
+for _wk, _wv in [('_wizard_step', 1), ('_wizard_ib_map', {}), ('_wizard_csv_ticker_data', {}), ('_wizard_df_clean', None), ('_wizard_broker', None), ('_wizard_positions', {}), ('_wizard_overrides', {}), ('_wizard_photo_sig', None), ('_wizard_income_summary', None), ('_wizard_income_df', None), ('_wizard_1042s', None), ('_wizard_1042s_sig', None), ('_prev_step', 1), ('_wizard_csv_name', None), ('_wizard_pos_confirmed', False), ('_prev_active_pill', 1)]:
     if _wk not in st.session_state:
         st.session_state[_wk] = _wv
 
@@ -1291,8 +1303,8 @@ def _da_block3_locked():
     return (
         '<div class="da-reveal" style="opacity:.55;border:1px dashed #d8dde2;padding:12px 14px;margin:4px 0;">'
         + _da_block_header(
-            3, "Archivo de ingresos · opcional", "locked",
-            "Validación extra · se desbloquea al confirmar tus posiciones.")
+            3, "Formulario 1042-S · opcional", "locked",
+            "Validación fiscal · se desbloquea al confirmar tus posiciones.")
         + '</div>'
     )
 
@@ -1321,7 +1333,8 @@ if input_method == "Subir CSV/Excel":
     # Estado de los micro-pasos de la carga consolidada (Paso 01)
     _csv_done    = st.session_state.get('_wizard_df_clean') is not None
     _pos_done    = bool(st.session_state.get('_wizard_pos_confirmed'))
-    _income_done = st.session_state.get('_wizard_income_summary') is not None
+    _income_done = (st.session_state.get('_wizard_1042s') is not None
+                     or st.session_state.get('_wizard_income_summary') is not None)
 
     # Píldora activa: dentro del Paso 01, la 02 ("Configura Costos") se ilumina
     # al entrar a la fase de Posiciones (CSV ya cargado); 03 en Resultados.
@@ -1424,7 +1437,8 @@ if input_method == "Subir CSV/Excel":
                     for _k in ['_wizard_df_clean', '_wizard_csv_ticker_data', '_wizard_broker',
                                '_wizard_csv_name', '_wizard_ib_map', '_wizard_positions',
                                '_wizard_overrides', '_wizard_photo_sig',
-                               '_wizard_income_summary', '_wizard_income_df']:
+                               '_wizard_income_summary', '_wizard_income_df',
+                               '_wizard_1042s', '_wizard_1042s_sig']:
                         st.session_state.pop(_k, None)
                     st.session_state['_wizard_pos_confirmed'] = False
                     st.rerun()
@@ -1563,72 +1577,151 @@ if input_method == "Subir CSV/Excel":
                     st.session_state['_wizard_pos_confirmed'] = False
                     st.rerun()
 
-        # ───────── BLOQUE 3 · Archivo de ingresos (opcional) ─────────
+        # ───────── BLOQUE 3 · Formulario 1042-S (opcional) ─────────
         if _income_done:
-            _inc_sum = st.session_state.get('_wizard_income_summary') or {}
-            _nrec = sum(1 for d in (_inc_sum.get('tickers') or {}).values() if d.get('received_total'))
-            st.markdown(_da_summary("Ingresos validados", f"{_nrec} tickers con dividendos recibidos"),
-                        unsafe_allow_html=True)
-            if st.session_state.get('_wizard_income_multi'):
-                st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
-                           "Para una validación exacta, exporta el income de una sola cuenta.")
-            _icc1, _icc2 = st.columns([5, 1])
-            with _icc2:
-                if st.button("editar", key="_edit_inc", type="tertiary", use_container_width=True):
-                    st.session_state.pop('_wizard_income_summary', None)
-                    st.session_state.pop('_wizard_income_df', None)
-                    st.rerun()
+            _has_1042s = st.session_state.get('_wizard_1042s') is not None
+            _has_inc = st.session_state.get('_wizard_income_summary') is not None
+            if _has_1042s:
+                _r1042s = st.session_state.get('_wizard_1042s') or {}
+                _forms_1042s = _r1042s.get('forms') or []
+                _roc_credit_done = sum(float(f.get('withholding_credit') or 0.0)
+                                        for f in _forms_1042s if str(f.get('income_code')) == '37')
+                _detail_1042s = f"{len(_forms_1042s)} formularios"
+                if _roc_credit_done:
+                    _detail_1042s += f" · crédito ROC {_money2(_roc_credit_done)}"
+                st.markdown(_da_summary("1042-S leído", _detail_1042s), unsafe_allow_html=True)
+                _p1c1, _p1c2 = st.columns([5, 1])
+                with _p1c2:
+                    if st.button("editar", key="_edit_1042s", type="tertiary", use_container_width=True):
+                        st.session_state.pop('_wizard_1042s', None)
+                        st.session_state.pop('_wizard_1042s_sig', None)
+                        st.rerun()
+            if _has_inc:
+                _inc_sum = st.session_state.get('_wizard_income_summary') or {}
+                _nrec = sum(1 for d in (_inc_sum.get('tickers') or {}).values() if d.get('received_total'))
+                st.markdown(_da_summary("Ingresos validados", f"{_nrec} tickers con dividendos recibidos"),
+                            unsafe_allow_html=True)
+                if st.session_state.get('_wizard_income_multi'):
+                    st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
+                               "Para una validación exacta, exporta el income de una sola cuenta.")
+                _icc1, _icc2 = st.columns([5, 1])
+                with _icc2:
+                    if st.button("editar", key="_edit_inc", type="tertiary", use_container_width=True):
+                        st.session_state.pop('_wizard_income_summary', None)
+                        st.session_state.pop('_wizard_income_df', None)
+                        st.rerun()
         elif _pos_done:
             st.markdown(_da_block_header(
-                3, "Archivo de ingresos · opcional", "active",
-                "Validación extra: confirma los dividendos recibidos."), unsafe_allow_html=True)
-            _inc_file = st.file_uploader(
-                "Archivo de ingresos (Investment Income)",
-                type=['csv', 'xlsx'], key="_step2_income", label_visibility="collapsed"
-            )
-            if _inc_file is not None:
-                try:
-                    _parseo(["Leyendo ingresos…", "Conciliando dividendos recibidos…"])
-                    _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
-                    if _inc_df is None:
-                        st.session_state['_wizard_income_summary'] = None
-                        st.session_state['_wizard_income_df'] = None
-                        st.error(
-                            "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
+                3, "Formulario 1042-S · opcional", "active",
+                "Validación fiscal: confirma retención y ROC del año."), unsafe_allow_html=True)
+
+            if _broker_s2 == 'ibkr':
+                st.markdown(_da_summary(
+                    "1042-S",
+                    "No hace falta — Interactive Brokers ya incluye el detalle fiscal en el "
+                    "archivo del Bloque 1."), unsafe_allow_html=True)
+            else:
+                _1042s_file = st.file_uploader(
+                    "Sube tu 1042-S (PDF) y lo leemos por ti",
+                    type=['pdf'], key="_step3_1042s")
+                st.caption(
+                    "Tu broker te lo envía a inicio de año (Schwab: Cuenta → Documentos → Impuestos). "
+                    "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
+                    "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
+                    "El PDF no se guarda: se lee en memoria y se descarta.")
+
+                if _1042s_file is not None:
+                    _sig_1042s = (_1042s_file.name, _1042s_file.size)
+                    if _sig_1042s != st.session_state.get('_wizard_1042s_sig'):
+                        _parseo(["Leyendo tu 1042-S…", "Deduplicando formularios…"])
+                        _gem_key_1042s = _get_gemini_key()
+                        with st.spinner("Leyendo tu 1042-S…"):
+                            _1042s_result = logic.extract_1042s(_1042s_file.getvalue(), _gem_key_1042s)
+                        st.session_state['_wizard_1042s'] = _1042s_result
+                        st.session_state['_wizard_1042s_sig'] = _sig_1042s
+
+                    _1042s_result = st.session_state.get('_wizard_1042s')
+                    if _1042s_result is None:
+                        st.error("No reconocimos este PDF como un Formulario 1042-S.")
                         st.caption(
-                            "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
-                            "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
-                            "ni un Excel (.xls/.xlsx), ni un PDF.")
-                    elif len(_inc_df) == 0:
-                        st.session_state['_wizard_income_summary'] = None
-                        st.session_state['_wizard_income_df'] = None
-                        st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
-                        st.caption(
-                            "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
-                            "Revisa que el export incluya las distribuciones de tus ETFs.")
+                            "Verifica que sea el documento que te envió tu broker (Schwab: Cuenta → "
+                            "Documentos → Impuestos), en formato PDF y sin escanear.")
                     else:
-                        _inc_summ = logic.summarize_income(_inc_df)
-                        _nrec_chk = sum(1 for d in (_inc_summ.get('tickers') or {}).values()
-                                        if d.get('received_total'))
-                        if _nrec_chk == 0:
-                            # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
+                        _forms_1042s_new = _1042s_result.get('forms') or []
+                        _relevant_new = [f for f in _forms_1042s_new
+                                         if str(f.get('income_code')) in ('06', '37')]
+                        if not _relevant_new:
+                            st.warning(
+                                "Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
+                                "(código 37) en tus formularios.")
+                        else:
+                            _roc_new = sum(float(f.get('withholding_credit') or 0.0)
+                                           for f in _relevant_new if str(f.get('income_code')) == '37')
+                            _bruto_new = sum(float(f.get('gross_income') or 0.0) for f in _relevant_new)
+                            _detail_new = f"{len(_forms_1042s_new)} formularios · bruto {_money2(_bruto_new)}"
+                            if _roc_new:
+                                _detail_new += f" · crédito ROC {_money2(_roc_new)}"
+                            st.markdown(_da_summary("1042-S leído", _detail_new), unsafe_allow_html=True)
+                            st.write("¿Es correcto?")
+                            _c1c, _c2c = st.columns(2)
+                            with _c1c:
+                                if st.button("Confirmar", type="primary", key="_1042s_ok"):
+                                    st.rerun()
+                            with _c2c:
+                                if st.button("Corregir", key="_1042s_no"):
+                                    st.session_state.pop('_wizard_1042s', None)
+                                    st.session_state.pop('_wizard_1042s_sig', None)
+                                    st.rerun()
+
+            with st.expander("¿Tienes también el Investment Income? (opcional)", expanded=False):
+                st.caption("Añade la validación dividendo por dividendo y la proyección de ingresos.")
+                _inc_file = st.file_uploader(
+                    "Archivo de ingresos (Investment Income)",
+                    type=['csv', 'xlsx'], key="_step2_income", label_visibility="collapsed"
+                )
+                if _inc_file is not None:
+                    try:
+                        _parseo(["Leyendo ingresos…", "Conciliando dividendos recibidos…"])
+                        _inc_df = logic.parse_schwab_income_csv(_inc_file.getvalue())
+                        if _inc_df is None:
                             st.session_state['_wizard_income_summary'] = None
                             st.session_state['_wizard_income_df'] = None
-                            st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
+                            st.error(
+                                "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
                             st.caption(
-                                "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
-                                "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
-                                "viene primero y se ignora).")
+                                "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
+                                "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
+                                "ni un Excel (.xls/.xlsx), ni un PDF.")
+                        elif len(_inc_df) == 0:
+                            st.session_state['_wizard_income_summary'] = None
+                            st.session_state['_wizard_income_df'] = None
+                            st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
+                            st.caption(
+                                "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
+                                "Revisa que el export incluya las distribuciones de tus ETFs.")
                         else:
-                            st.session_state['_wizard_income_summary'] = _inc_summ
-                            st.session_state['_wizard_income_df'] = _inc_df
-                            st.session_state['_wizard_income_multi'] = bool(_inc_summ.get('multi_account'))
-                            st.rerun()
-                except Exception as _ie:
-                    st.session_state['_wizard_income_summary'] = None
-                    st.session_state['_wizard_income_df'] = None
-                    st.error("No pudimos leer el archivo de ingresos.")
-                    st.caption(f"Detalle técnico: {_ie}")
+                            _inc_summ = logic.summarize_income(_inc_df)
+                            _nrec_chk = sum(1 for d in (_inc_summ.get('tickers') or {}).values()
+                                            if d.get('received_total'))
+                            if _nrec_chk == 0:
+                                # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
+                                st.session_state['_wizard_income_summary'] = None
+                                st.session_state['_wizard_income_df'] = None
+                                st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
+                                st.caption(
+                                    "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
+                                    "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
+                                    "viene primero y se ignora).")
+                            else:
+                                st.session_state['_wizard_income_summary'] = _inc_summ
+                                st.session_state['_wizard_income_df'] = _inc_df
+                                st.session_state['_wizard_income_multi'] = bool(_inc_summ.get('multi_account'))
+                                st.rerun()
+                    except Exception as _ie:
+                        st.session_state['_wizard_income_summary'] = None
+                        st.session_state['_wizard_income_df'] = None
+                        st.error("No pudimos leer el archivo de ingresos.")
+                        st.caption(f"Detalle técnico: {_ie}")
         else:
             # Visible desde el inicio pero desactivado (se activa tras Posiciones)
             st.markdown(_da_block3_locked(), unsafe_allow_html=True)
@@ -1643,12 +1736,15 @@ if input_method == "Subir CSV/Excel":
 
         # ───────── Resumen "Carga Completa" al 100% ─────────
         if _income_done:
+            _triple_via_txt = ("transacciones, posiciones y fiscal"
+                                if st.session_state.get('_wizard_1042s') is not None
+                                else "transacciones, posiciones e ingresos")
             st.markdown(
                 '<div class="da-reveal" style="border-left:4px solid #4caf82;background:#f0faf5;padding:14px 18px;margin:14px 0 4px 0;">'
                 '<div style="font-family:Inter,sans-serif;font-size:13px;font-weight:800;color:#021C36;'
                 'text-transform:uppercase;letter-spacing:0.04em;">✓ Carga completa</div>'
                 '<div style="font-family:Inter,sans-serif;font-size:12px;color:#5a6b7a;margin-top:3px;">'
-                'Validaste por triple vía: transacciones, posiciones e ingresos. Listo para analizar.</div>'
+                f'Validaste por triple vía: {_triple_via_txt}. Listo para analizar.</div>'
                 '</div>',
                 unsafe_allow_html=True
             )
@@ -1727,6 +1823,7 @@ if input_method == "Subir CSV/Excel":
                        '_wizard_broker', '_wizard_csv_name', '_wizard_pos_confirmed', '_prev_active_pill',
                        '_wizard_positions', '_wizard_overrides', '_wizard_photo_sig',
                        '_wizard_income_summary', '_wizard_income_df',
+                       '_wizard_1042s', '_wizard_1042s_sig',
                        '_results', '_classify_map', '_skipped', '_strat_results', '_file_id']:
                 st.session_state.pop(_k, None)
             st.rerun()
@@ -3197,61 +3294,28 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                                     f'CERTEZA</span><span style="font-family:Inter,sans-serif;'
                                     f'font-size:11px;color:#8899aa;">{_n_done} de 3</span></div>'
                                     f'{_steps_html}</div>', unsafe_allow_html=True)
-                                _roc_pdf = st.file_uploader(
-                                    'Sube tu 1042-S (PDF) y lo leemos por ti',
-                                    type=['pdf'], key=f'roc_1042s_pdf_{_vj_tk}')
-                                st.caption(
-                                    'El PDF no se guarda: se procesa de forma transitoria con '
-                                    'Gemini (Google) solo para leer el número y luego se descarta.')
-                                if _roc_pdf is not None:
-                                    _roc_pdf_sig = (_roc_pdf.name, _roc_pdf.size)
-                                    _roc_pdf_cache_key = f'_roc_pdf_extract_{_vj_tk}'
-                                    if st.session_state.get(f'{_roc_pdf_cache_key}_sig') != _roc_pdf_sig:
-                                        _gem_key_pdf = _get_gemini_key()
-                                        with st.spinner('Leyendo tu 1042-S…'):
-                                            _roc_pdf_result = logic.extract_roc_credit_from_pdf(
-                                                _roc_pdf.getvalue(), _gem_key_pdf)
-                                        st.session_state[_roc_pdf_cache_key] = _roc_pdf_result
-                                        st.session_state[f'{_roc_pdf_cache_key}_sig'] = _roc_pdf_sig
-                                        st.session_state.pop(f'{_roc_pdf_cache_key}_confirmed', None)
-                                    _roc_pdf_result = st.session_state.get(_roc_pdf_cache_key)
-                                    _roc_pdf_confirmed = st.session_state.get(
-                                        f'{_roc_pdf_cache_key}_confirmed')
-                                    if _roc_pdf_result is None:
-                                        st.warning(
-                                            'No pudimos procesar el PDF en este momento — '
-                                            'intenta de nuevo en unos minutos o teclea el '
-                                            'valor manualmente abajo.')
-                                    elif not _roc_pdf_result.get('per_form'):
-                                        st.warning(
-                                            'No encontré un crédito ROC (código 37) en ese PDF — '
-                                            'verifica que sea tu 1042-S o teclea el valor manualmente.')
-                                    elif _roc_pdf_confirmed:
-                                        _roc_manual_now = float(
-                                            st.session_state.get(f'roc_1042s_{_vj_tk}', 0.0) or 0.0)
-                                        if abs(_roc_manual_now - _roc_pdf_result['credit']) < 0.005:
-                                            st.success(
-                                                f'Crédito {_money(_roc_pdf_result["credit"])} '
-                                                f'tomado de tu 1042-S y aplicado al campo de abajo.')
-                                    else:
-                                        st.markdown(
-                                            f'Leí en tu 1042-S: crédito ROC '
-                                            f'**{_money(_roc_pdf_result["credit"])}** '
-                                            f'(sobre {_money(_roc_pdf_result["roc_gross"])} brutos '
-                                            f'código 37) — ¿es correcto?')
-                                        _cc1, _cc2 = st.columns(2)
-                                        with _cc1:
-                                            if st.button('Confirmar', type='primary',
-                                                         key=f'_roc_pdf_ok_{_vj_tk}'):
-                                                st.session_state[f'roc_1042s_{_vj_tk}'] = \
-                                                    _roc_pdf_result['credit']
-                                                st.session_state[f'{_roc_pdf_cache_key}_confirmed'] = True
-                                                st.rerun()
-                                        with _cc2:
-                                            if st.button('Corregir', key=f'_roc_pdf_no_{_vj_tk}'):
-                                                st.session_state.pop(_roc_pdf_cache_key, None)
-                                                st.session_state.pop(f'{_roc_pdf_cache_key}_sig', None)
-                                                st.rerun()
+                                _wizard_1042s_vj = st.session_state.get('_wizard_1042s')
+                                _forms_1042s_vj = (_wizard_1042s_vj or {}).get('forms') or []
+                                _roc_forms_vj = [f for f in _forms_1042s_vj
+                                                  if str(f.get('income_code')) == '37']
+                                if _roc_forms_vj:
+                                    _roc_credit_vj = sum(float(f.get('withholding_credit') or 0.0)
+                                                          for f in _roc_forms_vj)
+                                    # El guardia almacena el valor precargado, no un booleano:
+                                    # así un 1042-S nuevo (crédito distinto) sí vuelve a
+                                    # precargar, y una edición manual del usuario no se pisa.
+                                    _prefill_key_vj = f'_roc_1042s_prefilled_{_vj_tk}'
+                                    if st.session_state.get(_prefill_key_vj) != _roc_credit_vj:
+                                        st.session_state[f'roc_1042s_{_vj_tk}'] = _roc_credit_vj
+                                        st.session_state[_prefill_key_vj] = _roc_credit_vj
+                                    st.success(
+                                        f'Crédito {_money(_roc_credit_vj)} '
+                                        f'tomado de tu 1042-S y aplicado al campo de abajo '
+                                        f'— leído en el Bloque 3 de la carga.')
+                                else:
+                                    st.caption(
+                                        'Sube tu 1042-S en el Bloque 3 de la carga y este número '
+                                        'se llena solo.')
                                 st.number_input(
                                     '…o ingresa manualmente el crédito de la casilla 10 '
                                     '(código 37 · ROC) para ver tu número exacto:',
