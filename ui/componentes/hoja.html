@@ -1,0 +1,1310 @@
+<!-- GENERADO POR tools/extract_hoja.py — NO EDITAR A MANO.
+     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:      #f4f7fa;
+    --panel:       #ffffff;
+    --panel-tint:  #eef4f9;
+    --ink:         #021C36;
+    --ink-2:       #33475a;
+    --ink-mut:     #6a7b8a;
+    --hair:        #d5e0ea;
+    --hair-soft:   #e6edf3;
+
+    --anchor:      #021C36;
+    --drip:        #006497;
+    --cash:        #1f8a5b;
+    --loss:        #A32D2D;
+    --loss-soft:   #cf8a8a;
+    --loss-bg:     rgba(163,45,45,0.10);
+    --accent:      #006497;
+    --accent-tint: rgba(0,100,151,0.10);
+    --warn:        #a06a1a;
+    --mark:        #534AB7;
+
+    --sq-off:      #dbe3ea;
+    --tip-bg:      #021C36;
+    --tip-ink:     #eaf2f8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:     #0b1420;
+      --panel:      #101d2b;
+      --panel-tint: #142639;
+      --ink:        #eaf1f7;
+      --ink-2:      #c3d1de;
+      --ink-mut:    #8598a9;
+      --hair:       #26394c;
+      --hair-soft:  #1c2c3c;
+
+      --anchor:     #b9c9d8;
+      --drip:       #3ea0d6;
+      --cash:       #35b07d;
+      --loss:       #e07a7a;
+      --loss-soft:  #9c5555;
+      --loss-bg:    rgba(224,122,122,0.14);
+      --accent:     #3ea0d6;
+      --accent-tint: rgba(62,160,214,0.14);
+      --warn:       #d9a441;
+      --mark:       #AFA9EC;
+
+      --sq-off:     #2b4056;
+      --tip-bg:     #eaf1f7;
+      --tip-ink:    #0b1420;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --anchor:#021C36; --drip:#006497;
+    --cash:#1f8a5b; --loss:#A32D2D; --loss-soft:#cf8a8a; --loss-bg:rgba(163,45,45,0.10);
+    --accent:#006497; --accent-tint:rgba(0,100,151,0.10); --sq-off:#dbe3ea; --tip-bg:#021C36; --tip-ink:#eaf2f8;
+    --warn:#a06a1a; --mark:#534AB7;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --anchor:#b9c9d8; --drip:#3ea0d6;
+    --cash:#35b07d; --loss:#e07a7a; --loss-soft:#9c5555; --loss-bg:rgba(224,122,122,0.14);
+    --accent:#3ea0d6; --accent-tint:rgba(62,160,214,0.14); --sq-off:#2b4056; --tip-bg:#eaf1f7; --tip-ink:#0b1420;
+    --warn:#d9a441; --mark:#AFA9EC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 40px) 64px;
+  }
+
+  /* ---- navegación: RUTA (breadcrumb) — Categoría › Vista › ETF, cada segmento un
+     menú desplegable. Colapsa dos niveles en una sola línea y el "›" muestra
+     el anidamiento; las secciones quedan como tabs debajo. ---- */
+  .crumb { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .crumb[hidden] { display: none; }
+  .crumb-seg { position: relative; }
+  .crumb-seg[hidden] { display: none; }
+  .crumb-btn {
+    font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: 0.01em;
+    padding: 6px 10px; border: 1px solid transparent; background: none; color: var(--ink);
+    cursor: pointer; line-height: 1; display: inline-flex; align-items: center; gap: 8px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .crumb-btn:hover { border-color: var(--hair); }
+  .crumb-btn[aria-expanded="true"] { background: var(--panel-tint); border-color: var(--hair); }
+  .crumb-caret { font-size: 10px; color: var(--ink-mut); }
+  .crumb-sep { font-family: var(--font-mono); font-size: 16px; color: var(--ink-mut); }
+  .crumb-sep[hidden] { display: none; }
+  .crumb-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 160px;
+    background: var(--panel); border: 1px solid var(--hair); box-shadow: 0 8px 26px rgba(0,0,0,.22);
+    padding: 4px; display: flex; flex-direction: column;
+  }
+  .crumb-menu[hidden] { display: none; }
+  .crumb-item {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600; text-align: left;
+    padding: 8px 12px; border: none; background: none; color: var(--ink-2); cursor: pointer;
+    display: flex; align-items: center; gap: 8px; white-space: nowrap;
+    transition: background .12s ease, color .12s ease;
+  }
+  .crumb-item:hover { background: var(--panel-tint); color: var(--ink); }
+  .crumb-item.active { color: var(--ink); font-weight: 700; }
+  .crumb-item.active::after { content: "●"; margin-left: auto; font-size: 8px; color: var(--accent); }
+  .crumb-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* enlace a la explicación de la sección activa: vive al final de la ruta, que ya
+     es el título de dónde estás, así que aparece en todas las vistas sin duplicarse */
+  .crumb-help {
+    margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+    color: var(--ink-mut); background: none; border: none; padding: 6px 2px; cursor: pointer;
+    white-space: nowrap; transition: color .15s ease;
+  }
+  .crumb-help:hover { color: var(--accent); text-decoration: underline; }
+  .crumb-help:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- Modular Circuitry: la ruta es la misma superficie que la página,
+     no una caja aparte — fondo sólido var(--ground) exacto, sin patrones,
+     con borde dashed y tipografía mono en mayúsculas como único acento. */
+  .crumb {
+    position: relative; gap: 0; margin: 0 0 26px; padding: 13px 16px;
+    background: var(--ground); border: 1px dashed var(--hair);
+  }
+  .crumb-btn {
+    font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+    position: relative; z-index: 1; border-radius: 0;
+  }
+  .crumb-btn:hover { border-color: var(--accent); }
+  .crumb-btn[aria-expanded="true"] {
+    background: var(--accent-tint); border-color: var(--accent); color: var(--accent);
+  }
+  .crumb-caret { color: var(--ink-mut); }
+  .crumb-btn[aria-expanded="true"] .crumb-caret { color: var(--accent); }
+  /* el "›" original es un nodo de texto, no CSS content — se apaga con
+     font-size:0 en el propio span y el "|" nuevo se dibuja aparte */
+  .crumb-sep { color: transparent; font-size: 0; position: relative; z-index: 1; margin: 0 6px; }
+  .crumb-sep::before {
+    content: "|"; display: inline-block; color: var(--ink-mut); opacity: .6; font-size: 13px;
+  }
+  .crumb-menu {
+    border-radius: 0; background: var(--ground); border: 1px dashed var(--hair);
+    box-shadow: 0 4px 20px rgba(0,0,0,.25);
+  }
+  .crumb-item {
+    font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink);
+    border-bottom: 1px dashed var(--hair);
+  }
+  .crumb-item:last-child { border-bottom: none; }
+  .crumb-item:hover { background: var(--accent-tint); color: var(--accent); padding-left: 16px; }
+  .crumb-item.active { color: var(--accent); }
+  .crumb-item.active::after { color: var(--accent); }
+  .crumb-help {
+    color: var(--ink-mut); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+    position: relative; z-index: 1;
+  }
+  .crumb-help:hover { color: var(--accent); }
+
+  .etf-cta {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--panel);
+    background: var(--accent); border: none; padding: 10px 18px; cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .etf-cta:hover { opacity: .88; }
+  #etf-view[hidden], #etf-soon[hidden], #view-comparacion[hidden], #view-metodo[hidden] { display: none; }
+
+
+  .panel[hidden] { display: none; }
+
+  /* ---- placeholder "en diseño" (secciones 2 y 3) ---- */
+  .soon { padding: 8px 2px 0; }
+  .soon-badge {
+    display: inline-block; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
+    border: 1px solid var(--accent); padding: 4px 10px; margin-bottom: 18px;
+  }
+  .soon-title { font-family: var(--font-mono); font-size: clamp(20px, 3vw, 27px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; max-width: 22ch; }
+  .soon-lede { font-size: 15px; line-height: 1.55; color: var(--ink-2); max-width: 56ch; margin: 0 0 30px; }
+  .soon-lede b { color: var(--ink); font-weight: 600; }
+  /* mini-rail fantasma: insinúa la estructura paso a paso que tendrá */
+  .ghost-rail { display: flex; gap: 10px; margin-bottom: 26px; opacity: .5; }
+  .ghost-step { flex: 1; max-width: 90px; }
+  .ghost-bar { height: 4px; background: var(--hair); margin-bottom: 7px; }
+  .ghost-lab { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); }
+  .ghost-body { display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 40px); align-items: end; }
+  .ghost-plot { display: flex; align-items: flex-end; gap: 14px; height: 180px; }
+  .ghost-plot > div { flex: 1; background: var(--panel-tint); border: 1px dashed var(--hair); }
+  .ghost-side { display: flex; flex-direction: column; gap: 12px; }
+  .ghost-line { height: 12px; background: var(--panel-tint); }
+  .ghost-line.short { width: 60%; }
+
+  /* ---- step rail (sticky) — 8 pasos de ANCHO IGUAL (flex-basis:0) ---- */
+  .rail { display: flex; gap: 10px; margin: 16px 0 18px; overflow-x: auto; padding: 8px 0 6px; position: sticky; top: 0; background: var(--ground); z-index: 5; }
+  .step { flex: 1 1 0; min-width: 80px; display: flex; flex-direction: column; gap: 7px; align-items: center; text-align: center; }
+  .step.clickable { cursor: pointer; }
+  .step.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .step-bar { height: 4px; width: 100%; background: var(--hair); transition: background .15s ease; }
+  .step.done .step-bar { background: var(--accent); }
+  .step.now .step-bar { background: var(--loss); }
+  .step-lab { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-mut); line-height: 1.25; white-space: nowrap; }
+  .step.now .step-lab { color: var(--loss); font-weight: 700; }
+  .step.done .step-lab { color: var(--ink-2); }
+  .step.clickable:hover .step-lab { color: var(--accent); }
+  .step.now.clickable:hover .step-lab { color: var(--loss); }
+
+  /* ---- section frame ---- */
+  .sec { margin-top: 32px; }
+  .sec.closer { margin-top: 18px; }
+  /* divisor cockpit -> cierre */
+  .closer-divider { height: 1px; background: var(--hair); margin: 18px 0 0; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin: 0 0 4px;
+  }
+  .sec-note { font-size: 12px; color: var(--ink-mut); margin: 5px 0 0; }
+
+  /* explicación única del paso (dentro del cockpit). min-height medido con Chrome
+     headless sobre los 8 textos reales (6 caen en 2 líneas = 59px, 2 en 1 línea =
+     43px) — no es una estimación en em, es el máximo real + margen de seguridad. */
+  .step-note {
+    font-size: 13.5px; line-height: 1.45; color: var(--ink); background: var(--panel-tint); border-left: 3px solid var(--accent);
+    padding: 10px 15px; margin: 12px 0 0; max-width: 78ch; min-height: 62px; box-sizing: border-box;
+  }
+  .step-note b { color: var(--accent); }
+
+  /* ---- verdict (compacto) ---- */
+  .verdict {
+    background: var(--panel); border: 1px solid var(--hair); border-left: 4px solid var(--ink-mut);
+    padding: 16px clamp(18px, 3vw, 26px); transition: border-left-color .2s ease;
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 40px); align-items: center;
+  }
+  .v-kick { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--ink-mut); text-transform: uppercase; margin: 0 0 6px; transition: color .2s ease; }
+  .v-big { font-family: var(--font-mono); font-weight: 700; font-size: clamp(24px, 3.6vw, 34px); line-height: 0.95; color: var(--ink); letter-spacing: -0.01em; transition: color .2s ease; }
+  .v-big.up { color: var(--accent); }
+  .v-big.loss { color: var(--loss); }
+  .v-pct { font-family: var(--font-mono); font-size: clamp(14px, 2vw, 16px); color: var(--ink-mut); font-weight: 600; margin-top: 6px; transition: color .2s ease; }
+  .v-pct.up { color: var(--accent); }
+  .v-pct.loss { color: var(--loss); }
+  .v-pct-lab { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--ink-mut); }
+  .v-pct-sep { color: var(--ink-mut); }
+
+  .io { align-self: center; display: flex; flex-direction: column; gap: 18px; }
+  .io-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 14px; }
+  .io-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); text-align: right; }
+  .io-track { position: relative; height: 34px; background: var(--panel-tint); border: 1px solid var(--hair-soft); }
+  .io-fill { position: absolute; inset: 0 auto 0 0; display: flex; align-items: center; transition: width .3s cubic-bezier(.2,.8,.25,1), background .2s ease; }
+  .io-fill span { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--panel); padding-left: 10px; white-space: nowrap; }
+  .io-in  .io-fill { background: var(--anchor); }
+  .io-out .io-fill { background: var(--loss); }
+  .io-ghost { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start; transition: padding-left .3s cubic-bezier(.2,.8,.25,1); }
+  .io-ghost span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); font-weight: 600; white-space: nowrap; transition: color .2s ease, margin-left .2s ease; }
+
+  /* ---- waterfall ---- */
+  .fall-scroll { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+  .fall { position: relative; min-width: 820px; padding: 12px 8px 88px; }
+  .plot { position: relative; height: 300px; display: flex; align-items: flex-end; gap: clamp(5px, 1.1vw, 13px); border-bottom: 1px solid var(--hair); }
+  .col { position: relative; flex: 1; height: 100%; }
+  .seg {
+    position: absolute; left: 0; right: 0; overflow: hidden; min-height: 3px;
+    transform: scaleY(0); transform-origin: bottom; animation: grow .55s cubic-bezier(.2,.8,.25,1) forwards;
+  }
+  /* barras que ya estaban en pasos previos: se quedan quietas, no re-animan */
+  .seg.settled { animation: none; transform: scaleY(1); }
+  .col.reserved { pointer-events: none; }
+  .slot-tick { position: absolute; bottom: 0; left: 50%; width: 1px; height: 8px; background: var(--hair); }
+  .slot-ghost {
+    position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ink-mut); opacity: .42; line-height: 1.2;
+  }
+  .seg.s-anchor  { background: var(--anchor); }
+  .seg.s-drip    { background: var(--drip); }
+  .seg.s-transito{ background: var(--accent-tint); border: 2px solid var(--accent); }
+  .seg.s-cash    { background: var(--cash); }
+  .seg.s-loss    { background: var(--loss); }
+
+  .costline { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--loss); z-index: 3; animation: fadeIn .4s ease both; }
+  /* El rótulo se parte en dos líneas y se acota al ancho de UNA columna: con 8
+     slots ya no cabe en una sola línea sin invadir la columna vecina. Va por
+     encima de la línea, donde la primera columna ya no dibuja nada. */
+  .costline .cl-lab {
+    position: absolute; bottom: 3px; left: 0; max-width: 92px; background: var(--ground); padding: 0 6px 0 0;
+    font-family: var(--font-mono); font-size: 10px; line-height: 1.2; color: var(--loss); font-weight: 600;
+  }
+  .gap-band {
+    position: absolute; left: 0; right: 0; background: var(--loss-bg);
+    background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--loss-soft) 6px 7px);
+    display: flex; align-items: center; justify-content: center; animation: fadeIn .4s ease both; animation-delay: .3s;
+  }
+  .gap-band span {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--loss);
+    background: var(--ground); padding: 3px 8px; white-space: nowrap;
+  }
+
+  .col-cap { position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center; }
+  .cap-amt { font-family: var(--font-mono); font-size: 13.5px; font-weight: 700; }
+  .cap-amt.up { color: var(--drip); } .cap-amt.dn { color: var(--loss); } .cap-amt.base { color: var(--ink); } .cap-amt.cashc { color: var(--cash); }
+  /* 2.5em = dos líneas a line-height 1.25. Con 8 columnas angostas unos labels
+     envuelven y otros no; reservar siempre dos líneas alinea el subtítulo y el
+     acumulado de las 8 columnas en la misma horizontal. */
+  .cap-lab { font-family: var(--font-sans); font-size: 11px; color: var(--ink-mut); line-height: 1.25; margin-top: 3px; min-height: 2.5em; }
+  /* mismo margin-top que .cap-run: son la misma línea de la fila (subtítulo o
+     acumulado, nunca ambos) y deben caer en la misma horizontal. */
+  .cap-sub { font-family: var(--font-sans); font-size: 10px; color: var(--accent); font-style: italic; margin-top: 4px; }
+  .cap-run { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
+  .cap-run::before { content: "→ "; color: var(--ink-mut); }
+
+  /* ---- waffle ---- */
+  .waffle-wrap { display: grid; grid-template-columns: auto 1fr; gap: clamp(24px, 5vw, 52px); margin-top: 24px; align-items: start; }
+  @media (max-width: 620px) { .waffle-wrap { grid-template-columns: 1fr; } }
+  .grid {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px;
+    width: clamp(220px, 42vw, 300px);
+  }
+  .sq { aspect-ratio: 1; opacity: 0; animation: pop .35s ease forwards; }
+  .sq.q-anchor { background: var(--anchor); }
+  .sq.q-drip   { background: var(--drip); }
+  .sq.q-cash   { background: var(--cash); }
+  .sq.q-off    { background: var(--sq-off); }
+  .sq.q-sd, .sq.q-sl { position: relative; border: 1px solid var(--loss-soft); }
+  .sq.q-sd { background: var(--loss-bg); }
+  .sq.q-sl { background: transparent; }
+  .sq.q-sd::after, .sq.q-sl::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px));
+    opacity: .85;
+  }
+  .sq.q-sl::after { opacity: .5; }
+  .sq.q-transito { background: var(--accent-tint); border: 1px solid var(--accent); }
+
+  /* reserva de 3 filas (medido con Chrome headless sobre los 8 pasos reales:
+     1-2 filas = 130px, 3 filas = 155px) — el # de categorías crece de 1 a 3
+     según el paso, nunca mueve lo de abajo. */
+  .legend { display: flex; flex-direction: column; gap: 14px; min-height: 155px; }
+  .leg-row { display: flex; align-items: flex-start; gap: 11px; }
+  .leg-sw { display: flex; gap: 3px; margin-top: 2px; flex-shrink: 0; }
+  .leg-sw i { width: 15px; height: 15px; display: block; }
+  .sw-anchor { background: var(--anchor); }
+  .sw-drip { background: var(--drip); }
+  .sw-cash { background: var(--cash); }
+  .sw-struck { border: 1px solid var(--loss-soft); position: relative; background: var(--loss-bg); }
+  .sw-struck::after { content:""; position:absolute; inset:0; background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px)); }
+  .leg-txt strong { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+  .leg-txt .leg-amt { font-family: var(--font-mono); }
+  .leg-txt small { display: block; font-size: 11.5px; color: var(--ink-mut); margin-top: 1px; }
+
+  .surv {
+    margin-top: 20px; padding: 16px 18px; background: var(--panel-tint); border-left: 3px solid var(--loss);
+    font-size: 14px; color: var(--ink); font-weight: 500; min-height: 78px; box-sizing: border-box;
+  }
+  .surv b { font-family: var(--font-mono); }
+  .surv .alive { color: var(--cash); } .surv .dead { color: var(--loss); }
+  .waffle-note { font-size: 11.5px; color: var(--ink-mut); margin: 14px 0 0; }
+  .waffle-note .num { color: var(--ink-2); }
+
+  .foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--hair); font-size: 11.5px; color: var(--ink-mut); }
+
+  /* ---- tooltip ---- */
+  #tip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0; transform: translateY(4px);
+    transition: opacity .12s ease, transform .12s ease;
+    background: var(--tip-bg); color: var(--tip-ink); padding: 8px 11px; max-width: 240px;
+    font-size: 12px; line-height: 1.4; box-shadow: 0 6px 22px rgba(0,0,0,.28);
+  }
+  #tip.on { opacity: 1; transform: translateY(0); }
+  #tip .t-h { font-family: var(--font-mono); font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+  #tip .t-v { font-family: var(--font-mono); }
+
+  /* ============ COMPARACIÓN · Total Return Graph ============ */
+  .cmp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
+  .cmp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .cmp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
+  .cmp-lede b { color: var(--ink); font-weight: 600; }
+
+  .cmp-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+  .cmp-field { display: flex; flex-direction: column; gap: 8px; }
+  .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
+  .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
+  .cmp-chip {
+    font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 7px 13px; border: 1px solid var(--hair); background: none; color: var(--ink-mut);
+    cursor: pointer; line-height: 1; display: inline-flex; align-items: center; gap: 7px;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .cmp-chip:hover { border-color: var(--accent); color: var(--ink-2); }
+  .cmp-chip.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .cmp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cmp-dot { width: 9px; height: 9px; flex: none; }
+
+  .cmp-plot-wrap { background: var(--panel); border: 1px solid var(--hair); padding: 16px 14px 10px; }
+  .cmp-svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .cmp-svg text { font-family: var(--font-mono); }
+
+  .cmp-summary { font-size: 13.5px; color: var(--ink); background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 12px 16px; margin: 16px 0 0; line-height: 1.5; min-height: 44px; box-sizing: border-box; }
+  .cmp-summary b { font-family: var(--font-mono); }
+  .cmp-summary .up { color: var(--accent); } .cmp-summary .dn { color: var(--loss); }
+
+  .cmp-notes { font-size: 11.5px; color: var(--ink-mut); margin: 16px 0 0; line-height: 1.55; }
+  .cmp-notes b { color: var(--ink-2); }
+  .cmp-notes a { color: var(--accent); }
+  .cmp-notes .flag { color: var(--loss); font-weight: 700; }
+  /* he-cash/he-loss solo colorean junto a .he-c (celda de la matriz); aquí se
+     usan sueltos en el texto, así que necesitan su propia regla o quedan grises */
+  .cmp-notes .he-cash { color: var(--cash); }
+  .cmp-notes .he-loss { color: var(--loss); }
+  .cmp-notes ul { margin: 0; padding-left: 18px; }
+  .cmp-notes li { margin: 0 0 8px; }
+  .cmp-notes li:last-child { margin-bottom: 0; }
+  .cmp-notes li::marker { color: var(--hair); }
+
+  /* ============ METODOLOGÍA Y FUENTES ============ */
+  #view-metodologia[hidden] { display: none; }
+  .meth-back {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent);
+    background: none; border: none; padding: 0; margin: 0 0 14px; cursor: pointer;
+  }
+  .meth-back:hover { text-decoration: underline; }
+  .meth-index { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+  .meth-index button {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em;
+    padding: 6px 11px; border: 1px solid var(--hair); background: none; color: var(--ink-mut);
+    cursor: pointer; line-height: 1; transition: color .15s ease, border-color .15s ease;
+  }
+  .meth-index button:hover { border-color: var(--accent); color: var(--ink); }
+  .meth-index button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .meth-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 32px; margin-top: 22px; }
+  @media (max-width: 680px) { .meth-grid { grid-template-columns: 1fr; } }
+  .meth-item { border-left: 2px solid var(--hair); padding-left: 16px; transition: border-color .4s ease, background-color .4s ease; }
+  /* al llegar desde una sección, su entrada se señala un momento y vuelve a la calma —
+     borde + tinte de fondo, para que se note sin depender solo de un cambio de color de 2px */
+  .meth-item.lit { border-left-color: var(--accent); background: var(--accent-tint); }
+  .meth-h { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); margin: 0 0 8px; line-height: 1.3; }
+  .meth-p { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 8px; }
+  .meth-p b { color: var(--ink); font-weight: 600; }
+  .meth-src { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 8px 0 0; line-height: 1.45; }
+  .meth-src a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .meth-biblio { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--hair); }
+  .meth-refs { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); margin: 10px 0 0; padding-left: 22px; }
+  .meth-refs li { margin-bottom: 8px; }
+  .meth-refs a { color: var(--accent); word-break: break-word; }
+  .meth-note { font-size: 11.5px; color: var(--ink-mut); margin: 18px 0 0; line-height: 1.55; }
+  .meth-note .flag { color: var(--loss); font-weight: 700; }
+
+  /* ---- tabla del ítem 8 (los ratios que sí sirven) — scroll horizontal, mismo
+     patrón que las tablas de he-grid: en una columna de ~450px no cabe entera ---- */
+  .meth-tbl-wrap { overflow-x: auto; margin: 10px 0 4px; }
+  .meth-tbl { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 12px; }
+  .meth-tbl th, .meth-tbl td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: top; }
+  .meth-tbl th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; white-space: nowrap; }
+  .meth-tbl td { color: var(--ink-2); line-height: 1.5; }
+  .meth-tbl td b { color: var(--ink); }
+  .meth-tbl td.num { font-family: var(--font-mono); white-space: nowrap; color: var(--ink); }
+
+  /* ---- formulario: todas las ecuaciones de la página, juntas ---- */
+  .meth-formulario { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--hair); }
+  .meth-form-grid { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+  .meth-form-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) 1fr; gap: 8px 16px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--hair-soft); }
+  .meth-form-eq { font-family: var(--font-mono); font-size: 12px; color: var(--ink); font-weight: 600; }
+  .meth-form-use { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  @media (max-width: 680px) { .meth-form-row { grid-template-columns: 1fr; } }
+  .foot-link { font-family: var(--font-mono); font-size: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer; }
+  .foot-link:hover { text-decoration: underline; }
+
+  /* ============ HOJA EXCEL ============ */
+  .he-block { margin-top: 26px; }
+  .he-block:first-of-type { margin-top: 4px; }
+  .he-block-lab {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-mut); margin: 0 0 8px;
+  }
+  .he-block-lab .he-mark2 { color: var(--cash); }
+  .he-block-sub { text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .he-block-sub.warn { color: var(--warn); }
+  .he-block-sub.muted { color: var(--ink-mut); }
+
+  .he-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .he-grid { display: grid; column-gap: 0; row-gap: 0; }
+  /* Matriz única, 11 tracks. Las 4 opcionales (brutos, −NRA, DRIP, efectivo) viven
+     siempre en el DOM y valen 0fr mientras la hoja está sin corregir. NO se
+     transiciona `grid-template-columns`: medido en Chrome, la transición entre
+     listas de tracks con minmax() se queda clavada en el valor inicial (las
+     columnas nunca llegaban a abrirse). El track cambia de golpe — respuesta
+     directa al clic — y lo que se anima es la aparición del contenido. */
+  /* Las tres primeras columnas van en PÍXELES, no en fracciones: son la identidad
+     de la fila (fecha, ticker, lo que pusiste) y quedan clavadas en el mismo sitio
+     al encender el interruptor. El retorno, alineado a la derecha contra el borde
+     de la tabla, tampoco se mueve. Lo que se reacomoda es el centro — justo donde
+     entra el desglose —, que es inevitable al insertar cuatro columnas sin obligar
+     a scroll horizontal. */
+  /* UN SOLO template para las dos fases: las cuatro columnas del desglose ocupan
+     su ancho definitivo desde el principio, vacías. Así al accionar el interruptor
+     NINGUNA columna se mueve —ni las de los extremos ni las del centro— y comparar
+     antes/después es leer la misma cuadrícula. El hueco no es un defecto: dice que
+     a la hoja vieja le falta esa información. «− Imp. NRA» pesa más que sus vecinas
+     porque lleva la cifra más ancha (signo + 7 dígitos). */
+  /* 10 columnas: la primera etiqueta cuál de las dos lecturas es cada fila (la
+     fecha y el ticker viven arriba, en una línea de contexto: con un solo ETF
+     serían dos constantes repetidas). 850px = lo que mide el contenedor en
+     escritorio, así que caben enteras sin scroll interno. */
+  /* DRIP y Efectivo pesan algo más que sus vecinas: llevan la sub-línea que dice
+     si entran o no en el retorno, y debe caber en un renglón. */
+  .he-grid {
+    min-width: 850px;
+    grid-template-columns: 96px minmax(0,0.95fr) minmax(0,0.9fr) minmax(0,1.05fr) minmax(0,0.95fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr) minmax(0,1fr);
+  }
+  @media (max-width: 939px) {
+    .he-grid { grid-template-columns: minmax(96px,0.95fr) minmax(0,0.95fr) minmax(0,0.9fr) minmax(0,1.05fr) minmax(0,0.95fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr) minmax(0,1fr); }
+  }
+  /* En pantallas estrechas la ecuación es TEXTO, no una tabla: no debería exigir
+     el scroll lateral que sí necesitan las columnas. Se ancla al borde visible
+     (sticky) y se ciñe al ancho de la pantalla, partiéndose en varias líneas sin
+     romper los términos por dentro. Las dos cintas se igualan por medición
+     (`igualarCintas` en initHoja), así el reparto distinto de líneas entre una y
+     otra no mueve nada al accionar el interruptor. */
+
+  .he-context { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 2px 0 10px 2px; }
+
+  /* ---- cinta de ecuación: de dónde sale cada cifra que discrepa ----
+     Ocupa todo el ancho porque la fórmula cruza columnas no contiguas
+     (Valor mer. + Efectivo − Inversión); en una celda de 90px no cabría. */
+  .he-eq {
+    grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10px; line-height: 2.1;
+    color: var(--ink-mut); padding: 13px 7px 15px 22px; position: relative;
+    border-bottom: 1px solid var(--hair-soft); white-space: nowrap; overflow-x: auto;
+  }
+  .he-eq::before {
+    content: "↳"; position: absolute; left: 5px; top: 13px; color: var(--hair);
+  }
+  .he-eq .eq-lab { display: inline-block; min-width: 96px; color: var(--ink-mut); }
+  /* el resultado ocupa un ancho fijo para que el «=» de los dos renglones caiga
+     en la misma columna: las dos ecuaciones se leen como un bloque, no como
+     dos frases sueltas */
+  .he-eq .eq-res { display: inline-block; min-width: 66px; text-align: right; color: var(--ink); font-weight: 700; }
+  .he-eq .eq-op { color: var(--ink-mut); padding: 0 7px; }
+  /* cada término apunta a su columna: al pasarle el cursor, se ilumina */
+  .he-eq .eq-t { color: var(--ink-2); cursor: default; border-bottom: 1px dotted transparent; }
+  .he-eq .eq-t:hover { border-bottom-color: var(--accent); }
+  .he-eq .eq-t.is-warn { color: var(--warn); }
+  .he-eq .eq-t.is-cash { color: var(--cash); }
+  .he-eq .eq-note { color: var(--ink-mut); font-style: italic; }
+  .he-c.col-lit { background: var(--accent-tint); }
+
+  @media (max-width: 700px) {
+    .he-eq {
+      width: calc(100vw - 2 * clamp(16px, 4vw, 40px));
+      white-space: normal; padding: 12px 0 14px 16px; line-height: 1.9;
+    }
+    .he-eq::before { top: 12px; left: 1px; }
+    /* los términos no se parten por dentro; la línea sí */
+    .he-eq .eq-t, .he-eq .eq-res { white-space: nowrap; }
+    .he-eq .eq-lab { min-width: 0; padding-right: 7px; white-space: nowrap; }
+    .he-eq .eq-res { min-width: 0; }
+    .he-eq .eq-op { padding: 0 5px; }
+  }
+  .he-row-lab { font-family: var(--font-sans); font-weight: 700; font-size: 12px; color: var(--ink-2); }
+
+  /* La segunda lectura aparece bajo la primera, sin cabecera repetida, así los
+     números a comparar quedan a una fila de distancia en la misma columna. Su
+     espacio está RESERVADO desde el principio (`visibility`, no `display`): al
+     accionar el interruptor no se empuja nada de lo que viene debajo. */
+  .he-b { visibility: hidden; }
+  .he-grid.honest .he-b { visibility: visible; }
+  .he-grid.honest .he-c.he-b { animation: fadeIn .3s ease both; }
+  /* Con la corregida a la vista, la de arriba pasa a ser la referencia histórica.
+     La jerarquía se hace quitando peso a la vieja, no añadiendo adornos a la
+     buena: un velo uniforme conserva los colores semánticos (el ámbar del total
+     inflado, el rojo del retorno) para que se puedan seguir comparando. */
+  .he-grid.honest .he-row-lab:not(.he-b) { color: var(--ink-mut); }
+  .he-grid.honest .he-c:not(.he-b),
+  .he-grid.honest .he-eq:not(.he-b) { opacity: .68; }
+  /* al señalar un término de su propia ecuación, la lectura vieja recupera nitidez */
+  .he-grid.honest .he-eq:not(.he-b):hover { opacity: 1; }
+
+  /* padding lateral ajustado (7px): con once columnas es lo que permite que la
+     cifra más ancha, −$105.08, no se recorte dentro del ancho del contenedor. */
+  .he-h, .he-c { padding: 8px 7px; text-align: right; overflow: hidden; box-sizing: border-box; }
+  .he-h.he-l, .he-c.he-l { text-align: left; }
+  .he-c { white-space: nowrap; }
+  /* Los encabezados se apoyan en la regla inferior (align-items:flex-end): el
+     alto reservado —para que al abrir columnas los rótulos de 2 líneas no muevan
+     la tabla— queda como aire ARRIBA, no como un hueco entre rótulo y regla. */
+  .he-h {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-mut); border-bottom: 2px solid var(--anchor);
+    padding-bottom: 12px; line-height: 1.35; white-space: nowrap; align-self: stretch;
+    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 42px;
+  }
+  .he-h.he-l { justify-content: flex-start; }
+  .he-lab {
+    cursor: help; border-bottom: 1px dotted var(--hair); padding-bottom: 1px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .he-lab:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  /* Inversión y Valor mer. son las dos columnas que la hoja compara entre sí. El
+     recuadro punteado las marca como par — van salteadas (4ª y 7ª), así que el
+     recuadro + la línea que las une es lo único que las agrupa. El color del
+     rótulo NO se toca: el morado en el texto competía con los datos. */
+  .he-h.he-mark .he-lab { border: 1px dashed var(--mark); padding: 3px 6px; }
+
+  /* Puente entre los dos recuadros. La fila abarca la tabla entera y el tramo
+     visible se posiciona con JS (placeBridge) midiendo el borde derecho de la
+     caja de Inversión y el izquierdo de la de Valor mer. — los recuadros van
+     alineados a la derecha dentro de su celda, así que ningún grid-column los
+     alcanza; hay que medirlos. */
+  .he-bridge { grid-column: 1 / 9; align-self: end; position: relative; height: 22px; }
+  .he-bridge-hit {
+    position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: none; border: none; padding: 0; font: inherit;
+  }
+  .he-bridge-hit::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    border-top: 1px dashed var(--mark);
+  }
+  .he-bridge-lab {
+    position: relative; z-index: 1; background: var(--ground); padding: 0 8px;
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--mark);
+    white-space: nowrap; transition: opacity .15s ease;
+  }
+  .he-bridge-lab::after { content: " ⓘ"; }
+  .he-bridge-hit:hover .he-bridge-lab { opacity: .7; }
+  .he-bridge-hit:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+  @media (max-width: 700px) { .he-bridge-lab { font-size: 8px; padding: 0 5px; } }
+
+  /* Cada lectura son dos bandas: sus cifras y su ecuación. La línea va al final de
+     la ecuación, no entre ambas, porque pertenecen a la misma lectura. */
+  .he-c { font-size: 12.5px; font-weight: 700; color: var(--ink); padding-top: 13px; padding-bottom: 5px; }
+  .he-eq { border-bottom: 2px solid var(--anchor); }
+  .he-grid.honest .he-eq:not(.he-b) { border-bottom: 1px solid var(--hair-soft); }
+  /* La lectura reservada lleva 1px mientras está oculta y 2px cuando cierra la
+     tabla: la suma de bordes —y el alto total— es la misma en las dos fases. */
+  .he-eq.he-b { border-bottom-width: 1px; }
+  .he-grid.honest .he-eq.he-b { border-bottom-width: 2px; }
+  .he-c.he-mono { font-family: var(--font-mono); font-weight: 400; color: var(--ink-mut); }
+  .he-c.he-tk { font-family: var(--font-sans); font-weight: 800; color: var(--ink); }
+  .he-c.he-muted { color: var(--ink-mut); font-weight: 600; }
+  .he-c.he-nra { color: var(--loss); }
+  .he-c.he-cash { color: var(--cash); }
+  .he-c.he-loss { color: var(--loss); }
+
+  /* La advertencia la lleva el color, no una caja: con once columnas, un bloque
+     de fondo pesa más que la cifra que señala. */
+  .he-h.he-warn, .he-c.he-warn { color: var(--warn); }
+  .he-h.he-nra { color: var(--loss); }
+  .he-h.he-cash { color: var(--cash); }
+
+  /* ---- estado corregido: la hoja deja de mentir a la vista ---- */
+  /* «Total inv.» conserva su franja para marcar la columna, pero el ⚠ y el ámbar
+     son de la lectura vieja: en la fila corregida esa cifra ya es correcta. */
+  .he-grid.honest .he-c.he-warn { color: var(--ink-mut); }
+  .he-grid.honest .he-h.he-warn { color: var(--ink-mut); }
+  /* La franja de advertencia es de la CIFRA inflada, no de la columna entera: en
+     la lectura corregida ese total ya es correcto, así que no la lleva. */
+  .he-grid.honest .he-c.he-warn.he-b { color: var(--ink); background: none; }
+  /* Las sub-líneas de DRIP y Efectivo ocupan el segundo renglón que la fila YA
+     tiene por el `%` del retorno, así que encender el interruptor no mueve nada
+     verticalmente. Deben caber en UNA línea: si envuelven, la fila crece y empuja
+     todo lo de abajo (medido, no estimado). */
+
+  /* Las columnas del desglose ocupan su sitio desde el principio: en la fila «Tu
+     hoja» llevan un guion, porque esa información la hoja vieja no la tiene. Sus
+     rótulos van atenuados mientras no hay con qué llenarlas. */
+  .he-opt .he-lab { opacity: .45; }
+  .he-grid.honest .he-opt .he-lab { opacity: 1; }
+  .he-ph { color: var(--hair); font-weight: 400; }
+
+  .he-sub { display: block; font-size: 9px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-mut); margin-top: 1px; white-space: normal; }
+  .he-sub.cash { color: var(--cash); }
+
+  /* cierre de la sección: ambos textos en la misma celda, el inactivo reserva su
+     espacio con visibility (no display:none), para que nada de abajo se mueva. */
+  .he-compare { display: grid; }
+  .he-cmp-txt { grid-area: 1 / 1; margin: 0; transition: opacity .2s ease; }
+  .he-cmp-txt.off { visibility: hidden; opacity: 0; }
+
+
+  .he-switches { display: flex; flex-wrap: wrap; gap: 22px; margin: 12px 0 12px 2px; }
+  @media (max-width: 620px) { .he-switches { flex-direction: column; gap: 12px; } }
+  .he-switch-row { display: flex; align-items: center; gap: 10px; }
+  .he-switch {
+    width: 34px; height: 18px; padding: 2px; border: 1px solid var(--hair); background: var(--panel-tint);
+    cursor: pointer; flex: none; box-sizing: border-box; transition: background .2s ease, border-color .2s ease;
+  }
+  .he-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .he-switch .he-knob {
+    display: block; width: 12px; height: 12px; background: var(--ink-mut);
+    transform: translateX(0); transition: transform .2s ease, background .2s ease;
+  }
+  .he-switch[aria-checked="true"] { background: var(--ink); border-color: var(--ink); }
+  .he-switch[aria-checked="true"] .he-knob { transform: translateX(16px); background: var(--panel); }
+  .he-switch-lab { font-family: var(--font-sans); font-size: 13.5px; color: var(--ink-2); }
+  .he-switch[aria-checked="true"] + .he-switch-lab { color: var(--ink); font-weight: 600; }
+  .he-switch-cap { display: block; font-size: 11px; font-weight: 400; color: var(--ink-mut); margin-top: 2px; }
+  /* BASE FISCAL (Método tradicional) ahora son 3 chips .cmp-chip, no un
+     interruptor — cada uno trae su propia etiqueta fija, así que activar uno
+     no cambia ancho de nada, solo color. Lo único que sigue variando de largo
+     entre modos es la leyenda (#tmModoCap) y la nota de la matriz 3; ambas se
+     miden en vivo (ajustarBaseFiscal en initMetodo), no se estiman. */
+
+  /* ============ MÉTODO TRADICIONAL: la hoja de la clase auditada ============ */
+  /* Reutiliza el vocabulario de HOJA EXCEL (.he-grid/.he-c/.he-h/.he-lab/.he-eq/
+     .he-switch) y de COMPARACIÓN (.cmp-head/.cmp-title/.cmp-lede/.cmp-summary/
+     .cmp-notes/.cmp-chip). Solo se añaden los layouts que no tienen precedente:
+     el grid de 8 columnas de la matriz, el de 5 de la prueba DRIP, el de 4 del
+     payback y el de 5 de tasa-vs-yield; la fila-escalón del rendimiento; y las
+     calculadoras vivas de las fallas 1 y 6. */
+  /* Todas en `fr`: las tablas LLENAN el ancho del contenedor en vez de encogerse
+     a la izquierda. El min-width es el piso por debajo del cual sí conviene hacer
+     scroll (móvil), no el ancho de trabajo — en escritorio siempre sobra sitio y
+     las columnas se reparten el espacio. */
+  .tm-grid { min-width: 680px; grid-template-columns: 64px 88px minmax(0,0.85fr) minmax(0,1.05fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr); }
+  .tm-grid2 { min-width: 320px; grid-template-columns: 64px minmax(0,0.85fr) minmax(0,0.65fr); }
+  .tm-grid3 { min-width: 460px; grid-template-columns: 72px minmax(0,1fr) minmax(0,1.15fr) minmax(0,1.3fr); }
+  /* matrices 2 y 3: el mismo dinero contado por sus dos destinos posibles.
+     Mismas proporciones en las columnas que comparten, para que se lean como un
+     par y las cifras equivalentes caigan alineadas entre una tabla y la otra. */
+  /* tm-grid6 ahora sirve a "Sin DRIP" (creció de 5 a 6 columnas al sumar
+     Devuelto) — mismas proporciones, no hacía falta tocarlas: Devuelto es
+     tan angosto como el resto. tm-grid7 es "Con DRIP" (de 6 a 7), extensión
+     directa del mismo patrón con una columna más antes de Total. */
+  .tm-grid6 { min-width: 560px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
+  .tm-grid7 { min-width: 650px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
+  .tm-grid4 { min-width: 520px; grid-template-columns: 64px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
+
+  /* Solo en pantallas angostas se aprieta la familia "Método tradicional":
+     tipografía y padding menores, encabezados que envuelven (min-height reserva
+     el alto) y columnas en px medidas para que la tabla entre sin scroll. En
+     escritorio nada de esto aplica y las tablas respiran. */
+  @media (max-width: 700px) {
+    /* letter-spacing casi a cero: es lo que permite que «DIVIDENDOS» e
+       «INVERSIÓN» quepan ENTERAS en su columna. Con el espaciado normal se
+       partían a mitad de palabra, que es lo que se veía apeñuscado. */
+    .he-grid[class*="tm-grid"] .he-h {
+      font-size: 8px; letter-spacing: 0.02em; line-height: 1.25; white-space: normal;
+      overflow-wrap: anywhere; padding: 0 3px 7px; min-height: 27px;
+    }
+    .he-grid[class*="tm-grid"] .he-c { font-size: 11px; padding: 7px 3px 4px; }
+    .tm-grid2 { min-width: 280px; grid-template-columns: 52px minmax(0,0.85fr) minmax(0,0.65fr); }
+    .tm-grid3 { min-width: 330px; grid-template-columns: 52px minmax(0,1fr) minmax(0,1.15fr) minmax(0,1.3fr); }
+    /* minmax(): el px es el piso que garantiza que la cifra no se recorte, el fr
+       reparte el sobrante para que la tabla llene el ancho en vez de dejar un
+       hueco a la derecha — y de paso «DIVIDENDOS» cabe entero en su renglón. */
+    .tm-grid6 { min-width: 342px; grid-template-columns: 46px minmax(76px,1.25fr) minmax(54px,1fr) minmax(54px,1fr) minmax(55px,1fr) minmax(57px,1fr); }
+    .tm-grid7 { min-width: 398px; grid-template-columns: 46px minmax(76px,1.25fr) minmax(54px,1fr) minmax(54px,1fr) minmax(54px,1fr) minmax(55px,1fr) minmax(57px,1fr); }
+    .tm-grid4 { min-width: 360px; grid-template-columns: 48px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
+  }
+  /* Teléfonos: un punto menos en las cifras compra el ancho que falta para que
+     también aquí entren sin scroll. El corte va en 460px —no en 400— desde que
+     «Con DRIP» tiene 7 columnas: con el escalón anterior, un iPhone Pro Max
+     (430px) caía en la regla de 700px y se comía la columna Total. */
+  @media (max-width: 460px) {
+    .he-grid[class*="tm-grid"] .he-c { font-size: 10.5px; }
+    .tm-grid6 { min-width: 326px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
+    .tm-grid7 { min-width: 380px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
+  }
+  /* Por debajo de ~412px las 7 columnas de «Con DRIP» ya no caben: medido, el
+     contenido pide 371px de pistas y la caja da 343px en un iPhone SE/13/14/15.
+     Apretar la tipografía por debajo de 9.5px recorta las cifras dentro de su
+     propia celda, que es peor que deslizar. Se deja el scroll horizontal del
+     .he-scroll, el mismo mecanismo que la tabla ya usaba a 320px. */
+
+  /* fila destacada como contraejemplo (payback bueno, retorno negativo) — mismo
+     tinte que .he-c.col-lit, así hereda el mismo significado visual (columna/fila
+     que hay que mirar con cuidado) sin inventar un color nuevo */
+  .tm-flag { background: var(--accent-tint); }
+
+  .tm-context { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 2px 0 12px 2px; }
+
+  /* ---- vista 3: escalera del rendimiento — un escalón por fila, no se mueve nada,
+     solo se lee de arriba a abajo ---- */
+  .tm-escalera { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .tm-step {
+    display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 10px 18px;
+    padding: 13px 16px; background: var(--panel); border: 1px solid var(--hair); border-left: 3px solid var(--hair-soft);
+  }
+  .tm-step-lab { font-size: 13.5px; color: var(--ink-2); font-weight: 600; }
+  .tm-step-val { text-align: right; font-size: 17px; font-weight: 700; }
+  .tm-step-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-mut); margin-top: -2px; }
+  .tm-step-anual { font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
+  .tm-step.mal { border-left-color: var(--loss); } .tm-step.mal .tm-step-val { color: var(--loss); }
+  .tm-step.ok { border-left-color: var(--ink-mut); } .tm-step.ok .tm-step-val { color: var(--ink); }
+  .tm-step.na { border-left-color: var(--hair); } .tm-step.na .tm-step-val { color: var(--ink-mut); }
+  .tm-step.real { border-left-color: var(--accent); background: var(--accent-tint); } .tm-step.real .tm-step-val { color: var(--accent); }
+
+  /* ---- vista 5: las seis fallas — misma tarjeta visual que .meth-item, con otro
+     nombre de clase porque vive fuera de la vista Metodología ---- */
+  .tm-fallas { display: flex; flex-direction: column; gap: 22px; margin-top: 26px; }
+  .tm-falla { border-left: 2px solid var(--hair); padding-left: 16px; }
+  .tm-falla-h { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); margin: 0 0 8px; line-height: 1.3; }
+  .tm-falla-p { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 8px; }
+  .tm-falla-p b { color: var(--ink); font-weight: 600; }
+  .tm-falla-p i.num { color: var(--ink); }
+
+  /* ---- calculadoras vivas (fallas 1 y 6) — mismo lenguaje visual que los
+     controles de Comparación: .cmp-field/.cmp-lab agrupan el control con su
+     etiqueta mono en mayúsculas ---- */
+  .tm-calc { margin-top: 12px; padding: 14px 16px; background: var(--panel-tint); border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 12px; }
+  .tm-calc-row { display: flex; align-items: center; gap: 12px; }
+  .tm-calc-row input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 0; }
+  .tm-calc-row .num { width: 76px; text-align: right; font-weight: 700; color: var(--ink); flex-shrink: 0; }
+  .tm-calc-out { font-size: 13.5px; color: var(--ink-2); }
+  .tm-calc-out .num.big { font-size: 19px; font-weight: 700; color: var(--ink); }
+
+  @keyframes grow { to { transform: scaleY(1); } }
+  @keyframes pop { to { opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .seg { animation: none; transform: scaleY(1); }
+    .sq { animation: none; opacity: 1; }
+    .costline, .gap-band { animation: none; }
+    #tip { transition: none; }
+    .he-opt, .he-switch, .he-switch .he-knob { transition: none; }
+  }
+
+  /* ---- modal popup: Máx. sin DRIP ---- */
+  #modal-max {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-max.open { display: flex; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--hair);
+    max-width: 500px; width: 100%; padding: clamp(22px, 4vw, 34px);
+    position: relative; max-height: 90vh; overflow-y: auto;
+    animation: fadeIn .18s ease both;
+  }
+  .modal-close {
+    position: absolute; top: 12px; right: 14px;
+    font-family: var(--font-mono); font-size: 20px; font-weight: 700;
+    background: none; border: none; color: var(--ink-mut); cursor: pointer;
+    line-height: 1; padding: 4px 8px; transition: color .12s ease;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-eyebrow {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+  }
+  .modal-title {
+    font-family: var(--font-mono); font-size: 16px; font-weight: 700;
+    color: var(--ink); margin: 0 0 14px; letter-spacing: -0.01em;
+  }
+  .modal-lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+  .modal-lede b { color: var(--ink); font-weight: 600; }
+  .modal-formula {
+    background: var(--panel-tint); border-left: 3px solid var(--accent);
+    padding: 14px 16px; margin: 0 0 16px;
+  }
+  .mf-eq {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    color: var(--accent); display: block; margin-bottom: 14px; line-height: 1.4;
+  }
+  .mf-table { width: 100%; border-collapse: collapse; }
+  .mf-table td {
+    font-family: var(--font-mono); font-size: 12.5px; padding: 5px 0;
+    border-bottom: 1px solid var(--hair-soft); vertical-align: baseline;
+  }
+  .mf-table tr:last-child td { border-bottom: none; padding-top: 10px; font-weight: 700; font-size: 13px; }
+  .mf-table td:last-child { text-align: right; }
+  .mf-label { color: var(--ink-mut); }
+  .mf-val { color: var(--ink); }
+  .mf-val.loss { color: var(--loss); }
+  .mf-val.cash { color: var(--cash); }
+  .modal-note { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.6; }
+  .modal-note b { color: var(--ink-2); font-weight: 600; }
+  /* igual que en .cmp-notes: he-cash/he-loss solo colorean junto a .he-c, y aquí
+     se usan sueltos dentro del texto del modal */
+  .modal-box .he-cash { color: var(--cash); }
+  .modal-box .he-loss { color: var(--loss); }
+  /* indicador de clic en el encabezado */
+  .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-max"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-p-real"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-real"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .mf-val.accent { color: var(--accent); }
+  /* indicadores ⓘ para Valor DRIP y Valor cash */
+  .he-lab[data-tip="tm-p-drip"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-drip"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-p-cash"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-cash"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-tot"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-tot"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-tuinv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-tuinv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-max"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-max"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-div"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-div"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-inv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-inv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-invhoy"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-invhoy"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-driphoy"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-driphoy"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-drip"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-drip"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-ahora"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-ahora"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  /* ⓘ de las columnas de la MATRIZ 1 (Acción e Inicio quedan sin modal a propósito:
+     son identificadores, no cifras que se puedan malinterpretar) */
+  .he-lab[data-tip="tm-rendimiento"],
+  .he-lab[data-tip="tm-inversion"],
+  .he-lab[data-tip="tm-dividendos"],
+  .he-lab[data-tip="tm-totalinv"],
+  .he-lab[data-tip="tm-valor"],
+  .he-lab[data-tip="tm-ultimodiv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-rendimiento"]::after,
+  .he-lab[data-tip="tm-inversion"]::after,
+  .he-lab[data-tip="tm-dividendos"]::after,
+  .he-lab[data-tip="tm-totalinv"]::after,
+  .he-lab[data-tip="tm-valor"]::after,
+  .he-lab[data-tip="tm-ultimodiv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-dividendos"]::after,
+  .he-lab[data-tip="tm-valor"]::after { color: var(--cash); }
+  /* Total inv. es la otra observación nuestra, pero NO entra en la comparación:
+     por eso lleva el morado sin recuadro — el recuadro queda reservado al par
+     que sí se compara entre sí. El color hace aquí el trabajo que allá hace la
+     caja, así que este rótulo sí va teñido. */
+  .he-lab[data-tip="tm-totalinv"],
+  .he-lab[data-tip="tm-totalinv"]::after { color: var(--mark); }
+  .he-lab[data-tip="tm-totalinv"]:hover { color: var(--mark); border-bottom-color: var(--mark); }
+  #modal-tmrend, #modal-tminv, #modal-tmdiv,
+  #modal-tmtot, #modal-tmval, #modal-tmult, #modal-tmcmp {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-tmrend.open, #modal-tminv.open, #modal-tmdiv.open,
+  #modal-tmtot.open, #modal-tmval.open, #modal-tmult.open, #modal-tmcmp.open { display: flex; }
+  /* modales DRIP y CASH */
+  #modal-drip, #modal-cash {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-drip.open { display: flex; }
+  #modal-cash.open { display: flex; }
+  #modal-real {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-real.open { display: flex; }
+  #modal-sintot {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-sintot.open { display: flex; }
+  #modal-sinmax, #modal-sindiv, #modal-sintuinv {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-sinmax.open { display: flex; }
+  #modal-sindiv.open { display: flex; }
+  #modal-sintuinv.open { display: flex; }
+  #modal-coninv, #modal-condrip, #modal-contot, #modal-coninvhoy, #modal-condriphoy {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-coninv.open { display: flex; }
+  #modal-coninvhoy.open { display: flex; }
+  #modal-condrip.open { display: flex; }
+  #modal-condriphoy.open { display: flex; }
+  #modal-contot.open { display: flex; }
+</style>
+<style>
+  body { margin: 0; background: var(--ground); }
+</style>
+<main class="wrap" style="padding-top:0">
+<div class="panel" id="panel-hoja" role="tabpanel" hidden>
+    <header class="cmp-head">
+      <h2 class="cmp-title">Hoja Excel · con el error y sin él</h2>
+      <p class="cmp-lede">Esta es la hoja de cálculo de toda la vida, con tus números. Enciende el interruptor y verás qué le falta — y por qué la pérdida que muestra <b>no es la real</b>.</p>
+    </header>
+
+    <section class="he-block">
+      <div class="he-switches">
+        <div class="he-switch-row">
+          <button type="button" role="switch" aria-checked="false" class="he-switch" id="heSwHonest"><i class="he-knob"></i></button>
+          <span class="he-switch-lab">Corregir la hoja
+            <small class="he-switch-cap">Añade abajo la misma fila con el desglose y el retorno real, para compararlas.</small>
+          </span>
+        </div>
+      </div>
+
+      <p class="he-context" id="heContext"></p>
+
+      <div class="he-scroll">
+        <!-- Dos lecturas de la MISMA posición, una debajo de otra en la misma
+             cuadrícula: los números que hay que comparar quedan en la misma
+             columna, a una fila de distancia, sin encabezados repetidos en medio. -->
+        <div class="he-grid" id="heGrid">
+          <div class="he-h he-l"><span class="he-lab" data-tip="lectura">Lectura</span></div>
+          <div class="he-h"><span class="he-lab" data-tip="inversion">Inversión</span></div>
+          <div class="he-h he-opt he-opt-bruto"><span class="he-lab" data-tip="bruto">Brutos</span></div>
+          <div class="he-h he-nra he-opt he-opt-nra"><span class="he-lab" data-tip="nra">− Imp. NRA</span></div>
+          <div class="he-h"><span class="he-lab" data-tip="netos">Netos</span></div>
+          <div class="he-h he-opt he-opt-drip"><span class="he-lab" data-tip="drip">DRIP</span></div>
+          <div class="he-h he-cash he-opt he-opt-cash"><span class="he-lab" data-tip="efectivo">Efectivo</span></div>
+          <div class="he-h he-warn"><span class="he-lab" data-tip="totalinv">Total inv.</span></div>
+          <div class="he-h"><span class="he-lab" data-tip="valor">Valor mer.</span></div>
+          <div class="he-h"><span class="he-lab" data-tip="retorno">Retorno</span></div>
+
+          <!-- fila 1 · la hoja tal como la tienes -->
+          <div class="he-c he-l he-row-lab" id="heLabA">Tu hoja</div>
+          <div class="he-c num c-inv" id="heInversion"></div>
+          <div class="he-c num he-muted he-opt he-opt-bruto" id="heBrutoA"></div>
+          <div class="he-c num he-nra he-opt he-opt-nra" id="heNraA"></div>
+          <div class="he-c num c-div" id="heNetos"></div>
+          <div class="he-c num he-muted he-opt he-opt-drip" id="heDripA"></div>
+          <div class="he-c num he-cash he-opt he-opt-cash c-efvo" id="heCashA"></div>
+          <div class="he-c num he-warn c-total" id="heTotalinv"></div>
+          <div class="he-c num c-valor" id="heValor"></div>
+          <div class="he-c num c-ret" id="heRetornoA"></div>
+          <!-- de dónde salen las dos cifras que discrepan, con las cifras de esta fila -->
+          <div class="he-eq" id="heEqA"></div>
+
+          <!-- fila 2 · la misma posición, sin el error (aparece con el interruptor) -->
+          <div class="he-c he-l he-row-lab he-b" id="heLabB">Corregida</div>
+          <div class="he-c num he-b c-inv" id="heInversionB"></div>
+          <div class="he-c num he-muted he-b" id="heBrutoB"></div>
+          <div class="he-c num he-nra he-b" id="heNraB"></div>
+          <div class="he-c num he-b c-div" id="heNetosB"></div>
+          <div class="he-c num he-muted he-b c-drip" id="heDripB"></div>
+          <div class="he-c num he-cash he-b c-efvo" id="heCashB"></div>
+          <div class="he-c num he-warn he-b c-total" id="heTotalinvB"></div>
+          <div class="he-c num he-b c-valor" id="heValorB"></div>
+          <div class="he-c num he-b c-ret" id="heRetornoB"></div>
+          <div class="he-eq he-b" id="heEqB"></div>
+        </div>
+      </div>
+
+      <!-- Los dos textos de cierre se apilan en la MISMA celda de grid: el alto
+           reservado es siempre el del más largo, así encender el interruptor no
+           empuja lo que viene debajo (en ningún ancho de pantalla). -->
+      <div class="cmp-summary he-compare" id="heCompare">
+        <p class="he-cmp-txt" id="heCompareNaive"></p>
+        <p class="he-cmp-txt" id="heCompareHonest"></p>
+      </div>
+    </section>
+  </div>
+</main>
+<div id="tip" role="status"></div>
+<script>
+(function () {
+  "use strict";
+  // ---------- tooltip ----------
+  var tip = document.getElementById("tip");
+  function showTip(html, x, y) {
+    tip.innerHTML = html; tip.classList.add("on");
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var left = x + 14, top = y - h - 12;
+    if (left + w > window.innerWidth - 8) left = x - w - 14;
+    if (top < 8) top = y + 18;
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  function hideTip() { tip.classList.remove("on"); }
+  function tipHtml(c) {
+    return '<div class="t-h">' + c.th + '</div><div class="t-v">' + c.tv + '</div>' +
+           '<div style="margin-top:4px;opacity:.85">' + c.td + '</div>';
+  }
+(function initHoja() {
+    // El ROC no vive en esta matriz: no cambia el capital aportado ni el valor de
+    // hoy. Sus dos efectos reales (devolución de la retención NRA y base de costo)
+    // se explican al pie y se enlazan a las secciones que sí los tratan.
+    var D = {{DATA_JSON}};
+    var POCKET = D.POCKET, BRUTO = D.BRUTO, IMPUESTO = D.IMPUESTO, NETO = D.NETO, DRIP = D.DRIP, CASH = D.CASH, TOTAL_TRABAJANDO = D.TOTAL_TRABAJANDO, MERCADO = D.MERCADO, VALOR_HOY = D.VALOR_HOY, CAPITAL_ACTUAL = D.CAPITAL_ACTUAL, RESULTADO = D.RESULTADO, PICO = D.PICO;
+    var INICIO = D.INICIO, TICKER = D.TICKER;
+    var TOTALINV = POCKET + NETO;
+
+    // El «retorno aparente» de la hoja vieja: Valor mer. + Dividendos − Inversión.
+    // Usa los MISMOS dividendos netos que la lectura honesta; la única diferencia
+    // es que vuelve a sumar el DRIP, que ya está dentro del valor de mercado. Por
+    // eso la brecha contra el retorno real es exactamente el reinvertido.
+    var APARENTE = VALOR_HOY + NETO - POCKET;
+
+    function money(x) { return "$" + Math.abs(x).toFixed(2); }
+    function neg(x) { return "−$" + Math.abs(x).toFixed(2); }
+    function signed(x) { return (x >= 0 ? "+" : "−") + "$" + Math.abs(x).toFixed(2); }
+    function pctOf(x) { var p = x / POCKET * 100; return (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%"; }
+    function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
+    function setHtml(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+    // El encabezado del retorno queda neutro («Retorno») porque sirve a las dos
+    // filas; cuál es cuál lo dice la etiqueta de la fila, así que aquí basta la
+    // cifra y su porcentaje.
+    function retornoCell(id, val) {
+      setHtml(id, '<span class="he-loss">' + signed(val) + '</span>' +
+        '<span class="he-sub">(' + pctOf(val) + ")</span>");
+    }
+
+    // El contexto de la posición va arriba: con un solo ETF, fecha y ticker serían
+    // dos columnas constantes repetidas en las dos filas.
+    setHtml("heContext", TICKER + " · desde el " + INICIO);
+
+    // Fila 1 — la hoja tal como la tienes. Las cuatro columnas del desglose llevan
+    // un guion: esa información no existe en ella.
+    setText("heInversion", money(POCKET));
+    ["heBrutoA", "heNraA", "heDripA", "heCashA"].forEach(function (id) {
+      setHtml(id, '<span class="he-ph">—</span>');
+    });
+    setText("heNetos", money(NETO));
+    setText("heTotalinv", money(TOTALINV));
+    setText("heValor", money(VALOR_HOY));
+    retornoCell("heRetornoA", APARENTE);
+
+    // Fila 2 — la misma posición, sin el error. Las columnas que no cambian
+    // repiten el valor a propósito: leer la columna hacia abajo debe mostrar
+    // dónde SÍ y dónde NO cambia nada.
+    setText("heInversionB", money(POCKET));
+    setText("heBrutoB", money(BRUTO));
+    setText("heNraB", neg(IMPUESTO));
+    setText("heNetosB", money(NETO));
+    // Par simétrico y corto (cabe en una línea hasta 390 px, medido): dice qué
+    // entra y qué no en la fórmula del retorno.
+    // «entrar» tiene referente visible: la ecuación que va justo debajo.
+    setHtml("heDripB", money(DRIP) + '<span class="he-sub">no entra</span>');
+    setHtml("heCashB", money(CASH) + '<span class="he-sub cash">sí entra</span>');
+    // El «total invertido» honesto es lo que aportaste, ni un dólar más: repetir
+    // aquí los $861.40 sería avalar la fórmula de la hoja vieja.
+    setText("heTotalinvB", money(POCKET));
+    setText("heValorB", money(VALOR_HOY));
+    retornoCell("heRetornoB", RESULTADO);
+
+    // El texto de cierre cambia con el estado: apagado invita a corregir, encendido
+    // nombra la brecha con sus propios números.
+    // ---- cintas de ecuación: de dónde sale cada cifra que discrepa ----
+    // Se arman con las mismas constantes que la tabla; ninguna cifra se escribe
+    // a mano. Cada término apunta a su columna (data-col) para poder iluminarla.
+    function term(val, nombre, col, cls) {
+      return '<span class="eq-t' + (cls ? " " + cls : "") + '" data-col="' + col + '">' +
+        val + " " + nombre + "</span>";
+    }
+    function op(s) { return '<span class="eq-op">' + s + "</span>"; }
+    function eqLine(lab, res, cuerpo) {
+      return '<div><span class="eq-lab">' + lab + '</span><span class="eq-res">' + res +
+        "</span>" + op("=") + cuerpo + "</div>";
+    }
+
+    // «Valor mer.» no lleva ecuación: sería precio × acciones y el demo no tiene
+    // esos dos números por separado — inventarlos sería fabricar datos.
+    setHtml("heEqA",
+      eqLine("Total inv.", money(TOTALINV),
+        term(money(POCKET), "inversión", "inv") + op("+") +
+        term(money(NETO), "dividendos", "div", "is-warn")) +
+      eqLine("Retorno", signed(APARENTE),
+        term(money(VALOR_HOY), "valor mer.", "valor") + op("+") +
+        term(money(NETO), "dividendos", "div", "is-warn") + op("−") +
+        term(money(POCKET), "inversión", "inv")));
+
+    setHtml("heEqB",
+      // Misma forma que la ecuación de arriba, con la cifra a la vista: lo que
+      // cambia es que el término «+ dividendos» ya no está.
+      eqLine("Total inv.", money(POCKET),
+        term(money(POCKET), "inversión", "inv") +
+        ' <span class="eq-note">— sin sumar dividendos: son retorno, no capital</span>') +
+      eqLine("Retorno", signed(RESULTADO),
+        term(money(VALOR_HOY), "valor mer.", "valor") + op("+") +
+        term(money(CASH), "efectivo", "efvo", "is-cash") + op("−") +
+        term(money(POCKET), "inversión", "inv")));
+
+    // Al pasar el cursor por un término, se ilumina esa cifra en la tabla: es lo
+    // que ata la fórmula a los números en vez de dejarla como texto suelto. Cada
+    // cinta señala SOLO su propia lectura — la de «Tu hoja» no toca la fila
+    // corregida, y al revés; si no, el resaltado diría que el término pertenece
+    // a las dos, que es justo lo que la sección intenta distinguir.
+    function bindEq(cintaId, filtroFila) {
+      Array.prototype.forEach.call(document.querySelectorAll("#" + cintaId + " .eq-t"), function (el) {
+        var sel = "#heGrid .c-" + el.getAttribute("data-col") + filtroFila;
+        function on() {
+          Array.prototype.forEach.call(document.querySelectorAll(sel),
+            function (c) { c.classList.add("col-lit"); });
+        }
+        function off() {
+          Array.prototype.forEach.call(document.querySelectorAll("#heGrid .col-lit"),
+            function (c) { c.classList.remove("col-lit"); });
+        }
+        el.addEventListener("mouseenter", on);
+        el.addEventListener("mouseleave", off);
+      });
+    }
+    bindEq("heEqA", ":not(.he-b)");   // fila «Tu hoja»
+    bindEq("heEqB", ".he-b");         // fila «Corregida»
+
+    // Las dos cintas deben medir lo mismo pase lo que pase: en pantallas estrechas
+    // las ecuaciones se parten en líneas y cada una puede repartirlas distinto, lo
+    // que movería todo lo de abajo al accionar el interruptor. Se igualan por
+    // MEDICIÓN (no por un alto fijo estimado), y se recalcula al cambiar de ancho.
+    var eqA = document.getElementById("heEqA"), eqB = document.getElementById("heEqB");
+    function igualarCintas() {
+      eqA.style.minHeight = eqB.style.minHeight = "";
+      var alto = Math.max(eqA.getBoundingClientRect().height, eqB.getBoundingClientRect().height);
+      eqA.style.minHeight = eqB.style.minHeight = alto + "px";
+    }
+    ajustarHoja = igualarCintas;      // showTab lo llama al abrir la sección
+    igualarCintas();
+    var _reflow;
+    window.addEventListener("resize", function () {
+      clearTimeout(_reflow);
+      _reflow = setTimeout(igualarCintas, 150);
+    });
+
+    // Conclusión única, con los números del usuario. Apagada explica la primera
+    // trampa (sumar retorno como si fuera capital); encendida, la de fondo: el
+    // reinvertido contado dos veces.
+    setHtml("heCompareNaive",
+      'Tu hoja dice que perdiste <b>' + money(APARENTE) + '</b>. Pero de los ' + money(TOTALINV) +
+      ' que llama «total invertido», solo <b>' + money(POCKET) + '</b> salieron de tu bolsillo: ' +
+      'los otros ' + money(NETO) + ' son retorno que el fondo te devolvió, no capital que pusiste. ' +
+      'Enciende <b>«Corregir la hoja»</b> para ver qué más le falta.');
+    setHtml("heCompareHonest",
+      'Los <b>' + money(DRIP) + '</b> que reinvertiste ya compraron más acciones del fondo: ' +
+      'viven dentro de los ' + money(VALOR_HOY) + ' del valor de mercado. La hoja vieja los suma ' +
+      '<b>otra vez</b> como si además los tuvieras en el bolsillo — el mismo dinero contado dos ' +
+      'veces, cuando solo debe contarse una. Contándolo una sola vez, la pérdida real es ' +
+      '<b class="dn">' + signed(RESULTADO) + '</b>, no ' + signed(APARENTE) + '.');
+
+    // tooltips por encabezado — mismo patrón que el waterfall (showTip global en mouseenter/mousemove)
+    var HE_TIP = {
+      lectura: "Dos lecturas de la <b>misma</b> posición y los <b>mismos</b> pagos: arriba la de tu hoja de cálculo, abajo la corregida. Lee cada columna hacia abajo para ver dónde cambia el número — y dónde no.",
+      inversion: "Lo que pusiste de tu <b>bolsillo</b> (costo base): el capital real que aportaste, sin contar dividendos.",
+      netos: "Los dividendos que de verdad entraron a tu cuenta, <b>ya descontado</b> el impuesto NRA. Incluye lo reinvertido (DRIP) y el efectivo.",
+      bruto: "El dividendo <b>bruto</b>: lo que el fondo declaró, <b>antes</b> de la retención de impuesto a extranjeros.",
+      nra: "El impuesto que EE.UU. retiene a extranjeros (~30%) <b>antes</b> de depositarte el dividendo. Por eso el neto es menor que el bruto.",
+      drip: "La parte del dividendo que se <b>reinvirtió</b>: compró más acciones del fondo. Ese dinero <b>ya está dentro del «Valor mer.»</b> — sumarlo otra vez al retorno es contarlo dos veces.",
+      efectivo: "La parte del dividendo que se quedó <b>en efectivo</b>, a salvo del mercado. Es lo <b>único</b> que se suma al retorno además del valor de mercado.",
+      totalinv: "⚠ El método viejo: <b>Inversión + Dividendos</b>, como si los dividendos fueran capital que aportaste. <b>No lo son</b>: son retorno —y en YieldMax buena parte es tu propio capital de vuelta (ROC)—. Esta cifra infla el «invertido».",
+      valor: "Lo que valen hoy tus posiciones a precio de mercado.",
+      retorno: "Arriba, el <b>aparente</b>: Valor mer. + Dividendos − Inversión, la cuenta que sale de la hoja vieja — vuelve a sumar el <b>DRIP</b>, que ya está dentro del valor de mercado, y por eso la pérdida se ve menor. Abajo, el <b>real</b>: Valor mer. + dividendos en <b>efectivo</b> − Inversión. Es la única cifra que dice si ganaste o perdiste."
+    };
+    // El `data-tip` del retorno cambia con el interruptor, así que la descripción
+    // se resuelve en cada hover, no al enganchar el listener.
+    Array.prototype.forEach.call(document.querySelectorAll("#panel-hoja .he-lab[data-tip]"), function (el) {
+      function move(e) {
+        var desc = HE_TIP[el.getAttribute("data-tip")];
+        if (!desc) return;
+        var pt = e.touches ? e.touches[0] : e;
+        showTip('<div class="t-h">' + el.textContent + '</div><div style="opacity:.85">' + desc + '</div>', pt.clientX, pt.clientY);
+      }
+      el.addEventListener("mouseenter", move);
+      el.addEventListener("mousemove", move);
+      el.addEventListener("mouseleave", hideTip);
+    });
+
+    // Un solo interruptor — botón real (role=switch), accesible por teclado. Solo
+    // cambia clases + rótulos; el HTML de las celdas no se re-renderiza.
+    var sw = document.getElementById("heSwHonest"), grid = document.getElementById("heGrid");
+    var cmpNaive = document.getElementById("heCompareNaive"),
+        cmpHonest = document.getElementById("heCompareHonest");
+    var honest = false;
+    function applyHoja() {
+      grid.classList.toggle("honest", honest);
+      sw.setAttribute("aria-checked", String(honest));
+      cmpNaive.classList.toggle("off", honest);
+      cmpHonest.classList.toggle("off", !honest);
+    }
+    sw.addEventListener("click", function () { honest = !honest; applyHoja(); });
+    applyHoja();
+
+  })();
+})();
+</script>

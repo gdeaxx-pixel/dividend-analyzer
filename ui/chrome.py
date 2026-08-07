@@ -143,10 +143,16 @@ def render_ruta() -> Ruta:
     vista = st.session_state.vd_vista
     vistas = _vistas(categoria)
 
-    con_etf = vista == nav.VISTA_CON_ETF and categoria in nav.CATS
+    # El ETF activo se resuelve para TODA categoría con ETFs, no solo Cash flow: Salud
+    # NAV y Hoja Excel siguen necesitando saber de qué ticker hablan, aunque el demo
+    # oculte el tercer segmento del breadcrumb en esas dos vistas (`showTab`: `var
+    # conEtf = (name === "viaje")`). `con_etf` gobierna solo si se DIBUJA el popover;
+    # `tiene_etf` gobierna si existe un ETF de contexto que resolver.
+    tiene_etf = categoria in nav.CATS
+    con_etf = vista == nav.VISTA_CON_ETF and tiene_etf
     etf = None
     clave_etf = f"vd_etf_{categoria}"
-    if con_etf:
+    if tiene_etf:
         etfs = nav.CATS[categoria]
         if st.session_state.get(clave_etf) not in etfs:
             st.session_state[clave_etf] = etfs[0]

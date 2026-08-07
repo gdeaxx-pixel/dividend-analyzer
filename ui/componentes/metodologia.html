@@ -1,0 +1,1184 @@
+<!-- GENERADO POR tools/extract_metodologia.py — NO EDITAR A MANO.
+     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:      #f4f7fa;
+    --panel:       #ffffff;
+    --panel-tint:  #eef4f9;
+    --ink:         #021C36;
+    --ink-2:       #33475a;
+    --ink-mut:     #6a7b8a;
+    --hair:        #d5e0ea;
+    --hair-soft:   #e6edf3;
+
+    --anchor:      #021C36;
+    --drip:        #006497;
+    --cash:        #1f8a5b;
+    --loss:        #A32D2D;
+    --loss-soft:   #cf8a8a;
+    --loss-bg:     rgba(163,45,45,0.10);
+    --accent:      #006497;
+    --accent-tint: rgba(0,100,151,0.10);
+    --warn:        #a06a1a;
+    --mark:        #534AB7;
+
+    --sq-off:      #dbe3ea;
+    --tip-bg:      #021C36;
+    --tip-ink:     #eaf2f8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:     #0b1420;
+      --panel:      #101d2b;
+      --panel-tint: #142639;
+      --ink:        #eaf1f7;
+      --ink-2:      #c3d1de;
+      --ink-mut:    #8598a9;
+      --hair:       #26394c;
+      --hair-soft:  #1c2c3c;
+
+      --anchor:     #b9c9d8;
+      --drip:       #3ea0d6;
+      --cash:       #35b07d;
+      --loss:       #e07a7a;
+      --loss-soft:  #9c5555;
+      --loss-bg:    rgba(224,122,122,0.14);
+      --accent:     #3ea0d6;
+      --accent-tint: rgba(62,160,214,0.14);
+      --warn:       #d9a441;
+      --mark:       #AFA9EC;
+
+      --sq-off:     #2b4056;
+      --tip-bg:     #eaf1f7;
+      --tip-ink:    #0b1420;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --anchor:#021C36; --drip:#006497;
+    --cash:#1f8a5b; --loss:#A32D2D; --loss-soft:#cf8a8a; --loss-bg:rgba(163,45,45,0.10);
+    --accent:#006497; --accent-tint:rgba(0,100,151,0.10); --sq-off:#dbe3ea; --tip-bg:#021C36; --tip-ink:#eaf2f8;
+    --warn:#a06a1a; --mark:#534AB7;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --anchor:#b9c9d8; --drip:#3ea0d6;
+    --cash:#35b07d; --loss:#e07a7a; --loss-soft:#9c5555; --loss-bg:rgba(224,122,122,0.14);
+    --accent:#3ea0d6; --accent-tint:rgba(62,160,214,0.14); --sq-off:#2b4056; --tip-bg:#eaf1f7; --tip-ink:#0b1420;
+    --warn:#d9a441; --mark:#AFA9EC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 40px) 64px;
+  }
+
+  /* ---- navegación: RUTA (breadcrumb) — Categoría › Vista › ETF, cada segmento un
+     menú desplegable. Colapsa dos niveles en una sola línea y el "›" muestra
+     el anidamiento; las secciones quedan como tabs debajo. ---- */
+  .crumb { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .crumb[hidden] { display: none; }
+  .crumb-seg { position: relative; }
+  .crumb-seg[hidden] { display: none; }
+  .crumb-btn {
+    font-family: var(--font-mono); font-size: 15px; font-weight: 700; letter-spacing: 0.01em;
+    padding: 6px 10px; border: 1px solid transparent; background: none; color: var(--ink);
+    cursor: pointer; line-height: 1; display: inline-flex; align-items: center; gap: 8px;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .crumb-btn:hover { border-color: var(--hair); }
+  .crumb-btn[aria-expanded="true"] { background: var(--panel-tint); border-color: var(--hair); }
+  .crumb-caret { font-size: 10px; color: var(--ink-mut); }
+  .crumb-sep { font-family: var(--font-mono); font-size: 16px; color: var(--ink-mut); }
+  .crumb-sep[hidden] { display: none; }
+  .crumb-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 160px;
+    background: var(--panel); border: 1px solid var(--hair); box-shadow: 0 8px 26px rgba(0,0,0,.22);
+    padding: 4px; display: flex; flex-direction: column;
+  }
+  .crumb-menu[hidden] { display: none; }
+  .crumb-item {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600; text-align: left;
+    padding: 8px 12px; border: none; background: none; color: var(--ink-2); cursor: pointer;
+    display: flex; align-items: center; gap: 8px; white-space: nowrap;
+    transition: background .12s ease, color .12s ease;
+  }
+  .crumb-item:hover { background: var(--panel-tint); color: var(--ink); }
+  .crumb-item.active { color: var(--ink); font-weight: 700; }
+  .crumb-item.active::after { content: "●"; margin-left: auto; font-size: 8px; color: var(--accent); }
+  .crumb-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* enlace a la explicación de la sección activa: vive al final de la ruta, que ya
+     es el título de dónde estás, así que aparece en todas las vistas sin duplicarse */
+  .crumb-help {
+    margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+    color: var(--ink-mut); background: none; border: none; padding: 6px 2px; cursor: pointer;
+    white-space: nowrap; transition: color .15s ease;
+  }
+  .crumb-help:hover { color: var(--accent); text-decoration: underline; }
+  .crumb-help:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- Modular Circuitry: la ruta es la misma superficie que la página,
+     no una caja aparte — fondo sólido var(--ground) exacto, sin patrones,
+     con borde dashed y tipografía mono en mayúsculas como único acento. */
+  .crumb {
+    position: relative; gap: 0; margin: 0 0 26px; padding: 13px 16px;
+    background: var(--ground); border: 1px dashed var(--hair);
+  }
+  .crumb-btn {
+    font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+    position: relative; z-index: 1; border-radius: 0;
+  }
+  .crumb-btn:hover { border-color: var(--accent); }
+  .crumb-btn[aria-expanded="true"] {
+    background: var(--accent-tint); border-color: var(--accent); color: var(--accent);
+  }
+  .crumb-caret { color: var(--ink-mut); }
+  .crumb-btn[aria-expanded="true"] .crumb-caret { color: var(--accent); }
+  /* el "›" original es un nodo de texto, no CSS content — se apaga con
+     font-size:0 en el propio span y el "|" nuevo se dibuja aparte */
+  .crumb-sep { color: transparent; font-size: 0; position: relative; z-index: 1; margin: 0 6px; }
+  .crumb-sep::before {
+    content: "|"; display: inline-block; color: var(--ink-mut); opacity: .6; font-size: 13px;
+  }
+  .crumb-menu {
+    border-radius: 0; background: var(--ground); border: 1px dashed var(--hair);
+    box-shadow: 0 4px 20px rgba(0,0,0,.25);
+  }
+  .crumb-item {
+    font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink);
+    border-bottom: 1px dashed var(--hair);
+  }
+  .crumb-item:last-child { border-bottom: none; }
+  .crumb-item:hover { background: var(--accent-tint); color: var(--accent); padding-left: 16px; }
+  .crumb-item.active { color: var(--accent); }
+  .crumb-item.active::after { color: var(--accent); }
+  .crumb-help {
+    color: var(--ink-mut); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+    position: relative; z-index: 1;
+  }
+  .crumb-help:hover { color: var(--accent); }
+
+  .etf-cta {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--panel);
+    background: var(--accent); border: none; padding: 10px 18px; cursor: pointer;
+    transition: opacity .15s ease;
+  }
+  .etf-cta:hover { opacity: .88; }
+  #etf-view[hidden], #etf-soon[hidden], #view-comparacion[hidden], #view-metodo[hidden] { display: none; }
+
+
+  .panel[hidden] { display: none; }
+
+  /* ---- placeholder "en diseño" (secciones 2 y 3) ---- */
+  .soon { padding: 8px 2px 0; }
+  .soon-badge {
+    display: inline-block; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
+    border: 1px solid var(--accent); padding: 4px 10px; margin-bottom: 18px;
+  }
+  .soon-title { font-family: var(--font-mono); font-size: clamp(20px, 3vw, 27px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; max-width: 22ch; }
+  .soon-lede { font-size: 15px; line-height: 1.55; color: var(--ink-2); max-width: 56ch; margin: 0 0 30px; }
+  .soon-lede b { color: var(--ink); font-weight: 600; }
+  /* mini-rail fantasma: insinúa la estructura paso a paso que tendrá */
+  .ghost-rail { display: flex; gap: 10px; margin-bottom: 26px; opacity: .5; }
+  .ghost-step { flex: 1; max-width: 90px; }
+  .ghost-bar { height: 4px; background: var(--hair); margin-bottom: 7px; }
+  .ghost-lab { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); }
+  .ghost-body { display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 40px); align-items: end; }
+  .ghost-plot { display: flex; align-items: flex-end; gap: 14px; height: 180px; }
+  .ghost-plot > div { flex: 1; background: var(--panel-tint); border: 1px dashed var(--hair); }
+  .ghost-side { display: flex; flex-direction: column; gap: 12px; }
+  .ghost-line { height: 12px; background: var(--panel-tint); }
+  .ghost-line.short { width: 60%; }
+
+  /* ---- step rail (sticky) — 8 pasos de ANCHO IGUAL (flex-basis:0) ---- */
+  .rail { display: flex; gap: 10px; margin: 16px 0 18px; overflow-x: auto; padding: 8px 0 6px; position: sticky; top: 0; background: var(--ground); z-index: 5; }
+  .step { flex: 1 1 0; min-width: 80px; display: flex; flex-direction: column; gap: 7px; align-items: center; text-align: center; }
+  .step.clickable { cursor: pointer; }
+  .step.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .step-bar { height: 4px; width: 100%; background: var(--hair); transition: background .15s ease; }
+  .step.done .step-bar { background: var(--accent); }
+  .step.now .step-bar { background: var(--loss); }
+  .step-lab { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-mut); line-height: 1.25; white-space: nowrap; }
+  .step.now .step-lab { color: var(--loss); font-weight: 700; }
+  .step.done .step-lab { color: var(--ink-2); }
+  .step.clickable:hover .step-lab { color: var(--accent); }
+  .step.now.clickable:hover .step-lab { color: var(--loss); }
+
+  /* ---- section frame ---- */
+  .sec { margin-top: 32px; }
+  .sec.closer { margin-top: 18px; }
+  /* divisor cockpit -> cierre */
+  .closer-divider { height: 1px; background: var(--hair); margin: 18px 0 0; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin: 0 0 4px;
+  }
+  .sec-note { font-size: 12px; color: var(--ink-mut); margin: 5px 0 0; }
+
+  /* explicación única del paso (dentro del cockpit). min-height medido con Chrome
+     headless sobre los 8 textos reales (6 caen en 2 líneas = 59px, 2 en 1 línea =
+     43px) — no es una estimación en em, es el máximo real + margen de seguridad. */
+  .step-note {
+    font-size: 13.5px; line-height: 1.45; color: var(--ink); background: var(--panel-tint); border-left: 3px solid var(--accent);
+    padding: 10px 15px; margin: 12px 0 0; max-width: 78ch; min-height: 62px; box-sizing: border-box;
+  }
+  .step-note b { color: var(--accent); }
+
+  /* ---- verdict (compacto) ---- */
+  .verdict {
+    background: var(--panel); border: 1px solid var(--hair); border-left: 4px solid var(--ink-mut);
+    padding: 16px clamp(18px, 3vw, 26px); transition: border-left-color .2s ease;
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 40px); align-items: center;
+  }
+  .v-kick { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.06em; color: var(--ink-mut); text-transform: uppercase; margin: 0 0 6px; transition: color .2s ease; }
+  .v-big { font-family: var(--font-mono); font-weight: 700; font-size: clamp(24px, 3.6vw, 34px); line-height: 0.95; color: var(--ink); letter-spacing: -0.01em; transition: color .2s ease; }
+  .v-big.up { color: var(--accent); }
+  .v-big.loss { color: var(--loss); }
+  .v-pct { font-family: var(--font-mono); font-size: clamp(14px, 2vw, 16px); color: var(--ink-mut); font-weight: 600; margin-top: 6px; transition: color .2s ease; }
+  .v-pct.up { color: var(--accent); }
+  .v-pct.loss { color: var(--loss); }
+  .v-pct-lab { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--ink-mut); }
+  .v-pct-sep { color: var(--ink-mut); }
+
+  .io { align-self: center; display: flex; flex-direction: column; gap: 18px; }
+  .io-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 14px; }
+  .io-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); text-align: right; }
+  .io-track { position: relative; height: 34px; background: var(--panel-tint); border: 1px solid var(--hair-soft); }
+  .io-fill { position: absolute; inset: 0 auto 0 0; display: flex; align-items: center; transition: width .3s cubic-bezier(.2,.8,.25,1), background .2s ease; }
+  .io-fill span { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--panel); padding-left: 10px; white-space: nowrap; }
+  .io-in  .io-fill { background: var(--anchor); }
+  .io-out .io-fill { background: var(--loss); }
+  .io-ghost { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start; transition: padding-left .3s cubic-bezier(.2,.8,.25,1); }
+  .io-ghost span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); font-weight: 600; white-space: nowrap; transition: color .2s ease, margin-left .2s ease; }
+
+  /* ---- waterfall ---- */
+  .fall-scroll { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+  .fall { position: relative; min-width: 820px; padding: 12px 8px 88px; }
+  .plot { position: relative; height: 300px; display: flex; align-items: flex-end; gap: clamp(5px, 1.1vw, 13px); border-bottom: 1px solid var(--hair); }
+  .col { position: relative; flex: 1; height: 100%; }
+  .seg {
+    position: absolute; left: 0; right: 0; overflow: hidden; min-height: 3px;
+    transform: scaleY(0); transform-origin: bottom; animation: grow .55s cubic-bezier(.2,.8,.25,1) forwards;
+  }
+  /* barras que ya estaban en pasos previos: se quedan quietas, no re-animan */
+  .seg.settled { animation: none; transform: scaleY(1); }
+  .col.reserved { pointer-events: none; }
+  .slot-tick { position: absolute; bottom: 0; left: 50%; width: 1px; height: 8px; background: var(--hair); }
+  .slot-ghost {
+    position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center;
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ink-mut); opacity: .42; line-height: 1.2;
+  }
+  .seg.s-anchor  { background: var(--anchor); }
+  .seg.s-drip    { background: var(--drip); }
+  .seg.s-transito{ background: var(--accent-tint); border: 2px solid var(--accent); }
+  .seg.s-cash    { background: var(--cash); }
+  .seg.s-loss    { background: var(--loss); }
+
+  .costline { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--loss); z-index: 3; animation: fadeIn .4s ease both; }
+  /* El rótulo se parte en dos líneas y se acota al ancho de UNA columna: con 8
+     slots ya no cabe en una sola línea sin invadir la columna vecina. Va por
+     encima de la línea, donde la primera columna ya no dibuja nada. */
+  .costline .cl-lab {
+    position: absolute; bottom: 3px; left: 0; max-width: 92px; background: var(--ground); padding: 0 6px 0 0;
+    font-family: var(--font-mono); font-size: 10px; line-height: 1.2; color: var(--loss); font-weight: 600;
+  }
+  .gap-band {
+    position: absolute; left: 0; right: 0; background: var(--loss-bg);
+    background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--loss-soft) 6px 7px);
+    display: flex; align-items: center; justify-content: center; animation: fadeIn .4s ease both; animation-delay: .3s;
+  }
+  .gap-band span {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--loss);
+    background: var(--ground); padding: 3px 8px; white-space: nowrap;
+  }
+
+  .col-cap { position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center; }
+  .cap-amt { font-family: var(--font-mono); font-size: 13.5px; font-weight: 700; }
+  .cap-amt.up { color: var(--drip); } .cap-amt.dn { color: var(--loss); } .cap-amt.base { color: var(--ink); } .cap-amt.cashc { color: var(--cash); }
+  /* 2.5em = dos líneas a line-height 1.25. Con 8 columnas angostas unos labels
+     envuelven y otros no; reservar siempre dos líneas alinea el subtítulo y el
+     acumulado de las 8 columnas en la misma horizontal. */
+  .cap-lab { font-family: var(--font-sans); font-size: 11px; color: var(--ink-mut); line-height: 1.25; margin-top: 3px; min-height: 2.5em; }
+  /* mismo margin-top que .cap-run: son la misma línea de la fila (subtítulo o
+     acumulado, nunca ambos) y deben caer en la misma horizontal. */
+  .cap-sub { font-family: var(--font-sans); font-size: 10px; color: var(--accent); font-style: italic; margin-top: 4px; }
+  .cap-run { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
+  .cap-run::before { content: "→ "; color: var(--ink-mut); }
+
+  /* ---- waffle ---- */
+  .waffle-wrap { display: grid; grid-template-columns: auto 1fr; gap: clamp(24px, 5vw, 52px); margin-top: 24px; align-items: start; }
+  @media (max-width: 620px) { .waffle-wrap { grid-template-columns: 1fr; } }
+  .grid {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px;
+    width: clamp(220px, 42vw, 300px);
+  }
+  .sq { aspect-ratio: 1; opacity: 0; animation: pop .35s ease forwards; }
+  .sq.q-anchor { background: var(--anchor); }
+  .sq.q-drip   { background: var(--drip); }
+  .sq.q-cash   { background: var(--cash); }
+  .sq.q-off    { background: var(--sq-off); }
+  .sq.q-sd, .sq.q-sl { position: relative; border: 1px solid var(--loss-soft); }
+  .sq.q-sd { background: var(--loss-bg); }
+  .sq.q-sl { background: transparent; }
+  .sq.q-sd::after, .sq.q-sl::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px));
+    opacity: .85;
+  }
+  .sq.q-sl::after { opacity: .5; }
+  .sq.q-transito { background: var(--accent-tint); border: 1px solid var(--accent); }
+
+  /* reserva de 3 filas (medido con Chrome headless sobre los 8 pasos reales:
+     1-2 filas = 130px, 3 filas = 155px) — el # de categorías crece de 1 a 3
+     según el paso, nunca mueve lo de abajo. */
+  .legend { display: flex; flex-direction: column; gap: 14px; min-height: 155px; }
+  .leg-row { display: flex; align-items: flex-start; gap: 11px; }
+  .leg-sw { display: flex; gap: 3px; margin-top: 2px; flex-shrink: 0; }
+  .leg-sw i { width: 15px; height: 15px; display: block; }
+  .sw-anchor { background: var(--anchor); }
+  .sw-drip { background: var(--drip); }
+  .sw-cash { background: var(--cash); }
+  .sw-struck { border: 1px solid var(--loss-soft); position: relative; background: var(--loss-bg); }
+  .sw-struck::after { content:""; position:absolute; inset:0; background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px)); }
+  .leg-txt strong { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+  .leg-txt .leg-amt { font-family: var(--font-mono); }
+  .leg-txt small { display: block; font-size: 11.5px; color: var(--ink-mut); margin-top: 1px; }
+
+  .surv {
+    margin-top: 20px; padding: 16px 18px; background: var(--panel-tint); border-left: 3px solid var(--loss);
+    font-size: 14px; color: var(--ink); font-weight: 500; min-height: 78px; box-sizing: border-box;
+  }
+  .surv b { font-family: var(--font-mono); }
+  .surv .alive { color: var(--cash); } .surv .dead { color: var(--loss); }
+  .waffle-note { font-size: 11.5px; color: var(--ink-mut); margin: 14px 0 0; }
+  .waffle-note .num { color: var(--ink-2); }
+
+  .foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--hair); font-size: 11.5px; color: var(--ink-mut); }
+
+  /* ---- tooltip ---- */
+  #tip {
+    position: fixed; z-index: 50; pointer-events: none; opacity: 0; transform: translateY(4px);
+    transition: opacity .12s ease, transform .12s ease;
+    background: var(--tip-bg); color: var(--tip-ink); padding: 8px 11px; max-width: 240px;
+    font-size: 12px; line-height: 1.4; box-shadow: 0 6px 22px rgba(0,0,0,.28);
+  }
+  #tip.on { opacity: 1; transform: translateY(0); }
+  #tip .t-h { font-family: var(--font-mono); font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+  #tip .t-v { font-family: var(--font-mono); }
+
+  /* ============ COMPARACIÓN · Total Return Graph ============ */
+  .cmp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
+  .cmp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .cmp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
+  .cmp-lede b { color: var(--ink); font-weight: 600; }
+
+  .cmp-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+  .cmp-field { display: flex; flex-direction: column; gap: 8px; }
+  .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
+  .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
+  .cmp-chip {
+    font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em;
+    padding: 7px 13px; border: 1px solid var(--hair); background: none; color: var(--ink-mut);
+    cursor: pointer; line-height: 1; display: inline-flex; align-items: center; gap: 7px;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .cmp-chip:hover { border-color: var(--accent); color: var(--ink-2); }
+  .cmp-chip.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .cmp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cmp-dot { width: 9px; height: 9px; flex: none; }
+
+  .cmp-plot-wrap { background: var(--panel); border: 1px solid var(--hair); padding: 16px 14px 10px; }
+  .cmp-svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .cmp-svg text { font-family: var(--font-mono); }
+
+  .cmp-summary { font-size: 13.5px; color: var(--ink); background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 12px 16px; margin: 16px 0 0; line-height: 1.5; min-height: 44px; box-sizing: border-box; }
+  .cmp-summary b { font-family: var(--font-mono); }
+  .cmp-summary .up { color: var(--accent); } .cmp-summary .dn { color: var(--loss); }
+
+  .cmp-notes { font-size: 11.5px; color: var(--ink-mut); margin: 16px 0 0; line-height: 1.55; }
+  .cmp-notes b { color: var(--ink-2); }
+  .cmp-notes a { color: var(--accent); }
+  .cmp-notes .flag { color: var(--loss); font-weight: 700; }
+  /* he-cash/he-loss solo colorean junto a .he-c (celda de la matriz); aquí se
+     usan sueltos en el texto, así que necesitan su propia regla o quedan grises */
+  .cmp-notes .he-cash { color: var(--cash); }
+  .cmp-notes .he-loss { color: var(--loss); }
+  .cmp-notes ul { margin: 0; padding-left: 18px; }
+  .cmp-notes li { margin: 0 0 8px; }
+  .cmp-notes li:last-child { margin-bottom: 0; }
+  .cmp-notes li::marker { color: var(--hair); }
+
+  /* ============ METODOLOGÍA Y FUENTES ============ */
+  #view-metodologia[hidden] { display: none; }
+  .meth-back {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent);
+    background: none; border: none; padding: 0; margin: 0 0 14px; cursor: pointer;
+  }
+  .meth-back:hover { text-decoration: underline; }
+  .meth-index { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 18px; }
+  .meth-index button {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em;
+    padding: 6px 11px; border: 1px solid var(--hair); background: none; color: var(--ink-mut);
+    cursor: pointer; line-height: 1; transition: color .15s ease, border-color .15s ease;
+  }
+  .meth-index button:hover { border-color: var(--accent); color: var(--ink); }
+  .meth-index button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .meth-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 32px; margin-top: 22px; }
+  @media (max-width: 680px) { .meth-grid { grid-template-columns: 1fr; } }
+  .meth-item { border-left: 2px solid var(--hair); padding-left: 16px; transition: border-color .4s ease, background-color .4s ease; }
+  /* al llegar desde una sección, su entrada se señala un momento y vuelve a la calma —
+     borde + tinte de fondo, para que se note sin depender solo de un cambio de color de 2px */
+  .meth-item.lit { border-left-color: var(--accent); background: var(--accent-tint); }
+  .meth-h { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); margin: 0 0 8px; line-height: 1.3; }
+  .meth-p { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 8px; }
+  .meth-p b { color: var(--ink); font-weight: 600; }
+  .meth-src { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 8px 0 0; line-height: 1.45; }
+  .meth-src a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .meth-biblio { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--hair); }
+  .meth-refs { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); margin: 10px 0 0; padding-left: 22px; }
+  .meth-refs li { margin-bottom: 8px; }
+  .meth-refs a { color: var(--accent); word-break: break-word; }
+  .meth-note { font-size: 11.5px; color: var(--ink-mut); margin: 18px 0 0; line-height: 1.55; }
+  .meth-note .flag { color: var(--loss); font-weight: 700; }
+
+  /* ---- tabla del ítem 8 (los ratios que sí sirven) — scroll horizontal, mismo
+     patrón que las tablas de he-grid: en una columna de ~450px no cabe entera ---- */
+  .meth-tbl-wrap { overflow-x: auto; margin: 10px 0 4px; }
+  .meth-tbl { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 12px; }
+  .meth-tbl th, .meth-tbl td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: top; }
+  .meth-tbl th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; white-space: nowrap; }
+  .meth-tbl td { color: var(--ink-2); line-height: 1.5; }
+  .meth-tbl td b { color: var(--ink); }
+  .meth-tbl td.num { font-family: var(--font-mono); white-space: nowrap; color: var(--ink); }
+
+  /* ---- formulario: todas las ecuaciones de la página, juntas ---- */
+  .meth-formulario { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--hair); }
+  .meth-form-grid { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+  .meth-form-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) 1fr; gap: 8px 16px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--hair-soft); }
+  .meth-form-eq { font-family: var(--font-mono); font-size: 12px; color: var(--ink); font-weight: 600; }
+  .meth-form-use { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  @media (max-width: 680px) { .meth-form-row { grid-template-columns: 1fr; } }
+  .foot-link { font-family: var(--font-mono); font-size: inherit; color: var(--accent); background: none; border: none; padding: 0; cursor: pointer; }
+  .foot-link:hover { text-decoration: underline; }
+
+  /* ============ HOJA EXCEL ============ */
+  .he-block { margin-top: 26px; }
+  .he-block:first-of-type { margin-top: 4px; }
+  .he-block-lab {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-mut); margin: 0 0 8px;
+  }
+  .he-block-lab .he-mark2 { color: var(--cash); }
+  .he-block-sub { text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .he-block-sub.warn { color: var(--warn); }
+  .he-block-sub.muted { color: var(--ink-mut); }
+
+  .he-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .he-grid { display: grid; column-gap: 0; row-gap: 0; }
+  /* Matriz única, 11 tracks. Las 4 opcionales (brutos, −NRA, DRIP, efectivo) viven
+     siempre en el DOM y valen 0fr mientras la hoja está sin corregir. NO se
+     transiciona `grid-template-columns`: medido en Chrome, la transición entre
+     listas de tracks con minmax() se queda clavada en el valor inicial (las
+     columnas nunca llegaban a abrirse). El track cambia de golpe — respuesta
+     directa al clic — y lo que se anima es la aparición del contenido. */
+  /* Las tres primeras columnas van en PÍXELES, no en fracciones: son la identidad
+     de la fila (fecha, ticker, lo que pusiste) y quedan clavadas en el mismo sitio
+     al encender el interruptor. El retorno, alineado a la derecha contra el borde
+     de la tabla, tampoco se mueve. Lo que se reacomoda es el centro — justo donde
+     entra el desglose —, que es inevitable al insertar cuatro columnas sin obligar
+     a scroll horizontal. */
+  /* UN SOLO template para las dos fases: las cuatro columnas del desglose ocupan
+     su ancho definitivo desde el principio, vacías. Así al accionar el interruptor
+     NINGUNA columna se mueve —ni las de los extremos ni las del centro— y comparar
+     antes/después es leer la misma cuadrícula. El hueco no es un defecto: dice que
+     a la hoja vieja le falta esa información. «− Imp. NRA» pesa más que sus vecinas
+     porque lleva la cifra más ancha (signo + 7 dígitos). */
+  /* 10 columnas: la primera etiqueta cuál de las dos lecturas es cada fila (la
+     fecha y el ticker viven arriba, en una línea de contexto: con un solo ETF
+     serían dos constantes repetidas). 850px = lo que mide el contenedor en
+     escritorio, así que caben enteras sin scroll interno. */
+  /* DRIP y Efectivo pesan algo más que sus vecinas: llevan la sub-línea que dice
+     si entran o no en el retorno, y debe caber en un renglón. */
+  .he-grid {
+    min-width: 850px;
+    grid-template-columns: 96px minmax(0,0.95fr) minmax(0,0.9fr) minmax(0,1.05fr) minmax(0,0.95fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr) minmax(0,1fr);
+  }
+  @media (max-width: 939px) {
+    .he-grid { grid-template-columns: minmax(96px,0.95fr) minmax(0,0.95fr) minmax(0,0.9fr) minmax(0,1.05fr) minmax(0,0.95fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr) minmax(0,1fr); }
+  }
+  /* En pantallas estrechas la ecuación es TEXTO, no una tabla: no debería exigir
+     el scroll lateral que sí necesitan las columnas. Se ancla al borde visible
+     (sticky) y se ciñe al ancho de la pantalla, partiéndose en varias líneas sin
+     romper los términos por dentro. Las dos cintas se igualan por medición
+     (`igualarCintas` en initHoja), así el reparto distinto de líneas entre una y
+     otra no mueve nada al accionar el interruptor. */
+
+  .he-context { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 2px 0 10px 2px; }
+
+  /* ---- cinta de ecuación: de dónde sale cada cifra que discrepa ----
+     Ocupa todo el ancho porque la fórmula cruza columnas no contiguas
+     (Valor mer. + Efectivo − Inversión); en una celda de 90px no cabría. */
+  .he-eq {
+    grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10px; line-height: 2.1;
+    color: var(--ink-mut); padding: 13px 7px 15px 22px; position: relative;
+    border-bottom: 1px solid var(--hair-soft); white-space: nowrap; overflow-x: auto;
+  }
+  .he-eq::before {
+    content: "↳"; position: absolute; left: 5px; top: 13px; color: var(--hair);
+  }
+  .he-eq .eq-lab { display: inline-block; min-width: 96px; color: var(--ink-mut); }
+  /* el resultado ocupa un ancho fijo para que el «=» de los dos renglones caiga
+     en la misma columna: las dos ecuaciones se leen como un bloque, no como
+     dos frases sueltas */
+  .he-eq .eq-res { display: inline-block; min-width: 66px; text-align: right; color: var(--ink); font-weight: 700; }
+  .he-eq .eq-op { color: var(--ink-mut); padding: 0 7px; }
+  /* cada término apunta a su columna: al pasarle el cursor, se ilumina */
+  .he-eq .eq-t { color: var(--ink-2); cursor: default; border-bottom: 1px dotted transparent; }
+  .he-eq .eq-t:hover { border-bottom-color: var(--accent); }
+  .he-eq .eq-t.is-warn { color: var(--warn); }
+  .he-eq .eq-t.is-cash { color: var(--cash); }
+  .he-eq .eq-note { color: var(--ink-mut); font-style: italic; }
+  .he-c.col-lit { background: var(--accent-tint); }
+
+  @media (max-width: 700px) {
+    .he-eq {
+      width: calc(100vw - 2 * clamp(16px, 4vw, 40px));
+      white-space: normal; padding: 12px 0 14px 16px; line-height: 1.9;
+    }
+    .he-eq::before { top: 12px; left: 1px; }
+    /* los términos no se parten por dentro; la línea sí */
+    .he-eq .eq-t, .he-eq .eq-res { white-space: nowrap; }
+    .he-eq .eq-lab { min-width: 0; padding-right: 7px; white-space: nowrap; }
+    .he-eq .eq-res { min-width: 0; }
+    .he-eq .eq-op { padding: 0 5px; }
+  }
+  .he-row-lab { font-family: var(--font-sans); font-weight: 700; font-size: 12px; color: var(--ink-2); }
+
+  /* La segunda lectura aparece bajo la primera, sin cabecera repetida, así los
+     números a comparar quedan a una fila de distancia en la misma columna. Su
+     espacio está RESERVADO desde el principio (`visibility`, no `display`): al
+     accionar el interruptor no se empuja nada de lo que viene debajo. */
+  .he-b { visibility: hidden; }
+  .he-grid.honest .he-b { visibility: visible; }
+  .he-grid.honest .he-c.he-b { animation: fadeIn .3s ease both; }
+  /* Con la corregida a la vista, la de arriba pasa a ser la referencia histórica.
+     La jerarquía se hace quitando peso a la vieja, no añadiendo adornos a la
+     buena: un velo uniforme conserva los colores semánticos (el ámbar del total
+     inflado, el rojo del retorno) para que se puedan seguir comparando. */
+  .he-grid.honest .he-row-lab:not(.he-b) { color: var(--ink-mut); }
+  .he-grid.honest .he-c:not(.he-b),
+  .he-grid.honest .he-eq:not(.he-b) { opacity: .68; }
+  /* al señalar un término de su propia ecuación, la lectura vieja recupera nitidez */
+  .he-grid.honest .he-eq:not(.he-b):hover { opacity: 1; }
+
+  /* padding lateral ajustado (7px): con once columnas es lo que permite que la
+     cifra más ancha, −$105.08, no se recorte dentro del ancho del contenedor. */
+  .he-h, .he-c { padding: 8px 7px; text-align: right; overflow: hidden; box-sizing: border-box; }
+  .he-h.he-l, .he-c.he-l { text-align: left; }
+  .he-c { white-space: nowrap; }
+  /* Los encabezados se apoyan en la regla inferior (align-items:flex-end): el
+     alto reservado —para que al abrir columnas los rótulos de 2 líneas no muevan
+     la tabla— queda como aire ARRIBA, no como un hueco entre rótulo y regla. */
+  .he-h {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-mut); border-bottom: 2px solid var(--anchor);
+    padding-bottom: 12px; line-height: 1.35; white-space: nowrap; align-self: stretch;
+    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 42px;
+  }
+  .he-h.he-l { justify-content: flex-start; }
+  .he-lab {
+    cursor: help; border-bottom: 1px dotted var(--hair); padding-bottom: 1px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .he-lab:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  /* Inversión y Valor mer. son las dos columnas que la hoja compara entre sí. El
+     recuadro punteado las marca como par — van salteadas (4ª y 7ª), así que el
+     recuadro + la línea que las une es lo único que las agrupa. El color del
+     rótulo NO se toca: el morado en el texto competía con los datos. */
+  .he-h.he-mark .he-lab { border: 1px dashed var(--mark); padding: 3px 6px; }
+
+  /* Puente entre los dos recuadros. La fila abarca la tabla entera y el tramo
+     visible se posiciona con JS (placeBridge) midiendo el borde derecho de la
+     caja de Inversión y el izquierdo de la de Valor mer. — los recuadros van
+     alineados a la derecha dentro de su celda, así que ningún grid-column los
+     alcanza; hay que medirlos. */
+  .he-bridge { grid-column: 1 / 9; align-self: end; position: relative; height: 22px; }
+  .he-bridge-hit {
+    position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: none; border: none; padding: 0; font: inherit;
+  }
+  .he-bridge-hit::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    border-top: 1px dashed var(--mark);
+  }
+  .he-bridge-lab {
+    position: relative; z-index: 1; background: var(--ground); padding: 0 8px;
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--mark);
+    white-space: nowrap; transition: opacity .15s ease;
+  }
+  .he-bridge-lab::after { content: " ⓘ"; }
+  .he-bridge-hit:hover .he-bridge-lab { opacity: .7; }
+  .he-bridge-hit:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+  @media (max-width: 700px) { .he-bridge-lab { font-size: 8px; padding: 0 5px; } }
+
+  /* Cada lectura son dos bandas: sus cifras y su ecuación. La línea va al final de
+     la ecuación, no entre ambas, porque pertenecen a la misma lectura. */
+  .he-c { font-size: 12.5px; font-weight: 700; color: var(--ink); padding-top: 13px; padding-bottom: 5px; }
+  .he-eq { border-bottom: 2px solid var(--anchor); }
+  .he-grid.honest .he-eq:not(.he-b) { border-bottom: 1px solid var(--hair-soft); }
+  /* La lectura reservada lleva 1px mientras está oculta y 2px cuando cierra la
+     tabla: la suma de bordes —y el alto total— es la misma en las dos fases. */
+  .he-eq.he-b { border-bottom-width: 1px; }
+  .he-grid.honest .he-eq.he-b { border-bottom-width: 2px; }
+  .he-c.he-mono { font-family: var(--font-mono); font-weight: 400; color: var(--ink-mut); }
+  .he-c.he-tk { font-family: var(--font-sans); font-weight: 800; color: var(--ink); }
+  .he-c.he-muted { color: var(--ink-mut); font-weight: 600; }
+  .he-c.he-nra { color: var(--loss); }
+  .he-c.he-cash { color: var(--cash); }
+  .he-c.he-loss { color: var(--loss); }
+
+  /* La advertencia la lleva el color, no una caja: con once columnas, un bloque
+     de fondo pesa más que la cifra que señala. */
+  .he-h.he-warn, .he-c.he-warn { color: var(--warn); }
+  .he-h.he-nra { color: var(--loss); }
+  .he-h.he-cash { color: var(--cash); }
+
+  /* ---- estado corregido: la hoja deja de mentir a la vista ---- */
+  /* «Total inv.» conserva su franja para marcar la columna, pero el ⚠ y el ámbar
+     son de la lectura vieja: en la fila corregida esa cifra ya es correcta. */
+  .he-grid.honest .he-c.he-warn { color: var(--ink-mut); }
+  .he-grid.honest .he-h.he-warn { color: var(--ink-mut); }
+  /* La franja de advertencia es de la CIFRA inflada, no de la columna entera: en
+     la lectura corregida ese total ya es correcto, así que no la lleva. */
+  .he-grid.honest .he-c.he-warn.he-b { color: var(--ink); background: none; }
+  /* Las sub-líneas de DRIP y Efectivo ocupan el segundo renglón que la fila YA
+     tiene por el `%` del retorno, así que encender el interruptor no mueve nada
+     verticalmente. Deben caber en UNA línea: si envuelven, la fila crece y empuja
+     todo lo de abajo (medido, no estimado). */
+
+  /* Las columnas del desglose ocupan su sitio desde el principio: en la fila «Tu
+     hoja» llevan un guion, porque esa información la hoja vieja no la tiene. Sus
+     rótulos van atenuados mientras no hay con qué llenarlas. */
+  .he-opt .he-lab { opacity: .45; }
+  .he-grid.honest .he-opt .he-lab { opacity: 1; }
+  .he-ph { color: var(--hair); font-weight: 400; }
+
+  .he-sub { display: block; font-size: 9px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-mut); margin-top: 1px; white-space: normal; }
+  .he-sub.cash { color: var(--cash); }
+
+  /* cierre de la sección: ambos textos en la misma celda, el inactivo reserva su
+     espacio con visibility (no display:none), para que nada de abajo se mueva. */
+  .he-compare { display: grid; }
+  .he-cmp-txt { grid-area: 1 / 1; margin: 0; transition: opacity .2s ease; }
+  .he-cmp-txt.off { visibility: hidden; opacity: 0; }
+
+
+  .he-switches { display: flex; flex-wrap: wrap; gap: 22px; margin: 12px 0 12px 2px; }
+  @media (max-width: 620px) { .he-switches { flex-direction: column; gap: 12px; } }
+  .he-switch-row { display: flex; align-items: center; gap: 10px; }
+  .he-switch {
+    width: 34px; height: 18px; padding: 2px; border: 1px solid var(--hair); background: var(--panel-tint);
+    cursor: pointer; flex: none; box-sizing: border-box; transition: background .2s ease, border-color .2s ease;
+  }
+  .he-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .he-switch .he-knob {
+    display: block; width: 12px; height: 12px; background: var(--ink-mut);
+    transform: translateX(0); transition: transform .2s ease, background .2s ease;
+  }
+  .he-switch[aria-checked="true"] { background: var(--ink); border-color: var(--ink); }
+  .he-switch[aria-checked="true"] .he-knob { transform: translateX(16px); background: var(--panel); }
+  .he-switch-lab { font-family: var(--font-sans); font-size: 13.5px; color: var(--ink-2); }
+  .he-switch[aria-checked="true"] + .he-switch-lab { color: var(--ink); font-weight: 600; }
+  .he-switch-cap { display: block; font-size: 11px; font-weight: 400; color: var(--ink-mut); margin-top: 2px; }
+  /* BASE FISCAL (Método tradicional) ahora son 3 chips .cmp-chip, no un
+     interruptor — cada uno trae su propia etiqueta fija, así que activar uno
+     no cambia ancho de nada, solo color. Lo único que sigue variando de largo
+     entre modos es la leyenda (#tmModoCap) y la nota de la matriz 3; ambas se
+     miden en vivo (ajustarBaseFiscal en initMetodo), no se estiman. */
+
+  /* ============ MÉTODO TRADICIONAL: la hoja de la clase auditada ============ */
+  /* Reutiliza el vocabulario de HOJA EXCEL (.he-grid/.he-c/.he-h/.he-lab/.he-eq/
+     .he-switch) y de COMPARACIÓN (.cmp-head/.cmp-title/.cmp-lede/.cmp-summary/
+     .cmp-notes/.cmp-chip). Solo se añaden los layouts que no tienen precedente:
+     el grid de 8 columnas de la matriz, el de 5 de la prueba DRIP, el de 4 del
+     payback y el de 5 de tasa-vs-yield; la fila-escalón del rendimiento; y las
+     calculadoras vivas de las fallas 1 y 6. */
+  /* Todas en `fr`: las tablas LLENAN el ancho del contenedor en vez de encogerse
+     a la izquierda. El min-width es el piso por debajo del cual sí conviene hacer
+     scroll (móvil), no el ancho de trabajo — en escritorio siempre sobra sitio y
+     las columnas se reparten el espacio. */
+  .tm-grid { min-width: 680px; grid-template-columns: 64px 88px minmax(0,0.85fr) minmax(0,1.05fr) minmax(0,1.1fr) minmax(0,1.05fr) minmax(0,1fr) minmax(0,0.95fr); }
+  .tm-grid2 { min-width: 320px; grid-template-columns: 64px minmax(0,0.85fr) minmax(0,0.65fr); }
+  .tm-grid3 { min-width: 460px; grid-template-columns: 72px minmax(0,1fr) minmax(0,1.15fr) minmax(0,1.3fr); }
+  /* matrices 2 y 3: el mismo dinero contado por sus dos destinos posibles.
+     Mismas proporciones en las columnas que comparten, para que se lean como un
+     par y las cifras equivalentes caigan alineadas entre una tabla y la otra. */
+  /* tm-grid6 ahora sirve a "Sin DRIP" (creció de 5 a 6 columnas al sumar
+     Devuelto) — mismas proporciones, no hacía falta tocarlas: Devuelto es
+     tan angosto como el resto. tm-grid7 es "Con DRIP" (de 6 a 7), extensión
+     directa del mismo patrón con una columna más antes de Total. */
+  .tm-grid6 { min-width: 560px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
+  .tm-grid7 { min-width: 650px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
+  .tm-grid4 { min-width: 520px; grid-template-columns: 64px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
+
+  /* Solo en pantallas angostas se aprieta la familia "Método tradicional":
+     tipografía y padding menores, encabezados que envuelven (min-height reserva
+     el alto) y columnas en px medidas para que la tabla entre sin scroll. En
+     escritorio nada de esto aplica y las tablas respiran. */
+  @media (max-width: 700px) {
+    /* letter-spacing casi a cero: es lo que permite que «DIVIDENDOS» e
+       «INVERSIÓN» quepan ENTERAS en su columna. Con el espaciado normal se
+       partían a mitad de palabra, que es lo que se veía apeñuscado. */
+    .he-grid[class*="tm-grid"] .he-h {
+      font-size: 8px; letter-spacing: 0.02em; line-height: 1.25; white-space: normal;
+      overflow-wrap: anywhere; padding: 0 3px 7px; min-height: 27px;
+    }
+    .he-grid[class*="tm-grid"] .he-c { font-size: 11px; padding: 7px 3px 4px; }
+    .tm-grid2 { min-width: 280px; grid-template-columns: 52px minmax(0,0.85fr) minmax(0,0.65fr); }
+    .tm-grid3 { min-width: 330px; grid-template-columns: 52px minmax(0,1fr) minmax(0,1.15fr) minmax(0,1.3fr); }
+    /* minmax(): el px es el piso que garantiza que la cifra no se recorte, el fr
+       reparte el sobrante para que la tabla llene el ancho en vez de dejar un
+       hueco a la derecha — y de paso «DIVIDENDOS» cabe entero en su renglón. */
+    .tm-grid6 { min-width: 342px; grid-template-columns: 46px minmax(76px,1.25fr) minmax(54px,1fr) minmax(54px,1fr) minmax(55px,1fr) minmax(57px,1fr); }
+    .tm-grid7 { min-width: 398px; grid-template-columns: 46px minmax(76px,1.25fr) minmax(54px,1fr) minmax(54px,1fr) minmax(54px,1fr) minmax(55px,1fr) minmax(57px,1fr); }
+    .tm-grid4 { min-width: 360px; grid-template-columns: 48px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
+  }
+  /* Teléfonos: un punto menos en las cifras compra el ancho que falta para que
+     también aquí entren sin scroll. El corte va en 460px —no en 400— desde que
+     «Con DRIP» tiene 7 columnas: con el escalón anterior, un iPhone Pro Max
+     (430px) caía en la regla de 700px y se comía la columna Total. */
+  @media (max-width: 460px) {
+    .he-grid[class*="tm-grid"] .he-c { font-size: 10.5px; }
+    .tm-grid6 { min-width: 326px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
+    .tm-grid7 { min-width: 380px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
+  }
+  /* Por debajo de ~412px las 7 columnas de «Con DRIP» ya no caben: medido, el
+     contenido pide 371px de pistas y la caja da 343px en un iPhone SE/13/14/15.
+     Apretar la tipografía por debajo de 9.5px recorta las cifras dentro de su
+     propia celda, que es peor que deslizar. Se deja el scroll horizontal del
+     .he-scroll, el mismo mecanismo que la tabla ya usaba a 320px. */
+
+  /* fila destacada como contraejemplo (payback bueno, retorno negativo) — mismo
+     tinte que .he-c.col-lit, así hereda el mismo significado visual (columna/fila
+     que hay que mirar con cuidado) sin inventar un color nuevo */
+  .tm-flag { background: var(--accent-tint); }
+
+  .tm-context { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 2px 0 12px 2px; }
+
+  /* ---- vista 3: escalera del rendimiento — un escalón por fila, no se mueve nada,
+     solo se lee de arriba a abajo ---- */
+  .tm-escalera { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .tm-step {
+    display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 10px 18px;
+    padding: 13px 16px; background: var(--panel); border: 1px solid var(--hair); border-left: 3px solid var(--hair-soft);
+  }
+  .tm-step-lab { font-size: 13.5px; color: var(--ink-2); font-weight: 600; }
+  .tm-step-val { text-align: right; font-size: 17px; font-weight: 700; }
+  .tm-step-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-mut); margin-top: -2px; }
+  .tm-step-anual { font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
+  .tm-step.mal { border-left-color: var(--loss); } .tm-step.mal .tm-step-val { color: var(--loss); }
+  .tm-step.ok { border-left-color: var(--ink-mut); } .tm-step.ok .tm-step-val { color: var(--ink); }
+  .tm-step.na { border-left-color: var(--hair); } .tm-step.na .tm-step-val { color: var(--ink-mut); }
+  .tm-step.real { border-left-color: var(--accent); background: var(--accent-tint); } .tm-step.real .tm-step-val { color: var(--accent); }
+
+  /* ---- vista 5: las seis fallas — misma tarjeta visual que .meth-item, con otro
+     nombre de clase porque vive fuera de la vista Metodología ---- */
+  .tm-fallas { display: flex; flex-direction: column; gap: 22px; margin-top: 26px; }
+  .tm-falla { border-left: 2px solid var(--hair); padding-left: 16px; }
+  .tm-falla-h { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); margin: 0 0 8px; line-height: 1.3; }
+  .tm-falla-p { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 8px; }
+  .tm-falla-p b { color: var(--ink); font-weight: 600; }
+  .tm-falla-p i.num { color: var(--ink); }
+
+  /* ---- calculadoras vivas (fallas 1 y 6) — mismo lenguaje visual que los
+     controles de Comparación: .cmp-field/.cmp-lab agrupan el control con su
+     etiqueta mono en mayúsculas ---- */
+  .tm-calc { margin-top: 12px; padding: 14px 16px; background: var(--panel-tint); border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 12px; }
+  .tm-calc-row { display: flex; align-items: center; gap: 12px; }
+  .tm-calc-row input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 0; }
+  .tm-calc-row .num { width: 76px; text-align: right; font-weight: 700; color: var(--ink); flex-shrink: 0; }
+  .tm-calc-out { font-size: 13.5px; color: var(--ink-2); }
+  .tm-calc-out .num.big { font-size: 19px; font-weight: 700; color: var(--ink); }
+
+  @keyframes grow { to { transform: scaleY(1); } }
+  @keyframes pop { to { opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .seg { animation: none; transform: scaleY(1); }
+    .sq { animation: none; opacity: 1; }
+    .costline, .gap-band { animation: none; }
+    #tip { transition: none; }
+    .he-opt, .he-switch, .he-switch .he-knob { transition: none; }
+  }
+
+  /* ---- modal popup: Máx. sin DRIP ---- */
+  #modal-max {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-max.open { display: flex; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--hair);
+    max-width: 500px; width: 100%; padding: clamp(22px, 4vw, 34px);
+    position: relative; max-height: 90vh; overflow-y: auto;
+    animation: fadeIn .18s ease both;
+  }
+  .modal-close {
+    position: absolute; top: 12px; right: 14px;
+    font-family: var(--font-mono); font-size: 20px; font-weight: 700;
+    background: none; border: none; color: var(--ink-mut); cursor: pointer;
+    line-height: 1; padding: 4px 8px; transition: color .12s ease;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-eyebrow {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+  }
+  .modal-title {
+    font-family: var(--font-mono); font-size: 16px; font-weight: 700;
+    color: var(--ink); margin: 0 0 14px; letter-spacing: -0.01em;
+  }
+  .modal-lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+  .modal-lede b { color: var(--ink); font-weight: 600; }
+  .modal-formula {
+    background: var(--panel-tint); border-left: 3px solid var(--accent);
+    padding: 14px 16px; margin: 0 0 16px;
+  }
+  .mf-eq {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    color: var(--accent); display: block; margin-bottom: 14px; line-height: 1.4;
+  }
+  .mf-table { width: 100%; border-collapse: collapse; }
+  .mf-table td {
+    font-family: var(--font-mono); font-size: 12.5px; padding: 5px 0;
+    border-bottom: 1px solid var(--hair-soft); vertical-align: baseline;
+  }
+  .mf-table tr:last-child td { border-bottom: none; padding-top: 10px; font-weight: 700; font-size: 13px; }
+  .mf-table td:last-child { text-align: right; }
+  .mf-label { color: var(--ink-mut); }
+  .mf-val { color: var(--ink); }
+  .mf-val.loss { color: var(--loss); }
+  .mf-val.cash { color: var(--cash); }
+  .modal-note { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.6; }
+  .modal-note b { color: var(--ink-2); font-weight: 600; }
+  /* igual que en .cmp-notes: he-cash/he-loss solo colorean junto a .he-c, y aquí
+     se usan sueltos dentro del texto del modal */
+  .modal-box .he-cash { color: var(--cash); }
+  .modal-box .he-loss { color: var(--loss); }
+  /* indicador de clic en el encabezado */
+  .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-max"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-p-real"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-real"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .mf-val.accent { color: var(--accent); }
+  /* indicadores ⓘ para Valor DRIP y Valor cash */
+  .he-lab[data-tip="tm-p-drip"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-drip"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-p-cash"] { cursor: pointer; }
+  .he-lab[data-tip="tm-p-cash"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-tot"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-tot"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-tuinv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-tuinv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-max"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-max"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-s-div"] { cursor: pointer; }
+  .he-lab[data-tip="tm-s-div"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-inv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-inv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-invhoy"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-invhoy"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-driphoy"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-driphoy"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-drip"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-drip"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-c-ahora"] { cursor: pointer; }
+  .he-lab[data-tip="tm-c-ahora"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+  }
+  /* ⓘ de las columnas de la MATRIZ 1 (Acción e Inicio quedan sin modal a propósito:
+     son identificadores, no cifras que se puedan malinterpretar) */
+  .he-lab[data-tip="tm-rendimiento"],
+  .he-lab[data-tip="tm-inversion"],
+  .he-lab[data-tip="tm-dividendos"],
+  .he-lab[data-tip="tm-totalinv"],
+  .he-lab[data-tip="tm-valor"],
+  .he-lab[data-tip="tm-ultimodiv"] { cursor: pointer; }
+  .he-lab[data-tip="tm-rendimiento"]::after,
+  .he-lab[data-tip="tm-inversion"]::after,
+  .he-lab[data-tip="tm-dividendos"]::after,
+  .he-lab[data-tip="tm-totalinv"]::after,
+  .he-lab[data-tip="tm-valor"]::after,
+  .he-lab[data-tip="tm-ultimodiv"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+  }
+  .he-lab[data-tip="tm-dividendos"]::after,
+  .he-lab[data-tip="tm-valor"]::after { color: var(--cash); }
+  /* Total inv. es la otra observación nuestra, pero NO entra en la comparación:
+     por eso lleva el morado sin recuadro — el recuadro queda reservado al par
+     que sí se compara entre sí. El color hace aquí el trabajo que allá hace la
+     caja, así que este rótulo sí va teñido. */
+  .he-lab[data-tip="tm-totalinv"],
+  .he-lab[data-tip="tm-totalinv"]::after { color: var(--mark); }
+  .he-lab[data-tip="tm-totalinv"]:hover { color: var(--mark); border-bottom-color: var(--mark); }
+  #modal-tmrend, #modal-tminv, #modal-tmdiv,
+  #modal-tmtot, #modal-tmval, #modal-tmult, #modal-tmcmp {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-tmrend.open, #modal-tminv.open, #modal-tmdiv.open,
+  #modal-tmtot.open, #modal-tmval.open, #modal-tmult.open, #modal-tmcmp.open { display: flex; }
+  /* modales DRIP y CASH */
+  #modal-drip, #modal-cash {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-drip.open { display: flex; }
+  #modal-cash.open { display: flex; }
+  #modal-real {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-real.open { display: flex; }
+  #modal-sintot {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-sintot.open { display: flex; }
+  #modal-sinmax, #modal-sindiv, #modal-sintuinv {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-sinmax.open { display: flex; }
+  #modal-sindiv.open { display: flex; }
+  #modal-sintuinv.open { display: flex; }
+  #modal-coninv, #modal-condrip, #modal-contot, #modal-coninvhoy, #modal-condriphoy {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-coninv.open { display: flex; }
+  #modal-coninvhoy.open { display: flex; }
+  #modal-condrip.open { display: flex; }
+  #modal-condriphoy.open { display: flex; }
+  #modal-contot.open { display: flex; }
+</style>
+<style>
+  body { margin: 0; background: var(--ground); }
+</style>
+<main class="wrap" style="padding-top:0">
+<div id="view-metodologia" hidden>
+    <header class="cmp-head">
+      <h2 class="cmp-title">Cómo funciona la calculadora</h2>
+      <p class="cmp-lede">Qué mide cada sección, de dónde sale cada número y sobre qué base teórica se apoya. Aquí vive la explicación de los conceptos, para que la pantalla de análisis se dedique a <b>tus cifras</b>.</p>
+    </header>
+
+    <!-- índice: salta a la entrada de cada sección -->
+    <div class="meth-index" id="methIndex" role="group" aria-label="Índice"></div>
+
+    <div class="meth-grid">
+      <section class="meth-item" id="mt-hoja">
+        <h3 class="meth-h">1 · Hoja Excel: el «total invertido» y el DRIP contado dos veces</h3>
+        <p class="meth-p"><b>Qué mide:</b> la distancia entre lo que dice la hoja de cálculo de toda la vida y lo que de verdad pasó con tu dinero. La hoja clásica tiene una fórmula central, <i>Total inv. = Inversión + Dividendos</i>, y de ahí saca su idea de si «vas bien».</p>
+        <p class="meth-p"><b>Dónde falla:</b> suma manzanas con peras — trata el <b>retorno recibido</b> como si fuera <b>capital que aportaste</b>. No lo es: lo que aportaste no cambia porque el fondo te pague. Y cuando de esas mismas columnas sale un retorno (<i>Valor mer. + Dividendos − Inversión</i>), vuelve a sumar los dividendos que ya se <b>reinvirtieron</b> — dinero que compró más acciones y que por tanto <b>ya está dentro del valor de mercado</b>. El mismo dólar contado dos veces, y la pérdida se ve menor de lo que fue.</p>
+        <p class="meth-p"><b>Cómo lo calcula la app:</b> <i>Retorno total real = Valor de mercado + dividendos en <b>efectivo</b> − tu inversión</i>. Solo el efectivo se suma aparte, porque es lo único que salió del mercado y está en tu cuenta. La diferencia entre las dos cifras es, exactamente, lo reinvertido.</p>
+        <p class="meth-src">Fuente: definición estándar de retorno total (valor final + flujos cobrados − aportado), sin doble conteo del reinvertido.</p>
+      </section>
+
+      <section class="meth-item" id="mt-viaje">
+        <h3 class="meth-h">2 · Cash flow: de dónde sale cada número</h3>
+        <p class="meth-p"><b>Qué mide:</b> la ruta completa de un dólar, en el orden cronológico en que realmente ocurre — no en el orden que resulte cómodo de presentar.</p>
+        <p class="meth-p"><b>El recorrido:</b> tu bolsillo (lo que aportaste) → dividendo <b>bruto</b> (lo que el fondo declaró) → <b>impuesto NRA</b> (lo que EE.UU. retiene antes de depositarte) → dividendo <b>neto</b> → repartido entre lo <b>reinvertido (DRIP)</b> y el <b>efectivo</b> → impacto del mercado sobre el capital expuesto → resultado real. Cada paso responde una pregunta distinta, y por eso ninguna cifra sustituye a otra.</p>
+        <p class="meth-p"><b>Dos números que parecen contradecirse:</b> ver <i>$346</i> en un lado y <i>$256</i> en otro no es un error — el primero es el bruto («¿cuánto genera mi inversión?») y el segundo el neto («¿cuánto me llega a mí?»). La diferencia ahí es puramente el impuesto, no una reclasificación fiscal.</p>
+        <p class="meth-src">Fuente: el orden lo fija el propio flujo de caja del broker; los montos salen de las filas reales de tu CSV, no de fórmulas.</p>
+      </section>
+
+      <section class="meth-item" id="mt-tr">
+        <h3 class="meth-h">3 · Rendimiento total con dividendos reinvertidos (DRIP)</h3>
+        <p class="meth-p"><b>Qué mide:</b> el retorno total real de un fondo — apreciación del precio <i>más</i> las distribuciones reinvertidas — no solo el rendimiento por dividendo (yield), que ignora la erosión del precio.</p>
+        <p class="meth-p"><b>Cómo lo calcula:</b> reinversión <b>por evento</b> — cada distribución se reinvierte a su precio de cierre en la fecha correspondiente, encadenando un índice de retorno total. Se declara la base temporal (día ex-dividendo, convención yfinance; Morningstar reinvierte en fecha de pago). No se rellena historia pre-incepción.</p>
+        <p class="meth-src">Fuente: Morningstar, <i>Total Return Index Methodology</i> (2017) — la base del «growth of $10,000». <a href="https://www.morningstar.com/content/dam/marketing/shared/research/methodology/823664_TotalReturnIndex.pdf" target="_blank" rel="noopener">Ver PDF ↗</a></p>
+      </section>
+
+      <section class="meth-item" id="mt-nra">
+        <h3 class="meth-h">4 · Retención fiscal a extranjeros (NRA) — y cuánta vuelve</h3>
+        <p class="meth-p"><b>Qué mide:</b> lo que EE.UU. retiene sobre los dividendos pagados a un inversionista no residente <b>antes</b> de que el dinero llegue a tus manos.</p>
+        <p class="meth-p"><b>Cómo lo calcula:</b> 30% estatutario sobre el dividendo ordinario, reducible según el tratado fiscal de tu país. El monto exacto sale de las filas reales de tu broker, no de aplicar la tasa. Es la diferencia entre el bruto y el neto que ves en «Cash flow».</p>
+        <p class="meth-p"><b>La parte que casi nadie cuenta:</b> la retención se cobra <i>al momento</i> sobre todo el pago, pero la porción que resulte ser <b>retorno de capital no es dividendo gravable</b> — así que esa retención se reclasifica y <b>vuelve</b>. Llega como crédito automático si el broker reconcilia dentro de su ventana, o se reclama con el <i>1040-NR</i> si el impuesto ya se remitió; los tiempos dependen del broker. En un caso real documentado con el formulario <i>1042-S</i> (código 37, retorno de capital), el crédito recuperable fue de <b>$83</b> sobre $276 distribuidos bajo ese código.</p>
+        <p class="meth-src">Fuente: IRS — <a href="https://www.irs.gov/pub/irs-pdf/p515.pdf" target="_blank" rel="noopener"><i>Publication 515</i> ↗</a> (Withholding of Tax on Nonresident Aliens and Foreign Entities); <a href="https://www.law.cornell.edu/uscode/text/26/1441" target="_blank" rel="noopener">Internal Revenue Code §1441 ↗</a>; <a href="https://www.irs.gov/forms-pubs/about-form-1042-s" target="_blank" rel="noopener">formulario 1042-S ↗</a>.</p>
+      </section>
+
+      <section class="meth-item" id="mt-roc">
+        <h3 class="meth-h">5 · Retorno de capital (ROC): qué es y qué no</h3>
+        <p class="meth-p"><b>Qué mide:</b> la porción de una distribución que fiscalmente es <i>devolución de tu propio capital</i>, no ingreso — habitual en los fondos tipo YieldMax. Se lee del aviso <b>Sección 19(a)</b> del fondo; no se estima.</p>
+        <p class="meth-p"><b>Sus dos carriles, que no se cruzan:</b> el % de ROC <b>sí</b> es la palanca exacta de lo fiscal (cuánta retención NRA debe volver, y cuánto baja tu base de costo). El % de ROC <b>no</b> sirve para juzgar si tu capital se está destruyendo: es una etiqueta contable que puede saltar de 0% a 99% por motivos fiscales, y un fondo puede declarar 90% de ROC en un mes en que ganó dinero. Quien responde esa pregunta es la tendencia del NAV.</p>
+        <p class="meth-p"><b>Lo que el ROC nunca hace:</b> cambiar lo que aportaste. Tu capital aportado es invariante; una reclasificación fiscal mueve el bucket de impuesto y tu base de costo, no tu inversión. Por eso la calculadora no resta el ROC de ningún total ni lo usa para medir pérdida.</p>
+        <p class="meth-src">Fuente: <a href="https://www.govinfo.gov/content/pkg/COMPS-1879/pdf/COMPS-1879.pdf" target="_blank" rel="noopener">Investment Company Act of 1940, §19(a) ↗</a> y <a href="https://www.ecfr.gov/current/title-17/chapter-II/part-270/section-270.19a-1" target="_blank" rel="noopener">SEC Rule 19a-1 ↗</a> (requisito de aviso de la fuente de la distribución).</p>
+      </section>
+
+      <section class="meth-item" id="mt-nav">
+        <h3 class="meth-h">6 · Salud NAV — ¿destrucción o solo caída de mercado?</h3>
+        <p class="meth-p"><b>Qué mide:</b> distingue la erosión <i>real</i> del capital del fondo de una simple baja de precio recuperable.</p>
+        <p class="meth-p"><b>Cómo lo calcula:</b> mira la <b>tendencia del NAV / precio</b> en el tiempo, no el % de ROC. Un ROC alto puede ser eficiencia fiscal (no destructivo) o capital que se está consumiendo (destructivo); solo la trayectoria del NAV lo revela. Este es el diferenciador frente a herramientas que solo reportan yield.</p>
+        <p class="meth-src">Fuente: distinción estándar en fondos de reparto entre ROC no-destructivo y destructivo (basada en §19(a) + tendencia del NAV).</p>
+      </section>
+
+      <section class="meth-item" id="mt-yield">
+        <h3 class="meth-h">7 · Rendimiento, tasa de distribución y yield: tres cosas distintas</h3>
+        <p class="meth-p"><b>Qué mide cada una:</b> el <b>retorno total</b> es lo único que dice si ganaste o perdiste (precio + distribuciones reinvertidas, menos lo aportado). La <b>tasa de distribución</b> es solo el último pago anualizado. El <b>30-Day SEC Yield</b> es la única de las tres que está regulada — y solo cuenta ingreso neto de inversión, sin la prima de opciones.</p>
+        <p class="meth-p"><b>Dónde falla la tasa de distribución:</b> se cotiza sobre un precio ya reducido por la propia distribución (el denominador se contamina); anualiza un solo pago semanal que oscila; si el precio cae, la tasa sube sin techo — no es generosidad, es erosión; y supone que la distribución sale de utilidades cuando en fondos de opciones incluye retorno de capital, es decir, tu propio dinero. Por eso mismo la regulación no deja llamarla «yield»: de ahí que los fondos publiquen «Distribution Rate», una métrica sin estandarizar.</p>
+        <p class="meth-p"><b>La identidad que lo resume:</b> <i class="num">(1 + Retorno total) = (1 + Retorno de precio) × (1 + Retorno por distribución)</i>. De ahí sale la <b>tasa de equilibrio</b> — cuánto necesita distribuir un fondo solo para no perder capital: <i class="num">DR* = 1/(1 + Retorno de precio) − 1</i>.</p>
+        <p class="meth-src">Fuente: definiciones de Distribution Rate y 30-Day SEC Yield publicadas por los emisores de fondos de opciones; requisito regulatorio del SEC Yield — ver Bibliografía.</p>
+      </section>
+
+      <section class="meth-item" id="mt-ratios">
+        <h3 class="meth-h">8 · Los ratios que sí sirven</h3>
+        <p class="meth-p">Ninguno reemplaza al retorno total real, pero cada uno responde una pregunta legítima:</p>
+        <div class="meth-tbl-wrap">
+          <table class="meth-tbl">
+            <thead><tr><th>Ratio</th><th>Fórmula</th><th>Para qué sirve</th><th>Dónde miente</th></tr></thead>
+            <tbody>
+              <tr><td><b>YoC</b></td><td class="num">D₁₂ₘ / C₀</td><td>Cuánto ingreso anual genera tu dinero original; inmune al precio</td><td>Con DRIP hay que crecer el denominador; el ROC baja la base de costo, así que la YoC fiscal ≠ la económica</td></tr>
+              <tr><td><b>Payback ratio</b></td><td class="num">Σ efvo. neto / C₀</td><td>Cuánto de tu capital ya volvió al bolsillo</td><td>Solo vale sobre efectivo (con DRIP el payback es 0) y neto de impuesto. Necesario, no suficiente</td></tr>
+              <tr><td><b>Retorno total real</b></td><td class="num">(V + efvo.) − C</td><td>La única cifra que dice si ganaste</td><td>Nada, si se declara si el efectivo es bruto o neto</td></tr>
+              <tr><td><b>XIRR / TIR</b></td><td class="num">Σ CFᵢ/(1+r)^(tᵢ/365) = 0</td><td>Lo único que aguanta varias fechas de inicio y compras escalonadas</td><td>Requiere fechas reales</td></tr>
+              <tr><td><b>CAGR</b></td><td class="num">(V_f/V₀)^(1/n) − 1</td><td>Anualizar componiendo</td><td>÷n no es anualizar</td></tr>
+              <tr><td><b>Tasa de equilibrio</b></td><td class="num">DR* = 1/(1+PR) − 1</td><td>Cuánta distribución hace falta para no perder</td><td>Necesita el retorno de precio real</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="meth-src">Fuente: definiciones estándar de finanzas personales y de fondos (yield on cost, payback ratio, XIRR, CAGR); tasa de equilibrio derivada de la identidad de retorno total.</p>
+      </section>
+
+      <section class="meth-item" id="mt-anualizar">
+        <h3 class="meth-h">9 · Anualizar: por qué ÷N no es componer</h3>
+        <p class="meth-p"><b>El error:</b> dividir un retorno total entre el número de años (÷N) no es anualizar — es una aproximación lineal que ignora el interés compuesto. Anualizar de verdad es <b>componer</b>: encontrar la tasa constante que, aplicada N veces seguidas, llega al mismo retorno total.</p>
+        <p class="meth-p"><b>El ejemplo real:</b> con un retorno total de <b>+50.2%</b> en 3 años, dividir entre 3 da <b>16.7%</b> — un número que parece razonable y por eso pasa desapercibido. El CAGR real (componiendo) es <b>+14.5%</b> anual. El error se dispara cuando, además, el retorno anunciado ya viene inflado: en «Método tradicional» el anuncio original terminó <b>29.9×</b> por encima del total real y <b>34×</b> por encima del anualizado.</p>
+        <p class="meth-src">Fuente: fórmula estándar de CAGR (Compound Annual Growth Rate); ejemplo con las cifras de la sección «Método tradicional» de esta página.</p>
+      </section>
+
+      <section class="meth-item" id="mt-metodo">
+        <h3 class="meth-h">10 · «Método tradicional»: de dónde sale la auditoría</h3>
+        <p class="meth-p"><b>Qué audita:</b> la hoja de cálculo con la que se enseña a seguir un portafolio de fondos YieldMax — sus columnas, sus dos reglas de color y las conclusiones que se sacan de ella. No es un ejemplo inventado: es una cartera real de 5 ETFs, con hoja fechada <b>5/1/2026</b>.</p>
+        <p class="meth-p"><b>Las tres fuentes, y qué aporta cada una:</b> (1) la <b>grabación de la clase</b> donde se explica la hoja paso a paso — de ahí salen las columnas, las dos reglas de color y el cálculo de rendimiento, todo citado por minuto; (2) los <b>precios históricos</b> de cada fondo desde la fecha de cada posición hasta la fecha de la hoja; (3) las <b>fichas oficiales</b> de YieldMax, de donde salen la tasa de distribución, el 30-Day SEC Yield y el retorno total desde incepción.</p>
+        <p class="meth-p"><b>Cómo se probó el DRIP</b> (es reproducible, y es el método que sostiene todo lo demás): si a una posición no le entró dinero nuevo, su valor máximo hoy es <i>aportado × (1 + retorno de precio)</i>. Se calculó ese techo para los cinco fondos y se comparó contra el valor de mercado de la hoja. Los cinco lo superan por entre <b>2.6×</b> y <b>6.8×</b>, así que las acciones de más solo pueden venir de distribuciones reinvertidas. Lo corrobora un dato independiente: el retorno total que publica el propio emisor —métrica que asume reinversión— reproduce los resultados de la hoja (NVDY publica <b>+317%</b>; la posición está en +244%).</p>
+        <p class="meth-p"><b>Qué no se verificó:</b> las fechas exactas de cada compra (en la clase se dice que fueron varias compras escalonadas), así que el «techo sin reinvertir» es una aproximación — pero la brecha es tan grande que ningún efecto de calendario la explica. Tampoco se conocen los conteos de acciones por posición, que permitirían cerrar el cálculo al centavo.</p>
+        <p class="meth-src">Fuentes: grabación de clase <i>CLASE DIV</i> (30 jul 2026, min 6:20–30:11 y 56:00–71:00) — <b>video no listado, material de miembros</b>; precios y distribuciones históricas de Yahoo Finance; fichas de fondo de <a href="https://www.yieldmaxetfs.com/our-etfs/msty/" target="_blank" rel="noopener">yieldmaxetfs.com ↗</a> (tasa de distribución y SEC yield <i>as of</i> 07/29/2026; retornos <i>as of</i> 6/30/2026).</p>
+      </section>
+    </div>
+
+    <div class="meth-formulario" id="mt-formulario">
+      <h3 class="meth-h">Formulario</h3>
+      <p class="meth-p">Todas las ecuaciones de esta página, juntas:</p>
+      <div class="meth-form-grid">
+        <div class="meth-form-row"><span class="meth-form-eq">Retorno total real = Valor mercado + efectivo − Inversión</span><span class="meth-form-use">La única cifra que dice si ganaste o perdiste.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">Total inv. (hoja vieja) = Inversión + Dividendos</span><span class="meth-form-use">El error: trata el retorno recibido como si fuera capital aportado.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">YoC = D₁₂ₘ / C₀</span><span class="meth-form-use">Ingreso anual como % de tu costo original.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">Payback ratio = Σ efectivo neto / C₀</span><span class="meth-form-use">Cuánto de tu capital ya volvió, en efectivo.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">XIRR: Σ CFᵢ /(1+r)^(tᵢ/365) = 0</span><span class="meth-form-use">Aguanta fechas y montos irregulares.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">CAGR = (V_f / V₀)^(1/n) − 1</span><span class="meth-form-use">Anualizar componiendo, no dividiendo.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">(1 + RT) = (1 + Retorno precio) × (1 + Retorno distribución)</span><span class="meth-form-use">La identidad que separa precio de reparto.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">Tasa de equilibrio: DR* = 1 / (1 + PR) − 1</span><span class="meth-form-use">Cuánto debe distribuir un fondo solo para no perder capital.</span></div>
+        <div class="meth-form-row"><span class="meth-form-eq">Tasa de distribución = f · D / (P − D)</span><span class="meth-form-use">Por qué sube cuando el precio cae: el denominador ya descontó la distribución.</span></div>
+      </div>
+    </div>
+
+    <div class="meth-biblio">
+      <h3 class="meth-h">Bibliografía</h3>
+      <ol class="meth-refs">
+        <li>Morningstar. <i>Total Return Index Methodology</i> (2017). <a href="https://www.morningstar.com/content/dam/marketing/shared/research/methodology/823664_TotalReturnIndex.pdf" target="_blank" rel="noopener">morningstar.com · 823664_TotalReturnIndex.pdf</a></li>
+        <li>Internal Revenue Service. <i>Publication 515 — Withholding of Tax on Nonresident Aliens and Foreign Entities.</i> <a href="https://www.irs.gov/pub/irs-pdf/p515.pdf" target="_blank" rel="noopener">irs.gov · p515.pdf</a>. <a href="https://www.law.cornell.edu/uscode/text/26/1441" target="_blank" rel="noopener">IRC §1441 ↗</a>.</li>
+        <li>U.S. Securities and Exchange Commission. <i>Rule 19a-1</i>, Investment Company Act of 1940 §19(a) — Statements to Accompany Dividend Payments. <a href="https://www.ecfr.gov/current/title-17/chapter-II/part-270/section-270.19a-1" target="_blank" rel="noopener">ecfr.gov · §270.19a-1</a>.</li>
+        <li>U.S. Securities and Exchange Commission. <i>Rule 482</i> — Advertising by an Investment Company as Satisfying Requirements of Section 10. <a href="https://www.ecfr.gov/current/title-17/section-230.482" target="_blank" rel="noopener">ecfr.gov · §230.482</a>.</li>
+        <li>U.S. Securities and Exchange Commission. <i>Form N-1A</i>, Item 26 — cómputo estandarizado del 30-Day SEC Yield.</li>
+        <li>Financial Industry Regulatory Authority (FINRA). <i>Rule 2210</i> — Communications with the Public.</li>
+        <li>YieldMax ETFs. Fichas de fondo — tasa de distribución y 30-Day SEC Yield <i>as of</i> 07/29/2026, retornos desde incepción <i>as of</i> 6/30/2026: <a href="https://www.yieldmaxetfs.com/our-etfs/msty/" target="_blank" rel="noopener">MSTY</a> · <a href="https://www.yieldmaxetfs.com/our-etfs/cony/" target="_blank" rel="noopener">CONY</a> · <a href="https://www.yieldmaxetfs.com/our-etfs/nvdy/" target="_blank" rel="noopener">NVDY</a> · <a href="https://www.yieldmaxetfs.com/our-etfs/tsly/" target="_blank" rel="noopener">TSLY</a> · <a href="https://www.yieldmaxetfs.com/our-etfs/nfly/" target="_blank" rel="noopener">NFLY</a>.</li>
+        <li>Yahoo Finance. Series históricas de precio de cierre ajustado y distribuciones por acción de CONY, NVDY, MSTY, TSLY y NFLY, desde la fecha de cada posición hasta el 1 may 2026. Base del cálculo del «techo sin reinvertir» de la sección «Método tradicional».</li>
+        <li><i>CLASE DIV</i> — grabación de clase, 30 jul 2026 (94 min). Tramos citados: <b>min 6:20–30:11</b> (la hoja de Excel: columnas, reglas de color, los cuatro pasos y el cálculo de rendimiento) y <b>min 56:00–71:00</b> (recorrido por las fichas de YieldMax: distribuciones, tasa de distribución y retorno total). <span class="flag">Video no listado — material de miembros, no redistribuir.</span> <a href="https://www.youtube.com/watch?v=XYgrnIXd1m4" target="_blank" rel="noopener">Ver la clase ↗</a></li>
+      </ol>
+      <p class="meth-note"><span class="flag">Nota sobre las cifras:</span> esta página mezcla <b>dos juegos de datos, y ninguno es inventado</b>. El recorrido de un ETF («Cash flow», «Salud NAV», «Hoja Excel») usa el caso real de Schwab, calibrado a mediciones de la app. La sección <b>«Método tradicional»</b> usa cifras <b>tal cual</b>: la matriz sale de la hoja de la clase, los precios de Yahoo Finance y los datos de fondo de las fichas de YieldMax — ninguna está estimada ni redondeada. El cálculo exacto para <i>tu</i> portafolio —reinversión por evento, retención por país y lectura del 19(a)— corre en la app conectada a tu CSV.</p>
+    </div>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+(function buildMethIndex() {
+    var items = [
+      { id: "mt-hoja", lab: "1 · Hoja Excel" },
+      { id: "mt-viaje", lab: "2 · Cash flow" },
+      { id: "mt-tr", lab: "3 · Total return (DRIP)" },
+      { id: "mt-nra", lab: "4 · Impuesto NRA" },
+      { id: "mt-roc", lab: "5 · ROC" },
+      { id: "mt-nav", lab: "6 · Salud NAV" },
+      { id: "mt-yield", lab: "7 · Rendimiento vs tasa vs yield" },
+      { id: "mt-ratios", lab: "8 · Ratios que sí sirven" },
+      { id: "mt-anualizar", lab: "9 · Anualizar bien" },
+      { id: "mt-metodo", lab: "10 · Método tradicional" },
+      { id: "mt-formulario", lab: "Formulario" }
+    ];
+    var box = document.getElementById("methIndex");
+    items.forEach(function (it) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = it.lab;
+      b.addEventListener("click", function () {
+        var el = document.getElementById(it.id);
+        if (!el) return;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add("lit");
+        setTimeout(function () { el.classList.remove("lit"); }, 2000);
+      });
+      box.appendChild(b);
+    });
+  })();
+})();
+</script>

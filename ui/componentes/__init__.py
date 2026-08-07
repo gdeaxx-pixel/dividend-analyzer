@@ -23,6 +23,13 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 # narrativo de la vista— sin ningún aviso.
 ALTO_CASHFLOW = 2150
 
+# Pendiente de medir en el navegador (mismo criterio que ALTO_CASHFLOW: nunca estimar
+# a ojo). Placeholders generosos mientras se corrigen en la verificación de la Fase 4.
+ALTO_HOJA = 1400
+ALTO_COMPARACION = 900
+ALTO_METODO = 1800
+ALTO_METODOLOGIA = 2600
+
 
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
@@ -44,6 +51,43 @@ def render_cashflow(datos: dict, paso: int, alto: int = ALTO_CASHFLOW) -> None:
     html = _plantilla("cashflow.html")
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     html = html.replace("{{PASO}}", str(int(paso)))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_hoja(datos: dict, alto: int = ALTO_HOJA) -> None:
+    """Dibuja la Hoja Excel: las dos lecturas de la posición y el interruptor
+    «Corregir la hoja». `datos` viene de `ui.adapters.hoja_data`.
+    """
+    html = _plantilla("hoja.html")
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_comparacion(alto: int = ALTO_COMPARACION) -> None:
+    """Dibuja «Comparación · Simulación» (Total Return Graph). Sin datos: es un modelo
+    paramétrico que se porta tal cual (mapa-datos.md § 4), así que no hay `{{DATA_JSON}}`
+    que rellenar — el componente trae sus propias cifras, igual que en el demo.
+    """
+    html = _plantilla("comparacion.html")
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_metodo(vista_activa: str, alto: int = ALTO_METODO) -> None:
+    """Dibuja «Método tradicional». `vista_activa` es una de matriz/rendimiento/payback/
+    tasa/otras (`ui.nav.MET_ORDER`). El componente trae sus 5 sub-vistas ya calculadas
+    (initMetodo las llena de una pasada, igual que en el demo) y solo oculta las que no
+    tocan — sin datos de Python: la cartera que audita es ajena (mapa-datos.md § 6).
+    """
+    html = _plantilla("metodo.html")
+    html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_metodologia(alto: int = ALTO_METODOLOGIA) -> None:
+    """Dibuja Metodología: 11 entradas, formulario y bibliografía. HTML estático
+    completo — sin datos de Python (mapa-datos.md § 7).
+    """
+    html = _plantilla("metodologia.html")
     components.html(html, height=alto, scrolling=False)
 
 
