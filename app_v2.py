@@ -18,9 +18,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Sin posiciones confirmadas no hay recorrido que enseñar: la hoja de carga ocupa toda la
-# superficie y la ruta no se dibuja — solo el tema, en el encabezado.
-con_datos = bool(st.session_state.get("_wizard_pos_confirmed"))
+# Hasta que el usuario pulsa «Ver resultados →» (al final del Bloque 3, opcional) no hay
+# recorrido que enseñar: la hoja de carga ocupa toda la superficie y la ruta no se dibuja —
+# solo el tema, en el encabezado. Confirmar posiciones (Bloque 2) NO basta por sí solo:
+# saltar directo a resultados en ese punto dejaba el Bloque 3 (ingresos) inalcanzable.
+con_datos = bool(st.session_state.get("_wizard_listo"))
 
 # Los estilos se inyectan ANTES de dibujar el encabezado: si `render_encabezado` corriera
 # primero, el primer pintado de esta corrida saldría sin tokens.

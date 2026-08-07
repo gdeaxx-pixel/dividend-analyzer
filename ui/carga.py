@@ -139,11 +139,11 @@ def render_bloque_transacciones() -> bool:
                               "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary"):
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
+                st.session_state["_wizard_listo"] = False
                 st.rerun()
         return True
 
-    st.markdown(bloque_header(1, "Transacciones · CSV / Excel", "activo",
-                              "Sube el export de tu bróker para comenzar."),
+    st.markdown(bloque_header(1, "Transacciones · CSV / Excel", "activo"),
                 unsafe_allow_html=True)
     archivo = st.file_uploader("Archivo de transacciones", type=["csv", "xlsx"],
                                label_visibility="collapsed", help=_AYUDA_BROKER,
@@ -215,7 +215,6 @@ def render_bloque_posiciones() -> bool:
             key="_vd_fotos",
             help="Sube capturas donde se vean «Acciones/Posición» y «Base de coste / Cost "
                  "Basis» y rellenamos la tabla por ti.")
-        st.caption("Opcional · PNG o JPG · también puedes escribir los valores a mano")
         if fotos:
             firma = tuple((f.name, f.size) for f in fotos)
             if firma != st.session_state.get("_wizard_photo_sig"):
@@ -233,6 +232,11 @@ def render_bloque_posiciones() -> bool:
 
     previa = st.session_state.get("_wizard_csv_ticker_data") or {}
     posiciones = {}
+
+    col_h1, col_h2, col_h3 = st.columns([1.2, 1, 1.4])
+    col_h2.markdown('<p class="vd-col-header">Acciones</p>', unsafe_allow_html=True)
+    col_h3.markdown('<p class="vd-col-header">Costo base</p>', unsafe_allow_html=True)
+
     for ticker in analizables:
         fila = previa.get(ticker, {})
         ocr = leido.get(ticker) or {}
@@ -306,7 +310,7 @@ def render_carga() -> bool:
                 unsafe_allow_html=True)
     st.markdown(
         '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
-        'la lectura. Nada sale de tu navegador hacia un servidor nuestro.</p>',
+        'la lectura.</p>',
         unsafe_allow_html=True)
 
     hay_csv = render_bloque_transacciones()
@@ -327,7 +331,12 @@ def render_carga() -> bool:
         return False
 
     render_bloque_ingresos()
-    return True
+
+    if st.button("Ver resultados →", key="_vd_ir_resultados", type="primary"):
+        st.session_state["_wizard_listo"] = True
+        st.rerun()
+
+    return bool(st.session_state.get("_wizard_listo"))
 
 
 ESTILOS_CARGA = """
@@ -345,6 +354,11 @@ ESTILOS_CARGA = """
           letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
         }
         .vd-bloque-sub { font-size: 11.5px; color: var(--ink-mut); margin-top: 1px; }
+        .vd-col-header {
+          font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+          letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mut);
+          margin: 0 0 4px;
+        }
         .vd-bloque-locked { opacity: .5; border: 1px dashed var(--hair); padding: 10px 14px; margin: 6px 0; }
         .vd-bloque-locked .vd-bloque-head { margin: 0; }
         .vd-bloque-resumen {

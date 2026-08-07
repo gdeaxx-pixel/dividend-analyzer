@@ -86,10 +86,11 @@ def _sync_tema() -> None:
 
 
 def render_encabezado(con_datos: bool) -> str:
-    """Fila superior: marca (o el eyebrow de la carga) a la izquierda, tema a la derecha.
+    """Fila superior: marca a la izquierda, tema a la derecha.
 
-    En `con_datos=False` la marca no se dibuja aquí: la dibuja `ui/carga.py` como `<h2>`,
-    porque ahí es el título de la pantalla. Devuelve el tema activo — nunca `None`.
+    En `con_datos=False` la marca no se dibuja aquí: el wordmark de `ui/carga.py` (`<h2>`)
+    ya cumple ese papel como título de pantalla — mostrar ambos era redundante, así que la
+    columna izquierda queda vacía durante la carga. Devuelve el tema activo — nunca `None`.
     """
     st.session_state.setdefault("vd_tema", "Claro")
     st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
@@ -98,9 +99,6 @@ def render_encabezado(con_datos: bool) -> str:
     with col_izq:
         if con_datos:
             st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span class="vd-badge">Paso 1 de 2 · Carga</span>',
-                        unsafe_allow_html=True)
     with col_der:
         st.segmented_control(
             "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
