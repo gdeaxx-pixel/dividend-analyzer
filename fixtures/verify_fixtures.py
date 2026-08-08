@@ -64,7 +64,7 @@ def check(label, expected, got, failures):
 def main():
     failures = []
 
-    for case in ("schwab_synth_1", "ib_synth_1"):
+    for case in ("schwab_synth_1", "schwab_synth_2", "ib_synth_1"):
         case_dir = os.path.join(BASE, case)
         with open(os.path.join(case_dir, "expected.json"), encoding="utf-8") as f:
             exp = json.load(f)
@@ -115,6 +115,44 @@ def main():
         for ticker, invested in pexp["invested"].items():
             check(f"{ticker} vista previa invertido", invested,
                   preview.get(ticker, {}).get("invested", 0.0), failures)
+
+        # ── Income: hasta la Fase 5c el bloque `income_expected` de los expected.json
+        # era DECORATIVO — nadie lo comprobaba, y por eso pasó inadvertido que
+        # `schwab_synth_1` traía "Reported" donde el export real de Schwab dice
+        # "Received" (literal verificado en test_logic.py:799-803). Con la palabra
+        # equivocada, `summarize_income` devolvía {} y el fixture no ejercía nada de
+        # la capa de ingresos. Estas comprobaciones existen para que no se repita.
+        iexp = exp.get("income_expected") or {}
+        income_path = os.path.join(BASE, exp["income_glob"]) if exp.get("income_glob") else None
+        if iexp.get("received") and income_path and os.path.isfile(income_path):
+            with open(income_path, "rb") as f:
+                income_df = logic.parse_schwab_income_csv(f.read())
+            if income_df is None:
+                print("  [FALLA] el income CSV no se reconoce como export de Schwab")
+                failures.append(f"{case}: income no parseable")
+            else:
+                summ = logic.summarize_income(income_df)
+                for ticker, total in iexp["received"].items():
+                    check(f"{ticker} income recibido", total,
+                          summ["tickers"].get(ticker, {}).get("received_total", 0.0), failures)
+                for ticker, n in (iexp.get("n_payments") or {}).items():
+                    check(f"{ticker} income n pagos", float(n),
+                          float(summ["tickers"].get(ticker, {}).get("n_payments", 0)), failures)
+                for ticker, pp in (iexp.get("est_per_payment") or {}).items():
+                    check(f"{ticker} income est/pago", pp,
+                          summ["tickers"].get(ticker, {}).get("est_per_payment") or 0.0, failures)
+
+                # Proyección: solo la declaran los casos que traen filas 'Estimated'.
+                # Es la rama que `schwab_synth_1` no puede alcanzar por diseño.
+                pexp_proj = {k: v for k, v in (iexp.get("projection_expected") or {}).items()
+                             if isinstance(v, dict)}
+                if pexp_proj:
+                    proj = logic.project_income(income_df, None)
+                    for ticker, want in pexp_proj.items():
+                        got = proj.get(ticker) or {}
+                        for field, value in want.items():
+                            check(f"{ticker} {field}", float(value),
+                                  float(got.get(field) or 0.0), failures)
 
     print()
     if failures:
