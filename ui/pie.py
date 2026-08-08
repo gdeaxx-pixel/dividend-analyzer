@@ -233,6 +233,27 @@ def _render_disclaimer() -> None:
         "</div>", unsafe_allow_html=True)
 
 
+def _render_reporte_pdf(resultados: dict) -> None:
+    """Fila 37 — descarga del reporte PDF. Literal de `app.py:5271-5282`: `report.py`
+    y `test_report.py` no se tocan, solo se cablea el botón. `try/except` porque el
+    original también lo protege (un reporte que falla no debe romper el pie)."""
+    try:
+        from datetime import date as _date
+
+        from report import generate_report_pdf
+
+        broker = st.session_state.get("_wizard_broker") or "schwab"
+        pdf_bytes = generate_report_pdf(resultados, broker, version="2.0")
+        st.download_button(
+            label="Descargar Reporte PDF",
+            data=pdf_bytes,
+            file_name=f"auditoria-portafolio-{_date.today().isoformat()}.pdf",
+            mime="application/pdf",
+        )
+    except Exception:
+        pass
+
+
 def render_pie(resultados: dict) -> None:
     """Punto único de entrada: el pie completo, siempre visible al final de resultados."""
     if not resultados:
@@ -246,6 +267,7 @@ def render_pie(resultados: dict) -> None:
     _render_notas_tecnicas(resultados)
     _render_excluidos(resultados)
     _render_calculadoras()
+    _render_reporte_pdf(resultados)
     _render_disclaimer()
 
 
