@@ -4116,7 +4116,39 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
                             unsafe_allow_html=True
                         )
 
-
+                # ── Validación cruzada del 1042-S (tercera fuente, fiscal) ───
+                _wiz_1042s = st.session_state.get('_wizard_1042s')
+                if _wiz_1042s:
+                    _v1042 = logic.build_1042s_validation(results, _wiz_1042s)
+                    if _v1042:
+                        _v_style = {
+                            'match':            ('#4caf82', '#f0faf5', 'Coincide'),
+                            'portfolio_higher':  ('#e0a23c', '#fbf7ef', 'Tu análisis reporta más'),
+                            'form_higher':       ('#e0a23c', '#fbf7ef', 'El 1042-S reporta más'),
+                            'no_overlap':        ('#8899aa', '#f6f3f2', 'Sin año en común'),
+                        }
+                        _v_accent, _v_bg, _v_tag = _v_style.get(
+                            _v1042['status'], _v_style['no_overlap'])
+                        _v_bruto_p = f"${_v1042['bruto_portafolio']:,.2f}"
+                        _v_bruto_f = f"${_v1042['bruto_1042s']:,.2f}"
+                        st.markdown(
+                            '<div style="margin:8px 0 4px 0;"><p style="font-family:Inter,sans-serif;font-size:13px;'
+                            'font-weight:800;color:#021C36;margin:0 0 4px 0;">Validación cruzada del 1042-S</p>'
+                            '<p style="font-family:Inter,sans-serif;font-size:12px;color:#8899aa;margin:0 0 6px 0;">'
+                            f'Comparamos el dividendo bruto de tu análisis en {_v1042["tax_year"]} contra tu '
+                            'Formulario 1042-S (tercera fuente, fiscal). El código 01 (interés de cash) no cuenta.</p>'
+                            f'<div style="border-left:3px solid {_v_accent};padding:8px 14px;margin:8px 0;background:{_v_bg};">'
+                            f'<p style="font-family:Inter,sans-serif;font-size:13px;font-weight:700;color:#021C36;margin:0;">'
+                            f'<span style="color:{_v_accent};font-weight:600;">{_v_tag}</span></p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#555;margin:3px 0 0 0;line-height:1.5;">'
+                            f'Dividendo bruto — Tu análisis: <b>{_v_bruto_p}</b> · 1042-S: <b>{_v_bruto_f}</b> · '
+                            f'Retenido: <b>${_v1042["retenido_1042s"]:,.2f}</b> · '
+                            f'ROC (código 37): <b>${_v1042["roc_1042s"]:,.2f}</b> ({_v1042["roc_pct"]:.1f}% del bruto)</p>'
+                            f'<p style="font-family:Inter,sans-serif;font-size:12px;color:#777;margin:3px 0 0 0;line-height:1.5;">'
+                            f'{_v1042["note"]}</p>'
+                            '</div></div>',
+                            unsafe_allow_html=True
+                        )
 
             # ── Ingresos: Schwab vs tu cálculo + proyección (consolidado) ──
             _income_df_s3 = st.session_state.get('_wizard_income_df')
