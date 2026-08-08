@@ -62,6 +62,15 @@ def extraer(html: str) -> str:
         sys.exit("No encontré el botón «Volver» a quitar — ¿cambió su marcado?")
     panel = panel.replace(boton, "", 1)
 
+    # `hidden` en el envoltorio: en el demo `view-metodologia` es una vista de nivel
+    # superior que `showCat()` desoculta al seleccionarla (mismo patrón que
+    # `view-metodo` en `extract_metodo.py` y `panel-hoja` en `extract_hoja.py`). Sin
+    # `showCat` en el port, hay que quitarlo en la extracción o el iframe queda negro.
+    apertura_view = '<div id="view-metodologia" hidden>'
+    if apertura_view not in panel:
+        sys.exit("No encontré `hidden` en `view-metodologia` — ¿cambió el demo?")
+    panel = panel.replace(apertura_view, '<div id="view-metodologia">', 1)
+
     # 3 · `buildMethIndex`: arma los botones de salto del índice. Autocontenido — no
     #     depende de ningún estado del demo, así que se porta verbatim.
     ini = html.find("(function buildMethIndex() {")

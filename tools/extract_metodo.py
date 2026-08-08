@@ -63,6 +63,15 @@ def extraer(html: str) -> str:
         sys.exit("No pude aislar `view-metodo` en el demo — ¿cambió su estructura?")
     panel = html[i:j].rstrip()
 
+    # El envoltorio `view-metodo` trae `hidden` porque en el demo es una vista de nivel
+    # superior que `showCat()` desoculta al seleccionarla (mismo mecanismo, un nivel más
+    # arriba, que el `hidden` de `panel-hoja` en `extract_hoja.py`). Aquí no hay
+    # `showCat` — el componente completo es la única vista del iframe.
+    apertura_view = '<div id="view-metodo" hidden>'
+    if apertura_view not in panel:
+        sys.exit("No encontré `hidden` en `view-metodo` — ¿cambió el demo?")
+    panel = panel.replace(apertura_view, '<div id="view-metodo">', 1)
+
     # 3 · Los 20 modales — viven después de Metodología en el DOM, no dentro de
     #     `view-metodo`, pero son de esta vista (ver docstring).
     mi = html.find("<!-- ============ MODAL: Valor real hoy")
@@ -84,15 +93,35 @@ def extraer(html: str) -> str:
         sys.exit("No pude aislar el módulo JS de Método tradicional.")
     script = html[ini:fin].rstrip()
 
+    # `ajustarMetodoNra` es una variable global (`var ajustarMetodoNra = null;`) que en
+    # el demo vive en el `<script>` grande, para que `showMetTab` la llame al abrir la
+    # sub-vista "matriz". Acá no hay `showMetTab`, pero el propio módulo SÍ la lee en su
+    # listener de `resize` (unas líneas más abajo, en el mismo IIFE) — a diferencia de
+    # `ajustarHoja` en Hoja Excel, esta no es código muerto: solo le falta la
+    # declaración `var` que en el demo pone el script compartido. Sin ella, con
+    # `"use strict"`, la asignación revienta (`ReferenceError: ajustarMetodoNra is not
+    # defined`) y tumba todo el script antes de llegar al control de sub-vista de abajo
+    # — iframe en negro.
+    script = "  var ajustarMetodoNra;\n" + script
+
     # Control de sub-vista: el port no tiene `showMetTab` (era parte de la navegación
     # del demo). Un script mínimo, propio del port, oculta las 4 sub-vistas que no
     # tocan — initMetodo ya llenó las 5 de una pasada, así que basta con `hidden`.
+    #
+    # `showMetTab("matriz")` en el demo también llama a `ajustarMetodoNra()` cada vez
+    # que se entra a esa sub-vista — reserva el alto máximo entre los 3 modos fiscales
+    # (bruto/ROC/plano) para que cambiar de modo no mueva el layout. Sin esto, el alto
+    # solo se corrige si por casualidad se dispara un `resize` (el único otro sitio que
+    # la llama), así que el `scrollHeight` medido en el navegador es indeterminado:
+    # ~1670px sin ajustar, ~2540px ajustado — se midió el número equivocado más de una
+    # vez antes de encontrar esto.
     control_vista = (
         "  var VISTA_ACTIVA = " + '"{{VISTA_ACTIVA}}";\n'
         "  " + repr(list(MET_ORDER)).replace("'", '"') + ".forEach(function (n) {\n"
         '    var el = document.getElementById("met-panel-" + n);\n'
         "    if (el) el.hidden = (n !== VISTA_ACTIVA);\n"
-        "  });"
+        "  });\n"
+        '  if (VISTA_ACTIVA === "matriz" && ajustarMetodoNra) ajustarMetodoNra();'
     )
 
     return f"""<!-- GENERADO POR tools/extract_metodo.py — NO EDITAR A MANO.

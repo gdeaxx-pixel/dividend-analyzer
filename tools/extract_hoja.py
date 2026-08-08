@@ -74,6 +74,17 @@ def extraer(html: str) -> str:
         sys.exit("No pude localizar el cierre de `etf-view` tras el panel de Hoja Excel.")
     panel = html[i:fin_envoltorio].rstrip()
 
+    # El panel trae `hidden` porque en el demo es una pestaña de nivel superior que
+    # `showTab()` desoculta al seleccionarla. Aquí no hay pestañas del demo — el
+    # componente es la única vista del iframe — así que si se deja `hidden` puesto,
+    # el navegador no pinta nada: iframe negro, sin error en consola.
+    apertura_con_hidden = '<div class="panel" id="panel-hoja" role="tabpanel" hidden>'
+    if apertura_con_hidden not in panel:
+        sys.exit("No encontré `hidden` en la apertura del panel — ¿cambió el demo? "
+                 "Revisa si sigue haciendo falta este parche.")
+    panel = panel.replace(apertura_con_hidden,
+                          '<div class="panel" id="panel-hoja" role="tabpanel">', 1)
+
     # 3 · El tooltip flotante. `initHoja` LLAMA a `showTip`/`hideTip` (los `data-tip` de
     #     sus encabezados), pero esas funciones NO están definidas dentro de su propio
     #     IIFE — viven arriba, en el `<script>` grande que las comparte con Cash flow,
@@ -90,6 +101,17 @@ def extraer(html: str) -> str:
     # 4 · El módulo JS de `initHoja`.
     script = _entre(html, "(function initHoja() {", "\n\n  })();",
                     "el módulo JS de Hoja Excel")
+
+    # `ajustarHoja = igualarCintas;` escribe una variable global (`var ajustarHoja`)
+    # que en el demo vive en el `<script>` grande y que `showTab` llama al abrir la
+    # pestaña «hoja». Aquí no hay pestañas que abrir — `igualarCintas()` ya corre
+    # sola al cargar y en cada resize — así que es una asignación a un global
+    # inexistente. Con `"use strict"` eso es un `ReferenceError` que tumba todo el
+    # script (`ReferenceError: ajustarHoja is not defined`, iframe en negro).
+    linea_ajustar = "    ajustarHoja = igualarCintas;      // showTab lo llama al abrir la sección\n"
+    if linea_ajustar not in script:
+        sys.exit("No encontré la línea de ajustarHoja — ¿cambió el demo? Revisa si sigue haciendo falta este parche.")
+    script = script.replace(linea_ajustar, "", 1)
 
     # Las constantes en duro se sustituyen por el JSON que inyecta el adapter — el
     # mismo patrón que `extract_cashflow.py`. INICIO/TICKER también salen del JSON:

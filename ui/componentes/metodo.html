@@ -1015,7 +1015,7 @@
   body { margin: 0; background: var(--ground); }
 </style>
 <main class="wrap" style="padding-top:0">
-<div id="view-metodo" hidden>
+<div id="view-metodo">
 
     <!-- 1 · LA MATRIZ -->
     <div class="panel" id="met-panel-matriz" role="tabpanel">
@@ -1738,6 +1738,7 @@
 <script>
 (function () {
   "use strict";
+  var ajustarMetodoNra;
 (function initMetodo() {
     // ---- Bloque 1 · la matriz tal cual (hoja fechada 5/1/2026) ----
     var MATRIZ = [
@@ -2523,5 +2524,6 @@
     var el = document.getElementById("met-panel-" + n);
     if (el) el.hidden = (n !== VISTA_ACTIVA);
   });
+  if (VISTA_ACTIVA === "matriz" && ajustarMetodoNra) ajustarMetodoNra();
 })();
 </script>

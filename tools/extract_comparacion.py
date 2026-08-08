@@ -79,6 +79,17 @@ def extraer(html: str) -> str:
     script = _entre(html, "(function initComparacion() {", "\n\n  })();",
                     "el módulo JS de Comparación · Simulación")
 
+    # `ajustarHoja = igualarCintas;` escribe una variable global (`var ajustarHoja`)
+    # que en el demo vive en el `<script>` grande y que `showTab` llama al abrir la
+    # pestaña «hoja». Aquí no hay pestañas que abrir — `igualarCintas()` ya corre
+    # sola al cargar y en cada resize — así que es una asignación a un global
+    # inexistente. Con `"use strict"` eso es un `ReferenceError` que tumba todo el
+    # script (`ReferenceError: ajustarHoja is not defined`, iframe en negro).
+    linea_ajustar = "    ajustarHoja = igualarCintas;      // showTab lo llama al abrir la sección\n"
+    if linea_ajustar not in script:
+        sys.exit("No encontré la línea de ajustarHoja — ¿cambió el demo? Revisa si sigue haciendo falta este parche.")
+    script = script.replace(linea_ajustar, "", 1)
+
     return f"""<!-- GENERADO POR tools/extract_comparacion.py — NO EDITAR A MANO.
      Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
 <meta charset="utf-8">

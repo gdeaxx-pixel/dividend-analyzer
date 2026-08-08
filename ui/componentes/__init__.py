@@ -23,12 +23,38 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 # narrativo de la vista— sin ningún aviso.
 ALTO_CASHFLOW = 2150
 
-# Pendiente de medir en el navegador (mismo criterio que ALTO_CASHFLOW: nunca estimar
-# a ojo). Placeholders generosos mientras se corrigen en la verificación de la Fase 4.
-ALTO_HOJA = 1400
-ALTO_COMPARACION = 900
-ALTO_METODO = 1800
-ALTO_METODOLOGIA = 2600
+# Medido en el navegador sobre el componente real (fixture `schwab_synth_1`, MSTY):
+# `document.body.scrollHeight` = 658px, igual con el interruptor «Corregir la hoja»
+# encendido o apagado (la fila que agrega ya tenía su espacio reservado). Se detectó
+# y corrigió antes de esta medición un bug de extracción que dejaba el iframe en
+# negro (`hidden` heredado del panel de pestañas del demo — ver `extract_hoja.py`).
+ALTO_HOJA = 700
+
+# Medido en el navegador (fixture NVDY, paso 1 · DRIP bruto): `scrollHeight` = 901px,
+# ya casi exacto contra el placeholder de 900 — solo se sube el margen de seguridad.
+ALTO_COMPARACION = 920
+
+# Medido en el navegador sobre las 5 sub-vistas (fixture `schwab_synth_1`, precios en
+# vivo vía `analyze_portfolio`): matriz 1847px, rendimiento 1128px, payback 902px,
+# rendimiento vs tasa la más alta — 2541px —, otras calculadoras 563px. Dos bugs de
+# extracción corregidos antes de esta medición: (1) el iframe en negro por `hidden`
+# heredado de `view-metodo`, el envoltorio de nivel superior (ver `extract_metodo.py`);
+# (2) la medición inicial daba números inconsistentes entre cargas (1612–2541 para
+# "tasa") porque `ajustarBaseFiscal()` — que reserva el alto máximo entre los 3 modos
+# fiscales (bruto/ROC/plano) — solo se disparaba por azar vía `resize`, nunca al
+# entrar a la sub-vista «matriz» como hace `showMetTab` en el demo; se cableó ese
+# llamado en el extractor. Con eso el alto es determinista, pero sigue habiendo margen
+# extra: los precios en vivo pueden variar el número de filas visibles entre cargas.
+ALTO_METODO = 2650
+
+# Medido en el navegador: `scrollHeight` = 6826px, estable (una primera medición con
+# el iframe todavía a 2600 dio 5882 — algo dentro del componente solo terminaba de
+# expandirse con más alto disponible; se volvió a medir tras subir el alto hasta que
+# el número dejó de moverse). El placeholder de 2600 dejaba más de la mitad del texto
+# invisible sin aviso — `scrolling=False` no deja ni hacer scroll para alcanzarlo. Se
+# detectó y corrigió antes de esta medición un bug de extracción que dejaba el iframe
+# en negro (`hidden` heredado de `view-metodologia` — ver `extract_metodologia.py`).
+ALTO_METODOLOGIA = 7000
 
 
 def _plantilla(nombre: str) -> str:

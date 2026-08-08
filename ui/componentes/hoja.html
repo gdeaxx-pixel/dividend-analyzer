@@ -1015,7 +1015,7 @@
   body { margin: 0; background: var(--ground); }
 </style>
 <main class="wrap" style="padding-top:0">
-<div class="panel" id="panel-hoja" role="tabpanel" hidden>
+<div class="panel" id="panel-hoja" role="tabpanel">
     <header class="cmp-head">
       <h2 class="cmp-title">Hoja Excel · con el error y sin él</h2>
       <p class="cmp-lede">Esta es la hoja de cálculo de toda la vida, con tus números. Enciende el interruptor y verás qué le falta — y por qué la pérdida que muestra <b>no es la real</b>.</p>
@@ -1240,7 +1240,6 @@
       var alto = Math.max(eqA.getBoundingClientRect().height, eqB.getBoundingClientRect().height);
       eqA.style.minHeight = eqB.style.minHeight = alto + "px";
     }
-    ajustarHoja = igualarCintas;      // showTab lo llama al abrir la sección
     igualarCintas();
     var _reflow;
     window.addEventListener("resize", function () {
