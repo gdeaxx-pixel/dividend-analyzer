@@ -136,7 +136,8 @@ def render_bloque_transacciones() -> bool:
             if st.button("editar", key="_vd_edit_csv", type="tertiary",
                          use_container_width=True):
                 for clave in ("_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker",
-                              "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary"):
+                              "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary",
+                              "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error"):
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
                 st.session_state["_wizard_listo"] = False
@@ -281,24 +282,82 @@ def render_bloque_posiciones() -> bool:
     return False
 
 
-def render_bloque_ingresos() -> None:
-    """Bloque 3 — opcional, valida el ingreso contra el reporte del bróker."""
-    if st.session_state.get("_wizard_income_summary") is not None:
-        st.markdown(bloque_resumen("Ingresos cargados", "validación cruzada activa"),
-                    unsafe_allow_html=True)
+def render_bloque_1042s() -> None:
+    """Bloque 3 — opcional. Lee y valida el Formulario 1042-S (retención NRA / ROC)."""
+    wizard_1042s = st.session_state.get("_wizard_1042s")
+    if wizard_1042s is not None:
+        forms = wizard_1042s.get("forms") or []
+        n = len(forms)
+        credito = sum(f.get("withholding_credit") or 0.0 for f in forms
+                      if logic.income_code_str(f.get("income_code")) == "37")
+        detalle = f"{n} formularios"
+        if credito:
+            detalle += f" · crédito ROC ${credito:,.2f}"
+        st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+        _, col = st.columns([5, 1])
+        with col:
+            if st.button("editar", key="_vd_edit_1042s", type="tertiary",
+                         use_container_width=True):
+                st.session_state.pop("_wizard_1042s", None)
+                st.session_state.pop("_wizard_1042s_sig", None)
+                st.session_state.pop("_wizard_1042s_error", None)
+                st.rerun()
         return
 
-    st.markdown(bloque_header(3, "Archivo de ingresos · opcional", "activo",
-                              "Schwab: busca «Investment Income». En Interactive Brokers "
-                              "ya viene incluido en el archivo del Bloque 1."),
+    if st.session_state.get("_wizard_broker") == "ibkr":
+        st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
+                                  "Validación fiscal: confirma retención y ROC del año."),
+                    unsafe_allow_html=True)
+        st.markdown(bloque_resumen(
+            "1042-S",
+            "No hace falta — Interactive Brokers ya incluye el detalle fiscal en el "
+            "archivo del Bloque 1."),
+            unsafe_allow_html=True)
+        return
+
+    st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
+                              "Validación fiscal: confirma retención y ROC del año."),
                 unsafe_allow_html=True)
-    archivo = st.file_uploader("Archivo de ingresos", type=["csv", "xlsx"],
-                               label_visibility="collapsed", key="_vd_upload_inc",
-                               help="Schwab: Historial → Ingresos por inversión → Exportar")
-    if archivo is not None:
-        st.session_state["_wizard_income_name"] = archivo.name
-        st.session_state["_wizard_income_summary"] = {"archivo": archivo.name}
-        st.rerun()
+    archivo = st.file_uploader("Formulario 1042-S", type=["pdf"],
+                               key="_vd_upload_1042s", label_visibility="collapsed")
+    st.caption(
+        "Tu broker te lo envía a inicio de año (Schwab: Cuenta → Documentos → Impuestos). "
+        "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
+        "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
+        "El PDF no se guarda: se lee en memoria y se descarta.")
+
+    if archivo is None:
+        return
+
+    # El fallo se guarda en sesión, no se pinta y se olvida: la guarda por firma corta
+    # antes de releer el mismo archivo, así que sin persistirlo el mensaje desaparecía en
+    # el primer rerun y el usuario quedaba con su PDF adjunto, sin error y sin resultado.
+    sig = (archivo.name, archivo.size)
+    if sig != st.session_state.get("_wizard_1042s_sig"):
+        with st.spinner("Leyendo tu 1042-S…"):
+            resultado = logic.extract_1042s(archivo.getvalue(), _clave_gemini())
+        st.session_state["_wizard_1042s_sig"] = sig
+
+        if resultado is None:
+            st.session_state["_wizard_1042s_error"] = "ilegible"
+        else:
+            codigos = {logic.income_code_str(f.get("income_code"))
+                       for f in (resultado.get("forms") or [])}
+            if "06" not in codigos and "37" not in codigos:
+                st.session_state["_wizard_1042s_error"] = "sin_dividendos"
+            else:
+                st.session_state.pop("_wizard_1042s_error", None)
+                st.session_state["_wizard_1042s"] = resultado
+                st.rerun()
+
+    error = st.session_state.get("_wizard_1042s_error")
+    if error == "ilegible":
+        st.error("No reconocimos este PDF como un Formulario 1042-S.")
+        st.caption("Verifica que sea el documento que te envió tu broker (Schwab: Cuenta → "
+                   "Documentos → Impuestos), en formato PDF y sin escanear.")
+    elif error == "sin_dividendos":
+        st.warning("Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
+                   "(código 37) en tus formularios.")
 
 
 def render_carga() -> bool:
@@ -319,19 +378,19 @@ def render_carga() -> bool:
         st.markdown(bloque_bloqueado(2, "Posiciones del portafolio",
                                      "Se desbloquea al cargar el archivo."),
                     unsafe_allow_html=True)
-        st.markdown(bloque_bloqueado(3, "Archivo de ingresos · opcional",
+        st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
         return False
 
     hay_posiciones = render_bloque_posiciones()
     if not hay_posiciones:
-        st.markdown(bloque_bloqueado(3, "Archivo de ingresos · opcional",
+        st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
         return False
 
-    render_bloque_ingresos()
+    render_bloque_1042s()
 
     if st.button("Ver resultados →", key="_vd_ir_resultados", type="primary"):
         st.session_state["_wizard_listo"] = True
@@ -389,4 +448,28 @@ ESTILOS_CARGA = """
         [data-testid="stFileUploader"] section {
           background: var(--panel); border: 1px dashed var(--hair); border-radius: 0;
         }
+        [data-testid="stFileUploaderDropzoneInstructions"] {
+          color: var(--ink);
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] span {
+          color: var(--ink);
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] small {
+          color: var(--ink-mut);
+        }
+        [data-testid="stFileUploader"] [data-testid="stBaseButton-secondary"] {
+          background: var(--panel); color: var(--ink); border: 1px solid var(--hair);
+          border-radius: 0;
+        }
+        .vd-1042s-card {
+          background: var(--panel-tint); border-left: 3px solid var(--hair);
+          padding: 10px 14px; margin: 0 0 18px;
+        }
+        .vd-1042s-titulo {
+          font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+          letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
+          margin: 0;
+        }
+        .vd-1042s-detalle { font-size: 12px; color: var(--ink-2); margin: 4px 0 0; }
+        .vd-1042s-nota { font-size: 12px; color: var(--ink-mut); margin: 3px 0 0; }
 """
