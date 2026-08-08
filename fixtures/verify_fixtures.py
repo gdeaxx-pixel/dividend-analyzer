@@ -69,7 +69,14 @@ def main():
         with open(os.path.join(case_dir, "expected.json"), encoding="utf-8") as f:
             exp = json.load(f)
 
-        csv_path = os.path.join(BASE, exp["csv_glob"])
+        # `csv_glob`/`income_glob` son relativos al DIRECTORIO DEL CASO, que es la
+        # convención de los otros tres consumidores del mismo manifest
+        # (`test_real_examples.py:90`, `validate_real_cases.py:104`, `demo_mode.py:55`)
+        # y la que usan los casos reales de `real_examples/`. Este archivo los resolvía
+        # contra `BASE` y los expected.json sintéticos llevaban el nombre del caso dentro
+        # del glob para compensar — con el efecto de que los otros tres consumidores
+        # construían una ruta duplicada y saltaban esos casos en silencio.
+        csv_path = os.path.join(case_dir, exp["csv_glob"])
         with open(csv_path, "rb") as f:
             raw = f.read()
 
@@ -123,7 +130,7 @@ def main():
         # equivocada, `summarize_income` devolvía {} y el fixture no ejercía nada de
         # la capa de ingresos. Estas comprobaciones existen para que no se repita.
         iexp = exp.get("income_expected") or {}
-        income_path = os.path.join(BASE, exp["income_glob"]) if exp.get("income_glob") else None
+        income_path = os.path.join(case_dir, exp["income_glob"]) if exp.get("income_glob") else None
         if iexp.get("received") and income_path and os.path.isfile(income_path):
             with open(income_path, "rb") as f:
                 income_df = logic.parse_schwab_income_csv(f.read())

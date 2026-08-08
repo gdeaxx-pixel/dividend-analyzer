@@ -193,8 +193,8 @@ def write_ibkr(outdir):
 SCHWAB_EXPECTED = {
     "case_id": "schwab_synth_1",
     "broker": "schwab",
-    "csv_glob": "schwab_synth_1/synthetic_transactions.csv",
-    "income_glob": "schwab_synth_1/synthetic_investment_income.csv",
+    "csv_glob": "synthetic_transactions.csv",
+    "income_glob": "synthetic_investment_income.csv",
     "source": "SINTETICO — cifras inventadas, estructura real del export de Charles Schwab.",
     "notes": ("No es un caso real. Sirve para desarrollo y validacion de UI sin acceso a "
               "real_examples/. La validacion contra datos reales corre aparte, con "
@@ -253,7 +253,7 @@ SCHWAB_EXPECTED = {
 IB_EXPECTED = {
     "case_id": "ib_synth_1",
     "broker": "ibkr",
-    "csv_glob": "ib_synth_1/synthetic_transactions.csv",
+    "csv_glob": "synthetic_transactions.csv",
     "income_glob": None,
     "source": "SINTETICO — cifras inventadas, estructura real del export de Interactive Brokers.",
     "notes": ("No es un caso real. El export de IB trae la retencion como filas "

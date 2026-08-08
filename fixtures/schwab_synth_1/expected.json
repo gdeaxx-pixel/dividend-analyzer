@@ -1,30 +1,30 @@
 {
   "case_id": "schwab_synth_1",
   "broker": "schwab",
-  "csv_glob": "schwab_synth_1/synthetic_transactions.csv",
-  "income_glob": "schwab_synth_1/synthetic_investment_income.csv",
+  "csv_glob": "synthetic_transactions.csv",
+  "income_glob": "synthetic_investment_income.csv",
   "source": "SINTETICO — cifras inventadas, estructura real del export de Charles Schwab.",
   "notes": "No es un caso real. Sirve para desarrollo y validacion de UI sin acceso a real_examples/. La validacion contra datos reales corre aparte, con DIVIDEND_REAL_EXAMPLES_DIR.",
   "tickers": {
     "MSTY": {
-      "shares": 41.8182,
+      "shares": 8.36364,
       "cost_basis": 1040.0,
       "market_value": null,
-      "reliability": "high",
-      "note": "40 compradas @ $25.00 + 1.8182 reinvertidas @ $22.00."
+      "reliability": "ok",
+      "note": "40 compradas @ $25.00 + 1.8182 reinvertidas @ $22.00. ATRAVIESA un reverse split real de MSTY (2025-12-08, ratio 0.2): la compra es anterior, asi que la posicion queda ajustada a 8.36364 — ese ajuste ES parte de lo que este fixture verifica. Si MSTY vuelve a hacer split este numero cambia y el test fallara en voz alta: actualizarlo, no borrarlo."
     },
     "TSLY": {
-      "shares": 50.0,
+      "shares": 10.0,
       "cost_basis": 600.0,
       "market_value": null,
-      "reliability": "high",
-      "note": "50 compradas @ $12.00, sin reinversion."
+      "reliability": "ok",
+      "note": "50 compradas @ $12.00, sin reinversion. ATRAVIESA un reverse split real de TSLY (2025-12-01, ratio 0.2): la compra es anterior, asi que la posicion queda ajustada a 10.0 — ese ajuste ES parte de lo que este fixture verifica. Si TSLY vuelve a hacer split este numero cambia y el test fallara en voz alta: actualizarlo, no borrarlo."
     },
     "SCHB": {
       "shares": 10.05,
       "cost_basis": 201.05,
       "market_value": null,
-      "reliability": "high",
+      "reliability": "ok",
       "note": "10 compradas @ $20.00 + 0.05 reinvertidas @ $21.00."
     }
   },

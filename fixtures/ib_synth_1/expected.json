@@ -1,7 +1,7 @@
 {
   "case_id": "ib_synth_1",
   "broker": "ibkr",
-  "csv_glob": "ib_synth_1/synthetic_transactions.csv",
+  "csv_glob": "synthetic_transactions.csv",
   "income_glob": null,
   "source": "SINTETICO — cifras inventadas, estructura real del export de Interactive Brokers.",
   "notes": "No es un caso real. El export de IB trae la retencion como filas 'Foreign Tax Withholding' separadas de las filas 'Dividend'.",
@@ -10,22 +10,22 @@
       "shares": 50.0,
       "cost_basis": 750.0,
       "market_value": null,
-      "reliability": "high",
-      "note": "60 compradas @ $15.00, 10 vendidas. Costo base proporcional a las 50 vivas."
+      "reliability": "unreliable",
+      "note": "60 compradas @ $15.00, 10 vendidas. Costo base proporcional a las 50 vivas. OBSERVADO 2026-08-08: assess_ticker_quality lo reporta 'unreliable' (no_cost_recorded). Para NVDY y SMH esto es SOSPECHOSO — su CSV si registra una compra con costo, y aun asi 'Invested Capital' del daily_trend sale en cero. Se anota como observado para que el test corra, NO como comportamiento bendecido: pendiente de revisar con Daniel si es una deficiencia de la app con el formato de IB."
     },
     "CONY": {
-      "shares": 80.0,
+      "shares": 8.0,
       "cost_basis": 800.0,
       "market_value": null,
-      "reliability": "high",
-      "note": "80 compradas @ $10.00."
+      "reliability": "unreliable",
+      "note": "80 compradas @ $10.00. ATRAVIESA un reverse split real de CONY (2025-12-02, ratio 0.1): la compra es anterior, asi que la posicion queda ajustada a 8.0 — ese ajuste ES parte de lo que este fixture verifica. Si CONY vuelve a hacer split este numero cambia y el test fallara en voz alta: actualizarlo, no borrarlo. OBSERVADO 2026-08-08: assess_ticker_quality lo reporta 'unreliable' (value_without_cost, splits_detected). Para NVDY y SMH esto es SOSPECHOSO — su CSV si registra una compra con costo, y aun asi 'Invested Capital' del daily_trend sale en cero. Se anota como observado para que el test corra, NO como comportamiento bendecido: pendiente de revisar con Daniel si es una deficiencia de la app con el formato de IB."
     },
     "SMH": {
       "shares": 4.0,
       "cost_basis": 1000.0,
       "market_value": null,
-      "reliability": "high",
-      "note": "4 compradas @ $250.00."
+      "reliability": "unreliable",
+      "note": "4 compradas @ $250.00. OBSERVADO 2026-08-08: assess_ticker_quality lo reporta 'unreliable' (no_cost_recorded). Para NVDY y SMH esto es SOSPECHOSO — su CSV si registra una compra con costo, y aun asi 'Invested Capital' del daily_trend sale en cero. Se anota como observado para que el test corra, NO como comportamiento bendecido: pendiente de revisar con Daniel si es una deficiencia de la app con el formato de IB."
     }
   },
   "csv_preview_expected": {

@@ -1,24 +1,24 @@
 {
   "case_id": "schwab_synth_2",
   "broker": "schwab",
-  "csv_glob": "schwab_synth_2/synthetic_transactions.csv",
-  "income_glob": "schwab_synth_2/synthetic_investment_income.csv",
+  "csv_glob": "synthetic_transactions.csv",
+  "income_glob": "synthetic_investment_income.csv",
   "source": "SINTETICO — cifras inventadas, estructura real del export de Charles Schwab.",
-  "notes": "Complementa a schwab_synth_1, que es el caso de proyeccion VACIA (menos de INCOME_PROJ_MIN_PAYMENTS pagos y sin filas 'Estimated'). Este caso existe para ejercer la rama CON CONTENIDO de la vista Ingresos: 11 pagos 'Received' mensuales decrecientes en MSTY + 12 filas 'Estimated' futuras, de modo que project_income y filter_income_assets devuelvan proyeccion no vacia sin falsear nada. Creado en la Fase 5c tras descubrir que esa rama nunca se habia ejecutado y escondia un bug de expanders anidados.",
+  "notes": "Complementa a schwab_synth_1, que es el caso de proyeccion VACIA (menos de INCOME_PROJ_MIN_PAYMENTS pagos y sin filas 'Estimated'). Este caso existe para ejercer la rama CON CONTENIDO de la vista Ingresos: 7 pagos 'Received' mensuales decrecientes en MSTY + 12 filas 'Estimated' futuras, de modo que project_income y filter_income_assets devuelvan proyeccion no vacia sin falsear nada. Creado en la Fase 5c tras descubrir que esa rama nunca se habia ejecutado y escondia un bug de expanders anidados. Las compras son POSTERIORES al reverse split real de MSTY (2025-12-08, ratio 0.2) a proposito: asi 'shares' no depende de una accion corporativa que este caso no pretende probar. Si MSTY vuelve a hacer split, este numero cambia y el test fallara en voz alta — actualizarlo, no borrarlo.",
   "tickers": {
     "MSTY": {
       "shares": 100.0,
-      "cost_basis": 2000.0,
+      "cost_basis": 3176.0,
       "market_value": null,
       "reliability": "ok",
-      "note": "100 compradas @ $20.00, sin reinversion. Dividendo mensual decreciente 90->40 (erosion tipica YieldMax)."
+      "note": "100 compradas @ $31.76 el 12/15/2025 (cierre REAL sin ajustar de esa fecha), sin reinversion ni ventas. Dividendo mensual decreciente 90->42 (erosion tipica YieldMax)."
     },
     "SCHB": {
       "shares": 20.0,
-      "cost_basis": 440.0,
+      "cost_basis": 523.2,
       "market_value": null,
       "reliability": "ok",
-      "note": "20 compradas @ $22.00, dividendo trimestral marginal."
+      "note": "20 compradas @ $26.16 el 12/15/2025 (cierre REAL sin ajustar), dividendo trimestral marginal."
     }
   },
   "csv_preview_expected": {
@@ -28,21 +28,21 @@
       "SCHB": 20.0
     },
     "invested": {
-      "MSTY": 2000.0,
-      "SCHB": 440.0
+      "MSTY": 3176.0,
+      "SCHB": 523.2
     },
-    "note": "Vista previa del Bloque 1, NO la posicion. Este caso no tiene reinversiones ni ventas, asi que la vista previa coincide con la posicion."
+    "note": "Vista previa del Bloque 1, NO la posicion. Este caso no tiene reinversiones ni ventas, asi que la vista previa coincide con la posicion. Los precios de compra son el cierre REAL sin ajustar del 2025-12-15: con precios inventados muy por debajo del real, assess_data_quality marca 'value_without_cost' con razon (el valor del primer dia superaria al costo registrado) y el ticker sale 'unreliable'."
   },
   "income_expected": {
     "source": "synthetic_investment_income.csv",
     "cusip_folds": {},
     "received": {
-      "MSTY": 715.0,
-      "SCHB": 9.4
+      "MSTY": 462.0,
+      "SCHB": 4.9
     },
     "n_payments": {
-      "MSTY": 11,
-      "SCHB": 4
+      "MSTY": 7,
+      "SCHB": 2
     },
     "est_per_payment": {
       "MSTY": 75.0
@@ -50,11 +50,11 @@
     "projection_expected": {
       "MSTY": {
         "schwab_proj": 900.0,
-        "our_proj": 540.0,
-        "overstatement_pct": 66.7,
+        "our_proj": 600.0,
+        "overstatement_pct": 50.0,
         "payments_per_year": 12
       },
-      "note": "schwab_proj = 12 filas 'Estimated' futuras x $75 (el broker repite el pago alto). our_proj = run-rate de los ultimos 3 pagos ((50+45+40)/3 = $45) x 12. La sobreestimacion de 66.7% supera INCOME_OVERSTATE_FLAG_PCT (15%), asi que este caso SI ejerce la justificacion de sobreestimacion."
+      "note": "schwab_proj = 12 filas 'Estimated' futuras x $75 (el broker repite el pago alto). our_proj = run-rate de los ultimos 3 pagos ((58+50+42)/3 = $50) x 12. La sobreestimacion de 50% supera INCOME_OVERSTATE_FLAG_PCT (15%), asi que este caso SI ejerce la justificacion de sobreestimacion."
     },
     "note": "Dividendos BRUTOS. La retencion NRA va aparte, en las filas 'NRA Tax Adj'. 'Received'/'Estimated' son los literales del export real de Schwab (ver test_logic.py:799-803)."
   },
@@ -62,8 +62,8 @@
     "basis": "gross_withheld",
     "moment": "al cobro",
     "withheld_real": {
-      "MSTY": 214.5,
-      "SCHB": 2.82
+      "MSTY": 138.6,
+      "SCHB": 1.47
     },
     "note": "Retencion al cobro, tasa plana del 30%. NO confundir con `refund_estimated` de build_tax_summary, que es una estimacion post-reclasificacion anual (momento distinto — Regla 2)."
   },

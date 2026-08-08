@@ -140,13 +140,44 @@ proyección vacía, `synth_2` la proyección con contenido.
 `AppTest` sobre la vista Ingresos con `schwab_synth_2` contra el commit `6faabbe` (sin
 falsear nada) sale `StreamlitAPIException`; contra el código corregido, renderiza.
 
-**Pendiente para Daniel, no tocado aquí:** `csv_glob` en los `expected.json` está escrito
-relativo a `fixtures/` (como lo consume `verify_fixtures.py`), pero
-`test_real_examples.py:88-91` lo une al **directorio del caso**, produciendo una ruta
-duplicada — por eso el Tier 2 salta sobre los tres fixtures sintéticos. La explicación del
-traspaso («el Tier 2 necesita datos de mercado que los fixtures no cubren») no es la causa
-real. Afecta igual a `synth_1` y a `ib_synth_1`; unificar la convención es un cambio del
-harness compartido y se deja a su decisión.
+### La convención de `csv_glob` — y los tres fixtures que nunca se ejecutaron
+
+Los `expected.json` sintéticos escribían `csv_glob`/`income_glob` relativos a `fixtures/`,
+que es como los resolvía `verify_fixtures.py`. Pero los otros **tres** consumidores del
+mismo manifest (`test_real_examples.py:90`, `validate_real_cases.py:104`,
+`demo_mode.py:55`) los unen al **directorio del caso** — y los casos reales de
+`real_examples/` usan esa convención. Resultado: esos tres construían una ruta duplicada
+(`fixtures/schwab_synth_1/schwab_synth_1/…`) y **saltaban los tres casos en silencio**. La
+explicación del traspaso («el Tier 2 necesita datos de mercado que los fixtures no
+cubren») nunca fue la causa.
+
+Unificado a la convención mayoritaria: globs relativos al caso, `verify_fixtures.py`
+resolviendo contra `case_dir`, y `generate_fixtures.py` corregido para no reintroducirlo.
+**El Tier 2 pasa de 12 skipped / 0 passed a 13 passed.** Lo que esos 13 tests destaparon
+en cuanto empezaron a correr:
+
+- **Cuatro tickers con `shares` desfasados en los tres fixtures**, todos por reverse splits
+  REALES de diciembre 2025 (MSTY y TSLY 1:5 el 08 y 01/12; CONY 1:10 el 02/12). Los
+  fixtures se escribieron con fechas de principios de 2025 y el mercado se movió debajo de
+  ellos. Estaban ocultos tras `reliability: "high"` — un valor que el loader no reconoce
+  (`test_real_examples.py:47` solo asserta `"ok"`), así que el bloque `tickers[].shares`
+  era decorativo igual que `income_expected`. Corregidos a la verdad ajustada por split, con
+  nota de que un split futuro los cambia y debe actualizarse el número, no borrarse.
+- **`schwab_synth_2` se reconstruyó con compras posteriores al split** (2025-12-15) para que
+  su `shares` no dependa de una acción corporativa que ese caso no pretende probar, y **con
+  los precios de compra reales sin ajustar** de esa fecha (MSTY $31.76, SCHB $26.16). Con
+  precios inventados muy por debajo del real, `assess_data_quality` marcaba
+  `value_without_cost` **con razón**: valoraba las 100 acciones a $3,176 contra un costo
+  registrado de $2,000 (ratio 1.59 > `VALUE_WITHOUT_COST_RATIO`). El flag era correcto y el
+  fixture el equivocado.
+
+**Sospecha abierta, anotada y NO bendecida:** `assess_ticker_quality` reporta los tres
+tickers de `ib_synth_1` como `unreliable`; para NVDY y SMH eso es dudoso — su CSV sí
+registra una compra con costo (`Buy 60 @ -$900`) y aun así `Invested Capital` del
+`daily_trend` sale en cero, lo que dispara `no_cost_recorded`. Se registró como
+**observado** en su `expected.json` para que el test corra, con la nota explícita de que no
+es comportamiento aprobado: falta revisar con Daniel si es una deficiencia de la app con el
+formato de IB. No se tocó `logic.py`.
 
 ## Nota de método — Fase 5a (verificación)
 
