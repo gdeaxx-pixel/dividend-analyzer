@@ -9,7 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
-from ui import nav
+from ui import heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, hoja_data, salud_nav_data,
                          verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
@@ -23,6 +23,12 @@ _TRG_YM = ("NVDY", "TSLY", "CONY", "MSTY", "CHPY")
 _TRG_GROWTH = ("SCHB", "XLK", "SMH")
 _TRG_COLORES = {"NVDY": "#1f86c4", "TSLY": "#d1662f", "CONY": "#b95cae", "MSTY": "#a8b020",
                 "CHPY": "#17a89a", "SCHB": "#b06a3d", "XLK": "#8f76d4", "SMH": "#c99a26"}
+
+
+def obtener_resultados() -> dict:
+    """Acceso público al cache de `_resultados()`, para el pie (`ui/pie.py`) — que no
+    puede importar este módulo por el ciclo que crearía con `ui.componentes`."""
+    return _resultados()
 
 
 def _resultados() -> dict:
@@ -302,5 +308,8 @@ def render_vista(ruta: Ruta) -> None:
             return
     if ruta.categoria == "metodo" and ruta.vista in nav.MET_ORDER:
         render_metodo(ruta.vista)
+        return
+    if ruta.categoria == heredadas.CAT_CLAVE:
+        heredadas.render_vista(ruta.vista, ruta)
         return
     render_placeholder(ruta)

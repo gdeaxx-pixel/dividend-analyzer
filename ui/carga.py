@@ -47,13 +47,15 @@ def bloque_header(num: int, titulo: str, estado: str, subtitulo: str = "") -> st
     """Encabezado numerado. `estado`: 'activo' | 'hecho' | 'bloqueado'.
 
     Equivale a `_da_block_header` de app.py, pero sin hex hardcodeados: el estado se
-    expresa con las variables del artifact (--accent, --cash, --hair).
+    expresa con las variables del artifact (--accent, --cash, --hair). `vd-reveal`
+    (fila 34) es la animación de entrada — copiada literal de `.da-reveal` en
+    `app.py:1314-1319`, solo con el prefijo del port.
     """
     marca = {"hecho": "✓"}.get(estado, str(num))
     clase = f"vd-bloque-num vd-bloque-{estado}"
     sub = f'<div class="vd-bloque-sub">{subtitulo}</div>' if subtitulo else ""
     return (
-        '<div class="vd-bloque-head">'
+        '<div class="vd-bloque-head vd-reveal">'
         f'<div class="{clase}">{marca}</div>'
         f'<div><div class="vd-bloque-titulo">{titulo}</div>{sub}</div>'
         "</div>"
@@ -63,7 +65,7 @@ def bloque_header(num: int, titulo: str, estado: str, subtitulo: str = "") -> st
 def bloque_resumen(titulo: str, detalle: str) -> str:
     """Bloque completado y contraído."""
     return (
-        '<div class="vd-bloque-resumen">'
+        '<div class="vd-bloque-resumen vd-reveal">'
         '<div class="vd-bloque-num vd-bloque-hecho">✓</div>'
         f'<div><span class="vd-resumen-titulo">{titulo}</span>'
         f'<span class="vd-resumen-detalle"> · {detalle}</span></div>'
@@ -76,6 +78,22 @@ def bloque_bloqueado(num: int, titulo: str, subtitulo: str) -> str:
     intuya antes de empezar (mismo criterio que `_da_block3_locked`)."""
     return (f'<div class="vd-bloque-locked">{bloque_header(num, titulo, "bloqueado", subtitulo)}'
             "</div>")
+
+
+def notificar_progreso(con_datos: bool) -> None:
+    """Toasts de transición entre bloques — fila 33, texto y disparo literal de
+    `app.py:1358-1362`. Se llama desde `app_v2.py` en cada run (no solo mientras se
+    dibuja la carga): la transición al pill 3 ocurre justo cuando `con_datos` pasa a
+    `True`, momento en el que `app_v2.py` deja de invocar `render_carga` — por eso el
+    disparo vive aquí como función independiente y no dentro de `render_carga`."""
+    hay_csv = st.session_state.get("_wizard_df_clean") is not None
+    activo = 3 if con_datos else (2 if hay_csv else 1)
+    previo = st.session_state.get("_vd_prev_pill", activo)
+    if previo != activo:
+        mensajes = {2: "Configura tus costos", 3: "Paso 3 de 3 · Resultados"}
+        if activo in mensajes:
+            st.toast(mensajes[activo], icon=":material/check_circle:")
+    st.session_state["_vd_prev_pill"] = activo
 
 
 # ── Flujo ─────────────────────────────────────────────────────────────────────
@@ -400,6 +418,16 @@ def render_carga() -> bool:
 
 
 ESTILOS_CARGA = """
+        /* Fila 34 — animación de revelación progresiva, copiada literal de
+           `.da-reveal`/`@keyframes da-rev` en `app.py:1314-1319` (mismo timing y easing,
+           solo el prefijo cambia de `da-` a `vd-`). */
+        .vd-reveal { animation: vd-rev .42s cubic-bezier(.16, 1, .3, 1) both; }
+        @keyframes vd-rev {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) { .vd-reveal { animation: none; } }
+
         .vd-bloque-head { display: flex; align-items: center; gap: 11px; margin: 18px 0 10px; }
         .vd-bloque-num {
           flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center;

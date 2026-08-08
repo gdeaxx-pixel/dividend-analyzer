@@ -19,8 +19,14 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from ui import nav
+from ui import heredadas, nav
 from ui.tokens import css_variables
+
+# Categoría «Detalle» compuesta sobre la taxonomía generada: `ui/nav.py` es el espejo
+# verificable del artifact (el demo solo tiene 4 categorías) y no se edita para meterla
+# ahí — se compone aquí, en tiempo de import, sin tocar el generador (traspaso § Fase 5).
+CAT_ORDER_TOTAL = nav.CAT_ORDER + (heredadas.CAT_CLAVE,)
+CAT_LABELS_TOTAL = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL}
 
 
 @dataclass(frozen=True)
@@ -34,7 +40,7 @@ class Ruta:
 
     @property
     def categoria_label(self) -> str:
-        return nav.CAT_LABELS[self.categoria]
+        return CAT_LABELS_TOTAL[self.categoria]
 
     @property
     def vista_label(self) -> str:
@@ -43,11 +49,14 @@ class Ruta:
 
 def _vistas(categoria: str) -> dict:
     """Vistas de una categoría. Comparación y Método tienen las suyas; las categorías
-    con ETF comparten las tres secciones (Cash flow · Salud NAV · Hoja Excel)."""
+    con ETF comparten las tres secciones (Cash flow · Salud NAV · Hoja Excel); Detalle
+    (heredada, fuera del artifact) trae las suyas propias."""
     if categoria == "comparacion":
         return dict(nav.CMP_VIEWS)
     if categoria == "metodo":
         return dict(nav.MET_VIEWS)
+    if categoria == heredadas.CAT_CLAVE:
+        return dict(heredadas.VIEWS)
     return dict(nav.SECTIONS)
 
 
@@ -56,6 +65,8 @@ def _orden(categoria: str) -> tuple:
         return nav.CMP_ORDER
     if categoria == "metodo":
         return nav.MET_ORDER
+    if categoria == heredadas.CAT_CLAVE:
+        return heredadas.VIEW_ORDER
     return tuple(nav.SECTION_ORDER)
 
 
@@ -63,9 +74,11 @@ def inyectar_estilos(tema: str) -> None:
     """Inyecta los tokens del artifact para el tema activo, más los estilos del chrome
     y de la hoja de carga."""
     from ui.carga import ESTILOS_CARGA
+    from ui.pie import ESTILOS_PIE
 
-    st.markdown(f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}</style>",
-                unsafe_allow_html=True)
+    st.markdown(
+        f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}{ESTILOS_PIE}</style>",
+        unsafe_allow_html=True)
 
 
 def _sync_tema() -> None:
@@ -134,7 +147,7 @@ def render_ruta() -> Ruta:
     El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
     (Dividendos · Largo Plazo); Comparación y Método tradicional no lo llevan.
     """
-    st.session_state.setdefault("vd_categoria", nav.CAT_ORDER[0])
+    st.session_state.setdefault("vd_categoria", CAT_ORDER_TOTAL[0])
     categoria = st.session_state.vd_categoria
 
     orden = _orden(categoria)
@@ -171,7 +184,7 @@ def render_ruta() -> Ruta:
         elif kind == "cat":
             def _elegir_categoria(clave):
                 st.session_state.vd_categoria = clave
-            _popover_segmento(columna, nav.CAT_LABELS[categoria], nav.CAT_LABELS,
+            _popover_segmento(columna, CAT_LABELS_TOTAL[categoria], CAT_LABELS_TOTAL,
                               categoria, "vd_pop_cat", _elegir_categoria)
         elif kind == "vista":
             def _elegir_vista(clave):
