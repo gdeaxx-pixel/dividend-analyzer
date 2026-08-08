@@ -223,11 +223,27 @@ línea de capital invertido del gráfico y (2) el veredicto de calidad, que le m
 usuario un «datos incompletos · no confiable» **falso** sobre una posición cuyas cifras
 están bien.
 
-**Arreglo sugerido, NO aplicado** (`logic.py` está fuera de alcance en este port): en vez de
-`reindex` a secas, desplazar cada transacción al siguiente día de cotización disponible
-—`market_data.index.searchsorted(fecha)`— antes de acumular, de modo que un importe fechado
-en sábado entre el lunes en lugar de desaparecer. Queda a decisión de Daniel, junto con si
-merece un test de regresión propio.
+**ARREGLADO — en `main`, no aquí.** Daniel lo autorizó el 2026-08-08 y se corrigió en el
+repo canónico (commit `227eb3c`), **no en esta rama**: es un bug de producción que afecta a
+`app.py` hoy, y llevarlo aquí rompería el invariante de la Fase 5 (`git diff --stat
+logic.py` vacío). El port lo hereda cuando se rebase.
+
+El arreglo introduce `logic._snap_to_trading_days`, aplicado en los **tres** puntos donde
+estaba el patrón (la actividad completa —que arrastra también la cantidad de acciones—, el
+`Cash_Flow_In` y los dividendos en efectivo): desplaza cada fecha al siguiente día de
+cotización con `index.searchsorted` en vez de descartarla. Las fechas que ya cotizan no se
+mueven, así que el resultado es idéntico para cualquier CSV cuyas transacciones caigan todas
+en día hábil.
+
+**Impacto medido sobre datos reales: ninguno.** Los 21 tickers de `real_examples/` dan
+cifras idénticas antes y después — ninguno tiene transacciones en día no bursátil. Es red de
+seguridad, sin riesgo de mover números de producción hoy.
+
+Dos tests nuevos en `test_logic.py`, ambos verificados **saboteando el fix** (con el helper
+devolviendo su entrada sin alinear, los dos fallan):
+`test_snap_to_trading_days_defers_instead_of_dropping` y
+`test_weekend_purchase_keeps_cost_curve`. Suite en `main`: 197 → 199 passed, cero
+regresiones; `test_real_examples` 25 passed con datos reales de bróker.
 
 ## Nota de método — Fase 5a (verificación)
 
