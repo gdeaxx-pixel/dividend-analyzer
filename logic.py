@@ -982,6 +982,35 @@ def simulate_strategy_cached(ticker, start_date_str, initial_investment):
     return simulate_strategy(ticker, start_date, initial_investment)
 
 
+def _snap_to_trading_days(daily, index):
+    """Desplaza cada fecha de actividad al siguiente día de cotización disponible.
+
+    Un `reindex(market_data.index)` a secas DESCARTA las fechas que no existen en el índice
+    de precios —fin de semana, feriado, halt del ticker o hueco de datos de yfinance— y su
+    importe desaparece del acumulado en vez de diferirse al siguiente día hábil. Con una
+    compra fechada un sábado, la curva de capital invertido quedaba plana en cero durante
+    toda la serie y el ticker salía marcado como "datos incompletos · no confiable", aunque
+    su costo, ROI y valor de mercado (que se calculan por otra vía) fueran correctos.
+
+    No es un caso de laboratorio: las transferencias de posiciones (ACATS/journaled, que
+    `Cash_Flow_In` también recoge) pueden venir fechadas en fin de semana, y los extractos
+    de IB con zona horaria no estadounidense pueden fechar un trade del viernes por la tarde
+    ET en sábado.
+
+    Las fechas que ya cotizan no se mueven, así que para cualquier CSV cuyas transacciones
+    caigan todas en día hábil el resultado es idéntico al de antes. Las posteriores al
+    último día con precio se descartan: no hay día de cotización al que llevarlas.
+    """
+    if daily is None or len(daily) == 0 or index is None or len(index) == 0:
+        return daily
+    daily = daily.sort_index()
+    pos = index.searchsorted(daily.index)
+    keep = pos < len(index)
+    snapped = daily[keep].copy()
+    snapped.index = index[pos[keep]]
+    return snapped.groupby(level=0).sum()
+
+
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1368,7 +1397,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
         daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
         daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
-        
+        # Alinea al calendario bursátil ANTES de reindexar: sin esto, una transacción
+        # fechada en día no bursátil se perdía entera (importe Y cantidad). Ver
+        # `_snap_to_trading_days`.
+        daily_activity = _snap_to_trading_days(daily_activity, market_data.index)
+
         # 2. Reindex to market data (daily)
         daily_history = daily_activity.reindex(market_data.index).fillna(0)
         
@@ -1470,6 +1503,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Resample cash divs to daily
         if not cash_div_rows.empty:
             daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().abs()
+            # Mismo alineamiento que la actividad: un dividendo pagado en día no bursátil
+            # desaparecía del acumulado de efectivo cobrado.
+            daily_cash_divs = _snap_to_trading_days(daily_cash_divs, market_data.index)
             daily_history['Daily Cash Div'] = daily_cash_divs.reindex(market_data.index).fillna(0)
         else:
             daily_history['Daily Cash Div'] = 0.0

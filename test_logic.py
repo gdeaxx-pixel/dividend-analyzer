@@ -2661,3 +2661,72 @@ def test_extract_roc_credit_from_pdf_returns_none_on_sdk_failure(monkeypatch):
 def test_extract_roc_credit_from_pdf_none_without_bytes_or_key():
     assert logic.extract_roc_credit_from_pdf(b"", "fake-key") is None
     assert logic.extract_roc_credit_from_pdf(b"%PDF", "") is None
+
+
+# ── Alineación de transacciones al calendario bursátil ────────────────────────
+
+def test_snap_to_trading_days_defers_instead_of_dropping():
+    """`_snap_to_trading_days` mueve una fecha sin cotización al siguiente día hábil.
+
+    El `reindex` a secas que había antes DESCARTABA esas fechas y su importe desaparecía
+    del acumulado. Aquí se comprueba lo contrario: nada se pierde, y lo que ya cotiza no
+    se mueve.
+    """
+    index = pd.DatetimeIndex(["2025-12-12", "2025-12-15", "2025-12-16"])  # vie, lun, mar
+
+    # Sábado y domingo caen al lunes; ambos importes se conservan y se suman.
+    fin_de_semana = pd.Series([100.0, 5.0], index=pd.DatetimeIndex(["2025-12-13", "2025-12-14"]))
+    snapped = logic._snap_to_trading_days(fin_de_semana, index)
+    assert snapped.sum() == pytest.approx(105.0), "no se puede perder ningún importe"
+    assert snapped.loc[pd.Timestamp("2025-12-15")] == pytest.approx(105.0)
+
+    # Una fecha que YA cotiza no se mueve: el resultado es idéntico al de antes del fix.
+    habil = pd.Series([42.0], index=pd.DatetimeIndex(["2025-12-16"]))
+    assert logic._snap_to_trading_days(habil, index).loc[pd.Timestamp("2025-12-16")] == 42.0
+
+    # Posterior al último día con precio: no hay dónde ponerla, se descarta.
+    futuro = pd.Series([7.0], index=pd.DatetimeIndex(["2026-01-05"]))
+    assert len(logic._snap_to_trading_days(futuro, index)) == 0
+
+
+def test_weekend_purchase_keeps_cost_curve(monkeypatch):
+    """Una compra fechada en sábado debe seguir contando en la curva de capital invertido.
+
+    Regresión (2026-08-08): `daily_activity.reindex(market_data.index)` descartaba toda
+    transacción cuya fecha no fuera día de cotización — fin de semana, feriado, halt o
+    hueco de yfinance — y el importe se perdía del `cumsum`. La curva de 'Invested Capital'
+    quedaba plana en CERO durante toda la serie y `assess_ticker_quality` marcaba el ticker
+    como 'unreliable' (`no_cost_recorded`), aunque el costo, el ROI y el valor de mercado
+    fueran correctos: se calculan por otra vía. Alcanzable de verdad con transferencias
+    ACATS fechadas en fin de semana y con extractos de IB en zona horaria no estadounidense.
+    """
+    # 2025-12-13 es SÁBADO: el mercado no abre.
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+        b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2025-12-13,U123,Buy MSTY,Buy,MSTY,100,20.00,USD,-2000.00,-1.0,-2001.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    def mock_fetch(ticker, start_date):
+        # Solo días hábiles: viernes 12, lunes 15, martes 16. El sábado NO existe.
+        idx = pd.DatetimeIndex(["2025-12-12", "2025-12-15", "2025-12-16"])
+        data = pd.DataFrame(
+            {"Close": [20.0, 20.0, 20.0], "Dividends": [0.0, 0.0, 0.0],
+             "Stock Splits": [0.0, 0.0, 0.0], "VOO Price": [500.0, 500.0, 500.0]},
+            index=idx,
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+    results = logic.analyze_portfolio(df_clean, version="TEST_WEEKEND_BUY")
+
+    trend = results["MSTY"]["daily_trend"]
+    invertido = trend["Invested Capital"].max()
+    assert invertido == pytest.approx(2000.00, abs=0.01), (
+        f"la compra del sábado debe entrar el lunes, no perderse: curva = ${invertido:.2f}")
+
+    # Y el ticker no debe salir marcado como no confiable por una fecha de fin de semana.
+    calidad = logic.assess_ticker_quality(results, "MSTY")
+    assert "no_cost_recorded" not in calidad["flags"], calidad
