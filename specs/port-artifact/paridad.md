@@ -171,13 +171,63 @@ en cuanto empezaron a correr:
   registrado de $2,000 (ratio 1.59 > `VALUE_WITHOUT_COST_RATIO`). El flag era correcto y el
   fixture el equivocado.
 
-**Sospecha abierta, anotada y NO bendecida:** `assess_ticker_quality` reporta los tres
-tickers de `ib_synth_1` como `unreliable`; para NVDY y SMH eso es dudoso — su CSV sí
-registra una compra con costo (`Buy 60 @ -$900`) y aun así `Invested Capital` del
-`daily_trend` sale en cero, lo que dispara `no_cost_recorded`. Se registró como
-**observado** en su `expected.json` para que el test corra, con la nota explícita de que no
-es comportamiento aprobado: falta revisar con Daniel si es una deficiencia de la app con el
-formato de IB. No se tocó `logic.py`.
+### Auditoría de la sospecha de IB — veredicto
+
+La sospecha era: «`assess_ticker_quality` marca NVDY y SMH como `unreliable` pese a tener
+compra con costo; parece deficiencia con el formato de IB». **Esa hipótesis era falsa en su
+atribución**, y la auditoría encontró debajo una fragilidad real y agnóstica del bróker.
+
+**Causa raíz — `logic.py:1426`:**
+
+```python
+daily_history['Daily Invested'] = daily_activity['Cash_Flow_In'].reindex(market_data.index).fillna(0)
+daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
+```
+
+`market_data.index` solo contiene días de cotización. Una transacción fechada en un día que
+no cotiza **no se reindexa: se cae, se rellena con 0 y su importe se pierde para siempre**
+del `cumsum` — no se difiere al siguiente día hábil. La curva de costo queda plana en cero
+durante toda la serie.
+
+**Reproducción (A/B cambiando solo la fecha, nada más):**
+
+| Fecha de la compra | Curva `Invested Capital` | Veredicto |
+|---|---|---|
+| lunes hábil 2025-12-15 | $3,176 | `ok` |
+| sábado 2025-12-13 | **$0** | `unreliable` |
+| domingo 2025-12-14 | **$0** | `unreliable` |
+| Navidad 2025-12-25 | **$0** | `unreliable` |
+
+**No es de IB.** Reproducido idéntico con `schwab_synth_2` (tabla de arriba) y con
+`ib_synth_1`: mover la compra de NVDY/SMH del 2025-01-20 al 2025-01-21 devuelve la curva de
+$0 a $900/$1,000 y SMH pasa a `ok`. El bróker es irrelevante; lo que manda es si la fecha
+existe en el histórico de precios.
+
+**Defecto del fixture, corregido:** `ib_synth_1` fechaba sus compras el **2025-01-20, que
+fue MLK Day — el mercado estaba cerrado**. Era una transacción imposible, y por eso el
+`no_cost_recorded` original: mi sospecha nació de datos inventados mal. Movidas al
+2025-01-21 (martes hábil). Con eso SMH queda `ok`; NVDY y CONY siguen `unreliable` pero por
+otra razón —y correcta— `value_without_cost`: sus precios sintéticos están muy por debajo
+del precio real de la fecha, justo lo que ese flag existe para detectar (mismo problema que
+ya se corrigió en `schwab_synth_2` usando cierres reales).
+
+**Exposición real.** No es alarmista pero tampoco teórica: una compra no se ejecuta en
+feriado, pero sí pueden caer en día no bursátil las **transferencias de posiciones**
+(ACATS/journaled, que `Cash_Flow_In` también recoge, ver `logic.py` § 5b), los extractos de
+**IB con zona horaria no estadounidense** (un trade del viernes por la tarde ET puede
+fecharse el sábado) y cualquier **hueco de datos de yfinance** o halt del ticker.
+
+**Impacto acotado, pero visible al usuario.** `pocket_investment`, ROI y valor de mercado
+salen **correctos** en todos los casos — se calculan por otra vía. Lo que se rompe es (1) la
+línea de capital invertido del gráfico y (2) el veredicto de calidad, que le muestra al
+usuario un «datos incompletos · no confiable» **falso** sobre una posición cuyas cifras
+están bien.
+
+**Arreglo sugerido, NO aplicado** (`logic.py` está fuera de alcance en este port): en vez de
+`reindex` a secas, desplazar cada transacción al siguiente día de cotización disponible
+—`market_data.index.searchsorted(fecha)`— antes de acumular, de modo que un importe fechado
+en sábado entre el lunes en lugar de desaparecer. Queda a decisión de Daniel, junto con si
+merece un test de regresión propio.
 
 ## Nota de método — Fase 5a (verificación)
 

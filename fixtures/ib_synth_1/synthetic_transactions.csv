@@ -6,8 +6,8 @@ Summary,Header,Nombre del campo,Valor del campo
 Summary,Data,Divisa base,USD
 Summary,Data,Efectivo inicial,0.0
 Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,Quantity,Price,Price Currency,Gross Amount ,Commission,Net Amount
-Transaction History,Data,2025-01-20,U0000000,YIELDMAX NVDA OPTION INC ETF,Buy,NVDY,60,15.00,USD,-900.00,-1.00,-901.00
-Transaction History,Data,2025-01-20,U0000000,VANECK SEMICONDUCTOR ETF,Buy,SMH,4,250.00,USD,-1000.00,-1.00,-1001.00
+Transaction History,Data,2025-01-21,U0000000,YIELDMAX NVDA OPTION INC ETF,Buy,NVDY,60,15.00,USD,-900.00,-1.00,-901.00
+Transaction History,Data,2025-01-21,U0000000,VANECK SEMICONDUCTOR ETF,Buy,SMH,4,250.00,USD,-1000.00,-1.00,-1001.00
 Transaction History,Data,2025-02-05,U0000000,YIELDMAX COIN OPTION IS ETF,Buy,CONY,80,10.00,USD,-800.00,-1.00,-801.00
 Transaction History,Data,2025-02-28,U0000000,NVDY(US88634T7827) Dividendo en efectivo USD 1.00 por accion (Dividendo ordinario),Dividend,NVDY,,,USD,60.00,,60.00
 Transaction History,Data,2025-02-28,U0000000,NVDY(US88634T7827) Dividendo en efectivo USD 1.00 por accion - US Impuestos,Foreign Tax Withholding,NVDY,,,USD,-18.00,,-18.00
