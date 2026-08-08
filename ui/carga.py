@@ -155,6 +155,7 @@ def render_bloque_transacciones() -> bool:
                          use_container_width=True):
                 for clave in ("_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker",
                               "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary",
+                              "_wizard_income_df", "_wizard_income_multi",
                               "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error"):
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
@@ -300,42 +301,29 @@ def render_bloque_posiciones() -> bool:
     return False
 
 
-def render_bloque_1042s() -> None:
-    """Bloque 3 — opcional. Lee y valida el Formulario 1042-S (retención NRA / ROC)."""
-    wizard_1042s = st.session_state.get("_wizard_1042s")
-    if wizard_1042s is not None:
-        forms = wizard_1042s.get("forms") or []
-        n = len(forms)
-        credito = sum(f.get("withholding_credit") or 0.0 for f in forms
-                      if logic.income_code_str(f.get("income_code")) == "37")
-        detalle = f"{n} formularios"
-        if credito:
-            detalle += f" · crédito ROC ${credito:,.2f}"
-        st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
-        _, col = st.columns([5, 1])
-        with col:
-            if st.button("editar", key="_vd_edit_1042s", type="tertiary",
-                         use_container_width=True):
-                st.session_state.pop("_wizard_1042s", None)
-                st.session_state.pop("_wizard_1042s_sig", None)
-                st.session_state.pop("_wizard_1042s_error", None)
-                st.rerun()
-        return
+def _render_1042s_resumen() -> None:
+    """1042-S ya leído: tarjeta resumen + editar. Extraído de `render_bloque_1042s` para
+    poder mostrarse junto al resumen de ingresos (fila 5: las dos fuentes conviven)."""
+    forms = (st.session_state.get("_wizard_1042s") or {}).get("forms") or []
+    n = len(forms)
+    credito = sum(f.get("withholding_credit") or 0.0 for f in forms
+                  if logic.income_code_str(f.get("income_code")) == "37")
+    detalle = f"{n} formularios"
+    if credito:
+        detalle += f" · crédito ROC ${credito:,.2f}"
+    st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+    _, col = st.columns([5, 1])
+    with col:
+        if st.button("editar", key="_vd_edit_1042s", type="tertiary",
+                     use_container_width=True):
+            st.session_state.pop("_wizard_1042s", None)
+            st.session_state.pop("_wizard_1042s_sig", None)
+            st.session_state.pop("_wizard_1042s_error", None)
+            st.rerun()
 
-    if st.session_state.get("_wizard_broker") == "ibkr":
-        st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
-                                  "Validación fiscal: confirma retención y ROC del año."),
-                    unsafe_allow_html=True)
-        st.markdown(bloque_resumen(
-            "1042-S",
-            "No hace falta — Interactive Brokers ya incluye el detalle fiscal en el "
-            "archivo del Bloque 1."),
-            unsafe_allow_html=True)
-        return
 
-    st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
-                              "Validación fiscal: confirma retención y ROC del año."),
-                unsafe_allow_html=True)
+def _render_1042s_uploader() -> None:
+    """Sube y parsea el 1042-S. Literal de `app.py:1624-1674`."""
     archivo = st.file_uploader("Formulario 1042-S", type=["pdf"],
                                key="_vd_upload_1042s", label_visibility="collapsed")
     st.caption(
@@ -376,6 +364,118 @@ def render_bloque_1042s() -> None:
     elif error == "sin_dividendos":
         st.warning("Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
                    "(código 37) en tus formularios.")
+
+
+def _render_income_resumen() -> None:
+    """Income CSV ya leído: tarjeta resumen + editar. Literal de `app.py:1599-1612`."""
+    inc_sum = st.session_state.get("_wizard_income_summary") or {}
+    nrec = sum(1 for d in (inc_sum.get("tickers") or {}).values() if d.get("received_total"))
+    st.markdown(bloque_resumen("Ingresos validados", f"{nrec} tickers con dividendos recibidos"),
+                unsafe_allow_html=True)
+    if st.session_state.get("_wizard_income_multi"):
+        st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
+                   "Para una validación exacta, exporta el income de una sola cuenta.")
+    _, col = st.columns([5, 1])
+    with col:
+        if st.button("editar", key="_vd_edit_inc", type="tertiary",
+                     use_container_width=True):
+            st.session_state.pop("_wizard_income_summary", None)
+            st.session_state.pop("_wizard_income_df", None)
+            st.session_state.pop("_wizard_income_multi", None)
+            st.rerun()
+
+
+def _render_income_uploader() -> None:
+    """Sube y parsea el Investment Income de Schwab. Literal de `app.py:1676-1724`
+    (fila 5: restaura el income CSV, que convive con el 1042-S sin sustituirlo)."""
+    with st.expander("¿Tienes también el Investment Income? (opcional)", expanded=False):
+        st.caption("Añade la validación dividendo por dividendo y la proyección de ingresos.")
+        archivo = st.file_uploader(
+            "Archivo de ingresos (Investment Income)",
+            type=["csv", "xlsx"], key="_vd_upload_inc", label_visibility="collapsed")
+        if archivo is None:
+            return
+        try:
+            with st.spinner("Leyendo ingresos…"):
+                inc_df = logic.parse_schwab_income_csv(archivo.getvalue())
+            if inc_df is None:
+                st.session_state["_wizard_income_summary"] = None
+                st.session_state["_wizard_income_df"] = None
+                st.error(
+                    "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
+                st.caption(
+                    "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
+                    "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
+                    "ni un Excel (.xls/.xlsx), ni un PDF.")
+            elif len(inc_df) == 0:
+                st.session_state["_wizard_income_summary"] = None
+                st.session_state["_wizard_income_df"] = None
+                st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
+                st.caption(
+                    "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
+                    "Revisa que el export incluya las distribuciones de tus ETFs.")
+            else:
+                inc_summ = logic.summarize_income(inc_df)
+                nrec_chk = sum(1 for d in (inc_summ.get("tickers") or {}).values()
+                               if d.get("received_total"))
+                if nrec_chk == 0:
+                    # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
+                    st.session_state["_wizard_income_summary"] = None
+                    st.session_state["_wizard_income_df"] = None
+                    st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
+                    st.caption(
+                        "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
+                        "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
+                        "viene primero y se ignora).")
+                else:
+                    st.session_state["_wizard_income_summary"] = inc_summ
+                    st.session_state["_wizard_income_df"] = inc_df
+                    st.session_state["_wizard_income_multi"] = bool(inc_summ.get("multi_account"))
+                    st.rerun()
+        except Exception as error:                                    # noqa: BLE001
+            st.session_state["_wizard_income_summary"] = None
+            st.session_state["_wizard_income_df"] = None
+            st.error("No pudimos leer el archivo de ingresos.")
+            st.caption(f"Detalle técnico: {error}")
+
+
+def render_bloque_1042s() -> None:
+    """Bloque 3 — opcional. 1042-S y/o income CSV (Investment Income) de Schwab; las dos
+    fuentes conviven, ninguna sustituye a la otra (fila 5, Fase 5b)."""
+    tiene_1042s = st.session_state.get("_wizard_1042s") is not None
+    tiene_income = st.session_state.get("_wizard_income_summary") is not None
+
+    if tiene_1042s or tiene_income:
+        if tiene_1042s:
+            _render_1042s_resumen()
+        if tiene_income:
+            _render_income_resumen()
+        return
+
+    st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
+                              "Validación fiscal: confirma retención y ROC del año."),
+                unsafe_allow_html=True)
+
+    es_ibkr = st.session_state.get("_wizard_broker") == "ibkr"
+
+    if es_ibkr:
+        # Misma asimetría que ya se resolvió con Daniel en `669731c`: IBKR no tiene ni
+        # reporte de ingresos ni 1042-S aparte en esta app — ambos vienen incluidos en el
+        # archivo de transacciones del Bloque 1.
+        st.markdown(bloque_resumen(
+            "1042-S",
+            "No hace falta — Interactive Brokers ya incluye el detalle fiscal en el "
+            "archivo del Bloque 1."),
+            unsafe_allow_html=True)
+        st.markdown(bloque_resumen(
+            "Ingresos",
+            "No hace falta — Interactive Brokers ya incluye el detalle de dividendos en el "
+            "archivo del Bloque 1."),
+            unsafe_allow_html=True)
+        return
+
+    _render_1042s_uploader()
+    _render_income_uploader()
 
 
 def render_carga() -> bool:

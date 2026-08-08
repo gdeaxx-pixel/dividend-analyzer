@@ -74,10 +74,12 @@ def inyectar_estilos(tema: str) -> None:
     """Inyecta los tokens del artifact para el tema activo, más los estilos del chrome
     y de la hoja de carga."""
     from ui.carga import ESTILOS_CARGA
+    from ui.heredadas import ESTILOS_HEREDADAS
     from ui.pie import ESTILOS_PIE
 
     st.markdown(
-        f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}{ESTILOS_PIE}</style>",
+        f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}{ESTILOS_PIE}"
+        f"{ESTILOS_HEREDADAS}</style>",
         unsafe_allow_html=True)
 
 
