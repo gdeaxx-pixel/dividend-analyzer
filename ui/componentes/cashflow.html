@@ -1460,10 +1460,10 @@
 </script>
 <script>
 /* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
-   contenido: reservaba 2150px contra ~1080px reales en desktop. El iframe es same-origin
-   (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento padre y se
-   le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de componentes
-   registrados con `declare_component`, no de `components.html`.
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
    Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
    del alto del viewport del iframe, así que nunca detectaría el vacío. */
 (function () {
@@ -1495,3 +1495,4 @@
   setInterval(ajustar, 1000);
 })();
 </script>
+

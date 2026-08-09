@@ -25,6 +25,8 @@ import os
 import re
 import sys
 
+from _auto_alto import AUTO_ALTO_JS
+
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SALIDA = os.path.join(BASE, "ui", "componentes", "metodo.html")
 
@@ -142,6 +144,7 @@ def extraer(html: str) -> str:
 {control_vista}
 }})();
 </script>
+{AUTO_ALTO_JS}
 """
 
 
