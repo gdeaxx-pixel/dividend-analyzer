@@ -228,7 +228,51 @@ _ESTILOS = """
           font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
         }
         [data-testid="stHeader"], [data-testid="stToolbar"], footer { visibility: hidden; }
-        .block-container { max-width: 940px; padding-top: 2rem; padding-bottom: 4rem; }
+        /* `max-width: 940px` es el del artifact (`cashflow.html:88`). El padding lateral
+           también: el `clamp` es literalmente el suyo. Sin esto Streamlit mete 80px por
+           lado y deja 780px de contenido, cuando el artifact dibuja con 860px — y el rail
+           de 8 pasos no cabe por 10px. */
+        .block-container {
+          max-width: 940px; padding-top: 2rem; padding-bottom: 4rem;
+          padding-left: clamp(16px, 4vw, 40px); padding-right: clamp(16px, 4vw, 40px);
+        }
+
+        /* Rail de 8 pasos: barra de progreso + etiqueta, calcado del `.step` del artifact
+           (`ui/componentes/cashflow.html:213-224`). Gap 10px y padding del contenedor a
+           40px son la geometría del artifact: con ellos cada paso mide 98.8px y la
+           etiqueta más larga («Reinv + Efvo», 94px a 9.5px) entra con 4.8px de holgura,
+           así que `nowrap` nunca parte ni envuelve. El estado llega por la clave del
+           contenedor de cada paso (`…_done` / `…_now` / `…_todo`), porque `st.button`
+           solo distingue dos tipos y aquí hacen falta tres. */
+        .st-key-vd_paso_wrap [data-testid="stHorizontalBlock"] { gap: 10px; }
+        .st-key-vd_paso_wrap .stButton > button {
+          background: transparent !important;
+          border: none !important;
+          border-top: 4px solid var(--hair) !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          min-height: 0 !important;
+          padding: 7px 0 0 0 !important;
+          font-family: var(--font-mono) !important;
+          font-size: 9.5px !important;
+          letter-spacing: .03em !important;
+          text-transform: uppercase !important;
+          line-height: 1.25 !important;
+          color: var(--ink-mut) !important;
+          white-space: nowrap !important;
+          justify-content: center !important;
+        }
+        .st-key-vd_paso_wrap [class*="_done"] .stButton > button {
+          border-top-color: var(--accent) !important; color: var(--ink-2) !important;
+        }
+        .st-key-vd_paso_wrap [class*="_now"] .stButton > button {
+          border-top-color: var(--loss) !important; color: var(--loss) !important;
+          font-weight: 700 !important;
+        }
+        .st-key-vd_paso_wrap .stButton > button:hover { color: var(--accent) !important; }
+        .st-key-vd_paso_wrap [class*="_now"] .stButton > button:hover {
+          color: var(--loss) !important;
+        }
 
         .vd-brand {
           font-family: var(--font-mono); font-size: 13px; font-weight: 700;
