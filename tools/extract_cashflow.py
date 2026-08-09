@@ -94,6 +94,11 @@ def extraer(html: str) -> str:
     # El demo arranca en el paso final; en el port el paso lo manda Streamlit.
     script = re.sub(r"var pasoActual = \d+;", "var pasoActual = {{PASO}};", script)
 
+    # Tras el corte de producción el `app.py` viejo es `app_old.py`. El demo conserva el
+    # nombre antiguo (es fuente del artifact y no se toca), así que la referencia se
+    # corrige aquí: sin esto, regenerar revierte el fix del PR #2 en silencio.
+    script = script.replace("_build_clusters (app.py)", "_build_clusters (app_old.py)")
+
     return f"""<!-- GENERADO POR tools/extract_cashflow.py — NO EDITAR A MANO.
      Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
 <meta charset="utf-8">
@@ -113,6 +118,43 @@ def extraer(html: str) -> str:
   "use strict";
 {script}
   render(pasoActual);
+}})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido: reservaba 2150px contra ~1080px reales en desktop. El iframe es same-origin
+   (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento padre y se
+   le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de componentes
+   registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {{
+  "use strict";
+  var fe = null;
+  try {{ fe = window.frameElement; }} catch (e) {{ fe = null; }}
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {{
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h || Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }}
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) {{ setTimeout(ajustar, ms); }});
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {{
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }}
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
 }})();
 </script>
 """

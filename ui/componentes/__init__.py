@@ -16,12 +16,15 @@ import streamlit.components.v1 as components
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 
-# Alto del iframe. `components.html` no se adapta al contenido, así que hay que fijarlo.
-# NO estimar: medido en el navegador sobre el componente real en el paso 8 (el más alto),
-# `document.body.scrollHeight` = 2095px, con el mosaico terminando en 1642px. La primera
-# estimación fue 1180 y habría cortado el mosaico por la mitad — que es el remate
-# narrativo de la vista— sin ningún aviso.
-ALTO_CASHFLOW = 2150
+# Alto INICIAL del iframe y respaldo si el script auto-dimensionante no corre. El
+# componente se mide y corrige su propio alto desde dentro (ver el segundo <script> de
+# `tools/extract_cashflow.py`), así que este número ya no manda — pero tiene que ser
+# seguro por sí solo: si Streamlit Cloud sirviera el componente cross-origin,
+# `window.frameElement` no sería alcanzable y este valor sería el definitivo.
+# Medido en el navegador sobre los 8 pasos × 3 fixtures: 1053px (desktop) a 1485px
+# (320px de ancho). Se fija por encima del peor caso — NO bajarlo a la medida de
+# desktop: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
+ALTO_CASHFLOW = 1520
 
 # Medido en el navegador sobre el componente real (fixture `schwab_synth_1`, MSTY):
 # `document.body.scrollHeight` = 658px, igual con el interruptor «Corregir la hoja»
