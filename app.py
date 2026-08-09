@@ -5150,7 +5150,7 @@ if input_method == "Subir CSV/Excel" and st.session_state.get('_wizard_step', 1)
 
                     # Fase 2: Discrepancias de precio
                     for _disc in stats.get('price_discrepancies', []):
-                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_disc['date']}: precio CSV ${_disc['csv_price']:.2f} vs yfinance ${_disc['yf_price']:.2f} (ratio {_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
+                        st.warning(f"Posible evento corporativo no registrado en {ticker} el {_disc['date']}: precio CSV \\${_disc['csv_price']:.2f} vs yfinance \\${_disc['yf_price']:.2f} (ratio {_disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
 
                     # Fase 3: Eventos corporativos (dividendos especiales)
                     for _ca in stats.get('corporate_actions', []):

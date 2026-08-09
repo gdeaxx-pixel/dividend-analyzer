@@ -4212,9 +4212,9 @@ def nra_tax_breakdown(country, roc_fraction_pct, nominal_income=None):
     if nominal_income and nominal_income > 0:
         nom_amt = nominal_income * base / 100.0
         eff_amt = nominal_income * effective / 100.0
-        lines.append(f"Creías que te quitaban el {base:.0f}% (${nom_amt:,.0f}); en realidad, con el "
-                     f"escudo del ROC, la retención efectiva es ~{effective:.1f}% (${eff_amt:,.0f}). "
-                     f"Diferencia a tu favor: ${nom_amt - eff_amt:,.0f}.")
+        lines.append(f"Creías que te quitaban el {base:.0f}% (\\${nom_amt:,.0f}); en realidad, con el "
+                     f"escudo del ROC, la retención efectiva es ~{effective:.1f}% (\\${eff_amt:,.0f}). "
+                     f"Diferencia a tu favor: \\${nom_amt - eff_amt:,.0f}.")
     else:
         lines.append(f"Creías que te quitaban el {base:.0f}%; con el escudo del ROC, la retención "
                      f"efectiva real es ~{effective:.1f}%.")
