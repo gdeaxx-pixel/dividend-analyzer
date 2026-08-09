@@ -43,7 +43,11 @@ secrets.toml
 .venv/
 
 # Datos privados de brokers (fixtures locales del golden harness — NO versionar)
-real_examples/
+# Sin barra final a propósito: real_examples/ es un symlink a
+# ~/.local/share/dividend-analyzer/real_examples, y un patrón con "/" solo
+# matchea directorios reales, no symlinks — con barra, `git status` lo seguía
+# mostrando como "??" pese a estar protegido en espíritu.
+real_examples
 
 # Excepcion al `*.csv` de arriba: los fixtures SINTETICOS si se versionan. Son cifras
 # inventadas con la estructura de los exports de Schwab e IB, para que un ejecutor
