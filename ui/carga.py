@@ -1,6 +1,6 @@
 """Hoja de carga (Fase 2) — los tres bloques del wizard con el lenguaje del artifact.
 
-**El flujo no cambia, solo la piel.** Replica `app.py:1318-1730`: Transacciones →
+**El flujo no cambia, solo la piel.** Replica `app_old.py:1318-1730`: Transacciones →
 Posiciones → Ingresos, con el mismo estado en `st.session_state` y las mismas llamadas a
 `logic.py`. Lo que cambia es el tratamiento visual: eyebrow mono en mayúsculas, bordes
 dashed, cero border-radius, y todos los colores desde los tokens extraídos del demo.
@@ -20,7 +20,7 @@ import logic
 def _clave_gemini():
     """Resuelve la clave de Gemini sin ensuciar la interfaz.
 
-    Invierte el orden de `app.py:1219` (que mira `st.secrets` primero) por dos motivos
+    Invierte el orden de `app_old.py:1219` (que mira `st.secrets` primero) por dos motivos
     prácticos de este árbol: aquí la clave llega por entorno, porque `secrets.toml` es
     del repo canónico y no se copia al worktree; y **tocar `st.secrets` sin archivo pinta
     un recuadro de error rojo en la página** aunque se capture la excepción — Streamlit lo
@@ -46,10 +46,10 @@ def _clave_gemini():
 def bloque_header(num: int, titulo: str, estado: str, subtitulo: str = "") -> str:
     """Encabezado numerado. `estado`: 'activo' | 'hecho' | 'bloqueado'.
 
-    Equivale a `_da_block_header` de app.py, pero sin hex hardcodeados: el estado se
+    Equivale a `_da_block_header` de app_old.py, pero sin hex hardcodeados: el estado se
     expresa con las variables del artifact (--accent, --cash, --hair). `vd-reveal`
     (fila 34) es la animación de entrada — copiada literal de `.da-reveal` en
-    `app.py:1314-1319`, solo con el prefijo del port.
+    `app_old.py:1314-1319`, solo con el prefijo del port.
     """
     marca = {"hecho": "✓"}.get(estado, str(num))
     clase = f"vd-bloque-num vd-bloque-{estado}"
@@ -82,9 +82,9 @@ def bloque_bloqueado(num: int, titulo: str, subtitulo: str) -> str:
 
 def notificar_progreso(con_datos: bool) -> None:
     """Toasts de transición entre bloques — fila 33, texto y disparo literal de
-    `app_old.py:1358-1362`. Se llama desde `app.py` en cada run (no solo mientras se
+    `app_old.py:1358-1362`. Se llama desde `app_old.py` en cada run (no solo mientras se
     dibuja la carga): la transición al pill 3 ocurre justo cuando `con_datos` pasa a
-    `True`, momento en el que `app.py` deja de invocar `render_carga` — por eso el
+    `True`, momento en el que `app_old.py` deja de invocar `render_carga` — por eso el
     disparo vive aquí como función independiente y no dentro de `render_carga`."""
     hay_csv = st.session_state.get("_wizard_df_clean") is not None
     activo = 3 if con_datos else (2 if hay_csv else 1)
@@ -99,7 +99,7 @@ def notificar_progreso(con_datos: bool) -> None:
 # ── Flujo ─────────────────────────────────────────────────────────────────────
 
 def _leer_transacciones(archivo) -> tuple:
-    """Parseo del CSV/Excel — misma ruta que `app.py`, sin lógica propia."""
+    """Parseo del CSV/Excel — misma ruta que `app_old.py`, sin lógica propia."""
     if archivo.name.endswith(".xlsx"):
         import pandas as pd
         return pd.read_excel(archivo), "generic"
@@ -107,7 +107,7 @@ def _leer_transacciones(archivo) -> tuple:
 
 
 def _resumen_por_ticker(df_limpio) -> dict:
-    """Vista previa del Bloque 1 — réplica de `app.py:1400-1412`.
+    """Vista previa del Bloque 1 — réplica de `app_old.py:1400-1412`.
 
     OJO: filtra por `Action.contains('buy')`, así que NO suma las reinversiones ni resta
     las ventas. Es una vista previa del archivo, **no la posición**, que se confirma en el
@@ -222,7 +222,7 @@ def render_bloque_posiciones() -> bool:
         return False
 
     # ── Lectura de fotos con Gemini ───────────────────────────────────────────
-    # Rellena la tabla desde capturas del bróker, igual que `app.py:1455`. Reusa
+    # Rellena la tabla desde capturas del bróker, igual que `app_old.py:1455`. Reusa
     # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
     # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
     # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde.
@@ -287,7 +287,7 @@ def render_bloque_posiciones() -> bool:
         'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
 
     # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
-    # el bloque. Mismo tratamiento que `app.py:6289`.
+    # el bloque. Mismo tratamiento que `app_old.py:6289`.
     if excluidos:
         with st.expander(f"{len(excluidos)} instrumentos fuera del análisis"):
             st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
@@ -323,7 +323,7 @@ def _render_1042s_resumen() -> None:
 
 
 def _render_1042s_uploader() -> None:
-    """Sube y parsea el 1042-S. Literal de `app.py:1624-1674`."""
+    """Sube y parsea el 1042-S. Literal de `app_old.py:1624-1674`."""
     archivo = st.file_uploader("Formulario 1042-S", type=["pdf"],
                                key="_vd_upload_1042s", label_visibility="collapsed")
     st.caption(
@@ -367,7 +367,7 @@ def _render_1042s_uploader() -> None:
 
 
 def _render_income_resumen() -> None:
-    """Income CSV ya leído: tarjeta resumen + editar. Literal de `app.py:1599-1612`."""
+    """Income CSV ya leído: tarjeta resumen + editar. Literal de `app_old.py:1599-1612`."""
     inc_sum = st.session_state.get("_wizard_income_summary") or {}
     nrec = sum(1 for d in (inc_sum.get("tickers") or {}).values() if d.get("received_total"))
     st.markdown(bloque_resumen("Ingresos validados", f"{nrec} tickers con dividendos recibidos"),
@@ -386,7 +386,7 @@ def _render_income_resumen() -> None:
 
 
 def _render_income_uploader() -> None:
-    """Sube y parsea el Investment Income de Schwab. Literal de `app.py:1676-1724`
+    """Sube y parsea el Investment Income de Schwab. Literal de `app_old.py:1676-1724`
     (fila 5: restaura el income CSV, que convive con el 1042-S sin sustituirlo)."""
     with st.expander("¿Tienes también el Investment Income? (opcional)", expanded=False):
         st.caption("Añade la validación dividendo por dividendo y la proyección de ingresos.")
@@ -519,7 +519,7 @@ def render_carga() -> bool:
 
 ESTILOS_CARGA = """
         /* Fila 34 — animación de revelación progresiva, copiada literal de
-           `.da-reveal`/`@keyframes da-rev` en `app.py:1314-1319` (mismo timing y easing,
+           `.da-reveal`/`@keyframes da-rev` en `app_old.py:1314-1319` (mismo timing y easing,
            solo el prefijo cambia de `da-` a `vd-`). */
         .vd-reveal { animation: vd-rev .42s cubic-bezier(.16, 1, .3, 1) both; }
         @keyframes vd-rev {

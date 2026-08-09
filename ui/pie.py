@@ -2,21 +2,21 @@
 
 Decisión de Daniel (traspaso § Fase 5): estas cinco secciones globales van en un pie
 único al final de resultados, siempre visible, en vez de repetirse por vista. Regla de
-método de esta fase: se copia la lógica y el texto literal de `app.py`, re-vestido con
+método de esta fase: se copia la lógica y el texto literal de `app_old.py`, re-vestido con
 `ui/tokens.py` — no se redactan de nuevo los textos ni se reinterpretan las cifras.
 
-Fuentes en `app.py`:
-- Fila 22 — `_render_data_quality_panel` (`app.py:4031`), dentro del expander de
-  `app.py:6074`. La validación cruzada del 1042-S (tercera fuente) que ese panel también
+Fuentes en `app_old.py`:
+- Fila 22 — `_render_data_quality_panel` (`app_old.py:4031`), dentro del expander de
+  `app_old.py:6074`. La validación cruzada del 1042-S (tercera fuente) que ese panel también
   dibuja ya vive en el banner persistente `ui.vistas.render_1042s_card` desde la Fase 3 —
   no se duplica aquí.
 - Fila 23 — recolección de `_tech_events` (splits, reconciliaciones, dividendos
-  especiales) a lo largo de `app.py:5106-5158`, tabla en `app.py:6094`.
-- Fila 24 — `app.py:6382-6395` (tickers con `skipped=True` de `analyze_portfolio`, no
+  especiales) a lo largo de `app_old.py:5106-5158`, tabla en `app_old.py:6094`.
+- Fila 24 — `app_old.py:6382-6395` (tickers con `skipped=True` de `analyze_portfolio`, no
   confundir con los `mode_skip` de `classify_tickers` que ya se muestran en el Bloque 2
   de la carga — son dos exclusiones distintas, mapa-datos.md § no aplica, ver logic.py).
-- Fila 25 — `app.py:6396-6412`, texto literal.
-- Fila 26 — `app.py:6417-6432`, texto literal.
+- Fila 25 — `app_old.py:6396-6412`, texto literal.
+- Fila 26 — `app_old.py:6417-6432`, texto literal.
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ def _render_calidad_datos(resultados: dict) -> None:
 
 
 def _tech_events(resultados: dict) -> list[dict]:
-    """Replica la recolección de `_tech_events` de `app.py:5106-5158`, sin depender de
+    """Replica la recolección de `_tech_events` de `app_old.py:5106-5158`, sin depender de
     dibujarse mientras se recorre cada ticker: aquí no hay ese recorrido de UI, así que
     se reconstruye desde `stats` directamente."""
     eventos = []
@@ -189,7 +189,7 @@ def _render_excluidos(resultados: dict) -> None:
 
 
 def _render_calculadoras() -> None:
-    """Fila 25 — texto literal de `app.py:6396-6412`."""
+    """Fila 25 — texto literal de `app_old.py:6396-6412`."""
     with st.expander("Calculadoras de referencia — en qué nos inspiramos y en qué nos diferenciamos"):
         st.markdown(
             "Esta herramienta se construyó estudiando las mejores calculadoras públicas de "
@@ -217,8 +217,8 @@ def _render_calculadoras() -> None:
 
 
 def _render_disclaimer() -> None:
-    """Fila 26 — texto literal de `app.py:6417-6432`, re-vestido con tokens (fuera los
-    hex de `#f0eeec`/`#e0ddd9`/`#555`/`#888`/`#aaa` de la versión de `app.py`)."""
+    """Fila 26 — texto literal de `app_old.py:6417-6432`, re-vestido con tokens (fuera los
+    hex de `#f0eeec`/`#e0ddd9`/`#555`/`#888`/`#aaa` de la versión de `app_old.py`)."""
     st.markdown(
         '<div class="vd-pie-legal">'
         '<span class="vd-pie-legal-badge">Versión Beta</span>'
@@ -234,7 +234,7 @@ def _render_disclaimer() -> None:
 
 
 def _render_reporte_pdf(resultados: dict) -> None:
-    """Fila 37 — descarga del reporte PDF. Literal de `app.py:5271-5282`: `report.py`
+    """Fila 37 — descarga del reporte PDF. Literal de `app_old.py:5271-5282`: `report.py`
     y `test_report.py` no se tocan, solo se cablea el botón. `try/except` porque el
     original también lo protege (un reporte que falla no debe romper el pie)."""
     try:
