@@ -82,9 +82,9 @@ def bloque_bloqueado(num: int, titulo: str, subtitulo: str) -> str:
 
 def notificar_progreso(con_datos: bool) -> None:
     """Toasts de transición entre bloques — fila 33, texto y disparo literal de
-    `app.py:1358-1362`. Se llama desde `app_v2.py` en cada run (no solo mientras se
+    `app_old.py:1358-1362`. Se llama desde `app.py` en cada run (no solo mientras se
     dibuja la carga): la transición al pill 3 ocurre justo cuando `con_datos` pasa a
-    `True`, momento en el que `app_v2.py` deja de invocar `render_carga` — por eso el
+    `True`, momento en el que `app.py` deja de invocar `render_carga` — por eso el
     disparo vive aquí como función independiente y no dentro de `render_carga`."""
     hay_csv = st.session_state.get("_wizard_df_clean") is not None
     activo = 3 if con_datos else (2 if hay_csv else 1)

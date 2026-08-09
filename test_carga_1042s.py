@@ -27,7 +27,7 @@ render_carga()
 
 
 def _df_schwab():
-    """CSV sintético del fixture (misma ruta que usa el modo demo de `app_v2.py`),
+    """CSV sintético del fixture (misma ruta que usa el modo demo de `app.py`),
     normalizado como llega a `_wizard_df_clean` tras el Bloque 1."""
     ruta = os.path.join(os.path.dirname(__file__),
                          "fixtures", "schwab_synth_1", "synthetic_transactions.csv")
