@@ -274,7 +274,7 @@ _ESTILOS = """
            engancharlo por CSS puro sin JS. */
 
         /* La superficie del menú: `stPopoverBody` trae de fábrica la paleta cálida de
-           `app.py` (bg #fcf9f8, radio 12px, sombra suave) — es el propio contenedor de
+           `app_old.py` (bg #fcf9f8, radio 12px, sombra suave) — es el propio contenedor de
            Streamlit, no algo que este archivo escribiera, así que `[data-baseweb="popover"]
            div` no lo alcanzaba. Aquí se sobreescribe con el `.crumb-menu` del demo:
            `background: var(--ground); border: 1px dashed var(--hair); border-radius: 0`.
@@ -338,7 +338,7 @@ _ESTILOS = """
           letter-spacing: .06em; text-transform: uppercase;
         }
         /* La opción NO seleccionada (`kind=segmented_control`, sin el sufijo `Active`)
-           trae de fábrica el fondo cálido/casi blanco de `app.py` con texto casi blanco
+           trae de fábrica el fondo cálido/casi blanco de `app_old.py` con texto casi blanco
            encima — ilegible en modo oscuro. La seleccionada (`…Active`) ya usa el azul de
            marca de `.streamlit/config.toml` y no se toca. */
         [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"] {
@@ -371,7 +371,7 @@ _ESTILOS = """
           font-family: var(--font-mono) !important;
         }
 
-        /* `.streamlit/config.toml` lleva el tema de app.py (superficies cálidas) y lo
+        /* `.streamlit/config.toml` lleva el tema de app_old.py (superficies cálidas) y lo
            comparte con producción, así que no se toca: se sobreescribe aquí. Sin esto los
            selectores salen rosados sobre el azul frío del artifact. */
         [data-baseweb="select"] > div,

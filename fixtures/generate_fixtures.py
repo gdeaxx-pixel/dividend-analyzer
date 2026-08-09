@@ -185,7 +185,7 @@ def write_ibkr(outdir):
 #       consume `analyze_portfolio`.
 #
 #   `csv_preview_expected`             = lo que produce la agregación rápida de
-#       `app.py:1400-1412` (`_csv_ticker_data`) al cargar el archivo en el Bloque 1.
+#       `app_old.py:1400-1412` (`_csv_ticker_data`) al cargar el archivo en el Bloque 1.
 #       Esa agregación filtra por `Action.str.contains('buy')`, así que NO suma las
 #       filas `Reinvest Shares` y NO resta las ventas. Es una vista previa, no la
 #       posición. Una UI que muestre este número como "tus acciones" está mintiendo.
@@ -223,7 +223,7 @@ SCHWAB_EXPECTED = {
         },
     },
     "csv_preview_expected": {
-        "source": "app.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
+        "source": "app_old.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
         "shares": {"MSTY": 40.0, "TSLY": 50.0, "SCHB": 10.0, "AAPL": 5.0},
         "invested": {"MSTY": 1000.00, "TSLY": 600.00, "SCHB": 200.00, "AAPL": 900.00},
         "note": ("Vista previa del Bloque 1, NO la posicion. Ignora 'Reinvest Shares' "
@@ -282,7 +282,7 @@ IB_EXPECTED = {
         },
     },
     "csv_preview_expected": {
-        "source": "app.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
+        "source": "app_old.py:1400-1412 (_csv_ticker_data) — filtro Action.contains('buy')",
         "shares": {"NVDY": 60.0, "CONY": 80.0, "SMH": 4.0},
         "invested": {"NVDY": 900.00, "CONY": 800.00, "SMH": 1000.00},
         "note": ("Vista previa del Bloque 1, NO la posicion: no resta la venta de 10 NVDY. "

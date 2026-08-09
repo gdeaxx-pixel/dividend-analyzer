@@ -38,7 +38,7 @@ class FakeFile:
 
 
 def csv_preview_aggregate(clean):
-    """Réplica exacta de la agregación de `app.py:1400-1412` (`_csv_ticker_data`).
+    """Réplica exacta de la agregación de `app_old.py:1400-1412` (`_csv_ticker_data`).
 
     Filtra por `Action.contains('buy')`: no suma reinversiones ni resta ventas.
     Es la vista previa del Bloque 1, NO la posición real.

@@ -199,7 +199,7 @@ def render_trg_real(ruta: Ruta) -> None:
     diseño»): widgets nativos, mismo criterio que Salud NAV.
 
     Sin ETF de contexto en la ruta (Comparación no lleva breadcrumb de ETF): el fondo
-    base se elige aquí, igual que en `app.py:5931-5936` (referencia probada en
+    base se elige aquí, igual que en `app_old.py:5931-5936` (referencia probada en
     producción, misma lógica de controles y transformación de datos).
     """
     import altair as alt

@@ -1,24 +1,24 @@
-"""Categoría «Detalle» — secciones de `app.py` que el artifact nunca cubrió.
+"""Categoría «Detalle» — secciones de `app_old.py` que el artifact nunca cubrió.
 
 Fase 5 (traspaso § Fase 5 — Arquitectura): estas 4 vistas agrupan las secciones
 heredadas que Daniel decidió que vivan en su propia categoría de la ruta, en vez de
-resucitar el scroll infinito de `app.py`. A diferencia de `ui/nav.py`, este módulo
+resucitar el scroll infinito de `app_old.py`. A diferencia de `ui/nav.py`, este módulo
 **no se genera** — el demo del artifact no tiene una quinta categoría, así que
 inventarla ahí rompería el `--check` de `tools/extract_design_system.py` y dejaría
 que el port divergiera de su fuente sin que nadie lo note. Aquí sí se escribe a mano,
 porque no hay nada que extraer: nunca existió en el artifact.
 
 Regla de método de esta fase (no la de las fases 1-4): se copia la lógica y el texto
-literal de `app.py`, re-vestido con `ui/tokens.py`. No se redactan de nuevo los
+literal de `app_old.py`, re-vestido con `ui/tokens.py`. No se redactan de nuevo los
 textos ni se reinterpretan las cifras.
 
 Fase 5b — Portafolios e Ingresos:
-- Portafolios (filas 8, 9, 15, 16, 35, 36) — `app.py:3901-3945` (Tus dos portafolios),
-  `app.py:3989-4029` (Portafolio dividendos), `app.py:4997-5337` (Detalle por
-  portafolio + Resumen consolidado), `app.py:1869-1895` (`_render_interpretation`,
+- Portafolios (filas 8, 9, 15, 16, 35, 36) — `app_old.py:3901-3945` (Tus dos portafolios),
+  `app_old.py:3989-4029` (Portafolio dividendos), `app_old.py:4997-5337` (Detalle por
+  portafolio + Resumen consolidado), `app_old.py:1869-1895` (`_render_interpretation`,
   filas 35/36).
-- Ingresos (filas 11, 12, 14) — `app.py:4153-4995`, todo detrás de la misma guarda
-  `_wizard_income_df is not None` que en `app.py` (verificado por indentación: el
+- Ingresos (filas 11, 12, 14) — `app_old.py:4153-4995`, todo detrás de la misma guarda
+  `_wizard_income_df is not None` que en `app_old.py` (verificado por indentación: el
   bloque completo — gráfica, cuadrícula ROC y las 3 cuadrículas Schwab-vs-cálculo —
   vive dentro de `if _income_df_s3 is not None and len(_income_df_s3) > 0:`). La
   dona de concentración de ingreso es la excepción: usa `results` directo, sin CSV
@@ -93,7 +93,7 @@ def _agregados(resultados: dict, tickers: list[str]) -> tuple:
 
 def _tus_dos_portafolios(resultados: dict, classify_map: dict) -> tuple[list, list]:
     """Fila 8 — tarjetas A/B + dona de asignación por valor. Literal de
-    `app.py:3901-3987` (cascada de agregados, tarjetas, pie chart dividendos/crecimiento)."""
+    `app_old.py:3901-3987` (cascada de agregados, tarjetas, pie chart dividendos/crecimiento)."""
     mode_a = sorted(t for t, m in classify_map.items() if m == "mode_a")
     mode_b = sorted(t for t, m in classify_map.items() if m == "mode_b")
     if not (mode_a or mode_b):
@@ -140,7 +140,7 @@ def _tus_dos_portafolios(resultados: dict, classify_map: dict) -> tuple[list, li
 
 
 def _dona_asignacion(resultados: dict, mode_a: list[str], mode_b: list[str]) -> None:
-    """Pie chart de asignación por valor de mercado. Literal de `app.py:3946-3985`."""
+    """Pie chart de asignación por valor de mercado. Literal de `app_old.py:3946-3985`."""
     import altair as alt
     import pandas as pd
 
@@ -190,10 +190,10 @@ def _dona_asignacion(resultados: dict, mode_a: list[str], mode_b: list[str]) -> 
 
 def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
     """Fila 9 — semáforo de salud del NAV por fondo + cierre honesto. Literal de
-    `app.py:3989-4029`. Reusa `ui.adapters.salud_nav_data` (mismo objeto que Salud
+    `app_old.py:3989-4029`. Reusa `ui.adapters.salud_nav_data` (mismo objeto que Salud
     NAV) en vez de volver a invocar `classify_roc_health` por su cuenta.
 
-    La «Hoja de Excel que te venden vs la realidad» que `app.py` embebía aquí como
+    La «Hoja de Excel que te venden vs la realidad» que `app_old.py` embebía aquí como
     expander **no se duplica**: ya es su propia vista completa en la ruta
     (Dividendos/Largo Plazo › [ETF] › Hoja Excel) — la función sigue accesible,
     solo cambió de puerta de entrada."""
@@ -254,7 +254,7 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
 # ── Filas 35, 36 — interpretación educativa + exposición al subyacente ─────────
 
 def _render_interpretation(resultados: dict, ticker: str) -> None:
-    """Filas 35 y 36. Literal de `app.py:1869-1895` (`_render_interpretation`)."""
+    """Filas 35 y 36. Literal de `app_old.py:1869-1895` (`_render_interpretation`)."""
     interp = logic.build_interpretation(resultados, ticker)
     exp_lines = logic.build_underlying_exposure(resultados, ticker).get("lines", [])
     if not interp.get("lines") and not exp_lines:
@@ -276,7 +276,7 @@ def _render_interpretation(resultados: dict, ticker: str) -> None:
 # ── Fila 15 — Detalle por portafolio (tarjeta por ticker, mode_a) ──────────────
 
 def _tarjeta_roc(stats: dict) -> None:
-    """ROC callout — literal de `app.py:5117-5139` (solo si hay costo base del bróker)."""
+    """ROC callout — literal de `app_old.py:5117-5139` (solo si hay costo base del bróker)."""
     if stats.get("ib_cost_basis") is None or stats.get("roc_accumulated") is None:
         return
     roc_acc = stats["roc_accumulated"]
@@ -301,7 +301,7 @@ def _tarjeta_roc(stats: dict) -> None:
 
 
 def _tarjeta_retorno_total(stats: dict) -> None:
-    """Literal de `app.py:5160-5219` (retorno total + erosión de NAV si aplica)."""
+    """Literal de `app_old.py:5160-5219` (retorno total + erosión de NAV si aplica)."""
     total_ret = stats["market_value"] + stats["dividends_collected_cash"] - stats["pocket_investment"]
     total_ret_pct = (total_ret / stats["pocket_investment"] * 100) if stats["pocket_investment"] > 0 else 0
     cap_comp = stats["market_value"] - stats["pocket_investment"]
@@ -353,7 +353,7 @@ def _tarjeta_retorno_total(stats: dict) -> None:
 
 
 def _tarjeta_ticker(resultados: dict, ticker: str, stats: dict) -> None:
-    """Una tarjeta del acordeón «Detalle por portafolio» — literal de `app.py:5051-5259`."""
+    """Una tarjeta del acordeón «Detalle por portafolio» — literal de `app_old.py:5051-5259`."""
     roi = stats.get("roi_percent", 0)
     color_roi = _color_signo(roi)
     st.markdown(
@@ -465,7 +465,7 @@ def _tarjeta_ticker(resultados: dict, ticker: str, stats: dict) -> None:
 
 
 def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
-    """Fila 16 — Resumen consolidado, fondos de dividendos. Literal de `app.py:5261-5334`."""
+    """Fila 16 — Resumen consolidado, fondos de dividendos. Literal de `app_old.py:5261-5334`."""
     if len(rows) < 2:
         return
     import pandas as pd
@@ -509,7 +509,7 @@ def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
 
 def _detalle_por_portafolio(resultados: dict, mode_a: list[str]) -> None:
     """Fila 15 + 16 — acordeón de tarjetas por ticker + resumen. Literal de
-    `app.py:4997-5337` (solo `mode_a`: `app.py` no despliega este detalle denso para
+    `app_old.py:4997-5337` (solo `mode_a`: `app_old.py` no despliega este detalle denso para
     los tickers de crecimiento, solo la tarjeta agregada de la fila 8)."""
     if not mode_a:
         return
@@ -546,7 +546,7 @@ def render_portafolios(resultados: dict) -> None:
 # ── Ingresos (filas 11, 12, 14) ─────────────────────────────────────────────────
 
 def _annual_income_for(resultados: dict, ticker: str) -> float:
-    """Literal de `app.py:1909-1925`."""
+    """Literal de `app_old.py:1909-1925`."""
     s = resultados.get(ticker) or {}
     if not isinstance(s, dict) or "error" in s:
         return 0.0
@@ -564,7 +564,7 @@ def _annual_income_for(resultados: dict, ticker: str) -> float:
 
 
 def _dona_concentracion(resultados: dict) -> None:
-    """«¿De dónde viene tu ingreso?» — literal de `app.py:4956-4995`. No depende del
+    """«¿De dónde viene tu ingreso?» — literal de `app_old.py:4956-4995`. No depende del
     income CSV: usa `results` directo, igual que en producción."""
     growth_fn = getattr(logic, "filter_growth_assets", None)
     growth_set = set((growth_fn(resultados) or {}).keys()) if growth_fn else set()
@@ -607,7 +607,7 @@ def _dona_concentracion(resultados: dict) -> None:
 
 def _tabla_income_comparacion(items, proj: dict) -> None:
     """Fila 11 — tabla Schwab vs cálculo (recibido 12m, proyectado anual, histórico).
-    Condensa `app.py:4295-4300` (`_rows_ann`/`_rows_hist`) en una sola tabla nativa."""
+    Condensa `app_old.py:4295-4300` (`_rows_ann`/`_rows_hist`) en una sola tabla nativa."""
     import pandas as pd
 
     def fila(t, d):
@@ -631,7 +631,7 @@ def _tabla_income_comparacion(items, proj: dict) -> None:
 
 
 def _grafica_ingreso_acumulado(sum_sproj: float, sum_oproj: float) -> None:
-    """Literal de `app.py:4308-4385` — acumulado Schwab vs cálculo, 12 meses."""
+    """Literal de `app_old.py:4308-4385` — acumulado Schwab vs cálculo, 12 meses."""
     import datetime as _dt
 
     import altair as alt
@@ -669,7 +669,7 @@ def _grafica_ingreso_acumulado(sum_sproj: float, sum_oproj: float) -> None:
 
 
 def _justificacion_sobreestimacion(proj: dict) -> None:
-    """Literal de `app.py:4387-4422`."""
+    """Literal de `app_old.py:4387-4422`."""
     flagged = sorted(
         [(t, d) for t, d in proj.items()
          if (d.get("overstatement_pct") or 0) > logic.INCOME_OVERSTATE_FLAG_PCT],
@@ -709,7 +709,7 @@ def _justificacion_sobreestimacion(proj: dict) -> None:
 
 def _cuadricula_roc_consolidada(items, resultados: dict, roc19a_asof: dict) -> None:
     """Fila 12 — «Detalle consolidado Schwab vs cálculo · ROC». Condensa
-    `app.py:4424-4595` en una tabla nativa; Regla 3 no aplica aquí (esto no es
+    `app_old.py:4424-4595` en una tabla nativa; Regla 3 no aplica aquí (esto no es
     `tax_summary`, es la cuadrícula de ROC/dividendos por transacciones)."""
     import pandas as pd
 
@@ -769,12 +769,12 @@ def _cuadricula_roc_consolidada(items, resultados: dict, roc19a_asof: dict) -> N
 
 # ── Filas 13, 32 — infografía visual del ROC ────────────────────────────────
 
-SHOW_ROC_INFOGRAPHIC = True  # literal de `app.py:59` (fila 32) — alterna la fila 13.
+SHOW_ROC_INFOGRAPHIC = True  # literal de `app_old.py:59` (fila 32) — alterna la fila 13.
 
 
 def _infografia_roc(resultados: dict) -> None:
     """Fila 13 — panel de infografía ROC por ETF elegible. Literal de
-    `app.py:4500-4521`: solo fondos con ROC en pérdida (25-100% de ROC, ROC ≤
+    `app_old.py:4500-4521`: solo fondos con ROC en pérdida (25-100% de ROC, ROC ≤
     distribuciones totales, valor de mercado < bolsillo). Aditivo: solo lee
     `resultados`, con `try/except` — si algo falla no muestra nada ni rompe la vista."""
     if not SHOW_ROC_INFOGRAPHIC:
@@ -855,9 +855,9 @@ def render_ingresos(resultados: dict) -> None:
                     "coincidan con los tickers analizados.</p>", unsafe_allow_html=True)
 
     # HERMANA de `if proj:`, no hija — y fuera de todo expander. Las dos cosas son
-    # deliberadas y calcan `app.py`: allí `if SHOW_ROC_INFOGRAPHIC:` (`app.py:4504`) está
-    # al mismo indent que `if _proj:` (`app.py:4064`), ambos colgando del gate del income
-    # CSV (`app.py:4059`). O sea: la infografía se muestra aunque el income no cruce con
+    # deliberadas y calcan `app_old.py`: allí `if SHOW_ROC_INFOGRAPHIC:` (`app_old.py:4504`) está
+    # al mismo indent que `if _proj:` (`app_old.py:4064`), ambos colgando del gate del income
+    # CSV (`app_old.py:4059`). O sea: la infografía se muestra aunque el income no cruce con
     # ningún ticker, y no puede anidarse porque abre un `st.expander` por ETF elegible.
     _infografia_roc(resultados)
 
@@ -865,7 +865,7 @@ def render_ingresos(resultados: dict) -> None:
 # ── Filas 17, 18 — Proyección a futuro y escenarios ─────────────────────────
 
 def _concentracion_por_factor(resultados: dict, classify_map: dict) -> None:
-    """Literal de `app.py:5247-5269` — correlación oculta por factor/subyacente."""
+    """Literal de `app_old.py:5247-5269` — correlación oculta por factor/subyacente."""
     fc = logic.build_factor_concentration(resultados, classify_map)
     if not fc.get("factors") or len(fc["factors"]) < 1:
         return
@@ -896,7 +896,7 @@ def _concentracion_por_factor(resultados: dict, classify_map: dict) -> None:
 
 def _carrera_yieldmax(resultados: dict, fwd: dict, p_hz: int) -> None:
     """YieldMax — ingreso vs erosión de capital + veredicto de salud del NAV.
-    Literal de `app.py:5446-5567`."""
+    Literal de `app_old.py:5446-5567`."""
     import datetime as _dt
 
     import altair as alt
@@ -980,7 +980,7 @@ def _carrera_yieldmax(resultados: dict, fwd: dict, p_hz: int) -> None:
             nums.append(f"total return honesto {htr:+.0f}%")
         # `<details>` HTML, no `st.expander`: esta sección ya vive dentro del expander
         # «Proyección a futuro (escenario)» y Streamlit no permite expanders anidados
-        # (mismo motivo documentado en `app.py:5518-5520`).
+        # (mismo motivo documentado en `app_old.py:5518-5520`).
         st.markdown(
             "<details style='margin:2px 0 8px 0;'>"
             "<summary style='cursor:pointer;font-size:12px;color:var(--accent);'>"
@@ -1030,7 +1030,7 @@ def _carrera_yieldmax(resultados: dict, fwd: dict, p_hz: int) -> None:
 
 
 def _modulo_fiscal_nra(resultados: dict, fwd: dict, p_country: str) -> None:
-    """Literal de `app.py:5569-5590`."""
+    """Literal de `app_old.py:5569-5590`."""
     import pandas as pd
 
     with st.container(border=True):
@@ -1058,7 +1058,7 @@ def _modulo_fiscal_nra(resultados: dict, fwd: dict, p_country: str) -> None:
 
 
 def _monte_carlo(resultados: dict, classify_map: dict, proj_params: dict) -> None:
-    """Literal de `app.py:5592-5607` — rango de resultados posibles."""
+    """Literal de `app_old.py:5592-5607` — rango de resultados posibles."""
     import altair as alt
     import pandas as pd
 
@@ -1103,7 +1103,7 @@ def _monte_carlo(resultados: dict, classify_map: dict, proj_params: dict) -> Non
 
 def _proyeccion_escenario(resultados: dict, classify_map: dict) -> None:
     """Filas 17/18 — expander «Proyección a futuro (escenario)». Literal de
-    `app.py:5286-5608`: sliders de horizonte/aporte/país/DRIP/crecimiento,
+    `app_old.py:5286-5608`: sliders de horizonte/aporte/país/DRIP/crecimiento,
     `logic.project_portfolio_forward`, tabla por activo, carrera YieldMax, módulo
     fiscal NRA y Monte Carlo."""
     proj_elig = [t for t, s in resultados.items()
@@ -1276,7 +1276,7 @@ def render_proyeccion(resultados: dict) -> None:
 # ── Fila 19 — El yield anunciado vs lo que de verdad ganas ──────────────────
 
 def _yield_audit(resultados: dict, classify_map: dict) -> None:
-    """Fila 19. Literal de `app.py:3652-3782` (`_render_yield_audit`): 3 pasos
+    """Fila 19. Literal de `app_old.py:3652-3782` (`_render_yield_audit`): 3 pasos
     auditados (titular → mecanismo hoy → realizado) por fondo, con `st.pills` cuando
     está disponible. Reusa `logic.build_tax_summaries` una sola vez (Regla 3: mismo
     objeto fiscal por ticker, no se recalcula por segunda vez)."""
@@ -1395,7 +1395,7 @@ _ESTR_MONO = "'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
 
 def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
     """Reconstruye la serie temporal Portafolio Real vs «todo en un solo ETF».
-    Literal de `app.py:5682-5794`, cacheada en sesión por `_file_id` (evita repetir
+    Literal de `app_old.py:5682-5794`, cacheada en sesión por `_file_id` (evita repetir
     las descargas de yfinance en cada rerun del rail)."""
     import pandas as pd
     import yfinance as yf
@@ -1510,7 +1510,7 @@ def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
 
 def _comparativa_estrategias(resultados: dict) -> None:
     """Fila 20 — «Tu portafolio real vs. poner ese mismo dinero, mismas fechas, en un
-    solo ETF». Literal de `app.py:5665-5908`. El gate original (`_strat_results`,
+    solo ETF». Literal de `app_old.py:5665-5908`. El gate original (`_strat_results`,
     salida de `logic.simulate_triple_comparison`) solo se usaba como booleano — nunca
     se consumía su contenido en esta sección — así que aquí se reemplaza por «hay
     resultados válidos»: evita recalcular una comparación triple que esta vista no lee."""

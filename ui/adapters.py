@@ -120,7 +120,7 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
 
     Regla 4: la destructividad se mide con la TENDENCIA del NAV, nunca con el ROC% —
     `classify_roc_health` ya respeta esto internamente; esta función solo junta sus
-    parámetros, con la misma fórmula que `app.py:3590-3611` (verificada, en producción).
+    parámetros, con la misma fórmula que `app_old.py:3590-3611` (verificada, en producción).
     """
     roc_pct = logic._roc_pct_for(ticker, stats)
     nav_cagr = stats.get("price_cagr_recent")
