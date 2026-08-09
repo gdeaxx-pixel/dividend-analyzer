@@ -122,14 +122,19 @@ def render_rail(labels: list, activo: int, key: str = "vd_paso") -> int:
 
     En el demo el rail es HTML y cambia sin recargar; aquí cada clic es un rerun de
     Streamlit. Es el precio de tener el estado en Python, y está aprobado en el traspaso.
+
+    Envuelto en `st.container(key=...)` únicamente para darle a `inyectar_estilos` una
+    clase propia (`st-key-{key}_wrap`) y así ajustar tamaño/padding solo de estos 8
+    botones, sin tocar el segmented_control del tema ni los botones del popover de ruta.
     """
     st.session_state.setdefault(key, activo)
-    columnas = st.columns(len(labels))
-    for indice, (columna, etiqueta) in enumerate(zip(columnas, labels)):
-        with columna:
-            estado = "primary" if indice == st.session_state[key] else "secondary"
-            if st.button(etiqueta, key=f"{key}_{indice}", type=estado,
-                         use_container_width=True):
-                st.session_state[key] = indice
-                st.rerun()
+    with st.container(key=f"{key}_wrap"):
+        columnas = st.columns(len(labels))
+        for indice, (columna, etiqueta) in enumerate(zip(columnas, labels)):
+            with columna:
+                estado = "primary" if indice == st.session_state[key] else "secondary"
+                if st.button(etiqueta, key=f"{key}_{indice}", type=estado,
+                             use_container_width=True):
+                    st.session_state[key] = indice
+                    st.rerun()
     return st.session_state[key]

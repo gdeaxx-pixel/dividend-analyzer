@@ -359,6 +359,31 @@ _ESTILOS = """
           background: var(--accent-tint) !important; color: var(--accent) !important;
         }
 
+        /* Rail de 8 pasos del viaje del dinero (render_rail): st.columns(8) fuerza cada
+           columna a flex-basis 0 → 83.5px de columna a 1280px, y con el font-size nativo
+           de 16px las etiquetas de una sola palabra ("Mercado", "Resultado") no caben y
+           el navegador parte la palabra en dos ("Mercad"/"o"). Medido en vivo: a 13px +
+           padding 6px 4px el ancho de contenido disponible (~73.5px) alcanza para
+           "Resultado" (60.3px) y "Mercado" (53.1px) en una sola línea; las etiquetas que
+           no caben ("Reinv + Efvo", "Bols + DRIP", "Cap. actual") envuelven en su espacio
+           natural — nunca a mitad de palabra, que es lo que garantiza keep-all/hyphens.
+           min-height 66px iguala la altura de las 8 (2 líneas mide 65.2px; 1 línea queda
+           centrada por el inline-flex/align-items:center nativo del botón). Solo aplica
+           en escritorio: en mobile los botones ya se apilan a ancho completo (sin el
+           aprieto de columna) y se deja su tamaño nativo. */
+        .st-key-vd_paso_wrap .stButton > button {
+          word-break: keep-all !important;
+          overflow-wrap: normal !important;
+          hyphens: none !important;
+        }
+        @media (min-width: 641px) {
+          .st-key-vd_paso_wrap .stButton > button {
+            font-size: 13px !important;
+            padding: 6px 4px !important;
+            min-height: 66px !important;
+          }
+        }
+
         .vd-badge {
           display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
           font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
