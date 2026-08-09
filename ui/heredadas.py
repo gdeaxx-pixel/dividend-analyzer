@@ -1323,8 +1323,8 @@ def _yield_audit(resultados: dict, classify_map: dict) -> None:
     if i == 0:
         big = pct(adv)
         if adv is not None:
-            txt = (f"{au_tk} publica un yield **titular** de {pct(adv)}: «por cada $100 en "
-                  f"{au_tk} hoy, te pagaría ~${adv:.0f} al año». Pero ese número anualiza "
+            txt = (f"{au_tk} publica un yield **titular** de {pct(adv)}: «por cada \\$100 en "
+                  f"{au_tk} hoy, te pagaría ~\\${adv:.0f} al año». Pero ese número anualiza "
                   "**un solo pago** — es marketing, no una promesa.")
         else:
             txt = (f"No tenemos la tasa titular publicada de {au_tk} — sigue a los pasos 2 "

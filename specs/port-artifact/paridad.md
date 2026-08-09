@@ -41,7 +41,7 @@ Columnas a llenar por el ejecutor:
 | 16 | Resumen consolidado — fondos de dividendos (`app.py:5171`) | `ui/heredadas.py` `_resumen_consolidado`, vista «Portafolios» (dentro de `_detalle_por_portafolio`) | Fase 5b: con `schwab_synth_1` (MSTY+TSLY, ≥2 fondos), tabla nativa con fila TOTAL — verificado vía `AppTest.dataframe`: Tu inversión $1,600.00, Dividendos $201.00, Valor mercado $322.72, ROI total -67.27% (coincide con la agregación `(mv+div-inv)/inv` de `app.py:5271-5272`). |
 | 17 | Proyección a futuro y escenarios (`app.py:5244`) | `ui/heredadas.py` `_concentracion_por_factor` (correlación oculta por factor) + `render_proyeccion`, vista «Proyección» | Fase 5c, 2026-08-08: `AppTest` con `schwab_synth_1`/`ib_synth_1` — sin excepción, `logic.build_factor_concentration` leído tal cual (sin recalcular). |
 | 18 | Proyección a futuro (escenario) — expander (`app.py:5299`) | `ui/heredadas.py` `_proyeccion_escenario` + `_carrera_yieldmax` + `_modulo_fiscal_nra` + `_monte_carlo`, vista «Proyección» | Fase 5c: sliders (horizonte/aporte/país/DRIP/crecimiento/apreciación/meta) y escenario de subyacente en widgets nativos; `logic.project_portfolio_forward`/`logic.monte_carlo_projection`/`logic.classify_roc_health`/`logic.nra_tax_breakdown` leídos sin recalcular su matemática — verificado con `AppTest` sobre ambos fixtures, sin excepción. Desviación: el detalle técnico de la carrera YieldMax usa `<details>` HTML (no `st.expander`) porque ya vive dentro del expander «Proyección a futuro (escenario)» y Streamlit no permite expanders anidados — mismo motivo documentado en `app.py:5518-5520`; detectado por el propio `AppTest` (`StreamlitAPIException`) y corregido antes de cerrar la fase. |
-| 19 | El yield anunciado vs lo que de verdad ganas (`app.py:5658`) | `ui/heredadas.py` `_yield_audit`, vista «Estrategias» | Fase 5c: 3 pasos auditados (titular → mecanismo hoy → realizado) con `st.pills`, reusando `logic.build_hoja_excel`+`logic.build_tax_summaries` (Regla 3: un solo objeto fiscal, llamado una vez). Desviación de re-vestido: las barras de comparación del demo se condensan en `st.progress` por columna (sin equivalente nativo barato a la barra HTML animada) y la tabla «todos los fondos» usa `st.dataframe` en vez de `<table>` HTML — mismas cifras, mismo texto. Verificado con `AppTest` sobre `schwab_synth_1`/`ib_synth_1`, sin excepción. |
+| 19 | El yield anunciado vs lo que de verdad ganas (`app.py:5658`) | `ui/heredadas.py` `_yield_audit`, vista «Estrategias» | Fase 5c: 3 pasos auditados (titular → mecanismo hoy → realizado) con `st.pills`, reusando `logic.build_hoja_excel`+`logic.build_tax_summaries` (Regla 3: un solo objeto fiscal, llamado una vez). Desviación de re-vestido: las barras de comparación del demo se condensan en `st.progress` por columna (sin equivalente nativo barato a la barra HTML animada) y la tabla «todos los fondos» usa `st.dataframe` en vez de `<table>` HTML — mismas cifras, mismo texto. Verificado con `AppTest` sobre `schwab_synth_1`/`ib_synth_1`, sin excepción. **Bug encontrado y corregido en Fase 6 (2026-08-08, navegador real):** el texto del paso 1 («por cada $100 en MSTY hoy, te pagaría ~$86 al año») se renderizaba como LaTeX roto — `app.py:3767` lo embebe dentro de un bloque HTML completo (`unsafe_allow_html=True`, empieza con `<div>`), por lo que Streamlit nunca aplica su parser de markdown/LaTeX a ese texto; el port usaba `st.markdown(txt)` en texto plano con `**negritas**`, y los dos `$` literales del mismo párrafo se interpretaban como delimitadores de fórmula. Fix: escapar los `$` literales (`\$`) en `ui/heredadas.py:1326-1327`. `AppTest` no lo detecta (no renderiza HTML/LaTeX) — solo apareció al mirarlo en el navegador, ver nota de método de la Fase 6. |
 | 20 | Comparativa de estrategias (`app.py:5666`) | `ui/heredadas.py` `_comparativa_estrategias` + `_serie_temporal_estrategias`, vista «Estrategias» | Fase 5c: reconstrucción de flujos de compra desde `daily_trend`/`Invested Capital` (con los mismos 2 respaldos que `app.py`) + descarga de precios de SCHB/XLK/YMAX/SMH vía `yfinance`, cacheada en sesión por `_file_id` — verificado con `AppTest` sobre ambos fixtures, sin excepción (con o sin red, gracias al `try/except` por ETF ya presente en `app.py`). Dos desviaciones: (1) el gate original `_strat_results` (salida de `logic.simulate_triple_comparison`) solo se usaba como booleano en esta sección — nunca se leía su contenido — así que se sustituye por «hay resultados con inversión > 0», evitando recalcular una comparación que esta vista no consume; (2) la tabla de rendimiento se muestra con `st.dataframe` en vez del bloque HTML monoespaciado, y las etiquetas finales de la gráfica (de-colisión vertical) se omiten — el tooltip de Altair sigue mostrando cada valor al pasar el cursor. |
 | 21 | Total Return Graph — YieldMax vs Crecimiento (`app.py:5922`) | `ui/vistas.py:279` (ruta Comparación · Simulación) → `ui/componentes/render_comparacion` + `comparacion.html` (extraído por `tools/extract_comparacion.py`) | Fase 4: render medido con `ALTO_COMPARACION=920`, `initComparacion()` corre tal cual, sin adapter (no depende del CSV del usuario). |
 
@@ -262,6 +262,49 @@ Un hallazgo de método, no del port: `AppTest.run()` dos veces sobre la misma in
 revienta con `ValueError: content: "C" is not in list` — reproducido también contra el
 commit base `6c0038f`, **antes** de cualquier cambio de esta fase. No es una regresión;
 cada chequeo de este traspaso usa una instancia fresca de `AppTest` con un solo `.run()`.
+
+## Nota de método — Fase 6 (verificación humana, 2026-08-08)
+
+Rebase del port sobre `main` (hereda `227eb3c`, el arreglo del calendario bursátil) sin
+conflictos de fondo (solo `.gitignore`, ambas líneas se conservaron). Gate tras el rebase:
+236 passed/11 skipped · `fixtures/verify_fixtures.py` exit 0 · `git diff main -- logic.py`
+vacío.
+
+**El bug de `file_upload` del entorno (documentado en `feedback_preview-tool-sandbox-bug`)
+se sorteó, no se evitó**: se construyó un `File`/`DataTransfer` en JS dentro del navegador
+real (`atob` + `Uint8Array` + `input.files = dt.files` + evento `change`) y se disparó sobre
+el `input[type=file]` real del uploader de Streamlit — mismo endpoint, mismo camino de
+código que un drag-and-drop real, a diferencia de sembrar `session_state` a mano. Usado con
+el fixture `schwab_synth_2` (no datos reales de Daniel, para no exponerlos): resultado
+idéntico al de `verify_fixtures.py` (MSTY 100 acc. @ $3,176, SCHB 20 acc. @ $523.20,
+ingresos $462.00/$4.90 validados contra el income CSV).
+
+Recorridas las 17 vistas con datos reales renderizados (no solo `AppTest`): las 3 de
+Dividendos/MSTY, las 3 de Largo Plazo/SCHB (confirma que el waterfall no solo funciona en
+rojo/negativo — SCHB con retorno positivo renderiza con la paleta azul, sin regresión),
+Comparación (Simulación y Real), las 5 de Método tradicional (spot-check), y las 4 de
+Detalle — incluida Ingresos con el income CSV cruzando (ejercita la rama que 5c tuvo que
+forzar) y la infografía ROC expandida sin el `StreamlitAPIException` de expanders anidados
+que rompió 5c. Modo oscuro verificado en 2 vistas (Cash flow y Estrategias) sin regresión de
+contraste. Consola: un único error `POCKET is not defined` (`about:srcdoc`), no reproducible
+al repetir la acción — mount transitorio de un iframe anterior, no un fallo del port.
+
+**Un bug real encontrado y corregido** — fila 19 de esta tabla: el texto «por cada $100 en
+MSTY hoy…» se renderizaba como LaTeX roto (Streamlit interpreta `$…$` como fórmula cuando el
+bloque no empieza con una etiqueta HTML). `AppTest` no lo detecta porque no renderiza
+HTML/CSS/LaTeX — es exactamente la clase de defecto que este checklist existe para cazar.
+Gate re-verificado después del fix: 236 passed/11 skipped, sin cambios de conteo.
+
+**Dos bugs del mismo patrón, encontrados pero NO tocados** por estar **idénticos en
+`app.py` línea por línea** (`logic.py:4215-4217`, el módulo fiscal NRA — «Diferencia a tu
+favor: $X»; y `app.py:5153`/`ui/heredadas.py:434`, el aviso de discrepancia de precio CSV vs
+yfinance): ambos son bugs preexistentes de producción, no regresiones del port. Tocarlos
+aquí rompería el invariante `git diff main -- logic.py` vacío (el primero) o divergiría del
+comportamiento de `app.py` sin autorización (el segundo). Quedan anotados para que Daniel
+decida si los arregla en `main` cuando le convenga — no bloquean el port.
+
+Con esto, el punto 4 de «Cómo se audita» queda cerrado: la muestra recorrida a mano cubrió
+bastante más de 5 filas (8-21 completas con datos reales, no solo `AppTest`).
 
 ---
 
