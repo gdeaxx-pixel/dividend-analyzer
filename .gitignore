@@ -45,6 +45,12 @@ secrets.toml
 # Datos privados de brokers (fixtures locales del golden harness — NO versionar)
 real_examples/
 
+# Excepcion al `*.csv` de arriba: los fixtures SINTETICOS si se versionan. Son cifras
+# inventadas con la estructura de los exports de Schwab e IB, para que un ejecutor
+# externo trabaje sin acceso a real_examples/. La regla general sigue protegiendo
+# cualquier otro .csv del repo.
+!fixtures/**/*.csv
+
 # Roster del portafolio del usuario (posiciones privadas — local, NO versionar)
 knowledge/portfolio.yaml
 
@@ -61,3 +67,4 @@ design/
 # Fixtures con datos reales de Daniel (1042-S, PDFs de broker, capturas de posiciones).
 # Traen TIN, fecha de nacimiento, dirección y número de cuenta — NUNCA versionar.
 tests/daniel_zambrano/
+.evidence/

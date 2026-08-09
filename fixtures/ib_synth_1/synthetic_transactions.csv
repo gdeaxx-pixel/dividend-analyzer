@@ -1,0 +1,21 @@
+Statement,Header,Nombre del campo,Valor del campo
+Statement,Data,Title,Transaction History
+Statement,Data,Period,"Enero 2, 2025 - Junio 30, 2025"
+Statement,Data,WhenGenerated,"2025-06-30, 12:00:00 EDT"
+Summary,Header,Nombre del campo,Valor del campo
+Summary,Data,Divisa base,USD
+Summary,Data,Efectivo inicial,0.0
+Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,Quantity,Price,Price Currency,Gross Amount ,Commission,Net Amount
+Transaction History,Data,2025-01-21,U0000000,YIELDMAX NVDA OPTION INC ETF,Buy,NVDY,60,15.00,USD,-900.00,-1.00,-901.00
+Transaction History,Data,2025-01-21,U0000000,VANECK SEMICONDUCTOR ETF,Buy,SMH,4,250.00,USD,-1000.00,-1.00,-1001.00
+Transaction History,Data,2025-02-05,U0000000,YIELDMAX COIN OPTION IS ETF,Buy,CONY,80,10.00,USD,-800.00,-1.00,-801.00
+Transaction History,Data,2025-02-28,U0000000,NVDY(US88634T7827) Dividendo en efectivo USD 1.00 por accion (Dividendo ordinario),Dividend,NVDY,,,USD,60.00,,60.00
+Transaction History,Data,2025-02-28,U0000000,NVDY(US88634T7827) Dividendo en efectivo USD 1.00 por accion - US Impuestos,Foreign Tax Withholding,NVDY,,,USD,-18.00,,-18.00
+Transaction History,Data,2025-03-31,U0000000,CONY(US88634T8801) Dividendo en efectivo USD 0.75 por accion (Dividendo ordinario),Dividend,CONY,,,USD,60.00,,60.00
+Transaction History,Data,2025-03-31,U0000000,CONY(US88634T8801) Dividendo en efectivo USD 0.75 por accion - US Impuestos,Foreign Tax Withholding,CONY,,,USD,-18.00,,-18.00
+Transaction History,Data,2025-04-30,U0000000,SMH(US92189F6768) Dividendo en efectivo USD 0.50 por accion (Dividendo ordinario),Dividend,SMH,,,USD,2.00,,2.00
+Transaction History,Data,2025-04-30,U0000000,SMH(US92189F6768) Dividendo en efectivo USD 0.50 por accion - US Impuestos,Foreign Tax Withholding,SMH,,,USD,-0.60,,-0.60
+Transaction History,Data,2025-05-01,U0000000,Transferencia de Fondos Electronica,Deposit,-,,,USD,1000.00,,1000.00
+Transaction History,Data,2025-05-15,U0000000,Interes de credito USD,Credit Interest,-,,,USD,0.45,,0.45
+Transaction History,Data,2025-06-02,U0000000,NVDY(US88634T7827) Pago en Lugar de Dividendo (in Lieu),Payment in Lieu,NVDY,,,USD,1.20,,1.20
+Transaction History,Data,2025-06-10,U0000000,YIELDMAX NVDA OPTION INC ETF,Sell,NVDY,-10,13.00,USD,130.00,-1.00,129.00

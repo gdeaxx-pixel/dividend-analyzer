@@ -1,0 +1,6 @@
+"Investment Income Transactions as of 06/30/2025 09:00:00 ET"
+Transaction Date,Account Number,Account Name,Account Type,Security Description,Symbol,Security Type,Transaction Type,Transaction Amount,Income Type,
+02/28/2025,...111,Individual,BROKERAGE,YieldMax MSTR Option Income ETF,MSTY,ETFs & Closed End Funds,Dividend,80.0000000000,Received,
+03/31/2025,...111,Individual,BROKERAGE,YieldMax MSTR Option Income ETF,MSTY,ETFs & Closed End Funds,Dividend,76.0000000000,Received,
+03/31/2025,...111,Individual,BROKERAGE,YieldMax TSLA Option Income ETF,TSLY,ETFs & Closed End Funds,Dividend,45.0000000000,Received,
+03/31/2025,...111,Individual,BROKERAGE,Schwab US Broad Market ETF,SCHB,ETFs & Closed End Funds,Dividend,1.5000000000,Received,
