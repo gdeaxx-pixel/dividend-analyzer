@@ -11,7 +11,20 @@ todo lo que cambia estado vive en Python.
 
 import streamlit as st
 
-from ui.carga import notificar_progreso, render_carga
+import stale_guard
+
+# Los módulos se importan como tales antes de sacarles nombres sueltos: así el guardián
+# los ve todos ya cargados y puede recargarlos si el disco cambió bajo el proceso
+# (despliegue sin reinicio en Streamlit Cloud). Estos cuatro arrastran el resto de `ui/`.
+import logic  # noqa: F401  — lo vigila el guardián
+from ui import carga, chrome, pie, vistas  # noqa: F401  — ídem
+
+# Anotar en la 1ª corrida y comparar en las siguientes tiene que pasar DESPUÉS de los
+# imports: si tomara la foto antes, una corrida posterior al despliegue registraría las
+# fechas nuevas como si fueran las suyas y el código viejo pasaría desapercibido.
+stale_guard.asegurar_frescura()
+
+from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
 from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
 from ui.pie import render_pie
 from ui.vistas import obtener_resultados, render_1042s_card, render_vista
