@@ -26,6 +26,7 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 # desktop: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
 ALTO_CASHFLOW = 1520
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Medido en el navegador sobre el componente real (fixture `schwab_synth_1`, MSTY):
 # `document.body.scrollHeight` = 658px, igual con el interruptor «Corregir la hoja»
 # encendido o apagado (la fila que agrega ya tenía su espacio reservado). Se detectó
@@ -33,10 +34,12 @@ ALTO_CASHFLOW = 1520
 # negro (`hidden` heredado del panel de pestañas del demo — ver `extract_hoja.py`).
 ALTO_HOJA = 700
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Medido en el navegador (fixture NVDY, paso 1 · DRIP bruto): `scrollHeight` = 901px,
 # ya casi exacto contra el placeholder de 900 — solo se sube el margen de seguridad.
 ALTO_COMPARACION = 920
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Medido en el navegador sobre las 5 sub-vistas (fixture `schwab_synth_1`, precios en
 # vivo vía `analyze_portfolio`): matriz 1847px, rendimiento 1128px, payback 902px,
 # rendimiento vs tasa la más alta — 2541px —, otras calculadoras 563px. Dos bugs de
@@ -50,13 +53,12 @@ ALTO_COMPARACION = 920
 # extra: los precios en vivo pueden variar el número de filas visibles entre cargas.
 ALTO_METODO = 2650
 
-# Medido en el navegador: `scrollHeight` = 6826px, estable (una primera medición con
-# el iframe todavía a 2600 dio 5882 — algo dentro del componente solo terminaba de
-# expandirse con más alto disponible; se volvió a medir tras subir el alto hasta que
-# el número dejó de moverse). El placeholder de 2600 dejaba más de la mitad del texto
-# invisible sin aviso — `scrolling=False` no deja ni hacer scroll para alcanzarlo. Se
-# detectó y corrigió antes de esta medición un bug de extracción que dejaba el iframe
-# en negro (`hidden` heredado de `view-metodologia` — ver `extract_metodologia.py`).
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. Re-medido ago-2026: el contenido
+# real son 5882px con 7000 disponibles, y 0 elementos por debajo de ese corte. La nota
+# anterior decía 6826px y que el contenido "se expandía con más alto disponible" — es
+# falso, y de haberlo sido el auto-alto habría entrado en bucle. Se comprobó: converge
+# en 5882 sin oscilar.
 ALTO_METODOLOGIA = 7000
 
 
