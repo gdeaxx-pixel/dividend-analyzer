@@ -63,11 +63,13 @@ ALTO_COMPARACION_REAL = 1150
 ALTO_METODO = 2650
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
-# componente corrige su propio alto en cuanto carga. Re-medido ago-2026: el contenido
-# real son 5882px con 7000 disponibles, y 0 elementos por debajo de ese corte. La nota
-# anterior decía 6826px y que el contenido "se expandía con más alto disponible" — es
-# falso, y de haberlo sido el auto-alto habría entrado en bucle. Se comprobó: converge
-# en 5882 sin oscilar.
+# componente corrige su propio alto en cuanto carga. El alto depende del ANCHO (el texto
+# envuelve distinto): no hay un único "valor real" — a 860px (escritorio) converge en
+# 4537px, a 337px (contenedor real a 375px de viewport) en 6483px. Ambas mediciones
+# tomadas al ancho FINAL del iframe, no al 300px por defecto que Streamlit usa antes de
+# estirarlo (medir ahí da 6826px, un artefacto del ancho equivocado, no del contenido —
+# ver `feedback_resize-observer-suspendido`). 7000 cubre ambos casos con margen y sigue
+# siendo el respaldo seguro; no hace falta subirlo.
 ALTO_METODOLOGIA = 7000
 
 
