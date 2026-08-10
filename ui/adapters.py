@@ -49,6 +49,23 @@ def _f(valor, defecto: float = 0.0) -> float:
         return defecto
 
 
+def _tiene_datos(stats) -> bool:
+    """Un ticker es utilizable si `analyze_portfolio` lo analizó de verdad.
+
+    `classify_tickers` clasifica por IDENTIDAD del instrumento (SMH es un ETF de
+    crecimiento pase lo que pase) y `analyze_portfolio` por CALIDAD DE LOS DATOS
+    (una posición de menos de 14 días se descarta y solo deja
+    `{"skipped": True, "reason": …}`). Las dos son correctas por separado; lo que
+    no puede pasar es armar la lista con la primera y leer los números de la
+    segunda — de ahí el `KeyError: 'pocket_investment'` de esta vista.
+
+    Vive aquí (no en `ui/heredadas.py`) porque `trg_real_data` también lo necesita
+    y `ui.heredadas` ya importa de `ui.adapters` — el helper no puede vivir en
+    heredadas sin crear un import circular.
+    """
+    return isinstance(stats, dict) and "error" not in stats and not stats.get("skipped")
+
+
 def cashflow_data(stats: dict, ticker: str) -> dict:
     """Las 12 constantes del Cash flow, más lo que el componente necesita para rotular.
 
@@ -314,7 +331,8 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         grp[tk] = "ym" if tk in TRG_YM else "growth"
 
     classify_map = logic.classify_tickers(list(resultados.keys()))
-    poseidos = [t for t, m in classify_map.items() if m == "mode_a" and t in TRG_YM]
+    poseidos = [t for t, m in classify_map.items()
+                if m == "mode_a" and t in TRG_YM and _tiene_datos(resultados.get(t))]
     base_defecto = (max(poseidos, key=lambda t: (resultados.get(t) or {}).get("market_value") or 0)
                     if poseidos else ancla)
 
