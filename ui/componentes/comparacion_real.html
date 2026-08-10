@@ -1,5 +1,7 @@
-<!-- GENERADO POR tools/extract_comparacion.py — NO EDITAR A MANO.
-     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<!-- GENERADO POR tools/extract_comparacion_real.py — NO EDITAR A MANO.
+     Fuente: `ui/componentes/comparacion.html` (mismo demo), derivado — no hay diseño
+     propio que extraer (`cmp-panel-real` sigue siendo un placeholder «En diseño» en
+     el demo). Para cambiar algo, se cambia el demo o este extractor y se regenera. -->
 <meta charset="utf-8">
 <style>
   :root {
@@ -1015,10 +1017,10 @@
   body { margin: 0; background: var(--ground); }
 </style>
 <main class="wrap" style="padding-top:0">
-<div class="panel" id="cmp-panel-simulacion" role="tabpanel">
+<div class="panel" id="cmp-panel-real" role="tabpanel">
       <header class="cmp-head">
-        <h2 class="cmp-title">Total Return Graph · simulación</h2>
-        <p class="cmp-lede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>.</p>
+        <h2 class="cmp-title">Total Return Graph · datos reales</h2>
+        <p class="cmp-lede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>. Calculado sobre precios y dividendos reales hasta el {{ASOF}}, con reinversión por evento al cierre del día ex-dividendo.</p>
       </header>
 
       <div class="cmp-controls">
@@ -1070,63 +1072,33 @@
            '<div style="margin-top:4px;opacity:.85">' + c.td + '</div>';
   }
 (function initComparacion() {
-    var LAST = 38, RATE = 0.30;            // May 2023 (0) .. Jul 2026 (38)
+    var DATA = {{DATA_JSON}}, LAST = DATA.last;
     var MES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-    function mDate(m) { return new Date(2023, 4 + m, 1); }
+    function mDate(m) { return new Date(DATA.origen[0], DATA.origen[1] + m, 1); }
     function mLabel(m) { var d = mDate(m); return MES[d.getMonth()] + " " + d.getFullYear(); }
 
-    var COL = { NVDY:"#1f86c4", TSLY:"#d1662f", CONY:"#b95cae", MSTY:"#a8b020",
-                CHPY:"#17a89a", SCHB:"#b06a3d", XLK:"#8f76d4", SMH:"#c99a26" };
-    // roc: ROC 19a real ponderado (traspaso 2026-08-03, hallazgo L5 — unifica
-    // con ROC_19A de initMetodo, misma fuente knowledge/roc_19a.yaml asof
-    // 2026-07-25). Antes eran valores ilustrativos 0.85–0.92 sin relación con
-    // el dato real; solo cambia la separación entre "Neto ROC 19a" y "Peor
-    // caso 30%" — las formas siguen siendo sintéticas (shapeOf). CHPY no
-    // tiene aviso 19(a) en el yaml: se deja su valor ilustrativo (0.88), sin
-    // dato real que sustituir.
-    var F = {
-      NVDY:{ incep:0,  price:0.50,  div:2.86, roc:0.4108, grp:"ym" },
-      TSLY:{ incep:0,  price:-0.20, div:0.95, roc:0.5459, grp:"ym" },
-      CONY:{ incep:3,  price:-0.55, div:0.85, roc:0.5307, grp:"ym" },
-      MSTY:{ incep:9,  price:-0.75, div:0.65, roc:0.7156, grp:"ym" },
-      CHPY:{ incep:19, price:0.02,  div:0.26, roc:0.88,   grp:"ym" },   // sin 19(a) en el yaml — ilustrativo
-      SCHB:{ incep:0,  price:0.84,  div:0.02, roc:0,    grp:"growth" },
-      XLK: { incep:0,  price:1.40,  div:0.01, roc:0,    grp:"growth" },
-      SMH: { incep:0,  price:3.78,  div:0.00, roc:0,    grp:"growth" }
-    };
-    var YM = ["NVDY","TSLY","CONY","MSTY","CHPY"], GROWTH = ["SCHB","XLK","SMH"];
+    var COL = DATA.col;
+    // F ya no fabrica precio/dividendo/ROC ilustrativos (mapa-datos.md § 5):
+    // incep/grp por ticker salen de DATA, uno por cada clave presente en
+    // DATA.incep (un ticker que no descargó simplemente no aparece — sin
+    // ceros ni interpolación, decisión del traspaso 2026-08-10).
+    var F = {};
+    Object.keys(DATA.incep).forEach(function(tk){
+      F[tk] = { incep: DATA.incep[tk], grp: DATA.grp[tk] };
+    });
+    var _presente = function(t){ return Object.prototype.hasOwnProperty.call(DATA.incep, t); };
+    var YM = ["NVDY","TSLY","CONY","MSTY","CHPY"].filter(_presente),
+        GROWTH = ["SCHB","XLK","SMH"].filter(_presente);
 
-    function hash(s){ var h=0; for (var i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return (h>>>0)%1000/1000; }
-    function bump(m,c,w){ var z=(m-c)/w; return Math.exp(-z*z); }
-    var _shape = {};
-    function shapeOf(tk){
-      if (_shape[tk]) return _shape[tk];
-      var f = F[tk], seed = hash(tk)*6.28, raw = {}, span = LAST - f.incep;
-      for (var m = f.incep; m <= LAST; m++){
-        var p = span > 0 ? (m - f.incep)/span : 1;
-        var beta = f.grp === "ym" ? 1.15 : 0.9;
-        var wob = 1 + 0.05*Math.sin(m*0.9+seed) + 0.035*Math.sin(m*0.37+seed*1.7)
-                    - beta*(0.11*bump(m,15,2.6) + 0.07*bump(m,30,2.4));
-        raw[m] = Math.pow(p, 0.85) * wob;
-      }
-      var denom = raw[LAST] || 1, S = {};
-      for (var mm = f.incep; mm <= LAST; mm++) S[mm] = raw[mm]/denom;
-      _shape[tk] = S; return S;
-    }
-    function targetEnd(tk, mode){
-      var f = F[tk];
-      var w = mode === "bruto" ? 0 : mode === "plano" ? RATE : RATE*(1 - f.roc);
-      return f.price + f.div*(1 - w);
-    }
-    function idxAt(tk, m, mode){ return 1 + targetEnd(tk, mode) * shapeOf(tk)[m]; }
+    function idxAt(tk, m, mode){ return DATA.idx[mode][tk][m]; }
     function series(tk, mode, baseIncep){
       var startM = Math.max(baseIncep, F[tk].incep), base0 = idxAt(tk, startM, mode), out = {};
       for (var m = startM; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
       return { tk:tk, startM:startM, late: F[tk].incep > baseIncep, data:out };
     }
 
-    var state = { base:"NVDY", mode:"bruto", growth:new Set(GROWTH), ym:new Set() };
-    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso 30%"} ];
+    var state = { base:DATA.base_defecto, mode:"bruto", growth:new Set(GROWTH), ym:new Set() };
+    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
         elGrowth = document.getElementById("cmpGrowth"), elYm = document.getElementById("cmpYm"),
@@ -1273,7 +1245,10 @@
       var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
-        '<span class="flag">Cifras del demo:</span> el modo <b>DRIP bruto</b> usa retornos reales medidos con la app; el <b>neto</b> es una estimación ilustrativa — el cálculo exacto (reinversión compuesta con tu retención real) vive en la app.'
+        '<span class="flag">Cifras reales:</span> precios y dividendos de Yahoo '
+        + 'Finance hasta el ' + DATA.asof + '. El <b>neto ROC 19a</b> aplica la '
+        + 'retención solo sobre la porción no-ROC según los avisos 19(a); los ETFs '
+        + 'de crecimiento no tienen avisos 19(a) y retienen la tasa plana.'
       ];
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
       elNotes.innerHTML = parts.join("<br>");

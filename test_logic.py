@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import logic
+from ui.adapters import trg_real_data
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -2006,6 +2007,159 @@ def test_drip_comparison_skips_failed_comparator_and_dedupes_base(monkeypatch):
     assert sorted(meta.keys()) == ["MSTY", "SCHB"]
     assert (df.groupby("Ticker").size() > 0).all()
     assert len(df[df["Ticker"] == "MSTY"]) == 6
+
+
+# ── ui.adapters.trg_real_data — JSON del Total Return Graph · datos reales
+# (traspaso 2026-08-10) ─────────────────────────────────────────────────────────
+
+def _trg_real_fake_frames():
+    """Universo completo (5 YM + 3 crecimiento), diario, TSLY como ancla más antigua
+    (arranca 2026-01-01). CHPY arranca el 5 de marzo — tardío, > 7 días tras el ancla,
+    y a medio mes a propósito (no en el día 1) para ejercer el fix de remuestreo del
+    primer mes parcial (ver `trg_real_data`) también en un ticker tardío, no solo en
+    el ancla. La ventana cruza tres meses (ene/feb/mar) para probar el remuestreo
+    mensual."""
+    idx_full = pd.date_range("2026-01-01", "2026-03-20", freq="D")
+    idx_tardio = pd.date_range("2026-03-05", "2026-03-20", freq="D")
+
+    def _frame(idx, close0, drift, dia_div=None):
+        close = pd.Series([close0 + drift * i for i in range(len(idx))], index=idx)
+        divs = pd.Series(0.0, index=idx)
+        if dia_div is not None and dia_div in divs.index:
+            divs.loc[dia_div] = 1.0
+        return pd.DataFrame({"Close": close, "Dividends": divs})
+
+    return {
+        "TSLY": _frame(idx_full, 10.0, 0.02, dia_div=idx_full[10]),
+        "NVDY": _frame(idx_full, 20.0, 0.01, dia_div=idx_full[15]),
+        "CONY": _frame(idx_full, 15.0, 0.01),
+        "MSTY": _frame(idx_full, 12.0, 0.015, dia_div=idx_full[20]),
+        "CHPY": _frame(idx_tardio, 5.0, 0.03),
+        "SCHB": _frame(idx_full, 100.0, 0.05),
+        "XLK": _frame(idx_full, 200.0, 0.08),
+        "SMH": _frame(idx_full, 150.0, 0.10),
+    }
+
+
+def _trg_real_patch(monkeypatch, frames):
+    logic.build_drip_comparison_series.clear()
+    monkeypatch.setattr(logic, "fetch_market_data",
+                        lambda tk, start: (frames.get(tk, pd.DataFrame()), None))
+
+
+def test_trg_real_data_shape_has_3_modos_y_8_tickers(monkeypatch):
+    _trg_real_patch(monkeypatch, _trg_real_fake_frames())
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0, pais="México")
+    assert datos is not None
+    assert set(datos["idx"].keys()) == {"bruto", "roc", "plano"}
+    for modo in ("bruto", "roc", "plano"):
+        assert set(datos["idx"][modo].keys()) == {
+            "NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH"}
+    assert datos["origen"] == [2026, 0]  # enero 2026, 0-indexado
+
+
+def test_trg_real_data_incepcion_tardia_no_arranca_en_0(monkeypatch):
+    _trg_real_patch(monkeypatch, _trg_real_fake_frames())
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    assert "0" not in datos["idx"]["bruto"]["CHPY"]
+    primer_mes_chpy = min(int(k) for k in datos["idx"]["bruto"]["CHPY"].keys())
+    assert datos["incep"]["CHPY"] == primer_mes_chpy
+    # CHPY arranca en marzo (mes 2, 0-indexado desde enero) — tardío frente al ancla.
+    assert datos["incep"]["CHPY"] == 2
+    assert datos["incep"]["TSLY"] == 0
+
+
+def test_trg_real_data_incep_coincide_con_meta_start(monkeypatch):
+    frames = _trg_real_fake_frames()
+    _trg_real_patch(monkeypatch, frames)
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    logic.build_drip_comparison_series.clear()
+    _, meta = logic.build_drip_comparison_series(
+        "TSLY", tuple(t for t in frames if t != "TSLY"), mode="bruto", base_rate=0.30)
+    for tk, m in meta.items():
+        start = m["start"]
+        esperado = (start.year - 2026) * 12 + (start.month - 1 - 0)
+        assert datos["incep"][tk] == esperado, tk
+
+
+def test_trg_real_data_remuestreo_mensual_ultimo_valor_y_ultimo_dato_real(monkeypatch):
+    frames = _trg_real_fake_frames()
+    _trg_real_patch(monkeypatch, frames)
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    tsly_bruto = datos["idx"]["bruto"]["TSLY"]
+
+    logic.build_drip_comparison_series.clear()
+    df, _ = logic.build_drip_comparison_series(
+        "TSLY", tuple(t for t in frames if t != "TSLY"), mode="bruto", base_rate=0.30)
+    serie = df[df["Ticker"] == "TSLY"].set_index("Fecha")["Valor"].sort_index()
+
+    # Un mes intermedio COMPLETO (febrero, mes 1) sí usa el último cierre del mes.
+    ultimo_feb = serie[serie.index.month == 2].iloc[-1]
+    assert tsly_bruto["1"] == pytest.approx(round(float(ultimo_feb), 4))
+    # El último punto (mes 2, marzo — parcial, hasta el 20) es el último dato real de
+    # la serie completa, no el cierre "de mes" inexistente (marzo no terminó).
+    assert tsly_bruto[str(datos["last"])] == pytest.approx(round(float(serie.iloc[-1]), 4))
+    assert datos["last"] == 2
+
+
+def test_trg_real_data_primer_mes_usa_valor_real_de_arranque_no_cierre_de_mes(monkeypatch):
+    """El primer mes de CADA ticker (su propia incepción) casi nunca cae el día 1, así
+    que `.resample().last()` ahí tomaría el cierre de FIN de ese mes, no el valor real
+    de arranque — `build_total_return_series` normaliza cada serie a exactamente 100
+    en su primer dato. Si ese ancla se corre, la renormalización de JS a "0% en la
+    incepción" queda sesgada por lo que el precio ya se movió mientras tanto (medido
+    en vivo con datos reales: MSTY, incep 22-feb, daba +5% en vez de +24% con este
+    bug). Se prueba con el ancla (TSLY, incep día 1 — caso trivial) Y con un ticker
+    tardío que arranca a medio mes (CHPY, 5 de marzo — el caso que de verdad ejerce
+    el fix)."""
+    _trg_real_patch(monkeypatch, _trg_real_fake_frames())
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    assert datos["idx"]["bruto"]["TSLY"]["0"] == pytest.approx(100.0)
+    primer_mes_chpy = str(min(int(k) for k in datos["idx"]["bruto"]["CHPY"].keys()))
+    assert datos["idx"]["bruto"]["CHPY"][primer_mes_chpy] == pytest.approx(100.0)
+
+
+def test_trg_real_data_plano_menor_o_igual_roc_menor_o_igual_bruto(monkeypatch):
+    _trg_real_patch(monkeypatch, _trg_real_fake_frames())
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    last = str(datos["last"])
+    for tk in ("TSLY", "NVDY", "MSTY"):
+        plano = datos["idx"]["plano"][tk][last]
+        roc = datos["idx"]["roc"][tk][last]
+        bruto = datos["idx"]["bruto"][tk][last]
+        assert plano <= roc <= bruto + 1e-9, tk
+
+
+def test_trg_real_data_ancla_caida_devuelve_none(monkeypatch):
+    logic.build_drip_comparison_series.clear()
+    monkeypatch.setattr(logic, "fetch_market_data", lambda tk, start: (pd.DataFrame(), None))
+    assert trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0) is None
+
+
+def test_trg_real_data_ticker_caido_se_omite_de_todas_las_claves(monkeypatch):
+    """Un comparador que no descarga desaparece del JSON entero — no entra con ceros
+    ni interpolado.
+
+    Es el contrato que consume el componente: sus chips se dibujan filtrando
+    `["NVDY",…].filter(_presente)` contra `DATA.incep`
+    (`tools/extract_comparacion_real.py`). Si `incep`/`idx`/`col` dejaran de estar de
+    acuerdo, volvería el fallo que encontró la auditoría del 2026-08-10: el chip se
+    dibuja igual y al pulsarlo `F[tk]` es undefined → `TypeError` en `F[tk].incep`.
+    """
+    frames = _trg_real_fake_frames()
+    del frames["CHPY"]          # yfinance sin datos para ese símbolo
+    _trg_real_patch(monkeypatch, frames)
+
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    assert datos is not None            # cae un comparador, no el ancla
+    assert "CHPY" not in datos["incep"]
+    assert "CHPY" not in datos["grp"]
+    assert "CHPY" not in datos["col"]
+    for modo in ("bruto", "roc", "plano"):
+        assert "CHPY" not in datos["idx"][modo]
+    # Las cuatro claves siguen describiendo exactamente el mismo conjunto de tickers.
+    assert set(datos["incep"]) == set(datos["grp"]) == set(datos["col"])
+    assert set(datos["incep"]) == set(datos["idx"]["bruto"])
 
 
 def _msty_mstr_window():

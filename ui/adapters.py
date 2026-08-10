@@ -14,6 +14,18 @@ import datetime
 
 import logic
 
+# Universo del Total Return Graph — 5 fondos YieldMax + 3 ETFs de crecimiento. Paleta y
+# agrupación literales del demo (`viaje-dinero-waterfall.html:2781`). Viven aquí (no en
+# `ui/vistas.py`, que las tenía antes bajo `_TRG_*`) porque las consume `trg_real_data`;
+# `ui.vistas` ya importa de `ui.adapters`, así que dejarlas en vistas.py habría creado
+# un import circular en cuanto el adapter necesitara leerlas.
+TRG_YM = ("NVDY", "TSLY", "CONY", "MSTY", "CHPY")
+TRG_GROWTH = ("SCHB", "XLK", "SMH")
+TRG_UNIVERSO = TRG_YM + TRG_GROWTH
+TRG_COLORES = {"NVDY": "#1f86c4", "TSLY": "#d1662f", "CONY": "#b95cae", "MSTY": "#a8b020",
+              "CHPY": "#17a89a", "SCHB": "#b06a3d", "XLK": "#8f76d4", "SMH": "#c99a26"}
+TRG_MODOS = ("bruto", "roc", "plano")
+
 
 # Etiquetas del rail — literales del demo (`viaje-dinero-waterfall.html:2131`).
 STEP_LABELS = (
@@ -195,3 +207,126 @@ def verificar_identidades(datos: dict, tolerancia: float = 0.02) -> list:
         fallos.append(f"bolsillo negativo: {datos['POCKET']:.2f}")
 
     return fallos
+
+
+def _trg_ancla():
+    """El YM de `TRG_YM` con la incepción más antigua — decisión 4 del traspaso
+    2026-08-10: el ancla NO se hardcodea (hoy es TSLY; mañana puede entrar otro
+    fondo). Ignora los que fallen. Devuelve (ticker, Timestamp) o (None, None) si
+    ninguno de los 5 respondió.
+    """
+    mejor_tk, mejor_start = None, None
+    for tk in TRG_YM:
+        try:
+            data, _ = logic.fetch_market_data(tk, "2000-01-01")
+        except Exception:
+            continue
+        if data is None or data.empty or "Close" not in data.columns:
+            continue
+        start = data.sort_index().index.min()
+        if mejor_start is None or start < mejor_start:
+            mejor_tk, mejor_start = tk, start
+    return mejor_tk, mejor_start
+
+
+def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) -> dict | None:
+    """JSON para `ui/componentes/comparacion_real.html` (Total Return Graph · datos
+    reales): el índice TRI crudo de los 8 tickers del universo × 3 modos fiscales
+    sobre la ventana completa (mapa-datos.md § 5).
+
+    El componente no calcula nada — Python entrega el índice base 100 (normalizado en
+    la incepción de cada ticker, o en la del ancla si es posterior) y JS renormaliza
+    al fondo base que el usuario elija dentro del iframe, sin rerun (decisión 3 del
+    traspaso 2026-08-10: arquitectura Exhibit 2 del paper Morningstar TRI). Por eso
+    basta con UNA llamada a `build_drip_comparison_series` por modo, siempre anclada
+    al YM más antiguo — no una por cada posible selección de fondo base.
+
+    Devuelve `None` si el ancla (el YM de incepción más antigua) no descarga; para
+    cualquier otro ticker, si falla simplemente no aparece en `idx`/`incep`/`col` — el
+    componente omite su chip, no inventa una serie.
+
+    **Límite conocido del eje mensual (auditoría 2026-08-10).** Dentro del mes en que
+    arranca el fondo base, el base y sus comparadores NO se anclan en el mismo
+    instante: el base entra por su primer dato real (la excepción de `mensual.iloc[0]`
+    de abajo) y los comparadores, que ya existían, por el cierre de fin de ese mes.
+    Son hasta ~3 semanas de desfase en un solo punto, el de normalización. Medido con
+    base MSTY (incepción 22-feb-2024): el componente da SMH +173% donde el cálculo
+    diario da +176%; MSTY +23% contra +24%. Es la contrapartida declarada de portar el
+    eje mensual del demo (decisión 5 del traspaso) y afecta solo a la comparación
+    visual, nunca a una cifra fiscal. Si algún día hace falta paridad exacta con el
+    cálculo diario, la vía es interpolar el valor de cada comparador en la fecha real
+    de incepción del base, no volver a serie diaria (multiplicaría el JSON por ~20).
+    """
+    ancla, ancla_start = _trg_ancla()
+    if ancla is None:
+        return None
+
+    origen = [int(ancla_start.year), int(ancla_start.month) - 1]
+    comparar = tuple(t for t in TRG_UNIVERSO if t != ancla)
+
+    idx: dict = {}
+    meta_por_ticker: dict = {}
+    last = 0
+
+    for modo in TRG_MODOS:
+        df, meta = logic.build_drip_comparison_series(
+            ancla, comparar, mode=modo, base_rate=tasa_pct / 100.0)
+        if df.empty or ancla not in meta:
+            return None
+        idx[modo] = {}
+        for tk, grupo in df.groupby("Ticker"):
+            # Remuestreo mensual (decisión 5): el último cierre de cada mes; el punto
+            # final es el último dato real aunque el mes esté a medias — `.last()`
+            # sobre un bin parcial ya toma el último punto observado, sin rellenar.
+            serie = grupo.set_index("Fecha")["Valor"].sort_index()
+            mensual = serie.resample("ME").last().dropna()
+            # Excepción al "último del mes": el PRIMER mes de cada ticker también es
+            # casi siempre parcial (la incepción real rara vez cae el día 1), y
+            # `.resample().last()` ahí devolvería el cierre de FIN de ese mes — no el
+            # valor real de arranque. `build_total_return_series` normaliza cada
+            # serie a exactamente 100 en su primer dato (`serie.iloc[0]`); si ese
+            # ancla se corre unas semanas, la renormalización de JS a "0% en la
+            # incepción" queda sesgada por lo que el precio ya se movió mientras
+            # tanto — medido en vivo: MSTY (incep 22-feb, fondo volátil en sus
+            # primeras semanas) daba +5% de retorno final en vez de +24% con este
+            # bug. El resto de los meses SÍ debe ser el cierre de fin de mes. Si el
+            # ticker vive entero dentro de un solo mes (ventana muy corta desde su
+            # incepción), esto pisa también el "último dato real" de ese único bin —
+            # inocuo: `series()` en JS divide ese valor entre sí mismo cuando ese
+            # ticker es el fondo base (siempre 0%), y con la ventana real de 46 meses
+            # ningún ticker vive en un solo mes.
+            mensual.iloc[0] = serie.iloc[0]
+            valores = {}
+            for fecha, valor in mensual.items():
+                m = (int(fecha.year) - origen[0]) * 12 + (int(fecha.month) - 1 - origen[1])
+                valores[str(m)] = round(float(valor), 4)
+                if m > last:
+                    last = m
+            idx[modo][tk] = valores
+        meta_por_ticker.update(meta)
+
+    incep = {}
+    grp = {}
+    for tk, m in meta_por_ticker.items():
+        start = m["start"]
+        incep[tk] = ((int(start.year) - origen[0]) * 12
+                     + (int(start.month) - 1 - origen[1]))
+        grp[tk] = "ym" if tk in TRG_YM else "growth"
+
+    classify_map = logic.classify_tickers(list(resultados.keys()))
+    poseidos = [t for t, m in classify_map.items() if m == "mode_a" and t in TRG_YM]
+    base_defecto = (max(poseidos, key=lambda t: (resultados.get(t) or {}).get("market_value") or 0)
+                    if poseidos else ancla)
+
+    return {
+        "origen": origen,
+        "last": last,
+        "base_defecto": base_defecto,
+        "tasa_pct": tasa_pct,
+        "pais": pais,
+        "asof": datetime.date.today().isoformat(),
+        "incep": incep,
+        "grp": grp,
+        "col": {tk: TRG_COLORES[tk] for tk in meta_por_ticker if tk in TRG_COLORES},
+        "idx": idx,
+    }
