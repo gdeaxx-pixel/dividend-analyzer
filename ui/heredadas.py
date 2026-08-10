@@ -80,9 +80,18 @@ def _tarjeta(accent_var: str, titulo_html: str, cuerpo_html: str) -> str:
 
 # ── Fila 8 — Tus dos portafolios ────────────────────────────────────────────────
 
+def _fondos(tickers: list[str]) -> str:
+    """«3 fondos» / «1 fondo». Antes del filtro de `_tiene_datos` estos chips casi nunca
+    llegaban a uno solo y el plural fijo pasaba desapercibido; al excluir los tickers sin
+    datos, «1 fondos» se volvió visible (auditoría 2026-08-10)."""
+    n = len(tickers)
+    return f"{n} fondo" if n == 1 else f"{n} fondos"
+
+
 def _agregados(resultados: dict, tickers: list[str]) -> tuple:
-    filas = [(t, resultados[t]) for t in tickers
-             if isinstance(resultados.get(t), dict) and "error" not in resultados[t]]
+    from ui.adapters import _tiene_datos
+
+    filas = [(t, resultados[t]) for t in tickers if _tiene_datos(resultados.get(t))]
     inv = sum(s["pocket_investment"] for _, s in filas)
     mv = sum(s["market_value"] for _, s in filas)
     div = sum(s.get("dividends_collected_cash", 0) for _, s in filas)
@@ -94,8 +103,12 @@ def _agregados(resultados: dict, tickers: list[str]) -> tuple:
 def _tus_dos_portafolios(resultados: dict, classify_map: dict) -> tuple[list, list]:
     """Fila 8 — tarjetas A/B + dona de asignación por valor. Literal de
     `app_old.py:3901-3987` (cascada de agregados, tarjetas, pie chart dividendos/crecimiento)."""
-    mode_a = sorted(t for t, m in classify_map.items() if m == "mode_a")
-    mode_b = sorted(t for t, m in classify_map.items() if m == "mode_b")
+    from ui.adapters import _tiene_datos
+
+    mode_a = sorted(t for t, m in classify_map.items()
+                     if m == "mode_a" and _tiene_datos(resultados.get(t)))
+    mode_b = sorted(t for t, m in classify_map.items()
+                     if m == "mode_b" and _tiene_datos(resultados.get(t)))
     if not (mode_a or mode_b):
         return mode_a, mode_b
 
@@ -120,14 +133,14 @@ def _tus_dos_portafolios(resultados: dict, classify_map: dict) -> tuple[list, li
         tarjetas.append(
             '<div class="vd-her-port-card">'
             '<p class="vd-her-port-titulo">Portafolio de crecimiento</p>'
-            f'<span class="vd-her-port-chip">{len(mode_b)} fondos: {", ".join(mode_b)}</span>'
+            f'<span class="vd-her-port-chip">{_fondos(mode_b)}: {", ".join(mode_b)}</span>'
             + mini(inv, mv, div, tr, pct) + "</div>")
     if mode_a:
         inv, mv, div, tr, pct = _agregados(resultados, mode_a)
         tarjetas.append(
             '<div class="vd-her-port-card vd-her-port-card-navy">'
             '<p class="vd-her-port-titulo">Portafolio de dividendos</p>'
-            f'<span class="vd-her-port-chip">{len(mode_a)} fondos: {", ".join(mode_a)}</span>'
+            f'<span class="vd-her-port-chip">{_fondos(mode_a)}: {", ".join(mode_a)}</span>'
             + mini(inv, mv, div, tr, pct) + "</div>")
     estilo = ' style="grid-template-columns:1fr;"' if len(tarjetas) == 1 else ""
     st.markdown(f'<div class="vd-her-port-cards"{estilo}>' + "".join(tarjetas) + "</div>",
@@ -515,7 +528,7 @@ def _detalle_por_portafolio(resultados: dict, mode_a: list[str]) -> None:
         return
     _seccion("Detalle por portafolio",
              "Abre cada portafolio para ver sus posiciones y métricas de riesgo")
-    with st.expander(f"PORTAFOLIO DE DIVIDENDOS · income mensual · {len(mode_a)} fondos",
+    with st.expander(f"PORTAFOLIO DE DIVIDENDOS · income mensual · {_fondos(mode_a)}",
                      expanded=True):
         mostrados = []
         for ticker in mode_a:
@@ -1596,8 +1609,11 @@ def render_estrategias(resultados: dict) -> None:
         st.markdown('<p class="vd-lede">Carga tu CSV de transacciones para ver esta vista.</p>',
                     unsafe_allow_html=True)
         return
+    from ui.adapters import _tiene_datos
+
     classify_map = logic.classify_tickers(list(resultados.keys()))
-    mode_a = sorted(t for t, m in classify_map.items() if m == "mode_a")
+    mode_a = sorted(t for t, m in classify_map.items()
+                     if m == "mode_a" and _tiene_datos(resultados.get(t)))
     if mode_a:
         _seccion("El yield anunciado vs lo que de verdad ganas",
                  "Un fondo puede anunciar '80% de yield' y aun así hacerte perder "

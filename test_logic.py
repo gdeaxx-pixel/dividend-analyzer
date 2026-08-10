@@ -5,10 +5,12 @@ import sys
 
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import logic
-from ui.adapters import trg_real_data
+from ui.adapters import _tiene_datos, trg_real_data
+from ui.heredadas import _agregados
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -2884,3 +2886,92 @@ def test_weekend_purchase_keeps_cost_curve(monkeypatch):
     # Y el ticker no debe salir marcado como no confiable por una fecha de fin de semana.
     calidad = logic.assess_ticker_quality(results, "MSTY")
     assert "no_cost_recorded" not in calidad["flags"], calidad
+
+
+# ── KeyError en «Tus dos portafolios» con tickers `skipped` (2026-08-10) ────────
+#
+# `logic.classify_tickers` clasifica por IDENTIDAD del instrumento (SMH es mode_b pase lo
+# que pase) y `logic.analyze_portfolio` por CALIDAD DE LOS DATOS (una posición <14 días
+# queda `{"skipped": True, "reason": "held_less_than_14_days"}`, casi vacío).
+# `ui/heredadas.py::_tus_dos_portafolios` armaba mode_a/mode_b con el primero y leía los
+# números del segundo → `KeyError: 'pocket_investment'` (`?demo=schwab2` en producción,
+# vía SLV/XLB/SMH). El fix va en la construcción de las listas, no en cada consumidor.
+
+def _resultados_con_skipped(monkeypatch):
+    """Portafolio con un ticker válido y uno `skipped` (<14 días) en cada modo:
+    MSTY/TSLY en mode_a, SCHB/SMH en mode_b."""
+    rows = [
+        ("2024-01-01", "Buy", "MSTY", 100, -2000.0),
+        ("2024-06-01", "Dividend", "MSTY", 0, 500.0),
+        ("2025-01-01", "Buy", "TSLY", 100, -1000.0),
+        ("2025-01-03", "Sell", "TSLY", 100, 1010.0),
+        ("2024-01-01", "Buy", "SCHB", 50, -3000.0),
+        ("2025-01-01", "Buy", "SMH", 100, -1000.0),
+        ("2025-01-03", "Sell", "SMH", 100, 1010.0),
+    ]
+    df = _roc_norm_df(rows)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    return logic.analyze_portfolio(df, version="TEST_SKIPPED_MIX")
+
+
+def test_resultados_con_skipped_tiene_ambas_ramas(monkeypatch):
+    """Confirma la fixture antes de usarla: 2 válidos + 2 `skipped` (uno por modo)."""
+    results = _resultados_con_skipped(monkeypatch)
+    assert results["TSLY"].get("skipped") is True
+    assert results["TSLY"]["reason"] == "held_less_than_14_days"
+    assert results["SMH"].get("skipped") is True
+    assert results["SMH"]["reason"] == "held_less_than_14_days"
+    assert "pocket_investment" in results["MSTY"]
+    assert "pocket_investment" in results["SCHB"]
+
+
+def test_tiene_datos_helper(monkeypatch):
+    results = _resultados_con_skipped(monkeypatch)
+    assert _tiene_datos(results["MSTY"]) is True
+    assert _tiene_datos(results["SCHB"]) is True
+    assert _tiene_datos(results["TSLY"]) is False        # skipped
+    assert _tiene_datos(results["SMH"]) is False         # skipped
+    assert _tiene_datos({"error": "No market data"}) is False
+    assert _tiene_datos("not a dict") is False
+    assert _tiene_datos(None) is False
+
+
+def test_agregados_excluye_skipped_sin_crash(monkeypatch):
+    """`_agregados` no debe reventar con un `skipped` en la lista, y el total debe
+    corresponder solo al ticker con datos (no una suma parcial silenciosa con el otro)."""
+    results = _resultados_con_skipped(monkeypatch)
+    solo_valido = _agregados(results, ["MSTY"])
+    con_skipped = _agregados(results, ["MSTY", "TSLY"])
+    assert con_skipped == solo_valido
+
+
+def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
+    """Regresión de raíz: las 4 vistas de Detalle vía `AppTest` (patrón de
+    `test_carga_1042s.py`) con un `skipped` en mode_a (TSLY) y otro en mode_b (SMH). El
+    criterio principal es `at.exception == []`; además, las tarjetas deben excluir a los
+    tickers `skipped` en vez de sumarlos con ceros."""
+    results = _resultados_con_skipped(monkeypatch)
+
+    script = """
+import sys
+sys.path.insert(0, {path!r})
+from ui.heredadas import render_estrategias, render_ingresos, render_portafolios, render_proyeccion
+from ui.vistas import obtener_resultados
+
+resultados = obtener_resultados()
+render_portafolios(resultados)
+render_ingresos(resultados)
+render_proyeccion(resultados)
+render_estrategias(resultados)
+""".format(path=os.path.dirname(os.path.abspath(__file__)))
+
+    at = AppTest.from_string(script)
+    at.session_state["_vd_resultados"] = results
+    at.run()
+    assert at.exception == [], [e.value for e in at.exception]
+
+    texto = "\n".join(m.value for m in at.markdown)
+    assert "1 fondo: SCHB" in texto, "la tarjeta de crecimiento debe excluir a SMH (skipped)"
+    assert "1 fondo: MSTY" in texto, "la tarjeta de dividendos debe excluir a TSLY (skipped)"
+    assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"
+    assert "TSLY" not in texto, "TSLY está skipped: no debe aparecer en ninguna vista de Detalle"
