@@ -123,18 +123,26 @@ def render_metodologia(alto: int = ALTO_METODOLOGIA) -> None:
 
 
 def render_rail(labels: list, activo: int, key: str = "vd_paso") -> int:
-    """Rail de 8 pasos en botones nativos.
+    """Rail de 8 pasos: barra de progreso + etiqueta, como el `.step` del artifact.
 
     En el demo el rail es HTML y cambia sin recargar; aquí cada clic es un rerun de
     Streamlit. Es el precio de tener el estado en Python, y está aprobado en el traspaso.
+
+    Cada paso va envuelto en su propio `st.container(key=...)` cuya clave termina en
+    `_done` / `_now` / `_todo`: Streamlit convierte esa clave en la clase `st-key-…` y
+    `inyectar_estilos` la usa para colorear la barra. Es el único modo de tener TRES
+    estados — `st.button` solo distingue dos (`primary`/`secondary`).
     """
     st.session_state.setdefault(key, activo)
-    columnas = st.columns(len(labels))
-    for indice, (columna, etiqueta) in enumerate(zip(columnas, labels)):
-        with columna:
-            estado = "primary" if indice == st.session_state[key] else "secondary"
-            if st.button(etiqueta, key=f"{key}_{indice}", type=estado,
-                         use_container_width=True):
-                st.session_state[key] = indice
-                st.rerun()
+    actual = st.session_state[key]
+    with st.container(key=f"{key}_wrap"):
+        columnas = st.columns(len(labels))
+        for indice, (columna, etiqueta) in enumerate(zip(columnas, labels)):
+            estado = "now" if indice == actual else ("done" if indice < actual else "todo")
+            with columna:
+                with st.container(key=f"{key}_p{indice}_{estado}"):
+                    if st.button(etiqueta, key=f"{key}_{indice}",
+                                 use_container_width=True):
+                        st.session_state[key] = indice
+                        st.rerun()
     return st.session_state[key]
