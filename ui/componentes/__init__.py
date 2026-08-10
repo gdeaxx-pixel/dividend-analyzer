@@ -35,9 +35,18 @@ ALTO_CASHFLOW = 1520
 ALTO_HOJA = 700
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
-# Medido en el navegador (fixture NVDY, paso 1 · DRIP bruto): `scrollHeight` = 901px,
-# ya casi exacto contra el placeholder de 900 — solo se sube el margen de seguridad.
-ALTO_COMPARACION = 920
+# La medición vieja (901px) era solo a ancho de escritorio; a 320-375px los chips
+# envuelven en más filas y el panel crece. Re-medido en la auditoría del 2026-08-10 a
+# 375px: `body.scrollHeight` = 1025px. Se fija por encima de ESE caso, no del de
+# escritorio: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
+ALTO_COMPARACION = 1100
+
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
+# Mismo panel que ALTO_COMPARACION, pero el lede declara la fecha de corte y la nota
+# de cifras reales es más larga, así que crece un poco más. Medido en el navegador con
+# datos reales (`?demo=schwab2`, base MSTY · DRIP bruto): 974px a 1280 de ancho y
+# **1086px a 375px**. El auto-alto converge en esos valores sin oscilar.
+ALTO_COMPARACION_REAL = 1150
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Medido en el navegador sobre las 5 sub-vistas (fixture `schwab_synth_1`, precios en
@@ -72,53 +81,104 @@ def _plantilla(nombre: str) -> str:
         return f.read()
 
 
-def render_cashflow(datos: dict, paso: int, alto: int = ALTO_CASHFLOW) -> None:
+def _con_tema(html: str, tema: str) -> str:
+    """Inserta el atributo de tema ANTES del primer `<style>` (y por tanto antes del
+    `<script>` del componente), para que `draw()` — los colores dependientes de custom
+    properties — lea los tokens correctos en su primera pasada.
+
+    H1 (traspaso 2026-08-10): los 5 componentes viven en iframes `srcdoc` con su propia
+    copia del CSS del artifact. `ui/chrome.py:inyectar_estilos` escribe los tokens en el
+    documento PRINCIPAL; dentro del iframe nadie escribía `data-theme`, así que el CSS
+    caía a `@media (prefers-color-scheme: dark)` — el tema del SISTEMA OPERATIVO, no el
+    de la app (medido: con la app en Claro y el Mac en oscuro, todos los componentes
+    salían oscuros y el botón Claro no hacía nada dentro de ellos). El CSS del artifact
+    ya trae `:root[data-theme="light"]`/`[data-theme="dark"]` después del `@media`, así
+    que el selector con atributo gana por especificidad — no hace falta tocar CSS ni
+    extractores, solo escribir el atributo antes de que el componente calcule colores.
+    """
+    atributo = "dark" if tema == "Oscuro" else "light"
+    script = (f'<script>document.documentElement.setAttribute('
+              f'"data-theme", "{atributo}");</script>\n')
+    i = html.find("<style>")
+    if i < 0:
+        raise ValueError("No encontré <style> en el componente — ¿cambió el extractor?")
+    return html[:i] + script + html[i:]
+
+
+def render_cashflow(datos: dict, paso: int, tema: str, alto: int = ALTO_CASHFLOW) -> None:
     """Dibuja el recorrido del dinero en el paso indicado.
 
     `datos` viene de `ui.adapters.cashflow_data`; `paso` es 0-7 y lo controla el rail
     nativo. El JSON se serializa con `json.dumps`, que ya escapa lo necesario para vivir
-    dentro de un `<script>`.
+    dentro de un `<script>`. `tema` es "Claro"/"Oscuro" (`st.session_state["vd_tema"]`).
     """
     html = _plantilla("cashflow.html")
+    html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     html = html.replace("{{PASO}}", str(int(paso)))
     components.html(html, height=alto, scrolling=False)
 
 
-def render_hoja(datos: dict, alto: int = ALTO_HOJA) -> None:
+def render_hoja(datos: dict, tema: str, alto: int = ALTO_HOJA) -> None:
     """Dibuja la Hoja Excel: las dos lecturas de la posición y el interruptor
     «Corregir la hoja». `datos` viene de `ui.adapters.hoja_data`.
     """
     html = _plantilla("hoja.html")
+    html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
 
 
-def render_comparacion(alto: int = ALTO_COMPARACION) -> None:
+def render_comparacion(tema: str, alto: int = ALTO_COMPARACION) -> None:
     """Dibuja «Comparación · Simulación» (Total Return Graph). Sin datos: es un modelo
     paramétrico que se porta tal cual (mapa-datos.md § 4), así que no hay `{{DATA_JSON}}`
     que rellenar — el componente trae sus propias cifras, igual que en el demo.
     """
     html = _plantilla("comparacion.html")
+    html = _con_tema(html, tema)
     components.html(html, height=alto, scrolling=False)
 
 
-def render_metodo(vista_activa: str, alto: int = ALTO_METODO) -> None:
+def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION_REAL) -> None:
+    """Dibuja «Comparación · Real» (Total Return Graph con datos reales). Mismo
+    componente/CSS/controles que la Simulación (`ui/componentes/comparacion_real.html`,
+    derivado por `tools/extract_comparacion_real.py`), pero leyendo `{{DATA_JSON}}` —
+    el índice TRI crudo de los 8 tickers × 3 modos que arma
+    `ui.adapters.trg_real_data` — en vez del modelo paramétrico. El componente no
+    calcula: series()/draw() en JS hacen la renormalización al fondo base elegido, sin
+    rerun de Streamlit (mapa-datos.md § 5, decisión 3 del traspaso 2026-08-10).
+
+    Nombrado distinto a `ui.vistas.render_trg_real` (el despachador que llama a esta
+    función) a propósito — mismo patrón que `render_cashflow`/`render_cash_flow` y
+    `render_hoja`/`render_hoja_excel`: dos módulos con responsabilidades distintas no
+    pueden compartir nombre de función sin que el import de uno choque con la
+    definición del otro.
+    """
+    html = _plantilla("comparacion_real.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{ASOF}}", str(datos.get("asof", "")))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_metodo(vista_activa: str, tema: str, alto: int = ALTO_METODO) -> None:
     """Dibuja «Método tradicional». `vista_activa` es una de matriz/rendimiento/payback/
     tasa/otras (`ui.nav.MET_ORDER`). El componente trae sus 5 sub-vistas ya calculadas
     (initMetodo las llena de una pasada, igual que en el demo) y solo oculta las que no
     tocan — sin datos de Python: la cartera que audita es ajena (mapa-datos.md § 6).
     """
     html = _plantilla("metodo.html")
+    html = _con_tema(html, tema)
     html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
     components.html(html, height=alto, scrolling=False)
 
 
-def render_metodologia(alto: int = ALTO_METODOLOGIA) -> None:
+def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA) -> None:
     """Dibuja Metodología: 11 entradas, formulario y bibliografía. HTML estático
     completo — sin datos de Python (mapa-datos.md § 7).
     """
     html = _plantilla("metodologia.html")
+    html = _con_tema(html, tema)
     components.html(html, height=alto, scrolling=False)
 
 

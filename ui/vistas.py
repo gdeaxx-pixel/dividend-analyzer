@@ -11,18 +11,10 @@ import streamlit as st
 import logic
 from ui import heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, hoja_data, salud_nav_data,
-                         verificar_identidades)
+                         trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
-from ui.componentes import (render_cashflow, render_comparacion, render_hoja,
-                            render_metodo, render_metodologia, render_rail)
-
-# Paleta de los 8 tickers del universo de comparación — literal del demo
-# (`viaje-dinero-waterfall.html:2837`), reusada aquí para que TRG Real use los mismos
-# colores por ticker que TRG Simulación en vez de inventar una paleta nueva.
-_TRG_YM = ("NVDY", "TSLY", "CONY", "MSTY", "CHPY")
-_TRG_GROWTH = ("SCHB", "XLK", "SMH")
-_TRG_COLORES = {"NVDY": "#1f86c4", "TSLY": "#d1662f", "CONY": "#b95cae", "MSTY": "#a8b020",
-                "CHPY": "#17a89a", "SCHB": "#b06a3d", "XLK": "#8f76d4", "SMH": "#c99a26"}
+from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
+                            render_hoja, render_metodo, render_metodologia, render_rail)
 
 
 def obtener_resultados() -> dict:
@@ -121,7 +113,7 @@ def render_cash_flow(ruta: Ruta) -> None:
         return
 
     paso = render_rail(datos["STEP_LABELS"], activo=len(datos["STEP_LABELS"]) - 1)
-    render_cashflow(datos, paso)
+    render_cashflow(datos, paso, ruta.tema)
 
 
 def render_hoja_excel(ruta: Ruta) -> None:
@@ -146,7 +138,7 @@ def render_hoja_excel(ruta: Ruta) -> None:
                 st.write(f"· {fallo}")
         return
 
-    render_hoja(datos)
+    render_hoja(datos, ruta.tema)
 
 
 def render_salud_nav(ruta: Ruta) -> None:
@@ -193,87 +185,35 @@ def render_salud_nav(ruta: Ruta) -> None:
 
 
 def render_trg_real(ruta: Ruta) -> None:
-    """Total Return Graph con datos reales — la misma comparación que la Simulación,
-    pero calculada sobre precios/dividendos reales vía `logic.build_drip_comparison_series`
-    (mapa-datos.md § 5). Sin diseño del artifact (`cmp-panel-real` es un placeholder «En
-    diseño»): widgets nativos, mismo criterio que Salud NAV.
+    """Total Return Graph con datos reales — el mismo componente del artifact que
+    Comparación · Simulación (`ui/componentes/comparacion_real.html`, derivado de
+    `comparacion.html` por `tools/extract_comparacion_real.py`), alimentado con el
+    índice TRI real que calcula `logic.build_drip_comparison_series` (mapa-datos.md
+    § 5). Sin badge/título/lede propios: el panel del componente ya trae los suyos
+    (mismo patrón que Comparación · Simulación) — duplicarlos aquí dejaría dos
+    encabezados.
 
-    Sin ETF de contexto en la ruta (Comparación no lleva breadcrumb de ETF): el fondo
-    base se elige aquí, igual que en `app_old.py:5931-5936` (referencia probada en
-    producción, misma lógica de controles y transformación de datos).
+    El componente no calcula nada: `ui.adapters.trg_real_data` entrega el índice
+    crudo de los 8 tickers × 3 modos fiscales sobre la ventana completa, y `series()`
+    (JS) renormaliza al fondo base que el usuario elija dentro del iframe, sin rerun
+    de Streamlit — decisión 3 del traspaso 2026-08-10.
     """
-    import altair as alt
-
-    st.markdown('<span class="vd-badge">Comparación · Real</span>', unsafe_allow_html=True)
-    st.markdown('<h2 class="vd-title">Total Return Graph · datos reales</h2>',
-                unsafe_allow_html=True)
-    st.markdown(
-        '<p class="vd-lede">La misma comparación que la simulación, pero con tu '
-        'reinversión y tu retención efectiva, calculada desde precios y dividendos '
-        'reales.</p>', unsafe_allow_html=True)
-
     resultados = _resultados()
     if not resultados:
         st.info("Carga tu CSV para ver esta gráfica con datos reales.")
         return
 
-    classify_map = logic.classify_tickers(list(resultados.keys()))
-    poseidos_a = [t for t, m in classify_map.items() if m == "mode_a" and t in _TRG_YM]
-    base_defecto = (max(poseidos_a, key=lambda t: (resultados.get(t) or {}).get("market_value") or 0)
-                    if poseidos_a else _TRG_YM[0])
+    pais = st.session_state.get("proj_country")
+    pais = pais if pais in logic.NRA_COUNTRY_RATES else None
+    tasa_pct = logic.NRA_COUNTRY_RATES[pais][0] if pais else logic.NRA_DEFAULT_RATE
 
-    col_base, col_modo = st.columns([1, 2])
-    with col_base:
-        base = st.selectbox("Fondo base (YieldMax)", _TRG_YM,
-                            index=_TRG_YM.index(base_defecto), key="vd_trg_base")
-    with col_modo:
-        pais = st.session_state.get("proj_country")
-        pais = pais if pais in logic.NRA_COUNTRY_RATES else None
-        tasa_pct = logic.NRA_COUNTRY_RATES[pais][0] if pais else logic.NRA_DEFAULT_RATE
-        modo_lbl = st.radio(
-            "Supuesto de reinversión",
-            ["DRIP bruto (0%)", "Neto estimado (ROC 19a)", f"Peor caso ({tasa_pct:.0f}% plano)"],
-            horizontal=True, key="vd_trg_modo")
-    modo = ("bruto" if modo_lbl.startswith("DRIP") else
-           "roc" if "ROC" in modo_lbl else "plano")
-
-    col_g, col_y = st.columns(2)
-    with col_g:
-        crecimiento = st.pills("Crecimiento", _TRG_GROWTH, default=list(_TRG_GROWTH),
-                               selection_mode="multi", key="vd_trg_crecimiento")
-    with col_y:
-        otros_ym = [t for t in _TRG_YM if t != base]
-        ym_extra = st.pills("Otros YieldMax", otros_ym, default=[],
-                            selection_mode="multi", key=f"vd_trg_ym_{base}")
-    comparar = tuple((crecimiento or []) + (ym_extra or []))
-
-    df, meta = logic.build_drip_comparison_series(base, comparar, mode=modo, base_rate=tasa_pct / 100.0)
-    if df.empty or base not in meta:
-        st.warning(f"No se pudo descargar la serie de precios de {base} — inténtalo de nuevo "
-                   "en unos minutos.")
+    datos = trg_real_data(resultados, tasa_pct, pais)
+    if datos is None:
+        st.warning("No se pudo descargar la serie de precios del fondo base — "
+                  "inténtalo de nuevo en unos minutos.")
         return
 
-    df = df.copy()
-    df["Pct"] = df["Valor"] - 100.0
-    mostrados = [t for t in _TRG_COLORES if t in set(df["Ticker"])]
-    escala = alt.Scale(domain=mostrados, range=[_TRG_COLORES[t] for t in mostrados])
-    tardios = {t for t, m in meta.items() if m.get("late")}
-    df["Etiqueta"] = df["Ticker"] + df["Ticker"].map(lambda t: "*" if t in tardios else "")
-
-    lineas = alt.Chart(df).mark_line().encode(
-        x=alt.X("Fecha:T", title=None),
-        y=alt.Y("Pct:Q", title="Rendimiento total (%)"),
-        color=alt.Color("Ticker:N", scale=escala, legend=alt.Legend(orient="bottom", title=None)),
-        strokeWidth=alt.condition(alt.datum.Ticker == base, alt.value(3.2), alt.value(2)),
-        tooltip=[alt.Tooltip("Fecha:T", title="Fecha", format="%d %b %Y"),
-                alt.Tooltip("Ticker:N", title="Activo"),
-                alt.Tooltip("Pct:Q", title="Rendimiento total", format="+.1f")],
-    ).properties(height=420)
-    st.altair_chart(lineas, use_container_width=True)
-
-    if tardios:
-        st.caption("* incepción posterior al fondo base — arranca en 0% en su propia fecha; "
-                  "su cifra final no cubre el mismo horizonte.")
+    render_comparacion_real(datos, ruta.tema)
 
 
 def render_vista(ruta: Ruta) -> None:
@@ -287,7 +227,7 @@ def render_vista(ruta: Ruta) -> None:
         if st.button("← Volver al análisis", key="vd_metodologia_volver"):
             st.session_state["vd_metodologia"] = False
             st.rerun()
-        render_metodologia()
+        render_metodologia(ruta.tema)
         return
     if ruta.categoria in nav.CATS and ruta.etf:
         if ruta.vista == nav.VISTA_CON_ETF:
@@ -301,13 +241,13 @@ def render_vista(ruta: Ruta) -> None:
             return
     if ruta.categoria == "comparacion":
         if ruta.vista == "simulacion":
-            render_comparacion()
+            render_comparacion(ruta.tema)
             return
         if ruta.vista == "real":
             render_trg_real(ruta)
             return
     if ruta.categoria == "metodo" and ruta.vista in nav.MET_ORDER:
-        render_metodo(ruta.vista)
+        render_metodo(ruta.vista, ruta.tema)
         return
     if ruta.categoria == heredadas.CAT_CLAVE:
         heredadas.render_vista(ruta.vista, ruta)
