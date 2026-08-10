@@ -140,4 +140,13 @@ def render_rail(labels: list, activo: int, key: str = "vd_paso") -> int:
                                  use_container_width=True):
                         st.session_state[key] = indice
                         st.rerun()
+        # Leyenda «Paso N de 8 · Etiqueta», solo visible en móvil (ver @media en
+        # `ui/chrome.py`): en desktop el texto por paso ya cumple ese rol; a 375px
+        # Streamlit apila las 8 columnas y el texto por botón se oculta, así que esta
+        # línea es lo único que sigue comunicando dónde va el usuario.
+        st.markdown(
+            f'<div class="vd-rail-legend">Paso {actual + 1} de {len(labels)} · '
+            f'{labels[actual]}</div>',
+            unsafe_allow_html=True,
+        )
     return st.session_state[key]

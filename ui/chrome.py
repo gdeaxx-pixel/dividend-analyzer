@@ -273,6 +273,9 @@ _ESTILOS = """
         .st-key-vd_paso_wrap [class*="_now"] .stButton > button:hover {
           color: var(--loss) !important;
         }
+        /* Leyenda del rail móvil (`render_rail` en `ui/componentes/__init__.py`).
+           Oculta en desktop: ahí cada paso ya trae su propia etiqueta. */
+        .vd-rail-legend { display: none; }
 
         .vd-brand {
           font-family: var(--font-mono); font-size: 13px; font-weight: 700;
@@ -438,6 +441,43 @@ _ESTILOS = """
           }
           [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
             padding: 10px 12px;
+          }
+          /* Rail móvil: mockup aprobado por Daniel (diseñado 2026-08-09, sesión de
+             correcciones de forma). Por debajo de 640px Streamlit apila `st.columns(8)`
+             de fábrica y el rail pasaba a 8 cajas de ancho completo (~300px de alto) que
+             ya no comunican progreso. Se fuerza la fila de vuelta a horizontal — mismos
+             8 segmentos de 4px, sin etiqueta por paso (a ~34px de columna no cabe
+             ningún texto) — y la leyenda `.vd-rail-legend` de `render_rail` pasa a ser
+             la única fuente de "dónde vas". Cada columna sigue siendo tocable
+             (~34px de ancho), solo se oculta el texto que ya no cabe.
+             `stColumn` trae de fábrica `min-width: calc(100% - 24px)` para apilarse junto
+             con el `flex-wrap: wrap` del padre — es lo que lo dispara. Forzar `nowrap` sin
+             tocar ese `min-width` no apila, DESBORDA (cada columna insiste en medir ~93%
+             del ancho del contenedor, el row termina de 2500px+ con `overflow-x: visible`
+             heredado, y solo la primera columna queda dentro del viewport). Hay que anular
+             también el `min-width` y devolverle un `flex-basis` igual por columna. */
+          .st-key-vd_paso_wrap [data-testid="stHorizontalBlock"] {
+            flex-wrap: nowrap !important;
+            gap: 4px !important;
+          }
+          .st-key-vd_paso_wrap [data-testid="stColumn"] {
+            min-width: 0 !important;
+            width: auto !important;
+            flex: 1 1 0 !important;
+          }
+          .st-key-vd_paso_wrap .stButton > button {
+            padding: 7px 0 6px 0 !important;
+          }
+          .st-key-vd_paso_wrap .stButton > button p { display: none !important; }
+          .vd-rail-legend {
+            display: block;
+            margin-top: 8px;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+            color: var(--ink-mut);
           }
         }
 """
