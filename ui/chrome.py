@@ -252,8 +252,18 @@ _ESTILOS = """
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
           flex: 0 0 auto; width: auto; min-width: 0;
         }
+        /* La columna de «¿Cómo funciona? →» colapsa a 15px en las rutas sin ETF (4
+           columnas: Método tradicional · Comparación · Detalle) y el botón —inline-flex
+           con nowrap— se sale 121px por la derecha del recuadro. Causa: el `width: auto`
+           de la regla de arriba dimensiona por contenido, pero los contenedores internos
+           de Streamlit traen `flex: 1 1 0%` (base cero), así que el contenido aporta 0 y
+           la columna se colapsa. `max-content` no sirve — resuelve a 15px por la misma
+           circularidad. El botón mide 153.4px con la tipografía de esta fila; 170px le
+           deja holgura y la etiqueta es una constante del código, no viene de datos.
+           `text-align: right` mantiene el botón pegado al borde derecho: sin él quedaría
+           a 34px del borde en vez de los 17px de las rutas sanas. */
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child {
-          margin-left: auto;
+          margin-left: auto; min-width: 170px; text-align: right;
         }
         /* El botón «¿Cómo funciona? →» es un st.button sin popover: por defecto
            Streamlit envuelve su texto, y con la columna a flex-basis:auto eso colapsa
