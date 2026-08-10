@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import logic
 from ui.adapters import _tiene_datos, trg_real_data
 from ui.heredadas import _agregados
+from ui.pie import _separar_excluidos
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -2975,3 +2976,55 @@ render_estrategias(resultados)
     assert "1 fondo: MSTY" in texto, "la tarjeta de dividendos debe excluir a TSLY (skipped)"
     assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"
     assert "TSLY" not in texto, "TSLY está skipped: no debe aparecer en ninguna vista de Detalle"
+
+
+def test_separar_excluidos_tuyos_vs_ruido():
+    """`_separar_excluidos` no debe mezclar posiciones reales del usuario (`skipped` por
+    `held_less_than_14_days`) con acciones que nunca fueron un ETF (`not_known_etf`) — son
+    los "603 excluidos" que enterraban a SLV/XLB/SMH en producción."""
+    resultados = {
+        "MSTY": {"pocket_investment": 100},  # analizado, no excluido
+        "SMH": {"skipped": True, "reason": "held_less_than_14_days", "holding_days": 3},
+        "XLB": {"skipped": True, "reason": "held_less_than_14_days", "holding_days": 9},
+        "ACME": {"skipped": True, "reason": "not_known_etf"},
+        "FOOBAR": {"skipped": True, "reason": "not_known_etf"},
+    }
+    tuyos, ruido = _separar_excluidos(resultados)
+    assert set(tuyos) == {"SMH", "XLB"}
+    assert set(ruido) == {"ACME", "FOOBAR"}
+    assert "MSTY" not in tuyos and "MSTY" not in ruido
+
+
+def test_separar_excluidos_vacio_sin_skipped():
+    tuyos, ruido = _separar_excluidos({"MSTY": {"pocket_investment": 100}})
+    assert tuyos == {} and ruido == {}
+
+
+def test_pie_excluidos_titulo_no_entierra_las_posiciones_del_usuario(monkeypatch):
+    """Con posiciones reales (SMH) Y ruido (un ticker no reconocido) presentes a la vez, el
+    título del expander debe nombrar explícitamente las posiciones del usuario en vez de
+    solo el conteo total — y ambas debe aparecer en el cuerpo."""
+    results = _resultados_con_skipped(monkeypatch)
+    results["ACME"] = {"skipped": True, "reason": "not_known_etf", "ticker": "ACME"}
+
+    script = """
+import sys
+sys.path.insert(0, {path!r})
+from ui.pie import _render_excluidos
+from ui.vistas import obtener_resultados
+
+_render_excluidos(obtener_resultados())
+""".format(path=os.path.dirname(os.path.abspath(__file__)))
+
+    at = AppTest.from_string(script)
+    at.session_state["_vd_resultados"] = results
+    at.run()
+    assert at.exception == [], [e.value for e in at.exception]
+
+    assert len(at.expander) == 1
+    titulo = at.expander[0].label
+    assert titulo.startswith("2 posición(es) tuya(s) excluida(s)"), titulo
+    assert "+ 1 ticker(s) no reconocido(s) como ETF" in titulo, titulo
+
+    texto = "\n".join(m.value for m in at.markdown)
+    assert "SMH" in texto and "TSLY" in texto and "ACME" in texto

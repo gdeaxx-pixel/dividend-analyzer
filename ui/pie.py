@@ -169,23 +169,63 @@ def _render_notas_tecnicas(resultados: dict) -> None:
                   "y métricas ya están ajustadas.")
 
 
+def _separar_excluidos(resultados: dict) -> tuple[dict, dict]:
+    """Separa los `skipped` de `analyze_portfolio` en dos grupos que comparten el mismo
+    dict pero significan cosas muy distintas: `tuyos` (razón `held_less_than_14_days`) SÍ
+    son posiciones del usuario, solo que sin datos suficientes; `ruido` (`not_known_etf` y
+    cualquier otra razón) nunca fueron un ETF que la app cubra — normalmente cientos de
+    acciones sueltas que no tienen nada que ver con el portafolio. Mezclados en una sola
+    lista, los `tuyos` (los pocos que importan) se pierden entre el `ruido`."""
+    excluidos = {t: s for t, s in resultados.items() if isinstance(s, dict) and s.get("skipped")}
+    tuyos = {t: s for t, s in excluidos.items() if s.get("reason") == "held_less_than_14_days"}
+    ruido = {t: s for t, s in excluidos.items() if t not in tuyos}
+    return tuyos, ruido
+
+
+def _etiqueta_excluido(s: dict) -> str:
+    razon = s.get("reason", "")
+    if razon == "held_less_than_14_days":
+        return _SKIP_REASON[razon].format(days=s.get("holding_days", "?"))
+    return _SKIP_REASON.get(razon, "Excluido")
+
+
+def _render_lista_excluidos(grupo: dict) -> None:
+    for ticker, s in grupo.items():
+        st.markdown(f'<p class="vd-pie-excluido">— <b>{ticker}</b> · '
+                    f'<span class="vd-pie-excluido-razon">{_etiqueta_excluido(s)}</span></p>',
+                    unsafe_allow_html=True)
+
+
 def _render_excluidos(resultados: dict) -> None:
     """Fila 24 — tickers excluidos del análisis (`skipped` de `analyze_portfolio`; no
     confundir con los `mode_skip` de `classify_tickers` que se muestran en el Bloque 2
-    de la carga — son dos exclusiones distintas)."""
-    excluidos = {t: s for t, s in resultados.items() if isinstance(s, dict) and s.get("skipped")}
-    if not excluidos:
+    de la carga — son dos exclusiones distintas).
+
+    Título y orden priorizan `tuyos` sobre `ruido` (ver `_separar_excluidos`): con un
+    portafolio real, el ruido puede ser cientos de tickers y no debe enterrar los pocos
+    que sí son del usuario."""
+    tuyos, ruido = _separar_excluidos(resultados)
+    if not tuyos and not ruido:
         return
-    with st.expander(f"{len(excluidos)} ticker(s) excluidos del análisis"):
-        for ticker, s in excluidos.items():
-            razon = s.get("reason", "")
-            if razon == "held_less_than_14_days":
-                etiqueta = _SKIP_REASON[razon].format(days=s.get("holding_days", "?"))
-            else:
-                etiqueta = _SKIP_REASON.get(razon, "Excluido")
-            st.markdown(f'<p class="vd-pie-excluido">— <b>{ticker}</b> · '
-                        f'<span class="vd-pie-excluido-razon">{etiqueta}</span></p>',
-                        unsafe_allow_html=True)
+    if tuyos and ruido:
+        titulo = (f"{len(tuyos)} posición(es) tuya(s) excluida(s) · "
+                  f"+ {len(ruido)} ticker(s) no reconocido(s) como ETF")
+    elif tuyos:
+        titulo = f"{len(tuyos)} posición(es) tuya(s) excluida(s) del análisis"
+    else:
+        titulo = f"{len(ruido)} ticker(s) excluidos del análisis"
+
+    with st.expander(titulo):
+        if tuyos:
+            if ruido:
+                st.markdown('<p class="vd-pie-subtitulo">Tus posiciones, sin datos suficientes</p>',
+                            unsafe_allow_html=True)
+            _render_lista_excluidos(tuyos)
+        if ruido:
+            if tuyos:
+                st.markdown('<p class="vd-pie-subtitulo">No reconocidos como ETF de largo plazo</p>',
+                            unsafe_allow_html=True)
+            _render_lista_excluidos(ruido)
 
 
 def _render_calculadoras() -> None:
