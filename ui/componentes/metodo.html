@@ -1041,7 +1041,13 @@
       <div class="cmp-notes" id="tmNotes"></div>
 
       <div class="he-block">
-        <p class="cmp-lab" style="margin:0 0 10px 2px;">Base fiscal · rige las dos matrices de abajo</p>
+        <p class="cmp-lab" style="margin:0 0 10px 2px;">Cómo se reinvirtió</p>
+        <div class="cmp-row" role="group" aria-label="Con o sin DRIP" id="tmVistaGroup">
+          <button type="button" class="cmp-chip" data-vista="con" aria-pressed="true">Con DRIP</button>
+          <button type="button" class="cmp-chip" data-vista="sin" aria-pressed="false">Sin DRIP</button>
+        </div>
+
+        <p class="cmp-lab" style="margin:14px 0 10px 2px;">Base fiscal</p>
         <div class="cmp-row" role="group" aria-label="Base fiscal" id="tmModoGroup">
           <button type="button" class="cmp-chip" data-modo="bruto" aria-pressed="true">Sin NRA · residente EE. UU.</button>
           <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC 19a</button>
@@ -1050,7 +1056,9 @@
         <p class="he-switch-cap" id="tmModoCap" style="margin:10px 0 0;">Como está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención. Todas las cifras son observadas.</p>
       </div>
 
-      <div class="he-block">
+      <p class="cmp-notes" id="tmResumenFijo" style="margin-top:18px;"></p>
+
+      <div class="he-block" id="tmConDripBlock">
         <p class="he-block-lab">Con DRIP <span class="he-block-sub muted">— lo que de verdad pasó: cada distribución compró más acciones</span></p>
         <div class="he-scroll">
           <div class="he-grid tm-grid7" id="tmConDripGrid">
@@ -1069,7 +1077,7 @@
         <p class="cmp-notes" id="tmConDripNotes"></p>
       </div>
 
-      <div class="he-block">
+      <div class="he-block" id="tmSinDripBlock" hidden>
         <p class="he-block-lab">Sin DRIP <span class="he-block-sub muted">— si cada distribución hubiera caído en efectivo</span></p>
         <div class="he-scroll">
           <div class="he-grid tm-grid6" id="tmSinDripGrid">
@@ -1081,6 +1089,7 @@
             <div class="he-h"><span class="he-lab" data-tip="tm-s-tot">Total</span></div>
           </div>
         </div>
+        <p class="cmp-notes" id="tmSinDripNotes"></p>
       </div>
     </div>
 
@@ -1927,6 +1936,14 @@
         '<div class="he-c num he-cash">' + (D.devueltoTotAll ? fmtD(D.devueltoTotAll) : "—") + '</div>' +
         '<div class="he-c num">' + fmtD(D.sinDripTotAll) + '</div>';
       grid.insertAdjacentHTML("beforeend", rows);
+
+      setHtml("tmSinDripNotes",
+        '<span class="flag">Inversión Hoy + Dividendos + Devuelto = Total</span> — aquí la suma sí cierra fila por fila, ' +
+        'porque es el escenario que nunca pasó: cada distribución se queda en efectivo en vez de comprar más acciones. ' +
+        '<b>Inversión Hoy</b> es tu capital original valorado al precio de hoy; <b class="he-cash">Dividendos</b> es todo lo ' +
+        'que se cobró en efectivo, sumado sin reinvertir' +
+        (modo === "roc" ? '; <b class="he-cash">Devuelto</b> es la porción de la retención NRA que el ROC 19a reclasifica y regresa' : '') +
+        '. Como nada de eso volvió a comprar posición, sumar las tres columnas da exactamente <b>Total</b> — sin el hueco de valorización que sí aparece con DRIP.');
     }
 
     // ---- Matriz 3 · CON DRIP (lo que sí ocurrió) ----
@@ -1975,7 +1992,6 @@
         'El <b>DRIP</b> <b>no se suma</b> directamente a <b>Total</b>: compró acciones que siguieron cayendo, y su valor hoy es <b>DRIP Hoy</b> — <b style="color:var(--drip)">$' + D.dripHoyTotAll.toLocaleString("en-US") + '</b>, bastante menos que los $' + D.divTotAll.toLocaleString("en-US") + ' que se reinvirtieron.' +
         (esRoc ? ' <b>Devuelto</b> — <b class="he-cash">$' + D.devueltoTotAll.toLocaleString("en-US") + '</b> — es distinto de los dos: es la porción de la retención NRA que el ROC 19a reclasifica y regresa en efectivo, así que nunca compró acciones ni sufrió la caída del NAV.' : '') + '<br><br>' +
         '<b>Inversión Hoy + DRIP Hoy' + (esRoc ? ' + Devuelto' : '') + ' = Total</b> sí cierra (' + totalEqLine + '): son las mismas acciones acumuladas, valoradas al mismo precio de hoy, solo repartidas según de dónde vinieron' + (esRoc ? ', más el efectivo devuelto que nunca las compró' : '') + '.<br><br>' +
-        'Comparada con la matriz de abajo, es la respuesta a «¿reinvertir valió la pena?»: <b class="he-cash">$' + D.sinDripTotAll.toLocaleString("en-US") + '</b> en efectivo frente a <b style="color:var(--drip)">$' + D.conDripTotAll.toLocaleString("en-US") + '</b> con DRIP — <b>$' + (D.sinDripTotAll - D.conDripTotAll).toLocaleString("en-US") + ' a favor del efectivo</b>. ' +
         'La columna «Inversión» va con centavos porque es la cifra literal de la hoja; <b>Inversión Hoy</b>, <b>DRIP</b>, <b>DRIP Hoy</b>' + (esRoc ? ', <b>Devuelto</b>' : '') + ' y <b>Total</b> son el modelo reconstruido.');
     }
 
@@ -2060,17 +2076,53 @@
     }
 
     // ---- chips: grupo de 3 botones .cmp-chip (mismo patrón que la vista
-    // Comparación) gobierna las matrices 2 y 3 a la vez — no tiene sentido
-    // compararlas sobre bases distintas. A diferencia del interruptor binario
-    // anterior, cada chip trae su propia etiqueta FIJA en el HTML: no hay un
-    // solo rótulo que cambie de texto, así que activar uno solo cambia el
-    // color de los tres, nunca su ancho. ----
+    // Comparación) gobierna las matrices Con DRIP y Sin DRIP a la vez — no
+    // tiene sentido compararlas sobre bases distintas. A diferencia del
+    // interruptor binario anterior, cada chip trae su propia etiqueta FIJA
+    // en el HTML: no hay un solo rótulo que cambie de texto, así que activar
+    // uno solo cambia el color de los tres, nunca su ancho. ----
     var modoBtns = Array.prototype.slice.call(document.querySelectorAll("#tmModoGroup .cmp-chip"));
     var MODO_CAP = {
       bruto: "",
       roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (CONY 53% … MSTY 72%, al 25 jul 2026). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones.",
       plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, $15,118 en vez de $33,507."
     };
+
+    // ---- toggle de nivel 1: Con DRIP / Sin DRIP. Solo muestra el he-block
+    // correspondiente; el selector de Base fiscal (modo) sigue gobernando
+    // ambas matrices por igual, esté o no visible cada una. ----
+    var vistaDrip = "con";   // con | sin — con DRIP por defecto (lo que de verdad pasó)
+    var vistaBtns = Array.prototype.slice.call(document.querySelectorAll("#tmVistaGroup .cmp-chip"));
+    function aplicarVistaDrip() {
+      document.getElementById("tmConDripBlock").hidden = (vistaDrip !== "con");
+      document.getElementById("tmSinDripBlock").hidden = (vistaDrip !== "sin");
+      vistaBtns.forEach(function (b) {
+        var on = b.getAttribute("data-vista") === vistaDrip;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
+    }
+    vistaBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        vistaDrip = b.getAttribute("data-vista");
+        aplicarVistaDrip();
+        if (ajustarMetodoNra) ajustarMetodoNra();
+      });
+    });
+
+    // Resumen fijo: compara Con DRIP vs Sin DRIP sin importar cuál tabla
+    // está visible. Vive fuera de renderConDrip/renderSinDrip porque debe
+    // existir aunque solo una de las dos esté pintada en pantalla — usa D
+    // directamente, nunca recalcula.
+    function renderResumenFijo(D) {
+      var favor = D.sinDripTotAll >= D.conDripTotAll ? "efectivo" : "DRIP";
+      var delta = Math.abs(D.sinDripTotAll - D.conDripTotAll);
+      setHtml("tmResumenFijo",
+        'Con DRIP: <b style="color:var(--drip)">$' + D.conDripTotAll.toLocaleString("en-US") + '</b> · ' +
+        'Sin DRIP: <b class="he-cash">$' + D.sinDripTotAll.toLocaleString("en-US") + '</b> · ' +
+        '<b>$' + delta.toLocaleString("en-US") + ' a favor del ' + favor + '</b>.');
+    }
+
     function aplicarModo() {
       var D = computeAll();
       renderSinDrip(D);
@@ -2088,35 +2140,52 @@
         b.setAttribute("aria-pressed", String(on));
       });
       setHtml("tmModoCap", MODO_CAP[modo]);
+      renderResumenFijo(D);
     }
     modoBtns.forEach(function (b) {
       b.addEventListener("click", function () { modo = b.getAttribute("data-modo"); aplicarModo(); });
     });
-    aplicarModo();   // primer render: contenido correcto aunque el panel esté oculto (mide 0)
+    aplicarModo();          // primer render: contenido correcto aunque el panel esté oculto (mide 0)
+    aplicarVistaDrip();     // aplica la visibilidad inicial (Con DRIP)
 
-    // Alto de la leyenda (tmModoCap) y de la nota de la matriz 3
-    // (tmConDripNotes), medidos EN VIVO sobre los TRES modos reales (mismo
-    // patrón que igualarCintas en initHoja) — nada estimado. Ya no hace falta
-    // reservar ANCHO: los chips no tienen un rótulo que cambie de texto, así
-    // que pasar de uno a otro nunca los hace envolver distinto. Solo puede
-    // medir con el panel visible, así que se llama al abrir "Método
-    // tradicional › La matriz" (ver showMetTab) y en resize.
+    // Alto de la leyenda (tmModoCap, compartida por las dos vistas) y de la
+    // nota de cada matriz (tmConDripNotes / tmSinDripNotes), medidos EN VIVO
+    // sobre los TRES modos reales (mismo patrón que igualarCintas en
+    // initHoja) — nada estimado. tmModoCap se mide contra las 2 vistas × 3
+    // modos (6 combinaciones, siempre visible); cada nota de matriz se mide
+    // solo contra sus propios 3 modos, forzando temporalmente su bloque
+    // visible durante la medición para no depender de que el usuario ya
+    // haya visitado esa vista. Solo puede medir con el panel visible, así
+    // que se llama al abrir "Método tradicional › La matriz" (ver
+    // showMetTab), al cambiar de vista DRIP, y en resize.
     function ajustarBaseFiscal() {
       var capEl = document.getElementById("tmModoCap");
-      var notEl = document.getElementById("tmConDripNotes");
-      if (!capEl || !notEl || document.getElementById("met-panel-matriz").hidden) return;
-      capEl.style.minHeight = ""; notEl.style.minHeight = "";
-      var wasModo = modo, ch = [], nh = [];
-      ["bruto", "roc", "plano"].forEach(function (v) {
-        modo = v;
-        aplicarModo();
-        ch.push(capEl.getBoundingClientRect().height);
-        nh.push(notEl.getBoundingClientRect().height);
+      var conBlock = document.getElementById("tmConDripBlock");
+      var sinBlock = document.getElementById("tmSinDripBlock");
+      var conNotEl = document.getElementById("tmConDripNotes");
+      var sinNotEl = document.getElementById("tmSinDripNotes");
+      if (!capEl || !conNotEl || !sinNotEl || document.getElementById("met-panel-matriz").hidden) return;
+
+      capEl.style.minHeight = ""; conNotEl.style.minHeight = ""; sinNotEl.style.minHeight = "";
+      var wasModo = modo, wasVista = vistaDrip, ch = [];
+
+      [["con", conNotEl], ["sin", sinNotEl]].forEach(function (pair) {
+        var vista = pair[0], notEl = pair[1], nh = [];
+        conBlock.hidden = vista !== "con";
+        sinBlock.hidden = vista !== "sin";
+        ["bruto", "roc", "plano"].forEach(function (v) {
+          modo = v; vistaDrip = vista;
+          aplicarModo();
+          ch.push(capEl.getBoundingClientRect().height);
+          nh.push(notEl.getBoundingClientRect().height);
+        });
+        notEl.style.minHeight = Math.max.apply(null, nh) + "px";
       });
-      modo = wasModo;
+
+      modo = wasModo; vistaDrip = wasVista;
       capEl.style.minHeight = Math.max.apply(null, ch) + "px";
-      notEl.style.minHeight = Math.max.apply(null, nh) + "px";
-      aplicarModo();   // restaura el estado real tras medir los tres
+      aplicarModo();
+      aplicarVistaDrip();   // restaura la visibilidad real tras medir ambas
     }
     ajustarMetodoNra = ajustarBaseFiscal;   // showMetTab lo llama al mostrar "matriz"
     var _reflowNra;
