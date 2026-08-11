@@ -107,6 +107,21 @@ def _con_tema(html: str, tema: str) -> str:
     return html[:i] + script + html[i:]
 
 
+def _con_anchor(html: str, anchor: str | None) -> str:
+    """Inserta `window.__vdAnchor` antes del primer `<style>` (mismo punto que
+    `_con_tema`), para que `buildMethIndex()` (`ui/componentes/metodologia.html`) la lea
+    al construirse y abra ya iluminada la entrada correspondiente a la vista de origen —
+    ver `ui/chrome.py:_ANCLA_METODOLOGIA`. Sin `anchor`, no se inserta nada: el
+    componente se comporta como hoy (índice sin resaltar)."""
+    if not anchor:
+        return html
+    script = f'<script>window.__vdAnchor = {json.dumps(anchor)};</script>\n'
+    i = html.find("<style>")
+    if i < 0:
+        raise ValueError("No encontré <style> en el componente — ¿cambió el extractor?")
+    return html[:i] + script + html[i:]
+
+
 def render_cashflow(datos: dict, paso: int, tema: str, alto: int = ALTO_CASHFLOW) -> None:
     """Dibuja el recorrido del dinero en el paso indicado.
 
@@ -175,12 +190,14 @@ def render_metodo(vista_activa: str, tema: str, alto: int = ALTO_METODO) -> None
     components.html(html, height=alto, scrolling=False)
 
 
-def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA) -> None:
+def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | None = None) -> None:
     """Dibuja Metodología: 11 entradas, formulario y bibliografía. HTML estático
-    completo — sin datos de Python (mapa-datos.md § 7).
-    """
+    completo — sin datos de Python salvo, opcionalmente, `anchor` (mapa-datos.md § 7):
+    la entrada a iluminar al abrir, cuando se llega desde una vista concreta en vez del
+    índice general (ver `ui/chrome.py:_ANCLA_METODOLOGIA`)."""
     html = _plantilla("metodologia.html")
     html = _con_tema(html, tema)
+    html = _con_anchor(html, anchor)
     components.html(html, height=alto, scrolling=False)
 
 

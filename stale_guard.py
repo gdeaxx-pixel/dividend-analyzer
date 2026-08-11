@@ -46,7 +46,7 @@ _RAIZ = os.path.dirname(os.path.abspath(__file__))
 _ORDEN = (
     "logic", "storage", "report", "demo_mode",
     "ui.tokens", "ui.nav", "ui.componentes", "ui.heredadas", "ui.adapters",
-    "ui.chrome", "ui.carga", "ui.pie", "ui.vistas",
+    "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
 )
 
 # módulo → fecha del archivo cuando lo cargamos. Vive aquí y no en `st.session_state`

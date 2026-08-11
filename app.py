@@ -27,7 +27,8 @@ stale_guard.asegurar_frescura()
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
 from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
 from ui.pie import render_pie
-from ui.vistas import obtener_resultados, render_1042s_card, render_vista
+from ui.validacion import hay_alertas, preparar_pdf
+from ui.vistas import obtener_resultados, render_vista
 
 st.set_page_config(
     page_title="Viaje del dinero · Invierte & Gana",
@@ -77,9 +78,10 @@ inyectar_estilos(st.session_state["vd_tema"])
 render_encabezado(con_datos)
 
 if con_datos:
-    render_1042s_card()
-    ruta = render_ruta()
+    resultados = obtener_resultados()
+    pdf_bytes, pdf_filename = preparar_pdf(resultados)
+    ruta = render_ruta(hay_alertas(resultados), pdf_bytes, pdf_filename)
     render_vista(ruta)
-    render_pie(obtener_resultados())
+    render_pie(resultados)
 else:
     render_carga()
