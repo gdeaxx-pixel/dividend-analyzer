@@ -1050,7 +1050,7 @@
       <div class="io">
         <div class="io-row io-in">
           <span class="io-lab">Pusiste</span>
-          <div class="io-track"><div class="io-fill" style="width:62.65%"><span>$605.43</span></div></div>
+          <div class="io-track"><div class="io-fill" id="ioInFill" style="width:62.65%"></div><div class="io-ghost" id="ioInGhostWrap" style="padding-left:10px"><span class="num" id="ioInGhost" style="margin-left:0">$605.43</span></div></div>
         </div>
         <div class="io-row io-out">
           <span class="io-lab" id="ioOutLab">Ahora</span>
@@ -1127,18 +1127,29 @@
 
   var vKick = document.getElementById("vKick"), vBig = document.getElementById("vBig"),
       vPct = document.getElementById("vPct"),
+      ioInFill = document.getElementById("ioInFill"),
+      ioInGhost = document.getElementById("ioInGhost"), ioInGhostWrap = document.getElementById("ioInGhostWrap"),
       ioOutLab = document.getElementById("ioOutLab"), ioOutFill = document.getElementById("ioOutFill"),
       ioOutGhost = document.getElementById("ioOutGhost"), ioOutGhostWrap = document.getElementById("ioOutGhostWrap"),
       verdictCard = document.getElementById("verdictCard");
 
   // El label del monto nunca debe quedar a caballo entre el relleno y el track vacío:
   // si hay espacio, vive DENTRO del relleno (texto claro); si no, justo DESPUÉS de su borde (texto mudo).
-  function placeGhost(ratio) {
+  function placeGhostAt(ratio, wrap, ghost) {
     var inside = ratio >= 0.55;
-    ioOutGhostWrap.style.paddingLeft = inside ? "10px" : (Math.min(ratio, 0.9) * 100).toFixed(2) + "%";
-    ioOutGhost.style.color = inside ? "var(--panel)" : "var(--ink-mut)";
-    ioOutGhost.style.marginLeft = inside ? "0" : "8px";
+    wrap.style.paddingLeft = inside ? "10px" : (Math.min(ratio, 0.9) * 100).toFixed(2) + "%";
+    ghost.style.color = inside ? "var(--panel)" : "var(--ink-mut)";
+    ghost.style.marginLeft = inside ? "0" : "8px";
   }
+  function placeGhost(ratio) { placeGhostAt(ratio, ioOutGhostWrap, ioOutGhost); }
+
+  // "Pusiste" no cambia con el paso — a diferencia de "Ahora", se fija una sola vez.
+  (function initPusiste() {
+    var ratio = POCKET / MAXV;
+    ioInFill.style.width = (ratio * 100).toFixed(2) + "%";
+    ioInGhost.textContent = "$" + POCKET.toFixed(2);
+    placeGhostAt(ratio, ioInGhostWrap, ioInGhost);
+  })();
 
   function updateVerdict(step) {
     var isFinal = step === 7;
