@@ -110,6 +110,23 @@ def extraer(html: str) -> str:
      rectángulo blanco recortado sobre la superficie de la página. */
   body {{ margin: 0; background: var(--ground); }}
   .rail {{ display: none; }}  /* el rail es nativo en el port, no del componente */
+
+  /* El chasis de 940px se aplica DOS veces en el port: `.block-container` (ui/chrome.py)
+     deja el iframe en 860px, y dentro el `.wrap` vuelve a poner su padding lateral
+     (clamp = 34.4px por lado) → 791px útiles contra los 820 del `min-width` de `.fall`.
+     De ahí los 29px de scroll horizontal, iguales a 1280 y a 1440 porque el chasis está
+     topado. Aquí la cascada sangra hasta los bordes del iframe (ese padding ya lo puso
+     `.block-container`) y suelta el piso de 820, que era arbitrario: el min-content real
+     es 503px. El media query mide el viewport del IFRAME (860 en escritorio, 706 en iPad
+     vertical, 337 a 375px), así que el deslizamiento horizontal aprobado en móvil queda
+     intacto por debajo de 760. */
+  @media (min-width: 760px) {{
+    .fall-scroll {{
+      margin-left: calc(-1 * clamp(16px, 4vw, 40px));   /* espeja el padding del `.wrap` */
+      margin-right: calc(-1 * clamp(16px, 4vw, 40px));
+    }}
+    .fall {{ min-width: 0; }}
+  }}
 </style>
 <main class="wrap" style="padding-top:0">
 {panel}
