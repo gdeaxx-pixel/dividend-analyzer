@@ -645,11 +645,6 @@
   .he-bridge-hit:hover .he-bridge-lab { opacity: .7; }
   .he-bridge-hit:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
   @media (max-width: 700px) { .he-bridge-lab { font-size: 8px; padding: 0 5px; } }
-  /* Puente de Método tradicional (Con DRIP): solo señala qué columnas suman el
-     Total, no abre nada al clic — por eso pierde el cursor y el ⓘ del puente
-     de comparación de arriba. */
-  .he-bridge-hit.static { cursor: default; }
-  .he-bridge-hit.static .he-bridge-lab::after { content: ""; }
 
   /* Cada lectura son dos bandas: sus cifras y su ecuación. La línea va al final de
      la ecuación, no entre ambas, porque pertenecen a la misma lectura. */
@@ -1060,7 +1055,7 @@
         <div class="he-scroll">
           <div class="he-grid tm-grid7" id="tmConDripGrid">
             <div class="he-bridge">
-              <div class="he-bridge-hit static" id="tmConDripBridge" aria-hidden="true"><span class="he-bridge-lab">suman el total</span></div>
+              <button type="button" class="he-bridge-hit" id="tmConDripBridge" aria-label="Qué compone el Total de la matriz Con DRIP"><span class="he-bridge-lab">suman el total</span></button>
             </div>
             <div class="he-h he-l"><span class="he-lab" data-tip="tm-c-accion">Acción</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-c-inv">Inversión</span></div>
@@ -2361,14 +2356,18 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
   })();
 
-  // ---- Modal: Total · matriz Con DRIP (click sobre encabezado ⓘ) ----
+  // ---- Modal: Total · matriz Con DRIP (click sobre encabezado ⓘ o sobre el
+  // puente morado — mismo destino, es la misma suma explicada dos veces:
+  // encabezado la nombra, puente la señala sobre las columnas). ----
   (function () {
     var modal = document.getElementById("modal-contot");
     var closeBtn = document.getElementById("modal-contot-close");
-    var trigger = document.querySelector('[data-tip="tm-c-ahora"]');
+    var triggers = [document.querySelector('[data-tip="tm-c-ahora"]'), document.getElementById("tmConDripBridge")];
     function openModal() { modal.classList.add("open"); closeBtn.focus(); }
     function closeModal() { modal.classList.remove("open"); }
-    if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    triggers.forEach(function (trigger) {
+      if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    });
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
