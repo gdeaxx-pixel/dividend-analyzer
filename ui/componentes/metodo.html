@@ -645,6 +645,11 @@
   .he-bridge-hit:hover .he-bridge-lab { opacity: .7; }
   .he-bridge-hit:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
   @media (max-width: 700px) { .he-bridge-lab { font-size: 8px; padding: 0 5px; } }
+  /* Puente de Método tradicional (Con DRIP): solo señala qué columnas suman el
+     Total, no abre nada al clic — por eso pierde el cursor y el ⓘ del puente
+     de comparación de arriba. */
+  .he-bridge-hit.static { cursor: default; }
+  .he-bridge-hit.static .he-bridge-lab::after { content: ""; }
 
   /* Cada lectura son dos bandas: sus cifras y su ecuación. La línea va al final de
      la ecuación, no entre ambas, porque pertenecen a la misma lectura. */
@@ -744,6 +749,9 @@
      directa del mismo patrón con una columna más antes de Total. */
   .tm-grid6 { min-width: 560px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
   .tm-grid7 { min-width: 650px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
+  /* .he-bridge por defecto asume 8 columnas (grid-column: 1 / 9), heredado de
+     tm-grid — Con DRIP tiene 7, así que su puente necesita el propio corte. */
+  .tm-grid7 > .he-bridge { grid-column: 1 / 8; }
   .tm-grid4 { min-width: 520px; grid-template-columns: 64px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
 
   /* Solo en pantallas angostas se aprieta la familia "Método tradicional":
@@ -1051,12 +1059,15 @@
         <p class="he-block-lab">Con DRIP <span class="he-block-sub muted">— lo que de verdad pasó: cada distribución compró más acciones</span></p>
         <div class="he-scroll">
           <div class="he-grid tm-grid7" id="tmConDripGrid">
+            <div class="he-bridge">
+              <div class="he-bridge-hit static" id="tmConDripBridge" aria-hidden="true"><span class="he-bridge-lab">suman el total</span></div>
+            </div>
             <div class="he-h he-l"><span class="he-lab" data-tip="tm-c-accion">Acción</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-c-inv">Inversión</span></div>
-            <div class="he-h"><span class="he-lab" data-tip="tm-c-invhoy">Inversión Hoy</span></div>
+            <div class="he-h he-mark"><span class="he-lab" data-tip="tm-c-invhoy">Inversión Hoy</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-c-drip">DRIP</span></div>
-            <div class="he-h"><span class="he-lab" data-tip="tm-c-driphoy">DRIP Hoy</span></div>
-            <div class="he-h"><span class="he-lab">Devuelto</span></div>
+            <div class="he-h he-mark"><span class="he-lab" data-tip="tm-c-driphoy">DRIP Hoy</span></div>
+            <div class="he-h" id="tmConDripDevHead"><span class="he-lab">Devuelto</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-c-ahora">Total</span></div>
           </div>
         </div>
@@ -2062,7 +2073,7 @@
     var modoBtns = Array.prototype.slice.call(document.querySelectorAll("#tmModoGroup .cmp-chip"));
     var MODO_CAP = {
       bruto: "",
-      roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (CONY 53% … MSTY 72%, al 25 jul 2026). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones. Por eso, en fondos que cayeron mucho de precio (CONY −86.5%), el <b>Total</b> de este modo puede salir <b>mayor</b> que en «Sin NRA»: no porque retener convenga, sino porque ese efectivo devuelto nunca se expuso a la caída, mientras que en «Sin NRA» ese mismo dinero sí se reinvirtió y sí cayó con el fondo (CONY: $8,231 Sin NRA vs $9,769 Con NRA).",
+      roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (CONY 53% … MSTY 72%, al 25 jul 2026). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones.",
       plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, $15,118 en vez de $33,507."
     };
     function aplicarModo() {
@@ -2070,6 +2081,12 @@
       renderSinDrip(D);
       renderConDrip(D);
       renderNraModales(D);
+      // Devuelto solo suma al Total en "roc" (ver renderConDrip/totalEqLine) —
+      // el recuadro morado que señala la suma debe seguir esa misma regla.
+      var devHead = document.getElementById("tmConDripDevHead");
+      if (devHead) devHead.classList.toggle("he-mark", modo === "roc");
+      var cdGrid = document.getElementById("tmConDripGrid");
+      if (cdGrid && cdGrid._bridgeSchedule) cdGrid._bridgeSchedule();
       modoBtns.forEach(function (b) {
         var on = b.getAttribute("data-modo") === modo;
         b.classList.toggle("active", on);
@@ -2391,15 +2408,18 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
   });
 
-  // ---- Puente Inversión ↔ Valor mer.: se mide en píxeles reales ----
-  // Los recuadros van alineados a la derecha dentro de su celda, así que su
-  // posición no coincide con ninguna línea del grid. Se ancla el tramo al borde
-  // DERECHO de la caja de Inversión y al IZQUIERDO de la de Valor mer., y se
-  // recalcula cuando la tabla cambia de tamaño (incluida la primera vez que la
-  // vista deja de estar oculta, cuando hasta entonces medía 0).
-  (function () {
-    var grid = document.getElementById("tmGrid");
-    var hit = document.getElementById("tmBridge");
+  // ---- Puentes morados (recuadro he-mark + tramo que los conecta): se miden
+  // en píxeles reales. Los recuadros van alineados a la derecha dentro de su
+  // celda, así que su posición no coincide con ninguna línea del grid. Se
+  // ancla el tramo al borde DERECHO del primer recuadro marcado y al
+  // IZQUIERDO del último — sirve igual para 2 recuadros (Inversión ↔ Valor
+  // mer., que se comparan) que para 2 o 3 (Con DRIP: Inversión Hoy + DRIP Hoy
+  // [+ Devuelto en modo "roc"], que se suman) — y se recalcula cuando la
+  // tabla cambia de tamaño (incluida la primera vez que la vista deja de
+  // estar oculta, cuando hasta entonces medía 0).
+  function crearPuenteMark(gridId, hitId) {
+    var grid = document.getElementById(gridId);
+    var hit = document.getElementById(hitId);
     if (!grid || !hit) return;
     function placeBridge() {
       var boxes = grid.querySelectorAll(".he-h.he-mark .he-lab");
@@ -2407,7 +2427,7 @@
       var g = grid.getBoundingClientRect();
       if (!g.width) return;
       var a = boxes[0].getBoundingClientRect();
-      var b = boxes[1].getBoundingClientRect();
+      var b = boxes[boxes.length - 1].getBoundingClientRect();
       hit.style.left = Math.max(0, a.right - g.left) + "px";
       hit.style.right = Math.max(0, g.right - b.left) + "px";
     }
@@ -2424,9 +2444,12 @@
       if (tmr) clearTimeout(tmr);
       tmr = setTimeout(function () { tmr = 0; placeBridge(); }, 80);
     }
+    // referencia fuerte en el propio grid: además de evitar que el GC se la
+    // lleve, deja que otro código (aplicarModo, al cambiar cuántos recuadros
+    // están marcados) fuerce un reposicionamiento inmediato sin esperar los
+    // 400 ms del vigilante de abajo.
+    grid._bridgeSchedule = schedule;
     placeBridge();
-    // la referencia al ResizeObserver se guarda a propósito: uno sin referencia
-    // fuerte puede ser recolectado y dejar de avisar.
     if (window.ResizeObserver) {
       grid._bridgeRO = new ResizeObserver(schedule);
       grid._bridgeRO.observe(grid);
@@ -2441,18 +2464,25 @@
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
     // Vigilante barato: ResizeObserver y rAF vienen suspendidos en varios
     // entornos (paneles embebidos, Chrome headless), y ahí el tramo se queda
-    // con la medida vieja y se descuelga de los recuadros. Dos lecturas cada
-    // 400 ms bastan para volver a cerrarlo sin depender del ciclo de render.
+    // con la medida vieja y se descuelga de los recuadros — incluido el caso
+    // en que cambia el NÚMERO de recuadros marcados (Devuelto entra/sale del
+    // puente en Con DRIP) sin que el grid cambie de tamaño. Dos lecturas cada
+    // 400 ms de los dos extremos bastan para volver a cerrarlo sin depender
+    // del ciclo de render.
     setInterval(function () {
       if (vista && vista.hidden) return;
       var boxes = grid.querySelectorAll(".he-h.he-mark .he-lab");
       if (boxes.length < 2) return;
       var g = grid.getBoundingClientRect();
       if (!g.width) return;
-      var quiere = boxes[0].getBoundingClientRect().right - g.left;
-      if (Math.abs(quiere - parseFloat(hit.style.left || 0)) > 0.5) placeBridge();
+      var quiereL = boxes[0].getBoundingClientRect().right - g.left;
+      var quiereR = g.right - boxes[boxes.length - 1].getBoundingClientRect().left;
+      if (Math.abs(quiereL - parseFloat(hit.style.left || 0)) > 0.5 ||
+          Math.abs(quiereR - parseFloat(hit.style.right || 0)) > 0.5) placeBridge();
     }, 400);
-  })();
+  }
+  crearPuenteMark("tmGrid", "tmBridge");
+  crearPuenteMark("tmConDripGrid", "tmConDripBridge");
 
   // ---- Modal: la comparación Inversión ↔ Valor mer. (click sobre el puente) ----
   (function () {
