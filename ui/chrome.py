@@ -60,6 +60,25 @@ def _vistas(categoria: str) -> dict:
     return dict(nav.SECTIONS)
 
 
+def _ancla_metodologia(categoria: str, vista: str) -> str | None:
+    """A qué entrada de Metodología corresponde la vista activa — para que «¿Cómo
+    funciona?» abra ya iluminando la sección relacionada con lo que se estaba
+    consultando, en vez de siempre el índice general (decisión de Daniel 2026-08-10,
+    mapeo confirmado en la misma sesión). `None` cuando no hay una entrada 1:1 clara
+    (Comparación · Simulación, Detalle heredada): se abre sin resaltar, como antes."""
+    if vista == nav.VISTA_CON_ETF and categoria in nav.CATS:
+        return "mt-viaje"
+    if vista == "salud" and categoria in nav.CATS:
+        return "mt-nav"
+    if vista == "hoja" and categoria in nav.CATS:
+        return "mt-hoja"
+    if categoria == "comparacion" and vista == "real":
+        return "mt-tr"
+    if categoria == "metodo":
+        return "mt-metodo"
+    return None
+
+
 def _orden(categoria: str) -> tuple:
     if categoria == "comparacion":
         return nav.CMP_ORDER
@@ -76,10 +95,11 @@ def inyectar_estilos(tema: str) -> None:
     from ui.carga import ESTILOS_CARGA
     from ui.heredadas import ESTILOS_HEREDADAS
     from ui.pie import ESTILOS_PIE
+    from ui.validacion import ESTILOS_VALIDACION
 
     st.markdown(
         f"<style>\n        {css_variables(tema)}\n{_ESTILOS}{ESTILOS_CARGA}{ESTILOS_PIE}"
-        f"{ESTILOS_HEREDADAS}</style>",
+        f"{ESTILOS_HEREDADAS}{ESTILOS_VALIDACION}</style>",
         unsafe_allow_html=True)
 
 
@@ -138,16 +158,22 @@ def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actua
                 if st.button(f"{texto}{marca}", key=f"{prefijo}_{clave}",
                              use_container_width=True):
                     on_select(clave)
-                    st.session_state["vd_metodologia"] = False
+                    st.session_state["vd_panel"] = None
                     st.rerun()
 
 
-def render_ruta() -> Ruta:
+def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
+                 pdf_filename: str = "") -> Ruta:
     """Ruta horizontal funcional Categoría › Vista › ETF, un popover por segmento.
 
     Sustituye a `render_crumb` (decorativo) y a la barra lateral: es el único navegador.
     El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
     (Dividendos · Largo Plazo); Comparación y Método tradicional no lo llevan.
+
+    `alerta`/`pdf_bytes`/`pdf_filename` son datos ya resueltos por quien llama
+    (`app.py`, vía `ui.validacion`): este módulo es solo presentación (docstring de
+    arriba) y no calcula ni la confiabilidad ni el PDF — solo dibuja el menú de 3 puntos
+    con lo que se le entrega.
     """
     st.session_state.setdefault("vd_categoria", CAT_ORDER_TOTAL[0])
     categoria = st.session_state.vd_categoria
@@ -200,9 +226,30 @@ def render_ruta() -> Ruta:
                               f"vd_pop_etf_{categoria}", _elegir_etf)
         elif kind == "ayuda":
             with columna:
-                if st.button("¿CÓMO FUNCIONA? →", key="vd_ayuda"):
-                    st.session_state["vd_metodologia"] = True
-                    st.rerun()
+                clave_wrap = "vd_ayuda_alerta" if alerta else "vd_ayuda_sin_alerta"
+                with st.container(key=clave_wrap):
+                    with st.popover(""):
+                        if st.button("¿Cómo funciona?", key="vd_menu_metodologia",
+                                     use_container_width=True):
+                            st.session_state["vd_panel"] = "metodologia"
+                            st.session_state["vd_metodologia_anchor"] = (
+                                _ancla_metodologia(categoria, vista))
+                            st.rerun()
+                        marca = " ●" if alerta else ""
+                        if st.button(f"Validación datos{marca}", key="vd_menu_validacion",
+                                     use_container_width=True):
+                            st.session_state["vd_panel"] = "validacion"
+                            st.rerun()
+                        if st.button("Otras calculadoras", key="vd_menu_calculadoras",
+                                     use_container_width=True):
+                            st.session_state["vd_panel"] = "calculadoras"
+                            st.rerun()
+                        if pdf_bytes is not None:
+                            st.download_button(
+                                "Descargar reporte PDF", data=pdf_bytes,
+                                file_name=pdf_filename or "auditoria-portafolio.pdf",
+                                mime="application/pdf", key="vd_menu_pdf",
+                                use_container_width=True)
 
     return Ruta(categoria=categoria, vista=vista, etf=etf,
                 tema=st.session_state.get("vd_tema", "Claro"))
@@ -299,23 +346,18 @@ _ESTILOS = """
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
           flex: 0 0 auto; width: auto; min-width: 0;
         }
-        /* La columna de «¿Cómo funciona? →» colapsa a 15px en las rutas sin ETF (4
-           columnas: Método tradicional · Comparación · Detalle) y el botón —inline-flex
-           con nowrap— se sale 121px por la derecha del recuadro. Causa: el `width: auto`
-           de la regla de arriba dimensiona por contenido, pero los contenedores internos
+        /* La columna del menú de 3 puntos colapsa a 15px en las rutas sin ETF (3
+           columnas: Método tradicional · Comparación · Detalle) — el `width: auto` de
+           la regla de arriba dimensiona por contenido, pero los contenedores internos
            de Streamlit traen `flex: 1 1 0%` (base cero), así que el contenido aporta 0 y
-           la columna se colapsa. `max-content` no sirve — resuelve a 15px por la misma
-           circularidad. El botón mide 153.4px con la tipografía de esta fila; 170px le
-           deja holgura y la etiqueta es una constante del código, no viene de datos.
-           `text-align: right` mantiene el botón pegado al borde derecho: sin él quedaría
-           a 34px del borde en vez de los 17px de las rutas sanas. */
+           la columna se colapsa; `max-content` no sirve por la misma circularidad. Antes
+           este botón era texto («¿CÓMO FUNCIONA? →», 153.4px) y necesitaba 170px de
+           min-width; ahora es un `st.popover("")` sin label — solo el chevron nativo de
+           Streamlit — así que se deja un mínimo cómodo de click sin heredar ese número,
+           que ya no aplica a este contenido. */
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child {
-          margin-left: auto; min-width: 170px; text-align: right;
+          margin-left: auto; min-width: 48px; text-align: right;
         }
-        /* El botón «¿Cómo funciona? →» es un st.button sin popover: por defecto
-           Streamlit envuelve su texto, y con la columna a flex-basis:auto eso colapsa
-           el ancho al carácter más angosto (una letra por línea). nowrap le da al
-           flex-basis su medida real. */
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
           white-space: nowrap;
         }
@@ -373,17 +415,32 @@ _ESTILOS = """
           border-radius: 0 !important;
         }
 
-        /* «¿Cómo funciona? →»: enlace fantasma como `.crumb-help` en el demo — sin caja,
-           solo colorea en hover. Es la última columna de la fila de la ruta (no lleva
-           popover), así que se distingue por posición: `div:last-child` en esa fila. */
+        /* Menú de 3 puntos: enlace fantasma como `.crumb-help` en el demo — sin caja,
+           solo colorea en hover. Es la última columna de la fila de la ruta, así que se
+           distingue por posición: `div:last-child` en esa fila. Antes vestía el botón de
+           texto «¿Cómo funciona? →»; ahora el botón no lleva label (`st.popover("")`,
+           Daniel pidió solo el chevron nativo, sin el «⋮» que se probó primero) — el
+           chevron escala en `em`, por eso el tamaño de fuente más grande, y sin
+           subrayado en hover (no es un enlace de texto). */
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button {
           background: none !important; border: none !important; box-shadow: none !important;
-          color: var(--ink-mut) !important; padding: 6px 2px !important;
-          font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-          letter-spacing: .04em; text-transform: uppercase;
+          color: var(--ink-mut) !important; padding: 6px 10px !important;
+          font-size: 18px; line-height: 1;
         }
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button:hover {
-          color: var(--accent) !important; text-decoration: underline;
+          color: var(--accent) !important;
+        }
+        /* Punto de aviso del menú (`ui.validacion.hay_alertas`, vía `render_ruta`): solo
+           se pinta cuando SÍ hay algo que revisar en Validación datos — decisión de
+           Daniel (mockup aprobado 2026-08-10): nada ocupa espacio en la página, pero el
+           punto no pasa inadvertido. Contenedor con clave (`st.container(key=...)`,
+           mismo patrón que el rail) porque el botón del popover no acepta HTML propio. */
+        .st-key-vd_ayuda_alerta [data-testid="stPopoverButton"] {
+          position: relative;
+        }
+        .st-key-vd_ayuda_alerta [data-testid="stPopoverButton"]::after {
+          content: ""; position: absolute; top: 4px; right: 2px;
+          width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
         }
 
         /* Control de tema: `stButtonGroup` trae radio redondeado (8px en los extremos) y

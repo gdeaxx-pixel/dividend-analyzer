@@ -15,6 +15,8 @@ from ui.adapters import (DatosIncompletos, cashflow_data, hoja_data, salud_nav_d
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodologia, render_rail)
+from ui.pie import render_calculadoras
+from ui.validacion import render_validacion_datos
 
 
 def obtener_resultados() -> dict:
@@ -37,37 +39,6 @@ def _resultados() -> dict:
         with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
             st.session_state["_vd_resultados"] = logic.analyze_portfolio(df)
     return st.session_state["_vd_resultados"] or {}
-
-
-_V1042S_ESTILO = {
-    "match":            ("--cash", "Coincide"),
-    "portfolio_higher":  ("--warn", "Tu análisis reporta más"),
-    "form_higher":       ("--warn", "El 1042-S reporta más"),
-    "no_overlap":        ("--ink-mut", "Sin año en común"),
-}
-
-
-def render_1042s_card() -> None:
-    """Banner persistente bajo el encabezado: cruza el 1042-S leído en el Bloque 3
-    contra el bruto de dividendos que `analyze_portfolio` calculó. Solo aparece si hay
-    un 1042-S en sesión — es la tercera fuente, opcional, no gatea nada."""
-    wizard_1042s = st.session_state.get("_wizard_1042s")
-    if not wizard_1042s:
-        return
-    validacion = logic.build_1042s_validation(_resultados(), wizard_1042s)
-    if not validacion:
-        return
-    accent_var, etiqueta = _V1042S_ESTILO.get(validacion["status"], _V1042S_ESTILO["no_overlap"])
-    st.markdown(
-        f'<div class="vd-1042s-card" style="border-left-color: var({accent_var});">'
-        f'<p class="vd-1042s-titulo">Validación 1042-S · <span style="color: var({accent_var});">'
-        f'{etiqueta}</span></p>'
-        f'<p class="vd-1042s-detalle">Dividendo bruto {validacion["tax_year"]} — Tu análisis: '
-        f'<b>${validacion["bruto_portafolio"]:,.2f}</b> · 1042-S: <b>${validacion["bruto_1042s"]:,.2f}</b> · '
-        f'Retenido: <b>${validacion["retenido_1042s"]:,.2f}</b> · ROC: '
-        f'<b>${validacion["roc_1042s"]:,.2f}</b> ({validacion["roc_pct"]:.1f}%)</p>'
-        f'<p class="vd-1042s-nota">{validacion["note"]}</p>'
-        '</div>', unsafe_allow_html=True)
 
 
 def _stats_o_aviso(ruta: Ruta) -> dict | None:
@@ -219,15 +190,24 @@ def render_trg_real(ruta: Ruta) -> None:
 def render_vista(ruta: Ruta) -> None:
     """Punto único de entrada: decide qué vista toca según la ruta.
 
-    Metodología se activa desde el botón «¿Cómo funciona? →» de la ruta (`vd_metodologia`
-    en `st.session_state`) y se sale de ella con el botón nativo «← Volver al análisis» o
-    con cualquier otra selección de la ruta (`ui/chrome.py` limpia la bandera al elegir).
+    Metodología, Validación datos y Otras calculadoras se activan desde el menú de 3
+    puntos de la ruta (`vd_panel` en `st.session_state`, valores
+    `"metodologia"`/`"validacion"`/`"calculadoras"`/`None`) y se sale de cualquiera de
+    las tres con el botón nativo «← Volver al análisis» o con cualquier otra selección
+    de la ruta (`ui/chrome.py` limpia `vd_panel` al elegir) — solo un panel a la vez,
+    mismo patrón que Metodología antes de que existiera el menú.
     """
-    if st.session_state.get("vd_metodologia"):
-        if st.button("← Volver al análisis", key="vd_metodologia_volver"):
-            st.session_state["vd_metodologia"] = False
+    panel = st.session_state.get("vd_panel")
+    if panel in ("metodologia", "validacion", "calculadoras"):
+        if st.button("← Volver al análisis", key="vd_panel_volver"):
+            st.session_state["vd_panel"] = None
             st.rerun()
-        render_metodologia(ruta.tema)
+        if panel == "metodologia":
+            render_metodologia(ruta.tema, anchor=st.session_state.get("vd_metodologia_anchor"))
+        elif panel == "validacion":
+            render_validacion_datos(_resultados())
+        else:
+            render_calculadoras()
         return
     if ruta.categoria in nav.CATS and ruta.etf:
         if ruta.vista == nav.VISTA_CON_ETF:

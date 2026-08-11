@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import logic
 from ui.adapters import _tiene_datos, trg_real_data
 from ui.heredadas import _agregados
-from ui.pie import _separar_excluidos
+from ui.validacion import _separar_excluidos
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -3010,7 +3010,7 @@ def test_pie_excluidos_titulo_no_entierra_las_posiciones_del_usuario(monkeypatch
     script = """
 import sys
 sys.path.insert(0, {path!r})
-from ui.pie import _render_excluidos
+from ui.validacion import _render_excluidos
 from ui.vistas import obtener_resultados
 
 _render_excluidos(obtener_resultados())

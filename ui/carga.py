@@ -589,15 +589,4 @@ ESTILOS_CARGA = """
           background: var(--panel); color: var(--ink); border: 1px solid var(--hair);
           border-radius: 0;
         }
-        .vd-1042s-card {
-          background: var(--panel-tint); border-left: 3px solid var(--hair);
-          padding: 10px 14px; margin: 0 0 18px;
-        }
-        .vd-1042s-titulo {
-          font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
-          letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
-          margin: 0;
-        }
-        .vd-1042s-detalle { font-size: 12px; color: var(--ink-2); margin: 4px 0 0; }
-        .vd-1042s-nota { font-size: 12px; color: var(--ink-mut); margin: 3px 0 0; }
 """

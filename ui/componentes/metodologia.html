@@ -1165,20 +1165,25 @@
       { id: "mt-metodo", lab: "10 · Método tradicional" },
       { id: "mt-formulario", lab: "Formulario" }
     ];
+    function highlight(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.classList.add("lit");
+      setTimeout(function () { el.classList.remove("lit"); }, 2000);
+    }
     var box = document.getElementById("methIndex");
     items.forEach(function (it) {
       var b = document.createElement("button");
       b.type = "button";
       b.textContent = it.lab;
-      b.addEventListener("click", function () {
-        var el = document.getElementById(it.id);
-        if (!el) return;
-        el.scrollIntoView({ block: "center", behavior: "smooth" });
-        el.classList.add("lit");
-        setTimeout(function () { el.classList.remove("lit"); }, 2000);
-      });
+      b.addEventListener("click", function () { highlight(it.id); });
       box.appendChild(b);
     });
+    // `window.__vdAnchor`, si existe, la fija el host (no el propio demo) para abrir
+    // ya iluminada la entrada relacionada con la sección que se estaba consultando —
+    // sigue autocontenido: sin ese global, este bloque es un no-op.
+    if (window.__vdAnchor) { highlight(window.__vdAnchor); }
   })();
 })();
 </script>
