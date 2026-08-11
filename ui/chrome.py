@@ -18,9 +18,45 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from ui import heredadas, nav
 from ui.tokens import css_variables
+
+_FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
+
+
+def _pedir_cierre_popover() -> None:
+    """Marca que, en el próximo render, hay que forzar el cierre de cualquier popover
+    abierto. Streamlit no expone ninguna forma de cerrarlo desde Python en NINGUNA versión
+    publicada (verificado contra el código fuente de 1.42.0 y 1.50.0, la última real en
+    PyPI — su propio docstring dice que solo un clic FUERA del popover lo cierra). Por eso
+    tras elegir una opción se queda flotando en pantalla, sin reposicionarse con el scroll
+    (reportado por Daniel 2026-08-11). El cierre real ocurre en `_consumir_cierre_popover`,
+    simulando ese clic afuera."""
+    st.session_state[_FLAG_CIERRE_POPOVER] = True
+
+
+def _consumir_cierre_popover() -> None:
+    """Si el run anterior pidió cierre, inyecta un componente invisible que simula el clic
+    fuera del popover. `components.html` siempre corre en un iframe sandboxed, así que hay
+    que cruzar a `window.parent.document` para alcanzar el DOM real de la app — mismo motivo
+    que documenta `Dividend — iframes de components.html se auto-dimensionan` en la memoria
+    del agente. Se llama al inicio de `render_ruta`, y el flag se consume de inmediato para
+    no interferir con popovers que el usuario siga usando en otro rerun cualquiera."""
+    if not st.session_state.pop(_FLAG_CIERRE_POPOVER, False):
+        return
+    components.html(
+        """<script>
+        try {
+          var doc = window.parent.document;
+          ["mousedown", "mouseup", "click"].forEach(function (tipo) {
+            doc.body.dispatchEvent(new MouseEvent(tipo, {bubbles: true, cancelable: true}));
+          });
+        } catch (e) {}
+        </script>""",
+        height=0,
+    )
 
 # Categoría «Detalle» compuesta sobre la taxonomía generada: `ui/nav.py` es el espejo
 # verificable del artifact (el demo solo tiene 4 categorías) y no se edita para meterla
@@ -159,6 +195,7 @@ def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actua
                              use_container_width=True):
                     on_select(clave)
                     st.session_state["vd_panel"] = None
+                    _pedir_cierre_popover()
                     st.rerun()
 
 
@@ -175,6 +212,8 @@ def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
     arriba) y no calcula ni la confiabilidad ni el PDF — solo dibuja el menú de 3 puntos
     con lo que se le entrega.
     """
+    _consumir_cierre_popover()
+
     st.session_state.setdefault("vd_categoria", CAT_ORDER_TOTAL[0])
     categoria = st.session_state.vd_categoria
 
@@ -234,15 +273,18 @@ def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
                             st.session_state["vd_panel"] = "metodologia"
                             st.session_state["vd_metodologia_anchor"] = (
                                 _ancla_metodologia(categoria, vista))
+                            _pedir_cierre_popover()
                             st.rerun()
                         marca = " ●" if alerta else ""
                         if st.button(f"Validación datos{marca}", key="vd_menu_validacion",
                                      use_container_width=True):
                             st.session_state["vd_panel"] = "validacion"
+                            _pedir_cierre_popover()
                             st.rerun()
                         if st.button("Otras calculadoras", key="vd_menu_calculadoras",
                                      use_container_width=True):
                             st.session_state["vd_panel"] = "calculadoras"
+                            _pedir_cierre_popover()
                             st.rerun()
                         if pdf_bytes is not None:
                             st.download_button(
