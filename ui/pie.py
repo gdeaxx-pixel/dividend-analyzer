@@ -55,52 +55,62 @@ def render_calculadoras() -> None:
         "nunca se proyecta como si fuera un ETF de crecimiento.")
 
 
+HTML_REGLA = '<hr class="vd-pie-regla">'
+
+HTML_DISCLAIMER = (
+    '<div class="vd-pie-legal">'
+    '<span class="vd-pie-legal-badge">Versión Beta</span>'
+    '<p class="vd-pie-legal-titulo">Esta herramienta es de carácter informativo y '
+    'estimativo — no constituye asesoría financiera.</p>'
+    '<p class="vd-pie-legal-cuerpo1">Los datos, cálculos y proyecciones pueden '
+    'presentar errores o inexactitudes. Siempre verifica con tus propios registros o '
+    'los estados de cuenta de tu casa de bolsa.</p>'
+    '<p class="vd-pie-legal-cuerpo2">El uso de esta aplicación es bajo tu propio '
+    'riesgo. Reporta cualquier fallo o inconsistencia para ayudarnos a seguir '
+    'mejorando.</p>'
+    "</div>"
+)
+
+
 def _render_disclaimer() -> None:
     """Fila 26 — texto literal de `app_old.py:6417-6432`, re-vestido con tokens (fuera los
-    hex de `#f0eeec`/`#e0ddd9`/`#555`/`#888`/`#aaa` de la versión de `app_old.py`)."""
-    st.markdown(
-        '<div class="vd-pie-legal">'
-        '<span class="vd-pie-legal-badge">Versión Beta</span>'
-        '<p class="vd-pie-legal-titulo">Esta herramienta es de carácter informativo y '
-        'estimativo — no constituye asesoría financiera.</p>'
-        '<p class="vd-pie-legal-cuerpo1">Los datos, cálculos y proyecciones pueden '
-        'presentar errores o inexactitudes. Siempre verifica con tus propios registros o '
-        'los estados de cuenta de tu casa de bolsa.</p>'
-        '<p class="vd-pie-legal-cuerpo2">El uso de esta aplicación es bajo tu propio '
-        'riesgo. Reporta cualquier fallo o inconsistencia para ayudarnos a seguir '
-        'mejorando.</p>'
-        "</div>", unsafe_allow_html=True)
+    hex de `#f0eeec`/`#e0ddd9`/`#555`/`#888`/`#aaa` de la versión de `app_old.py`).
+
+    El HTML vive en `HTML_DISCLAIMER` (constante del módulo) para que
+    `design/previews/build_pie_preview.py` lo reuse tal cual, sin duplicarlo."""
+    st.markdown(HTML_DISCLAIMER, unsafe_allow_html=True)
 
 
 def render_pie(resultados: dict) -> None:
     """Punto único de entrada: el pie, siempre visible al final de resultados."""
     if not resultados:
         return
-    st.markdown('<hr class="vd-pie-regla">', unsafe_allow_html=True)
+    st.markdown(HTML_REGLA, unsafe_allow_html=True)
     _render_disclaimer()
 
 
 ESTILOS_PIE = """
-        .vd-pie-regla { border: none; border-top: 1px dashed var(--hair); margin: 24px 0 14px; }
+        .vd-pie-regla { border: none; border-top: 1px dashed var(--hair); margin: 16px 0 10px; }
         .vd-pie-legal {
-          background: var(--panel-tint);
-          padding: 12px 16px; margin-top: 0;
+          background: var(--panel-tint); font-family: var(--font-mono);
+          padding: 8px 12px; margin-top: 0;
         }
         .vd-pie-legal-badge {
-          display: inline-block; font-family: var(--font-mono); font-size: 9px;
-          font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-          color: var(--ink-mut); border: 1px solid var(--hair); padding: 1px 5px;
-          margin-bottom: 5px;
+          display: inline-block; font-size: 8px !important;
+          font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+          color: var(--ink-mut); border: 1px solid var(--hair); padding: 1px 4px;
+          margin-bottom: 4px;
         }
         .vd-pie-legal-titulo {
-          font-size: 11px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2);
-          margin: 0 0 3px; line-height: 1.35;
+          font-size: 9.5px !important; font-weight: 700; letter-spacing: .01em;
+          color: var(--ink-2); margin: 0 0 2px !important; line-height: 1.3 !important;
         }
         .vd-pie-legal-cuerpo1 {
-          font-size: 10px; color: var(--ink-mut); line-height: 1.4; margin: 0 0 2px;
+          font-size: 8.5px !important; color: var(--ink-mut); line-height: 1.35 !important;
+          margin: 0 0 1px !important;
         }
         .vd-pie-legal-cuerpo2 {
-          font-size: 10px; color: var(--ink-mut); line-height: 1.4; margin: 0;
-          opacity: .8;
+          font-size: 8.5px !important; color: var(--ink-mut); line-height: 1.35 !important;
+          margin: 0 !important; opacity: .8;
         }
 """
