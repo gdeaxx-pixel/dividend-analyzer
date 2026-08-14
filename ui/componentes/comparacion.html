@@ -1018,7 +1018,7 @@
 <div class="panel" id="cmp-panel-simulacion" role="tabpanel">
       <header class="cmp-head">
         <h2 class="cmp-title">Total Return Graph · simulación</h2>
-        <p class="cmp-lede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>.</p>
+        <p class="cmp-lede" id="cmpLede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total, normalizado a <b>0% en la incepción del fondo base</b>.</p>
       </header>
 
       <div class="cmp-controls">
@@ -1027,8 +1027,12 @@
           <div class="cmp-row" id="cmpBase" role="group" aria-label="Fondo base"></div>
         </div>
         <div class="cmp-field">
-          <span class="cmp-lab">Supuesto de reinversión</span>
-          <div class="cmp-row" id="cmpMode" role="group" aria-label="Supuesto de reinversión"></div>
+          <span class="cmp-lab">Cómo se reinvirtió (fondo base)</span>
+          <div class="cmp-row" id="cmpVista" role="group" aria-label="Cómo se reinvirtió"></div>
+        </div>
+        <div class="cmp-field">
+          <span class="cmp-lab">Base fiscal</span>
+          <div class="cmp-row" id="cmpMode" role="group" aria-label="Base fiscal"></div>
         </div>
         <div class="cmp-field">
           <span class="cmp-lab">Paso 3 · Crecimiento</span>
@@ -1124,14 +1128,34 @@
       for (var m = startM; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
       return { tk:tk, startM:startM, late: F[tk].incep > baseIncep, data:out };
     }
+    // "Sin DRIP" (efectivo) solo se ofrece para el fondo base: los dividendos
+    // salen del mercado apenas se pagan (acumulación lineal, sin componer —
+    // mismo criterio que la matriz "Sin DRIP" de Método tradicional) en vez de
+    // reinvertirse en más acciones del fondo. El precio corre con su propia
+    // shapeOf(tk), el efectivo con una rampa lineal; ambos llegan al MISMO
+    // total final que "Con DRIP" (targetEnd) — lo que cambia es el camino, no
+    // la cifra real medida con la app.
+    function seriesSin(tk, mode, baseIncep){
+      var f = F[tk], startM = baseIncep;
+      var w = mode === "bruto" ? 0 : mode === "plano" ? RATE : RATE*(1 - f.roc);
+      var divNet = f.div*(1 - w), span = LAST - startM, out = {}, priceData = {};
+      for (var m = startM; m <= LAST; m++){
+        var p = f.price * shapeOf(tk)[m];
+        var c = divNet * (span > 0 ? (m - startM)/span : 1);
+        priceData[m] = p; out[m] = p + c;
+      }
+      return { tk:tk, startM:startM, late:false, data:out, priceData:priceData };
+    }
 
-    var state = { base:"NVDY", mode:"bruto", growth:new Set(GROWTH), ym:new Set() };
+    var state = { base:"NVDY", mode:"bruto", vista:"con", growth:new Set(GROWTH), ym:new Set() };
     var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso 30%"} ];
+    var VISTAS = [ {k:"con", lab:"Con DRIP · reinversión"}, {k:"sin", lab:"Sin DRIP · efectivo"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
+        elVista = document.getElementById("cmpVista"),
         elGrowth = document.getElementById("cmpGrowth"), elYm = document.getElementById("cmpYm"),
         svg = document.getElementById("cmpSvg"), elSum = document.getElementById("cmpSummary"),
-        elNotes = document.getElementById("cmpNotes");
+        elNotes = document.getElementById("cmpNotes"), elLede = document.getElementById("cmpLede");
 
     function chip(label, active, extra){
       var b = document.createElement("button");
@@ -1143,12 +1167,18 @@
     function dot(tk){ return '<span class="cmp-dot" style="background:'+COL[tk]+'"></span>'; }
 
     function renderControls(){
-      elBase.innerHTML = ""; elMode.innerHTML = ""; elGrowth.innerHTML = ""; elYm.innerHTML = "";
+      elBase.innerHTML = ""; elMode.innerHTML = ""; elVista.innerHTML = ""; elGrowth.innerHTML = ""; elYm.innerHTML = "";
       YM.forEach(function(tk){
         var b = chip(tk, tk === state.base);
         b.setAttribute("aria-pressed", tk === state.base);
         b.onclick = function(){ state.base = tk; state.ym.delete(tk); renderControls(); draw(); };
         elBase.appendChild(b);
+      });
+      VISTAS.forEach(function(vs){
+        var b = chip(vs.lab, vs.k === state.vista);
+        b.setAttribute("aria-pressed", vs.k === state.vista);
+        b.onclick = function(){ state.vista = vs.k; renderControls(); draw(); };
+        elVista.appendChild(b);
       });
       MODES.forEach(function(md){
         var b = chip(md.lab, md.k === state.mode);
@@ -1186,15 +1216,20 @@
       var INK = css.getPropertyValue("--ink").trim(),
           HAIR = css.getPropertyValue("--hair").trim(),
           MUT = css.getPropertyValue("--ink-mut").trim(),
+          CASH = css.getPropertyValue("--cash").trim(),
           PANEL = css.getPropertyValue("--panel").trim();
       var baseIncep = F[state.base].incep; _baseIncep = baseIncep;
-      var list = [ series(state.base, state.mode, baseIncep) ];
+      var baseSeries = state.vista === "sin" ? seriesSin(state.base, state.mode, baseIncep) : series(state.base, state.mode, baseIncep);
+      var list = [ baseSeries ];
       GROWTH.forEach(function(t){ if (state.growth.has(t)) list.push(series(t, state.mode, baseIncep)); });
       state.ym.forEach(function(t){ list.push(series(t, state.mode, baseIncep)); });
       _lastList = list;
 
       var lo = 0, hi = 0;
-      list.forEach(function(s){ for (var m in s.data){ var v=s.data[m]; if (v<lo) lo=v; if (v>hi) hi=v; } });
+      list.forEach(function(s){
+        for (var m in s.data){ var v=s.data[m]; if (v<lo) lo=v; if (v>hi) hi=v; }
+        if (s.priceData) for (var m2 in s.priceData){ var v2=s.priceData[m2]; if (v2<lo) lo=v2; if (v2>hi) hi=v2; }
+      });
       var pad = (hi - lo) * 0.08 || 0.1; hi += pad; lo -= pad;
       var x = function(m){ return ML + (m - baseIncep)/(LAST - baseIncep) * (W - ML - MR); };
       var y = function(v){ return MT + (hi - v)/(hi - lo) * (H - MT - MB); };
@@ -1215,6 +1250,19 @@
 
       list.forEach(function(s){
         var f = F[s.tk], isBase = s.tk === state.base, color = isBase ? INK : COL[s.tk];
+        if (s.priceData){
+          // Sin DRIP (fondo base): banda apilada = precio (línea) + efectivo
+          // acumulado (área). El área nunca se encoge — el mercado no le
+          // puede quitar de vuelta un dividendo que ya salió como cash.
+          color = CASH;
+          var top = "", bottom = "";
+          for (var m = s.startM; m <= LAST; m++) top += (m===s.startM?"M":"L") + x(m).toFixed(1) + " " + y(s.data[m]).toFixed(1);
+          for (var m2 = LAST; m2 >= s.startM; m2--) bottom += " L" + x(m2).toFixed(1) + " " + y(s.priceData[m2]).toFixed(1);
+          out.push('<path d="'+top+bottom+' Z" fill="'+CASH+'" opacity="0.16"/>');
+          var dp = "";
+          for (var m3 = s.startM; m3 <= LAST; m3++) dp += (m3===s.startM?"M":"L") + x(m3).toFixed(1) + " " + y(s.priceData[m3]).toFixed(1);
+          out.push('<path d="'+dp+'" fill="none" stroke="'+MUT+'" stroke-width="1.6" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>');
+        }
         var d = "";
         for (var m = s.startM; m <= LAST; m++) d += (m===s.startM?"M":"L") + x(m).toFixed(1) + " " + y(s.data[m]).toFixed(1);
         out.push('<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+(isBase?3.2:2)+'"'+(f.grp==="growth"?' stroke-dasharray="6 4"':'')+' stroke-linejoin="round" stroke-linecap="round"/>');
@@ -1223,10 +1271,10 @@
       });
 
       var labels = list.map(function(s){ return { tk:s.tk, late:s.late, v:s.data[LAST], y:y(s.data[LAST]),
-                                                  base:s.tk===state.base }; }).sort(function(a,b){ return a.y-b.y; });
+                                                  base:s.tk===state.base, sin:!!s.priceData }; }).sort(function(a,b){ return a.y-b.y; });
       for (var i=1;i<labels.length;i++) if (labels[i].y - labels[i-1].y < 14) labels[i].y = labels[i-1].y + 14;
       labels.forEach(function(L){
-        var color = L.base ? INK : COL[L.tk];
+        var color = L.sin ? CASH : (L.base ? INK : COL[L.tk]);
         out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+L.tk+(L.late?"*":"")+'</tspan> '+fmtPct(L.v)+'</text>');
       });
 
@@ -1259,22 +1307,26 @@
     }
 
     function renderSummaryNotes(list){
-      var base = list[0], bv = base.data[LAST];
+      var base = list[0], bv = base.data[LAST], sin = state.vista === "sin";
       var rivals = list.slice(1);
       if (rivals.length){
         var best = rivals.reduce(function(a,b){ return b.data[LAST] > a.data[LAST] ? b : a; });
         var dpp = Math.round((bv - best.data[LAST]) * 100);
         elSum.innerHTML = '<b class="'+(bv>=0?"up":"dn")+'">'+state.base+" "+fmtPct(bv)+'</b> vs mejor comparador '+
           '<b>'+best.tk+(best.late?"*":"")+" "+fmtPct(best.data[LAST])+'</b> → diferencia <b class="'+(dpp>=0?"up":"dn")+'">'+
-          (dpp>=0?"+":"")+dpp+' pp</b> en el mismo horizonte y con el mismo supuesto de reinversión.';
+          (dpp>=0?"+":"")+dpp+' pp</b> en el mismo horizonte'+(sin?"":" y con el mismo supuesto de reinversión")+'.';
       } else {
         elSum.innerHTML = '<b>'+state.base+" "+fmtPct(bv)+'</b> · activa un comparador para medir la diferencia.';
       }
+      elLede.innerHTML = sin
+        ? 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Normalizado a <b>0% en la incepción del fondo base</b>.'
+        : 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>.';
       var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
         '<span class="flag">Cifras del demo:</span> el modo <b>DRIP bruto</b> usa retornos reales medidos con la app; el <b>neto</b> es una estimación ilustrativa — el cálculo exacto (reinversión compuesta con tu retención real) vive en la app.'
       ];
+      if (sin) parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> y se acumuló sin componer — nunca se encoge con el precio. Llega al mismo total final que Con DRIP; lo que cambia es el camino, no la cifra.');
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
       elNotes.innerHTML = parts.join("<br>");
     }
