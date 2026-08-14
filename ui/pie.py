@@ -81,27 +81,26 @@ def render_pie(resultados: dict) -> None:
 
 
 ESTILOS_PIE = """
-        .vd-pie-regla { border: none; border-top: 1px dashed var(--hair); margin: 40px 0 24px; }
+        .vd-pie-regla { border: none; border-top: 1px dashed var(--hair); margin: 24px 0 14px; }
         .vd-pie-legal {
-          background: var(--panel-tint); border-top: 1px solid var(--hair);
-          padding: 24px 28px; margin-top: 32px;
+          background: var(--panel-tint);
+          padding: 12px 16px; margin-top: 0;
         }
         .vd-pie-legal-badge {
           display: inline-block; font-family: var(--font-mono); font-size: 9px;
           font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-          color: var(--ink-mut); border: 1px solid var(--hair); padding: 2px 6px;
-          margin-bottom: 10px;
+          color: var(--ink-mut); border: 1px solid var(--hair); padding: 1px 5px;
+          margin-bottom: 5px;
         }
         .vd-pie-legal-titulo {
-          font-size: 12px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2);
-          margin: 0 0 8px; max-width: 720px; line-height: 1.5;
+          font-size: 11px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2);
+          margin: 0 0 3px; line-height: 1.35;
         }
         .vd-pie-legal-cuerpo1 {
-          font-size: 11px; color: var(--ink-mut); line-height: 1.7; margin: 0 0 4px;
-          max-width: 720px;
+          font-size: 10px; color: var(--ink-mut); line-height: 1.4; margin: 0 0 2px;
         }
         .vd-pie-legal-cuerpo2 {
-          font-size: 11px; color: var(--ink-mut); line-height: 1.7; margin: 0;
-          max-width: 720px; opacity: .8;
+          font-size: 10px; color: var(--ink-mut); line-height: 1.4; margin: 0;
+          opacity: .8;
         }
 """
