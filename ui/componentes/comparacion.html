@@ -1129,22 +1129,36 @@
       return { tk:tk, startM:startM, late: F[tk].incep > baseIncep, data:out };
     }
     // "Sin DRIP" (efectivo) solo se ofrece para el fondo base: los dividendos
-    // salen del mercado apenas se pagan (acumulación lineal, sin componer —
-    // mismo criterio que la matriz "Sin DRIP" de Método tradicional) en vez de
-    // reinvertirse en más acciones del fondo. El precio corre con su propia
-    // shapeOf(tk), el efectivo con una rampa lineal; ambos llegan al MISMO
-    // total final que "Con DRIP" (targetEnd) — lo que cambia es el camino, no
-    // la cifra real medida con la app.
+    // salen del mercado apenas se pagan en vez de reinvertirse en más
+    // acciones del fondo. "Con DRIP" (targetEnd) es la cifra real medida con
+    // la app y NO se toca. "Sin DRIP" parte de esa misma cifra y le suma una
+    // corrección: cuánto valió no exponer cada dividendo a lo que el precio
+    // hizo DESPUÉS de pagarse — positiva si el precio venía cayendo (el
+    // efectivo se salvó de la caída), negativa si venía subiendo (el
+    // efectivo se perdió la subida). Se estima repartiendo el dividendo neto
+    // en partes iguales mes a mes y comparando, con la MISMA shapeOf(tk) que
+    // dibuja la línea, el nivel de precio de cada mes contra el nivel final
+    // — es una estimación ilustrativa (no hay dato real mes a mes en este
+    // demo), mismo criterio de "estimación ilustrativa" que ya se usa para
+    // los modos Neto ROC 19a / Peor caso 30%.
     function seriesSin(tk, mode, baseIncep){
-      var f = F[tk], startM = baseIncep;
+      var f = F[tk], startM = baseIncep, shp = shapeOf(tk);
       var w = mode === "bruto" ? 0 : mode === "plano" ? RATE : RATE*(1 - f.roc);
       var divNet = f.div*(1 - w), span = LAST - startM, out = {}, priceData = {};
-      for (var m = startM; m <= LAST; m++){
-        var p = f.price * shapeOf(tk)[m];
-        var c = divNet * (span > 0 ? (m - startM)/span : 1);
-        priceData[m] = p; out[m] = p + c;
+      var lvl = {};
+      for (var m = startM; m <= LAST; m++) lvl[m] = 1 + f.price*shp[m];
+      var sumGrowth = 0, n = 0;
+      for (var m2 = startM + 1; m2 <= LAST; m2++){ sumGrowth += lvl[LAST]/lvl[m2]; n++; }
+      var avgGrowth = n > 0 ? sumGrowth/n : 1;
+      var penalty = divNet * (1 - avgGrowth);   // > 0 si el precio cayó, < 0 si subió
+      var conTotal = f.price + divNet, sinTotal = conTotal + penalty;
+      for (var m3 = startM; m3 <= LAST; m3++){
+        var frac = span > 0 ? (m3 - startM)/span : 1;
+        priceData[m3] = f.price * shp[m3];
+        out[m3] = priceData[m3] + (divNet + penalty) * frac;
       }
-      return { tk:tk, startM:startM, late:false, data:out, priceData:priceData };
+      out[LAST] = sinTotal; // cierre exacto (evita el redondeo del promedio discreto)
+      return { tk:tk, startM:startM, late:false, data:out, priceData:priceData, penalty:penalty };
     }
 
     var state = { base:"NVDY", mode:"bruto", vista:"con", growth:new Set(GROWTH), ym:new Set() };
@@ -1319,14 +1333,22 @@
         elSum.innerHTML = '<b>'+state.base+" "+fmtPct(bv)+'</b> · activa un comparador para medir la diferencia.';
       }
       elLede.innerHTML = sin
-        ? 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Normalizado a <b>0% en la incepción del fondo base</b>.'
+        ? 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo que no se reinvirtió</b>; los comparadores siguen con DRIP. Normalizado a <b>0% en la incepción del fondo base</b>.'
         : 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>.';
       var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
         '<span class="flag">Cifras del demo:</span> el modo <b>DRIP bruto</b> usa retornos reales medidos con la app; el <b>neto</b> es una estimación ilustrativa — el cálculo exacto (reinversión compuesta con tu retención real) vive en la app.'
       ];
-      if (sin) parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> y se acumuló sin componer — nunca se encoge con el precio. Llega al mismo total final que Con DRIP; lo que cambia es el camino, no la cifra.');
+      if (sin){
+        var pen = base.penalty || 0, penPp = Math.round(Math.abs(pen)*100);
+        var penTxt = pen > 0.001
+          ? 'como el precio de '+state.base+' viene cayendo, ese efectivo se <b>salvó</b> de perder — se estima que sumó <b>+'+penPp+' pp</b> frente a haberse reinvertido.'
+          : pen < -0.001
+            ? 'como el precio de '+state.base+' viene subiendo, ese efectivo se <b>perdió</b> la subida — se estima que restó <b>−'+penPp+' pp</b> frente a haberse reinvertido.'
+            : 'el precio de '+state.base+' se mantuvo casi plano, así que reinvertir o no reinvertir apenas cambió el resultado.';
+        parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> más una estimación de lo que ese efectivo se ahorró (o se perdió) al no montarse en el precio — '+penTxt+' No es un dato real mes a mes, es ilustrativo, igual que <b>Neto ROC 19a</b> / <b>Peor caso 30%</b>.');
+      }
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
       elNotes.innerHTML = parts.join("<br>");
     }
