@@ -33,6 +33,24 @@ transada por el producto de las razones de todos los splits *posteriores* a la f
 transaccion (`Stock Splits` de yfinance: ratio < 1 = split inverso, p.ej. 0.2 = 1:5). El
 resultado es una serie de posicion en "unidades vigentes hoy", compatible con `Close`/
 `Dividends` de yfinance sin mas conversiones.
+
+## Elegibilidad de dividendo: estrictamente ANTES de la fecha ex-dividendo
+
+Bug real encontrado en la auditoria de este PR (no era de splits, aunque el sintoma —numeros
+inflados alrededor de las fechas de compra— parecia serlo): comprar el MISMO dia de la fecha
+ex-dividendo NO da derecho a esa distribucion (convencion estandar de mercado — hay que ser
+tenedor de registro desde ANTES del ex-date; vender el mismo dia SI conserva el derecho, ya
+que la tenencia relevante es la del cierre del dia anterior). `dividends_for_position` usa
+`position_asof(position, ex_date, inclusive=False)` — corte estrictamente `< ex_date` — para
+no contar de mas una compra que cae justo el dia del evento.
+
+Verificado contra MSTY/IB: con corte inclusivo (`<=`, el bug), cada compra que caia el mismo
+dia que un ex-date de yfinance se sumaba de mas a esa distribucion (p.ej. la compra de 100
+acciones-vintage del 2025-09-25 se contaba en el dividendo CON ex-date 2025-09-25, inflando
+esa distribucion en 100 x 0.2 = 20 acciones equivalentes); el efecto se acumulaba en cada
+compra sucesiva y llegaba a $346.55 (4.80%) de diferencia total contra el extracto real. Con
+el corte exclusivo la diferencia cae a $0.97 (0.013%) — ver `test_backtest.py` para el gate
+completo y el detalle evento-por-evento.
 """
 
 from __future__ import annotations
@@ -151,13 +169,20 @@ def shares_from_transactions(transactions: pd.DataFrame, splits: pd.Series) -> p
     return position
 
 
-def position_asof(position: pd.Series, date: DateLike) -> float:
-    """Posicion vigente en `date` (step function: ultimo valor con indice <= date, 0 si
-    `date` es anterior a la primera transaccion)."""
+def position_asof(position: pd.Series, date: DateLike, inclusive: bool = True) -> float:
+    """Posicion vigente en `date` (step function: ultimo valor con indice <= date si
+    `inclusive=True`, o < date si `inclusive=False`; 0 si `date` es anterior a la primera
+    transaccion).
+
+    `inclusive=False` es la convencion correcta para elegibilidad de dividendo: para cobrar
+    la distribucion de una fecha ex-dividendo D hay que haber comprado ANTES de D (comprar el
+    mismo dia D no da derecho a esa distribucion — ver `dividends_for_position`, que es quien
+    debe usar `inclusive=False`). `inclusive=True` (default) es la lectura general de
+    "posicion al cierre del dia D", correcta para cualquier otro uso de la posicion."""
     if position is None or len(position) == 0:
         return 0.0
     ts = _to_ts(date)
-    eligible = position[position.index <= ts]
+    eligible = position[position.index <= ts] if inclusive else position[position.index < ts]
     return float(eligible.iloc[-1]) if len(eligible) else 0.0
 
 
@@ -196,7 +221,11 @@ def dividends_for_position(
     rows = []
     total = 0.0
     for ex_date, rate in divs.items():
-        shares = position_asof(position, ex_date)
+        # inclusive=False: comprar EL MISMO dia de la fecha ex-dividendo no da derecho a esa
+        # distribucion (convencion estandar de mercado). Verificado contra el extracto real
+        # de IB (ver test_backtest.py): sin esto, cada compra que cae el mismo dia que un
+        # ex-date queda contada de mas — el error no es de splits, es de elegibilidad.
+        shares = position_asof(position, ex_date, inclusive=False)
         amount = shares * float(rate)
         total += amount
         rows.append({"ex_date": ex_date, "shares": shares, "rate_per_share": float(rate),

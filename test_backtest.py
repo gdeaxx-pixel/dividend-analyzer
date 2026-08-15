@@ -4,13 +4,27 @@ Gate central del PR: el motor debe reproducir el bruto de dividendos MSTY del ex
 IB (`real_examples/interactive_brokers_data/1/`, ground truth verificado por
 `logic.parse_ibkr_csv`: $7,224.59 bruto, $545.52 retencion NRA, $6,679.07 neto) replicando la
 posicion real (acciones efectivamente en mano en cada ex-date) x distribucion por accion real
-de yfinance. Si esto no reconcilia dentro de tolerancia, el manejo de splits esta mal y la
-Fase 3.2 (UI) NO debe arrancar sobre este motor.
+de yfinance. Si esto no reconcilia dentro de tolerancia, el manejo de splits/elegibilidad esta
+mal y la Fase 3.2 (UI) NO debe arrancar sobre este motor.
 
 Todo lo que toca red (yfinance) hace `pytest.skip` limpio si la red/API falla — un FAIL aqui es
 siempre una regresion de LOGICA, nunca un outage (mismo patron que test_real_examples.py).
+
+## Nota de auditoria (revision de Opus sobre la primera version de este PR)
+
+La primera version reconciliaba a 4.80% ($346.55 de diferencia) con una tolerancia de 8%
+"justificada" por desfase ex-date/pay-date. Esa justificacion NO sobrevivio la auditoria: los
+primeros 4 eventos reconciliaban a +0.0 exacto, y el residuo crecia en cantidades REDONDAS de
+acciones (+5, +10, +20...) coincidiendo una a una con compras que caian el MISMO dia que una
+fecha ex-dividendo de yfinance. La causa real: `dividends_for_position` contaba esas compras
+como ya elegibles para ESA distribucion (corte `<=`), cuando la convencion de mercado exige
+haber comprado ANTES del ex-date. Corregido con `position_asof(..., inclusive=False)` — ver
+docstring de `backtest.py`. Con la correccion, la diferencia cae a $0.97 (0.013%).
 """
+import contextlib
+import importlib.util
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,15 +43,16 @@ MSTY_CSV = os.path.join(
 )
 BACKTEST_PATH = os.path.join(BASE, "backtest.py")
 
-# Tolerancia del gate de reconciliacion: diferencia observada real es 4.80% (ver PR). El
-# desfase no es error de logica sino ruido esperado entre la fecha ex-dividendo que reporta
-# yfinance y la fecha de asiento/pago que postea IB en su ledger (1-2 dias habiles de
-# corrimiento sistematico, verificado a mano: yfinance 2025-11-20 vs IB 2025-11-21, yfinance
-# 2025-12-04 vs IB 2025-12-05, etc.) mas el redondeo de centavos por evento acumulado sobre
-# ~40 distribuciones semanales/mensuales. 8% deja margen sobre el 4.80% observado sin
-# esconder una regresion real: el sabotaje de abajo prueba que una ruptura genuina del manejo
-# de splits produce ~126%, muy por encima de cualquier tolerancia razonable.
-GATE_TOLERANCE_PCT = 8.0
+# Tolerancia del gate de reconciliacion: diferencia observada real, con el corte de
+# elegibilidad corregido (inclusive=False, ver backtest.py), es $0.97 sobre $7,224.59 =
+# 0.013%. Ese residuo es ruido de redondeo de centavos: yfinance publica la tasa/accion con 3
+# decimales (p.ej. 0.740) mientras el extracto de IB trae 4 (0.7375 implicito) — la diferencia
+# de ultimo digito, multiplicada por ~250-1250 acciones y sumada sobre 40 eventos, es del
+# orden de $1. 0.5% deja ~38x de margen sobre el 0.013% observado sin esconder una regresion
+# real: el sabotaje de abajo prueba que romper el manejo de splits sube la diferencia a
+# ~126% y romper el corte de elegibilidad (ver test_sabotage_eligibility_cutoff_...) la sube a
+# ~4.8% — ambos muy por encima de 0.5%.
+GATE_TOLERANCE_PCT = 0.5
 
 
 def _require_msty_csv():
@@ -99,10 +114,10 @@ def test_gate_msty_reconciles_against_real_ib_statement():
 
     diff_pct = abs(engine_gross - csv_gross) / csv_gross * 100.0
     assert diff_pct <= GATE_TOLERANCE_PCT, (
-        f"GATE DE SPLITS FALLIDO: motor reconstruyo ${engine_gross:,.2f} bruto vs "
-        f"${csv_gross:,.2f} real de IB ({diff_pct:.1f}% de diferencia, tolerancia "
-        f"{GATE_TOLERANCE_PCT}%). El manejo de splits en shares_from_transactions esta mal — "
-        "NO avanzar a UI con este motor."
+        f"GATE FALLIDO: motor reconstruyo ${engine_gross:,.2f} bruto vs ${csv_gross:,.2f} "
+        f"real de IB ({diff_pct:.2f}% de diferencia, tolerancia {GATE_TOLERANCE_PCT}%). El "
+        "manejo de splits (shares_from_transactions) o de elegibilidad de ex-date "
+        "(dividends_for_position) esta mal — NO avanzar a UI con este motor."
     )
 
 
@@ -121,6 +136,61 @@ def test_gate_msty_position_matches_pre_and_post_split_units():
         "de consulta"
     )
     assert position.iloc[-1] == pytest.approx(250.0, abs=0.01)
+
+
+# ── position_asof: elegibilidad de ex-dividendo (unitario, sin red) ─────────
+
+def test_position_asof_inclusive_vs_exclusive_on_same_day_transaction():
+    """Regresion directa del bug que encontro la auditoria: una compra fechada EXACTAMENTE en
+    la fecha de consulta debe contar con `inclusive=True` (posicion "al cierre del dia D") y
+    NO contar con `inclusive=False` (elegibilidad de dividendo: hay que haber comprado ANTES
+    del ex-date)."""
+    position = pd.Series([10.0, 25.0], index=pd.to_datetime(["2024-01-01", "2024-01-10"]))
+    assert bt.position_asof(position, "2024-01-10", inclusive=True) == 25.0
+    assert bt.position_asof(position, "2024-01-10", inclusive=False) == 10.0
+    # una fecha posterior a la ultima transaccion da lo mismo en ambos modos
+    assert bt.position_asof(position, "2024-01-15", inclusive=True) == 25.0
+    assert bt.position_asof(position, "2024-01-15", inclusive=False) == 25.0
+
+
+def test_dividends_for_position_excludes_same_day_purchase():
+    """Version sintetica minima del bug real: comprar 100 acciones justo en la fecha
+    ex-dividendo no debe generar dividendo ese evento (compra tardia), pero SI participa de
+    cualquier distribucion posterior."""
+    position = pd.Series([50.0, 150.0], index=pd.to_datetime(["2024-01-01", "2024-01-10"]))
+    dividends = pd.Series([1.0, 1.0], index=pd.to_datetime(["2024-01-10", "2024-01-20"]))
+    total, detail = bt.dividends_for_position(
+        "FAKE", position, start="2024-01-01", end="2024-01-31", dividends=dividends)
+    by_date = detail.set_index("ex_date")["shares"]
+    assert by_date.loc[pd.Timestamp("2024-01-10")] == 50.0, (
+        "la compra del mismo dia (2024-01-10, 100 acciones) no deberia contar para el "
+        "dividendo con ex-date 2024-01-10"
+    )
+    assert by_date.loc[pd.Timestamp("2024-01-20")] == 150.0
+    assert total == pytest.approx(50.0 + 150.0)
+
+
+def test_date_buffer_days_matters_when_event_falls_at_the_window_edge():
+    """La auditoria de Opus probo 0/1/2/3/5 sobre el caso real MSTY y el total no se movio —
+    correcto, porque en ese dataset el primer/ultimo evento de yfinance ya caen comodamente
+    DENTRO de [start, end] sin necesitar margen (no es que el parametro este muerto). Este
+    test sintetico fuerza el caso donde SI importa: un evento justo 2 dias fuera del borde de
+    la ventana solo aparece si el buffer lo alcanza."""
+    position = pd.Series([100.0], index=pd.to_datetime(["2024-01-01"]))
+    dividends = pd.Series([1.0], index=pd.to_datetime(["2024-01-03"]))  # 2 dias antes de start
+    total_sin_buffer, detail_sin = bt.dividends_for_position(
+        "FAKE", position, start="2024-01-05", end="2024-01-31",
+        dividends=dividends, date_buffer_days=0)
+    total_con_buffer, detail_con = bt.dividends_for_position(
+        "FAKE", position, start="2024-01-05", end="2024-01-31",
+        dividends=dividends, date_buffer_days=3)
+    assert total_sin_buffer == 0.0 and len(detail_sin) == 0, (
+        "sin buffer, el evento fuera de [start, end] no deberia aparecer"
+    )
+    assert total_con_buffer == pytest.approx(100.0) and len(detail_con) == 1, (
+        "con buffer=3, el evento a 2 dias del borde SI deberia entrar — "
+        "date_buffer_days no esta muerto, solo no lo ejercita el caso real de MSTY"
+    )
 
 
 # ── Casos de split conocidos (fallan si el ajuste se rompe) ─────────────────
@@ -238,81 +308,122 @@ def test_run_backtest_requires_capital_or_shares():
         bt.run_backtest("FAKE", "2024-01-01")
 
 
-# ── Test de sabotaje: rompe el manejo de splits y confirma que el gate FALLA ─
+# ── Tests de sabotaje: rompen el motor a proposito y confirman que el gate FALLA ─
 
-def test_sabotage_breaking_split_handling_fails_the_gate():
-    """Rompe a proposito la conversion de splits en `shares_from_transactions` (hardcodea el
-    factor a 1.0, es decir: "ignora los splits" — el bug exacto que produce el Riesgo #1),
-    confirma que el gate de reconciliacion FALLA con el motor roto, revierte el archivo y
-    verifica con `diff` que quedo byte-a-byte identico al original.
-
-    Sin este test, un futuro refactor podria borrar por accidente el ajuste de split y
-    ningun otro test lo notaria hasta que un usuario real subiera un CSV con un split de por
-    medio (feedback_test-tocado-para-desbloquear-deploy: la pregunta no es si el gate "pasa"
-    sino si seguiria detectando el bug).
-    """
-    _require_msty_csv()
-
+@contextlib.contextmanager
+def _sabotaged_backtest_module(target: str, replacement: str, sabotage_name: str):
+    """Reescribe `backtest.py` en disco reemplazando `target` por `replacement`, carga esa
+    version rota como un modulo Python aparte (no pisa el `backtest` normal que el resto de
+    la suite ya tiene importado), la entrega al bloque `with`, y SIEMPRE — pase lo que pase
+    adentro — revierte el archivo al original y verifica con `diff` que quedo byte-a-byte
+    identico (feedback_test-tocado-para-desbloquear-deploy: la pregunta no es si el gate
+    "pasa" sino si seguiria detectando el bug; y un sabotaje que no se revierte limpio deja
+    el repo roto para el resto de la sesion)."""
     original = Path(BACKTEST_PATH).read_text(encoding="utf-8")
-    target = "return float(future.prod())"
     assert original.count(target) == 1, (
-        "linea de sabotaje no encontrada (o duplicada) en backtest.py — "
-        "actualizar test_sabotage_breaking_split_handling_fails_the_gate"
+        f"[{sabotage_name}] linea de sabotaje no encontrada (o duplicada) en backtest.py — "
+        "el codigo cambio, actualizar el target de este sabotaje"
     )
-    sabotaged = original.replace(
-        target,
-        "return 1.0  # SABOTAJE DE PRUEBA: ignora los splits futuros a proposito",
-    )
+    sabotaged = original.replace(target, replacement)
     assert sabotaged != original
 
-    backup_path = BACKTEST_PATH + ".sabotage_backup"
+    backup_path = BACKTEST_PATH + f".sabotage_backup.{sabotage_name}"
     Path(backup_path).write_text(original, encoding="utf-8")
+    module_name = f"backtest_sabotaged_{sabotage_name}"
 
     try:
         Path(BACKTEST_PATH).write_text(sabotaged, encoding="utf-8")
-
-        # recarga el modulo desde el archivo (ya sabotaged) bajo un nombre separado para no
-        # pisar el `backtest` normal que pytest ya tiene importado para el resto de la suite
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("backtest_sabotaged", BACKTEST_PATH)
+        spec = importlib.util.spec_from_file_location(module_name, BACKTEST_PATH)
         sabotaged_module = importlib.util.module_from_spec(spec)
         # dataclasses._get_field resuelve anotaciones tipo-string buscando el modulo en
         # sys.modules por nombre; sin registrarlo ahi, la definicion de BacktestResult
         # revienta con AttributeError al cargar el archivo sabotaged como modulo aparte.
-        sys.modules["backtest_sabotaged"] = sabotaged_module
+        sys.modules[module_name] = sabotaged_module
         try:
             spec.loader.exec_module(sabotaged_module)
-
-            position, first, last, csv_gross = _msty_position_and_ground_truth(
-                module=sabotaged_module)
-            # con el split ignorado, la posicion final queda en unidades PRE-split (~1250) en
-            # vez de las 250 reales
-            assert position.iloc[-1] == pytest.approx(1250.0, abs=1.0), (
-                "el sabotaje no tuvo el efecto esperado sobre la posicion — revisar el patch"
-            )
-
-            engine_gross, _ = sabotaged_module.dividends_for_position(
-                "MSTY", position, start=first, end=last)
-            diff_pct = abs(engine_gross - csv_gross) / csv_gross * 100.0
-
-            assert diff_pct > GATE_TOLERANCE_PCT, (
-                f"el gate deberia fallar con el manejo de splits roto, pero la diferencia "
-                f"quedo en {diff_pct:.1f}% (tolerancia {GATE_TOLERANCE_PCT}%) — el sabotaje "
-                "no esta ejercitando la rama que protege el gate"
-            )
-            print(f"[sabotaje] gate FALLA como se esperaba: {diff_pct:.1f}% de diferencia "
-                  f"(motor roto reconstruyo ${engine_gross:,.2f} vs ${csv_gross:,.2f} real)")
+            yield sabotaged_module
         finally:
-            del sys.modules["backtest_sabotaged"]
+            del sys.modules[module_name]
     finally:
         Path(BACKTEST_PATH).write_text(original, encoding="utf-8")
         restored = Path(BACKTEST_PATH).read_text(encoding="utf-8")
-        assert restored == original, "backtest.py NO quedo identico tras revertir el sabotaje"
-
-        import subprocess
+        assert restored == original, (
+            f"[{sabotage_name}] backtest.py NO quedo identico tras revertir el sabotaje"
+        )
         diff_result = subprocess.run(
             ["diff", BACKTEST_PATH, backup_path], capture_output=True, text=True)
         assert diff_result.returncode == 0 and diff_result.stdout == "", (
-            f"diff detecto cambios residuales tras revertir el sabotaje:\n{diff_result.stdout}"
+            f"[{sabotage_name}] diff detecto cambios residuales tras revertir:\n"
+            f"{diff_result.stdout}"
         )
         os.remove(backup_path)
+
+
+def test_sabotage_breaking_split_handling_fails_the_gate():
+    """Rompe a proposito la conversion de splits en `shares_from_transactions` (hardcodea el
+    factor a 1.0, es decir: "ignora los splits" — el bug exacto del Riesgo #1 del plan)."""
+    _require_msty_csv()
+
+    with _sabotaged_backtest_module(
+        target="return float(future.prod())",
+        replacement="return 1.0  # SABOTAJE DE PRUEBA: ignora los splits futuros a proposito",
+        sabotage_name="split_factor",
+    ) as sabotaged_module:
+        position, first, last, csv_gross = _msty_position_and_ground_truth(
+            module=sabotaged_module)
+        # con el split ignorado, la posicion final queda en unidades PRE-split (~1250) en vez
+        # de las 250 reales
+        assert position.iloc[-1] == pytest.approx(1250.0, abs=1.0), (
+            "el sabotaje no tuvo el efecto esperado sobre la posicion — revisar el patch"
+        )
+
+        engine_gross, _ = sabotaged_module.dividends_for_position(
+            "MSTY", position, start=first, end=last)
+        diff_pct = abs(engine_gross - csv_gross) / csv_gross * 100.0
+
+        assert diff_pct > GATE_TOLERANCE_PCT, (
+            f"el gate deberia fallar con el manejo de splits roto, pero la diferencia quedo "
+            f"en {diff_pct:.2f}% (tolerancia {GATE_TOLERANCE_PCT}%) — el sabotaje no esta "
+            "ejercitando la rama que protege el gate"
+        )
+        print(f"[sabotaje splits] gate FALLA como se esperaba: {diff_pct:.1f}% de diferencia "
+              f"(motor roto reconstruyo ${engine_gross:,.2f} vs ${csv_gross:,.2f} real)")
+
+
+def test_sabotage_breaking_eligibility_cutoff_fails_the_gate():
+    """Rompe a proposito el corte de elegibilidad de dividendo en `dividends_for_position`
+    (vuelve a `inclusive=True`, el bug REAL que encontro la auditoria de Opus sobre la
+    primera version de este PR: contar como elegible una compra hecha el mismo dia de la
+    fecha ex-dividendo). Confirma que el gate sube de 0.013% a ~4.8% y falla."""
+    _require_msty_csv()
+
+    with _sabotaged_backtest_module(
+        target='shares = position_asof(position, ex_date, inclusive=False)',
+        replacement=(
+            'shares = position_asof(position, ex_date, inclusive=True)  '
+            '# SABOTAJE DE PRUEBA: cuenta de mas las compras del mismo dia'
+        ),
+        sabotage_name="eligibility_cutoff",
+    ) as sabotaged_module:
+        position, first, last, csv_gross = _msty_position_and_ground_truth(
+            module=sabotaged_module)
+        # el sabotaje esta en dividends_for_position, no en shares_from_transactions — la
+        # posicion en si sigue correcta (250 finales)
+        assert position.iloc[-1] == pytest.approx(250.0, abs=0.01)
+
+        engine_gross, _ = sabotaged_module.dividends_for_position(
+            "MSTY", position, start=first, end=last)
+        diff_pct = abs(engine_gross - csv_gross) / csv_gross * 100.0
+
+        assert diff_pct > GATE_TOLERANCE_PCT, (
+            f"el gate deberia fallar con el corte de elegibilidad roto, pero la diferencia "
+            f"quedo en {diff_pct:.2f}% (tolerancia {GATE_TOLERANCE_PCT}%) — el sabotaje no "
+            "esta ejercitando la rama que protege el gate"
+        )
+        assert diff_pct == pytest.approx(4.80, abs=0.5), (
+            f"se esperaba recrear aprox. el 4.80% que reporto la auditoria original al "
+            f"contar de mas las compras del mismo dia; dio {diff_pct:.2f}%"
+        )
+        print(f"[sabotaje elegibilidad] gate FALLA como se esperaba: {diff_pct:.2f}% de "
+              f"diferencia (motor roto reconstruyo ${engine_gross:,.2f} vs "
+              f"${csv_gross:,.2f} real)")
