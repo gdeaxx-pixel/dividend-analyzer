@@ -10,7 +10,7 @@ from streamlit.testing.v1 import AppTest
 sys.path.insert(0, os.path.dirname(__file__))
 import logic
 from ui.adapters import _tiene_datos, trg_real_data
-from ui.heredadas import _agregados
+from ui.heredadas import _agregados, _cuadricula_roc_consolidada
 from ui.validacion import _separar_excluidos
 
 
@@ -2867,6 +2867,51 @@ def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):
     assert s["withheld_tax_total"] == pytest.approx(138.60, abs=0.01)
 
 
+def test_analyze_portfolio_roi_neto_schwab_no_ignora_la_retencion(monkeypatch):
+    """Auditoría de Opus al PR B (PR C, Parte 1): `gross_value = market_value +
+    dividends_collected_cash` sumaba BRUTO para Schwab (la retención vive en 'NRA Tax Adj',
+    fila que ningún branch del loop de clasificación tocaba) -> ROI/Retorno Total/IRR salían
+    sobreestimados. Medido con `fixtures/schwab_synth_2` MSTY (mismo mock de mercado $20/share
+    que usa todo este archivo): net_profit baja exactamente $138.60 (la retención) y ROI baja
+    +4.36 pp al arreglar el fix — cifras verificadas por Opus antes del fix.
+    `dividends_collected_cash` NO cambia (sigue $462, el crudo bruto) — el fix vive en
+    gross_value/net_profit/roi/IRR, no en el campo crudo (otros consumidores lo siguen
+    leyendo tal cual; ver test_analyze_portfolio_schwab_msty_dividend_base_convention)."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="TEST_ROI_NETO_SCHWAB")
+    s = res["MSTY"]
+    assert s["dividends_collected_cash"] == pytest.approx(462.0, abs=0.01)   # crudo, sin tocar
+    assert s["pocket_investment"] == pytest.approx(3176.0, abs=0.01)
+    old_net_profit = s["market_value"] + 462.0 - s["pocket_investment"]      # fórmula pre-fix
+    old_roi = old_net_profit / s["pocket_investment"] * 100
+    expected_net_profit = s["market_value"] + 323.40 - s["pocket_investment"]  # 462 − 138.60
+    assert s["net_profit"] == pytest.approx(expected_net_profit, abs=0.01)
+    assert s["net_profit"] == pytest.approx(old_net_profit - 138.60, abs=0.01)
+    assert s["roi_percent"] == pytest.approx(
+        expected_net_profit / s["pocket_investment"] * 100, abs=0.01)
+    assert s["roi_percent"] == pytest.approx(old_roi - 4.36, abs=0.02)
+
+
+def test_analyze_portfolio_roi_neto_ib_no_resta_la_retencion_dos_veces(monkeypatch):
+    """Convención IB: `dividends_collected_cash` ya viene neto (retención plegada en la
+    propia fila de dividendo). El fix debe usarlo TAL CUAL para gross_value/net_profit/roi —
+    restarle `withheld_tax_total` otra vez encima duplicaría la retención. Es la misma
+    asimetría bruto/neto que ya resolvió el PR B, ahora también cubierta del lado de
+    ROI/Retorno Total."""
+    dfc = _load_real_ib_1()
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="TEST_ROI_NETO_IB")
+    s = res["MSTY"]
+    expected_net_profit = s["market_value"] + s["dividends_collected_cash"] - s["pocket_investment"]
+    assert s["net_profit"] == pytest.approx(expected_net_profit, abs=0.01)
+    assert s["roi_percent"] == pytest.approx(
+        expected_net_profit / s["pocket_investment"] * 100, abs=0.01)
+
+
 def test_build_hoja_excel_sin_tax_summary_no_rompe():
     """Fixture legado (dict a mano sin tax_summary, igual que usan los tests preexistentes de
     build_hoja_excel — test_build_hoja_excel_roc_dollars_trap y vecino) no debe lanzar
@@ -3188,6 +3233,39 @@ def test_agregados_excluye_skipped_sin_crash(monkeypatch):
     solo_valido = _agregados(results, ["MSTY"])
     con_skipped = _agregados(results, ["MSTY", "TSLY"])
     assert con_skipped == solo_valido
+
+
+def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
+    """PR C, Parte 3: `ui/heredadas.py:740,763` — la columna "Div. pagados (neto)" leía
+    `total_dividends` (`dividends_collected_cash + dividends_collected_drip`), que mezcla
+    bases: para Schwab el cash es BRUTO y el drip es neto, así que la columna llamada "neto"
+    en realidad mostraba una mezcla bruto/neto. `dividends_net_total` (objeto fiscal único,
+    `logic.build_dividend_tax_totals`) sí es neto de verdad — ground truth de
+    `fixtures/schwab_synth_2` MSTY: bruto $462.00, retención $138.60, neto $323.40, sin DRIP
+    (mismas cifras que test_analyze_portfolio_schwab_msty_dividend_base_convention)."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    results = logic.analyze_portfolio(dfc, version="TEST_HEREDADAS_CUADRICULA")
+
+    import ui.heredadas as heredadas_mod
+    capturado = {}
+
+    def _spy_dataframe(df_arg, *args, **kwargs):
+        capturado["df"] = df_arg
+
+    monkeypatch.setattr(heredadas_mod.st, "dataframe", _spy_dataframe)
+    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(heredadas_mod.st, "caption", lambda *a, **k: None)
+
+    _cuadricula_roc_consolidada([("MSTY", {})], results, {})
+
+    fila_msty = capturado["df"][capturado["df"]["ETF"] == "MSTY"].iloc[0]
+    assert fila_msty["Div. pagados (neto)"] == "$323"
+    fila_total = capturado["df"][capturado["df"]["ETF"] == "TOTAL"].iloc[0]
+    assert fila_total["Div. pagados (neto)"] == "$323"
 
 
 def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):

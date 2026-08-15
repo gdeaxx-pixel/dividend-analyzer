@@ -38,6 +38,21 @@ def _fmt_pct(v, signed: bool = False) -> str:
         return "N/A"
 
 
+def _dividendos_netos(s: dict) -> float:
+    """Dividendos en efectivo NETOS de retención NRA — lo que la etiqueta "(neto impuestos)"
+    del PDF promete. `dividends_collected_cash` NO sirve para esto: para Schwab viene bruto
+    (la retención vive en una fila aparte que ese campo nunca ve) y para IB ya viene neto —
+    usarlo tal cual etiquetaba una cifra bruta como neta (y de paso inflaba Retorno Total/ROI
+    del PDF, que se calculan sobre este número). `dividends_net_total` es el objeto fiscal
+    único (`logic.build_dividend_tax_totals`, corrido dentro de `analyze_portfolio`): declara
+    su propia procedencia y ya resuelve la convención por ticker. Si no está presente (stats
+    armado a mano, sin pasar por `analyze_portfolio`), degrada al campo crudo — igual que
+    hace `ui/adapters.cashflow_data` en su rama "legado".
+    """
+    neto = s.get("dividends_net_total")
+    return float(neto) if neto is not None else float(s.get("dividends_collected_cash", 0) or 0)
+
+
 # Las fuentes core de fpdf2 (Helvetica) solo codifican latin-1. Cualquier carácter
 # Unicode fuera de ese rango (em-dash, comillas tipográficas, flechas, viñetas…)
 # lanza una excepción al exportar y rompe TODO el PDF. Mapeamos los más comunes a
@@ -185,9 +200,9 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
         if not s.get("skipped") and not s.get("error")
     }
 
-    total_inv  = sum(s.get("pocket_investment", 0)        for s in valid.values())
-    total_mv   = sum(s.get("market_value", 0)             for s in valid.values())
-    total_div  = sum(s.get("dividends_collected_cash", 0) for s in valid.values())
+    total_inv  = sum(s.get("pocket_investment", 0) for s in valid.values())
+    total_mv   = sum(s.get("market_value", 0)      for s in valid.values())
+    total_div  = sum(_dividendos_netos(s)           for s in valid.values())
     total_ret  = (total_mv + total_div) - total_inv
     total_roi  = (total_ret / total_inv * 100) if total_inv else 0
 
@@ -268,7 +283,7 @@ def generate_report_pdf(results: dict, broker: str, version: str = "2.0") -> byt
         # Bloque Retorno Total por ticker
         inv  = s.get("pocket_investment", 0)
         mv   = s.get("market_value", 0)
-        divs = s.get("dividends_collected_cash", 0)
+        divs = _dividendos_netos(s)
         t_ret     = mv + divs - inv
         t_ret_pct = (t_ret / inv * 100) if inv else 0
         pdf._total_return_box(

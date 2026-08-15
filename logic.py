@@ -1148,7 +1148,18 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # 6. Dividend Payout (Pago de Dividendo en Efectivo)
             # Keywords: dividend, payout, yield, interest (excluding reinvestment)
             is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
-            
+
+            # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
+            # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
+            # ('Dividend - Foreign Tax Withholding') SÍ contiene 'dividend' y ya la cubre
+            # is_div_payout de arriba -> se excluye aquí con `not is_div_payout` para no
+            # procesarla dos veces. Sin este branch, el retiro de caja por impuesto era
+            # invisible para el cronograma de IRR (mismo bug de fondo que gross_value, pero
+            # de timing): IRR salía sobreestimado igual que ROI/Retorno Total.
+            is_tax_only = (('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                            or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+                           and not is_div_payout)
+
             # Logic
             row_cash_flow = 0.0
             
@@ -1245,7 +1256,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     history_incomplete = True
                 if shares_owned_pocket < 0:
                     shares_owned_pocket = 0.0
-                 
+
+            elif is_tax_only:
+                # No mueve shares ni pocket_investment: solo el timing de IRR (el efecto
+                # en dólares sobre ROI/Retorno Total se resuelve más abajo con
+                # `build_dividend_tax_totals`, que ya distingue la convención por ticker).
+                irr_flows_dated.append((_tx_date, amount))
+
             # Special Handling: Splits in CSV
             # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
             # But the SKILL says: "Balance Reset: Al detectar un 'Reverse Split' con una cantidad positiva en el CSV, trátalo como un Reinicio de Balance."
@@ -1371,11 +1388,23 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Total Return = (Valor Mercado Actual + Cash Cobrado) - Inversión Bolsillo
         # NOTE: Total Return includes the current VALUE of the DRIP shares (in market_value) PLUS the Cash collected.
         # It does NOT include the historical `dividends_collected_drip` value directly, as that money is now inside `market_value`.
-        
-        gross_value = market_value + dividends_collected_cash
+        #
+        # `dividends_collected_cash` NO es neto en los dos brokers: convención IB pliega la
+        # retención dentro de la propia fila (ya neto); convención Schwab la deja en una fila
+        # aparte ('NRA Tax Adj', sin 'dividend' en el Action) que este campo nunca ve (bruto).
+        # Sumar bruto a `market_value` sobreestimaba ROI/Retorno Total en Schwab (+4.36 pp
+        # medido en MSTY de fixtures/schwab_synth_2). `build_dividend_tax_totals` ya detecta
+        # la convención por fila -> solo restamos la retención cuando NO viene plegada, para
+        # no restarla dos veces en IB. `dividends_collected_drip` no se toca: ese dinero ya
+        # está dentro de `market_value` (acciones compradas con el neto post-retención).
+        _tax_totals_early = build_dividend_tax_totals(ticker_df)
+        _cash_collected_net = (dividends_collected_cash if _tax_totals_early['netted']
+                                else dividends_collected_cash - _tax_totals_early['withheld'])
+
+        gross_value = market_value + _cash_collected_net
         net_profit = gross_value - pocket_investment
         roi = (net_profit / pocket_investment * 100) if pocket_investment != 0 else 0
-        
+
         # Total Dividends (Informational)
         total_dividends = dividends_collected_cash + dividends_collected_drip
         
@@ -1881,8 +1910,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # solo es correcto para IB — para Schwab duplica la retención. `build_dividend_tax_totals`
         # detecta la convención por fila (¿la fila de impuesto comparte 'dividend' en el
         # Action?) en vez de asumirla, y NUNCA reconstruye el bruto sumando cuando el CSV ya
-        # lo entrega (`_csv_dividends_in_window`).
-        _dividend_tax_totals = build_dividend_tax_totals(ticker_df)
+        # lo entrega (`_csv_dividends_in_window`). Ya se calculó arriba (`_tax_totals_early`,
+        # necesario para el fix de ROI/Retorno Total) — se reusa por identidad, no se repite.
+        _dividend_tax_totals = _tax_totals_early
         _withheld = _dividend_tax_totals['withheld']
         _withheld_by_year = _dividend_tax_totals['withheld_by_year']
         _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)

@@ -32,16 +32,23 @@ _MKT_MOCK = lambda t, d: (
         index=__import__("pandas").to_datetime(["2026-01-01"])), None)
 
 
-def _schwab_msty_stats(monkeypatch):
+def _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_SCHWAB"):
     """`stats["MSTY"]` real vía analyze_portfolio sobre fixtures/schwab_synth_2 — ground
-    truth: bruto $462.00, retención $138.60, neto $323.40, sin DRIP."""
+    truth: bruto $462.00, retención $138.60, neto $323.40, sin DRIP.
+
+    `version` es la cache key de `@st.cache_data` sobre `analyze_portfolio`: un test que
+    monkeypatchea una función interna (p.ej. `logic._dividend_tax_netted`) y reusa la misma
+    version que otro test ya corrido en la sesión recibiría el resultado CACHEADO de ese otro
+    test, sin pasar de nuevo por la función sabotajeada — silenciosamente inválido. Cada test
+    que sabotea algo debe pasar su propia version única.
+    """
     raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
                              "synthetic_transactions.csv"), "rb").read()
     df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
     assert broker == "schwab"
     dfc = logic.normalize_csv(df)
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
-    res = logic.analyze_portfolio(dfc, version="TEST_ADAPTERS_SCHWAB")
+    res = logic.analyze_portfolio(dfc, version=version)
     return res["MSTY"]
 
 
@@ -129,6 +136,25 @@ def test_verificar_identidades_sin_stats_omite_el_guard_independiente(monkeypatc
     datos = cashflow_data(s, "MSTY")
     assert verificar_identidades(datos) == []
     assert verificar_identidades(datos, stats={}) == []
+
+
+def test_verificar_identidades_no_es_ciego_a_la_convencion_rota(monkeypatch):
+    """PR C, Parte 2 — auditoría de Opus al PR B: la versión anterior del guard decidía qué
+    lado comparar (NETO vs BRUTO) leyendo `stats['dividend_base_convention']`, que sale de
+    la MISMA detección (`logic._dividend_tax_netted`) que el guard debería estar auditando.
+    Si esa detección se rompe, la convención se rompe con ella y el guard cuadra por
+    casualidad — comprobado sabotajeando `_dividend_tax_netted` para que devuelva siempre
+    `True`: Schwab vuelve a mostrar BRUTO $600.60 (el bug que arregló el PR B) y el guard
+    viejo no lo veía. Este test fuerza exactamente ese sabotaje y exige que el guard falle."""
+    monkeypatch.setattr(logic, "_dividend_tax_netted", lambda history_df: True)
+    s = _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_SCHWAB_SABOTAGE_NETTED")
+    datos = cashflow_data(s, "MSTY")
+    # Con la detección sabotajeada, el objeto fiscal único queda roto (BRUTO=600.60 en vez
+    # de 462.00) — confirmamos el sabotaje antes de exigirle nada al guard.
+    assert datos["BRUTO"] == pytest.approx(600.60, abs=0.01)
+    fallos = verificar_identidades(datos, s)
+    assert any("CSV releído independiente" in f for f in fallos), (
+        "el guard debe reportar el BRUTO inflado por la convención rota, no pasar en silencio")
 
 
 def test_verificar_identidades_detecta_objeto_fiscal_roto(monkeypatch):
