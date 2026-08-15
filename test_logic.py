@@ -2397,10 +2397,17 @@ def test_advertised_distribution_rate_reads_yaml():
 # ── Hoja Excel: método tradicional vs vista honesta (build_hoja_excel) ──────────
 
 def test_build_hoja_excel_naive_vs_honest():
+    """`dividends_gross_total` viene DECLARADO en stats (como lo deja
+    `build_dividend_tax_totals` dentro de `analyze_portfolio`), igual a `total_dividends`:
+    escenario Schwab sin DRIP, donde el CSV ya entrega el bruto directo y NO hay que sumarle
+    la retención de nuevo (antes del fix, `build_hoja_excel` sí lo hacía y duplicaba el
+    impuesto — ver `test_ib_withheld_tax_no_rompe_schwab` y el caso real MSTY $600.60 vs
+    $462)."""
     results = {
         "MSTY": {
             "pocket_investment": 4197.2, "total_dividends": 2574.54,
-            "withheld_tax_total": 120.0, "market_value": 1131.78,
+            "withheld_tax_total": 120.0, "dividends_gross_total": 2574.54,
+            "market_value": 1131.78,
             "dividends_collected_cash": 2574.54, "last_payment": 28.85,
             "price_cagr": -81.5, "roc_percent": 90.0, "price_history_days": 500,
             "advertised_yield": 66.67, "forward_yield": 132.6, "realized_yield": 227.5,
@@ -2415,18 +2422,20 @@ def test_build_hoja_excel_naive_vs_honest():
     assert round(r["total_inv_naive"], 2) == round(4197.2 + 2574.54, 2)
     # honesto: valor + cash − inversión  (queda negativo → el income no cubrió la erosión)
     assert round(r["total_return"], 2) == round(1131.78 + 2574.54 - 4197.2, 2)
-    # bruto = neto + NRA
-    assert round(r["dividends_gross"], 2) == round(2574.54 + 120.0, 2)
-    assert r["nav_health"]["verdict"] in ("destructive", "mixed", "accounting", "insufficient")
-    assert r["audit"]["advertised"] == 66.67
+    # bruto = declarado (leído del CSV), NO neto + NRA — sumarlo de nuevo duplicaría la
+    # retención cuando el broker (Schwab) ya reporta `total_dividends` en base bruta.
+    assert round(r["dividends_gross"], 2) == 2574.54
 
 
 def test_build_hoja_excel_roc_dollars_trap():
     # Ticker ficticio sin avisos 19a → roc_pct cae al estimado del broker (roc_percent).
+    # `dividends_gross_total` declarado igual a `total_dividends` (mismo escenario Schwab
+    # sin DRIP de test_build_hoja_excel_naive_vs_honest).
     results = {
         "ZZZZ": {
             "pocket_investment": 4197.2, "total_dividends": 2574.54,
-            "withheld_tax_total": 120.0, "market_value": 1131.78,
+            "withheld_tax_total": 120.0, "dividends_gross_total": 2574.54,
+            "market_value": 1131.78,
             "dividends_collected_cash": 2574.54, "last_payment": 28.85,
             "price_cagr": -81.5, "roc_percent": 90.0, "price_history_days": 500,
             "advertised_yield": 66.67, "forward_yield": 132.6, "realized_yield": 227.5,
@@ -2435,7 +2444,7 @@ def test_build_hoja_excel_roc_dollars_trap():
     }
     out = logic.build_hoja_excel(results, classify_map={"ZZZZ": "mode_a"})
     r = out["rows"][0]
-    gross = 2574.54 + 120.0
+    gross = 2574.54          # declarado, no net_div + withheld_tax_total (ver test naive_vs_honest)
     assert r["roc_pct"] == 90.0
     # ROC en dólares = % ROC × distribución bruta (no es una resta de costos).
     assert round(r["roc_dollars"], 2) == round(0.90 * gross, 2)
@@ -2531,10 +2540,17 @@ def test_held_too_briefly_ignora_transfers():
 # ── Ronda 3 (2026-07-13): desglose por año de la devolución ROC + ROC forward reciente ──
 
 def test_dividends_gross_and_withheld_by_year_match_totals(monkeypatch):
-    """dividends_gross_by_year / withheld_by_year deben cuadrar exactamente con
-    total_dividends + withheld_tax_total (la reclasificación es por año fiscal). Se sintetiza
-    retención en 2 años calendario distintos (real_examples/ hoy no trae un caso Schwab con
-    NRA Tax Adj multi-año)."""
+    """dividends_gross_by_year / withheld_by_year — retención en 2 años calendario distintos
+    (real_examples/ hoy no trae un caso Schwab con NRA Tax Adj multi-año).
+
+    Convención Schwab: 'NRA Tax Adj' NO comparte 'dividend' con la fila del pago -> el CSV
+    YA entrega el bruto directo ('Dividend' 300/400). ANTES del fix, `dividends_gross_by_year`
+    asumía ciegamente `gross = net + withheld` (correcto solo para IB, donde la retención
+    viene plegada en la propia fila de dividendo) y duplicaba la retención aquí: 390/460 en
+    vez de 300/400. Ese comportamiento viejo era el bug, no el contrato — por eso este test
+    cambia de expectativa (no es un test tocado para pasar el deploy: sigue pudiendo fallar
+    si `build_dividend_tax_totals` deja de detectar la convención por fila).
+    """
     df = _roc_norm_df([
         ("2024-01-01", "Buy", "MSTY", 100, -2000.0),
         ("2024-06-01", "Dividend", "MSTY", 0, 300.0),
@@ -2547,13 +2563,21 @@ def test_dividends_gross_and_withheld_by_year_match_totals(monkeypatch):
     assert s["total_dividends"] == pytest.approx(700.0, abs=0.01)
     assert s["withheld_tax_total"] == pytest.approx(150.0, abs=0.01)
     gby, wby = s["dividends_gross_by_year"], s["withheld_by_year"]
+    nby = s["dividends_net_by_year"]
     assert sum(wby.values()) == pytest.approx(s["withheld_tax_total"], abs=0.05)
-    assert sum(gby.values()) == pytest.approx(
-        s["total_dividends"] + s["withheld_tax_total"], abs=0.05)
+    # El CSV ya entrega el bruto (convención Schwab, detectada por fila): la suma por año
+    # cuadra con `total_dividends` tal cual, SIN sumarle la retención de nuevo.
+    assert sum(gby.values()) == pytest.approx(s["total_dividends"], abs=0.05)
     assert wby[2024] == pytest.approx(90.0, abs=0.01)
     assert wby[2025] == pytest.approx(60.0, abs=0.01)
-    assert gby[2024] == pytest.approx(390.0, abs=0.01)
-    assert gby[2025] == pytest.approx(460.0, abs=0.01)
+    assert gby[2024] == pytest.approx(300.0, abs=0.01)
+    assert gby[2025] == pytest.approx(400.0, abs=0.01)
+    assert nby[2024] == pytest.approx(210.0, abs=0.01)
+    assert nby[2025] == pytest.approx(340.0, abs=0.01)
+    # Objeto fiscal único (totales del ticker completo): bruto = leído del CSV, neto = derivado.
+    assert s["dividend_base_convention"] == "bruto_leido"
+    assert s["dividends_gross_total"] == pytest.approx(700.0, abs=0.01)
+    assert s["dividends_net_total"] == pytest.approx(550.0, abs=0.01)
 
 
 def test_estimate_roc_refund_by_year_sums_match_total_when_roc_uniform(monkeypatch):
@@ -2690,7 +2714,11 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
 
     he = logic.build_hoja_excel(results, classify_map={"MSTY": "mode_a"})
     r = he["rows"][0]
-    gross = s["total_dividends"] + s["withheld_tax_total"]
+    # Objeto fiscal único: bruto = declarado (`dividends_gross_total`), NO `total_dividends +
+    # withheld_tax_total` — este fixture es convención Schwab (retención en fila aparte, el
+    # CSV ya trae el bruto directo), así que sumarle la retención de nuevo la duplicaría.
+    assert s["dividend_base_convention"] == "bruto_leido"
+    gross = s["dividends_gross_total"]
     # roc_dollars sigue viniendo de _roc_pct_for (weighted_pct 19a) — no del tax_summary.
     assert r["roc_pct"] == pytest.approx(65.0, abs=0.01)
     assert round(r["roc_dollars"], 2) == round(0.65 * gross, 2)
@@ -2744,6 +2772,99 @@ def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
     assert same_rate_named["MSTY"]["country"] == "Colombia"
     assert same_rate_named["MSTY"]["refund_estimated"] == pytest.approx(
         default_ts["refund_estimated"], abs=0.01)   # la etiqueta no altera la aritmética
+
+
+# ── Objeto fiscal único: bruto/retención/neto (PR B, build_dividend_tax_totals) ─────────────
+# Escala declarada en cada aserción — por ticker vs portafolio no son comparables entre sí
+# (ver Obsidian feedback_dividend-invariante-roc-nra). Ground truth verificado por Opus.
+
+def test_build_dividend_tax_totals_schwab_style_no_duplica_retencion():
+    """Convención Schwab (retención en fila 'NRA Tax Adj' aparte, sin 'dividend' en el
+    Action): el CSV ya entrega el bruto directo -> el neto se DERIVA restando, nunca al
+    revés. `fixtures/schwab_synth_2` MSTY: 90+82+74+66+58+50+42 = $462 bruto (suma de los
+    'Cash Dividend'), retención = 30% exacto = $138.60, neto = $323.40 (ESCALA: por ticker)."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    assert broker == "schwab"
+    dfc = logic.normalize_csv(df)
+    sub = dfc[dfc["Ticker"] == "MSTY"]
+    tt = logic.build_dividend_tax_totals(sub)
+    assert tt["netted"] is False
+    assert tt["gross_source"] == "leido"
+    assert tt["net_source"] == "derivado"
+    assert tt["gross"] == pytest.approx(462.00, abs=0.01)
+    assert tt["withheld"] == pytest.approx(138.60, abs=0.01)
+    assert tt["net"] == pytest.approx(323.40, abs=0.01)
+    # Identidad de reconciliación: bruto − retención = neto, contra el CSV como fuente.
+    assert round(tt["gross"] - tt["withheld"], 2) == pytest.approx(tt["net"], abs=0.01)
+
+
+def test_build_dividend_tax_totals_ib_style_neteada_en_la_fila():
+    """Convención IB (retención plegada como fila negativa 'Dividend - Foreign Tax
+    Withholding', SÍ comparte 'dividend' con el Action): el CSV ya entrega el neto directo ->
+    el bruto se DERIVA sumando. `real_examples/interactive_brokers_data/1` MSTY: bruto
+    $7,224.59, retención $545.52, neto $6,679.07 (ESCALA: por ticker) — mismas cifras que
+    `test_ib_withheld_tax_neto_por_ticker`, ahora también verificadas del lado del bruto/neto,
+    no solo de la retención."""
+    dfc = _load_real_ib_1()
+    sub = dfc[dfc["Ticker"] == "MSTY"]
+    tt = logic.build_dividend_tax_totals(sub)
+    assert tt["netted"] is True
+    assert tt["gross_source"] == "derivado"
+    assert tt["net_source"] == "leido"
+    assert tt["gross"] == pytest.approx(7224.59, abs=0.01)
+    assert tt["withheld"] == pytest.approx(545.52, abs=0.01)
+    assert tt["net"] == pytest.approx(6679.07, abs=0.01)
+    assert round(tt["gross"] - tt["withheld"], 2) == pytest.approx(tt["net"], abs=0.01)
+
+
+@pytest.mark.parametrize("ticker,expected_withheld", [
+    ("TSLY", 495.01),
+    ("CONY", 202.98),
+])
+def test_build_dividend_tax_totals_ib_no_rompe_pr_a(ticker, expected_withheld):
+    """No-regresión del PR A (fix/ingesta-ib-old-reversos): TSLY/CONY deben seguir dando la
+    misma retención neta que ya tenían verificada — el objeto fiscal único reusa
+    `withheld_tax_total` por identidad, no la reimplementa."""
+    dfc = _load_real_ib_1()
+    sub = dfc[dfc["Ticker"] == ticker]
+    tt = logic.build_dividend_tax_totals(sub)
+    assert tt["netted"] is True
+    assert tt["withheld"] == pytest.approx(expected_withheld, abs=0.01)
+    assert round(tt["gross"] - tt["withheld"], 2) == pytest.approx(tt["net"], abs=0.01)
+
+
+def test_analyze_portfolio_ib_msty_dividend_base_convention(monkeypatch):
+    """`analyze_portfolio` propaga el objeto fiscal único al dict de resultados: convención
+    detectada, bruto/neto agregados, y `observed_tax_refund_by_year` sigue vacío para IB (no
+    debe inventar un reembolso — invariante del PR A, ver
+    `test_ib_observed_refund_no_confunde_reverso_de_split_con_reembolso`)."""
+    dfc = _load_real_ib_1()
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="TEST_TAX_TOTALS_IB")
+    s = res["MSTY"]
+    assert s["dividend_base_convention"] == "neto_leido"
+    assert s["dividends_gross_total"] == pytest.approx(7224.59, abs=0.01)
+    assert s["dividends_net_total"] == pytest.approx(6679.07, abs=0.01)
+    assert s["withheld_tax_total"] == pytest.approx(545.52, abs=0.01)
+    assert s["tax_refund_observed_by_year"] == {}
+
+
+def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):
+    """Mismo contrato que el test IB de arriba, del lado Schwab: convención 'bruto_leido' y
+    bruto/neto agregados coinciden con el ground truth ($462/$138.60/$323.40)."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="TEST_TAX_TOTALS_SCHWAB")
+    s = res["MSTY"]
+    assert s["dividend_base_convention"] == "bruto_leido"
+    assert s["dividends_gross_total"] == pytest.approx(462.00, abs=0.01)
+    assert s["dividends_net_total"] == pytest.approx(323.40, abs=0.01)
+    assert s["withheld_tax_total"] == pytest.approx(138.60, abs=0.01)
 
 
 def test_build_hoja_excel_sin_tax_summary_no_rompe():

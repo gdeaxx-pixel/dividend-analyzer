@@ -1876,13 +1876,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
 
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
-        _withheld = withheld_tax_total(ticker_df)
-        _withheld_by_year = withheld_tax_total_by_year(ticker_df)
+        # Objeto fiscal único de bruto/retención/neto (PR B): `divs_by_year` mezcla bases
+        # según el broker (bruto para Schwab-cash, neto para IB) y `gross = net + withheld`
+        # solo es correcto para IB — para Schwab duplica la retención. `build_dividend_tax_totals`
+        # detecta la convención por fila (¿la fila de impuesto comparte 'dividend' en el
+        # Action?) en vez de asumirla, y NUNCA reconstruye el bruto sumando cuando el CSV ya
+        # lo entrega (`_csv_dividends_in_window`).
+        _dividend_tax_totals = build_dividend_tax_totals(ticker_df)
+        _withheld = _dividend_tax_totals['withheld']
+        _withheld_by_year = _dividend_tax_totals['withheld_by_year']
         _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)
-        _gross_by_year = {
-            _y: round(divs_by_year.get(_y, 0.0) + _withheld_by_year.get(_y, 0.0), 2)
-            for _y in (set(divs_by_year) | set(_withheld_by_year))
-        }
+        _gross_by_year = _dividend_tax_totals['gross_by_year']
         _cadence_change = detect_cadence_change(ticker_df)
 
         # CAGR de precio puro (no contaminado por DRIP/aportes): la erosión/apreciación
@@ -1993,6 +1997,16 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_gross_by_year": _gross_by_year,
             "withheld_by_year": dict(_withheld_by_year),
             "tax_refund_observed_by_year": dict(_refund_obs_by_year),
+            # Objeto fiscal único (PR B): bruto/neto agregados, con procedencia declarada.
+            # 'bruto_leido' = el CSV ya trae el bruto directo (Schwab); 'neto_leido' = el CSV
+            # ya trae el neto (retención plegada en la fila de dividendo, IB) y el bruto se
+            # derivó sumando. Ninguna vista debe reconstruir bruto/neto por su cuenta — leer
+            # estos campos (o `tax_summary`, que los reusa por identidad).
+            "dividends_gross_total": _dividend_tax_totals['gross'],
+            "dividends_net_total": _dividend_tax_totals['net'],
+            "dividends_net_by_year": _dividend_tax_totals['net_by_year'],
+            "dividend_base_convention": (
+                'neto_leido' if _dividend_tax_totals['netted'] else 'bruto_leido'),
             "price_cagr":        _price_cagr,
             "price_cagr_recent": _price_cagr_recent,
             "price_history_days": _price_history_days,
@@ -3839,6 +3853,108 @@ def _csv_dividends_in_window(history_df, start=None, end=None) -> float:
     return total
 
 
+def _csv_dividends_by_year(history_df) -> dict:
+    """Como `_csv_dividends_in_window` pero agrupada por año calendario de la fila (`Date`).
+
+    Mismo filtro exacto de filas (ver docstring de `_csv_dividends_in_window`): cuenta
+    'Reinvest Dividend'/'Cash Dividend'/'Qualified Dividend' (lo que el CSV declara), omite
+    'Reinvest Shares' (compra neta post-impuesto). Base del objeto fiscal único por año.
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0:
+        return out
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        amount = _clean_money(row.get('Amount', 0))
+        if pd.isna(amount):
+            amount = 0.0
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        if is_drip and ('share' in action or 'acciones' in action):
+            continue
+        if 'dividend' in action or 'dividendo' in action:
+            y = _row_year(row.get('Date'))
+            if y is None:
+                continue
+            out[y] = out.get(y, 0.0) + amount
+    return {y: round(v, 2) for y, v in out.items()}
+
+
+def _dividend_tax_netted(history_df) -> bool:
+    """Detecta, POR FILA (no por broker asumido), si la retención NRA de este historial
+    viene PLEGADA dentro de las filas de dividendo o registrada APARTE.
+
+    - True (convención IB): la fila de impuesto sigue conteniendo 'dividend'/'dividendo' en
+      el Action ('Dividend - Foreign Tax Withholding', ver `parse_ibkr_csv`/`action_map`) ->
+      la misma fila YA resta del total que suma `_csv_dividends_in_window`/
+      `_csv_dividends_by_year` -> esa suma es el NETO.
+    - False (convención Schwab): la fila de impuesto NO contiene 'dividend' ('NRA Tax Adj')
+      -> `_csv_dividends_in_window`/`_csv_dividends_by_year` nunca la tocan -> esa suma es
+      el BRUTO.
+
+    Es la pieza que evita asumir una base fija: dos brokers pueden convivir en el mismo CSV
+    (cuentas mixtas) y cada ticker se evalúa con su propio historial.
+    """
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return False
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if is_tax and ('dividend' in action or 'dividendo' in action):
+            return True
+    return False
+
+
+def build_dividend_tax_totals(history_df) -> dict:
+    """Objeto fiscal único de bruto/retención/neto por ticker (regla dura del invariante
+    ROC/NRA: nunca reconstruir el bruto sumando hacia atrás si el CSV ya lo entrega).
+
+    Cada broker reporta `dividendos cobrados` en una base distinta:
+    - Schwab deja la retención en filas aparte ('NRA Tax Adj', sin 'dividend' en el Action)
+      -> `_csv_dividends_in_window`/`_csv_dividends_by_year` (que solo suman filas con
+      'dividend'/'dividendo') YA dan el BRUTO -> el neto se DERIVA restando la retención.
+    - IB pliega la retención como fila negativa cuyo Action sigue conteniendo 'dividend'
+      ('Dividend - Foreign Tax Withholding') -> esa misma suma YA da el NETO -> el bruto se
+      DERIVA sumando la retención.
+    `_dividend_tax_netted` detecta la convención mirando las filas, no asumiendo el broker —
+    así que `gross = net + withheld` (correcto para IB) nunca se aplica ciegamente a Schwab,
+    que ya venía bruto y quedaba duplicando la retención (bug $600.60 vs $462 real en MSTY).
+
+    Devuelve:
+      gross, withheld, net: totales del ticker completo.
+      gross_source, net_source: 'leido' (viene directo del CSV) o 'derivado' (aritmética
+        sobre el otro + la retención) — la procedencia declarada de cada cifra.
+      netted: bool, la convención detectada (True = IB-style, False = Schwab-style).
+      gross_by_year, net_by_year, withheld_by_year: mismos tres campos, por año calendario.
+    """
+    withheld = withheld_tax_total(history_df)
+    withheld_by_year = withheld_tax_total_by_year(history_df)
+    ledger = round(_csv_dividends_in_window(history_df), 2)
+    ledger_by_year = _csv_dividends_by_year(history_df)
+    netted = _dividend_tax_netted(history_df)
+    years = set(ledger_by_year) | set(withheld_by_year)
+
+    if netted:
+        net, net_source = ledger, 'leido'
+        gross, gross_source = round(ledger + withheld, 2), 'derivado'
+        gross_by_year = {y: round(ledger_by_year.get(y, 0.0) + withheld_by_year.get(y, 0.0), 2)
+                          for y in years}
+        net_by_year = dict(ledger_by_year)
+    else:
+        gross, gross_source = ledger, 'leido'
+        net, net_source = round(ledger - withheld, 2), 'derivado'
+        gross_by_year = dict(ledger_by_year)
+        net_by_year = {y: round(ledger_by_year.get(y, 0.0) - withheld_by_year.get(y, 0.0), 2)
+                       for y in years}
+
+    return {
+        'gross': gross, 'withheld': withheld, 'net': net,
+        'gross_source': gross_source, 'net_source': net_source, 'netted': netted,
+        'gross_by_year': gross_by_year, 'net_by_year': net_by_year,
+        'withheld_by_year': dict(withheld_by_year),
+    }
+
+
 def _dividend_events(history_df) -> 'pd.Series':
     """Serie de dividendo BRUTO por fecha de pago (un valor por día con dividendo).
 
@@ -4019,7 +4135,11 @@ def build_hoja_excel(results, classify_map=None, tax_summaries=None):
     Vista honesta:
       total_return = valor de mercado + dividendos en efectivo − inversión  (DRIP ya está en el
       valor de mercado, por eso NO se suma; mismo criterio que la tarjeta de Retorno Total).
-      dividendos: bruto = neto + impuesto NRA  (total_dividends ya viene neto de NRA).
+      dividendos: bruto = `dividends_gross_total` (objeto fiscal único, `build_dividend_tax_totals`
+      en `analyze_portfolio`) — NUNCA `total_dividends + withheld_tax_total`: esa suma solo es
+      correcta si el broker plegó la retención dentro del propio dividendo (IB); para Schwab
+      (retención en fila aparte) `total_dividends` YA es el bruto y sumarle la retención la
+      duplica (bug real: $600.60 mostrados vs $462 bruto verdadero en MSTY).
       nav_health = classify_roc_health(...)  → veredicto honesto por tendencia del NAV.
       audit = audit_advertised_yield(...)    → titular vs mecanismo vs realizado.
 
@@ -4040,9 +4160,14 @@ def build_hoja_excel(results, classify_map=None, tax_summaries=None):
     roc19a = load_roc_19a()
     for tk, s in items:
         pocket = s.get('pocket_investment') or 0.0
-        net_div = s.get('total_dividends') or 0.0          # drip + cash, ya neto de NRA
+        net_div = s.get('total_dividends') or 0.0          # drip + cash, tal cual el ledger
         nra = s.get('withheld_tax_total') or 0.0
-        gross_div = net_div + nra
+        # Objeto fiscal único: lee `dividends_gross_total` (declara su propia procedencia,
+        # ver `build_dividend_tax_totals`). Solo degrada a `net_div + nra` para fixtures
+        # legado sin el campo (stats armados a mano en tests, no vía analyze_portfolio) —
+        # esa fórmula es incorrecta para Schwab en producción, por eso no es el camino normal.
+        _gross_declared = s.get('dividends_gross_total')
+        gross_div = float(_gross_declared) if _gross_declared is not None else (net_div + nra)
         mv = s.get('market_value') or 0.0
         cash_div = s.get('dividends_collected_cash') or 0.0
 
@@ -4364,7 +4489,14 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             return _null(withheld_real)
 
         net_div = float(stats.get('total_dividends') or 0.0)
-        gross = net_div + withheld_real
+        # Objeto fiscal único: `dividends_gross_total` ya declara su procedencia (leído del
+        # CSV o derivado, ver `build_dividend_tax_totals`). `net_div + withheld_real` solo es
+        # correcto cuando el broker plegó la retención en el propio dividendo (IB) — para
+        # Schwab (fila de retención aparte) `total_dividends` YA es el bruto, así que sumar
+        # de nuevo duplica la retención. Solo cae al viejo cálculo si el campo no está
+        # (stats crudos armados a mano, sin pasar por analyze_portfolio).
+        _gross_declared = stats.get('dividends_gross_total')
+        gross = float(_gross_declared) if _gross_declared is not None else (net_div + withheld_real)
         gross_by_year = stats.get('dividends_gross_by_year') or {}
         withheld_by_year = stats.get('withheld_by_year') or {}
         years_wh = sorted(y for y, v in (withheld_by_year or {}).items() if v > 0.01)

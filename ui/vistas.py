@@ -74,7 +74,9 @@ def render_cash_flow(ruta: Ruta) -> None:
 
     # Las identidades del waterfall se comprueban ANTES de dibujar: si no cuadran, las
     # barras mienten aunque cada cifra suelta sea correcta. Se avisa en vez de callar.
-    fallos = verificar_identidades(datos)
+    # Se pasa `stats` para que el guard reconcilie contra una relectura independiente del
+    # CSV, no solo contra las identidades definitorias de `cashflow_data`.
+    fallos = verificar_identidades(datos, stats)
     if fallos:
         st.error("Las cifras de este recorrido no cuadran entre sí — no se dibuja para no "
                  "mostrar un gráfico que miente.")
@@ -100,7 +102,7 @@ def render_hoja_excel(ruta: Ruta) -> None:
         st.warning(str(error))
         return
 
-    fallos = verificar_identidades(datos)
+    fallos = verificar_identidades(datos, stats)
     if fallos:
         st.error("Las cifras de esta hoja no cuadran entre sí — no se dibuja para no "
                  "mostrar una tabla que miente.")
