@@ -215,7 +215,15 @@ def test_ib_sell_negative_qty_shares_counted_correctly():
 
 
 def test_normalize_real_ib_file():
-    """Valida el archivo IB real con FTW y Payment in Lieu incluidos (922 filas)."""
+    """Valida el archivo IB real con FTW y Payment in Lieu incluidos (922 filas).
+
+    Desde el fix de ingesta IB (rama fix/ingesta-ib-old-reversos), las filas
+    'Foreign Tax Withholding' ya NO se funden en Action=='Dividend' puro: quedan
+    como 'Dividend - Foreign Tax Withholding' (sigue conteniendo 'dividend', así
+    que analyze_portfolio las sigue neteando en dividends_collected_cash igual que
+    antes) para que withheld_tax_total() pueda detectarlas por separado — antes
+    reportaba $0 de retención para todos los tickers IB.
+    """
     base = os.path.dirname(__file__)
     real_path = os.path.join(base, "interactive_brokers_data",
                              "U15179613.TRANSACTIONS.20240820.20260514.csv")
@@ -225,16 +233,131 @@ def test_normalize_real_ib_file():
         df, broker = logic.load_and_detect_csv(FakeFile(f.read(), "real_ib.csv"))
     assert broker == "ibkr"
     assert len(df) == 922
-    # Foreign Tax Withholding deben estar presentes como Dividend con monto negativo
-    ftw_rows = df[(df["Action"] == "Dividend") & (df["Amount"] < 0)]
-    assert len(ftw_rows) > 0, "Foreign Tax Withholding debe generar filas con monto negativo"
-    # Normalización TSLY.OLD → TSLY
+    # Foreign Tax Withholding: rastro explícito propio, con monto negativo (cargos) y
+    # positivo (reversos de los splits inversos .OLD, ya fusionados en el ticker base).
+    ftw_rows = df[df["Action"] == "Dividend - Foreign Tax Withholding"]
+    assert len(ftw_rows) == 462, "Deben sobrevivir las 462 filas de retención del CSV crudo"
+    assert (ftw_rows["Amount"] < 0).sum() > 0, "Debe haber cargos (monto negativo)"
+    assert (ftw_rows["Amount"] > 0).sum() > 0, "Debe haber reversos .OLD (monto positivo)"
+    # Normalización TSLY.OLD → TSLY (y MSTY.OLD, CONY.OLD)
     assert "TSLY.OLD" not in df["Ticker"].values, "TSLY.OLD debe normalizarse a TSLY"
-    # 745 Dividend = dividendos ordinarios + FTW (negativo) + Payment in Lieu
-    assert len(df[df["Action"] == "Dividend"]) == 745
+    assert "MSTY.OLD" not in df["Ticker"].values, "MSTY.OLD debe normalizarse a MSTY"
+    assert "CONY.OLD" not in df["Ticker"].values, "CONY.OLD debe normalizarse a CONY"
+    # 283 Dividend puro + 462 FTW = 745 filas etiquetadas como dividendo en sentido amplio
+    # (dividendos ordinarios + Payment in Lieu, sin contar FTW aparte)
+    assert len(df[df["Action"] == "Dividend"]) == 283
     assert len(df[df["Action"] == "Buy"]) == 153
     df_clean = logic.normalize_csv(df)
     assert len(df_clean) > 0
+
+
+# ── withheld_tax_total — IB: .OLD fusionado + reversos neteados ───────────────
+# (fix/ingesta-ib-old-reversos). Cifras verificadas por Opus contra
+# real_examples/interactive_brokers_data/1 (462 filas 'Foreign Tax Withholding' crudas).
+# ESCALA declarada en cada aserción — por ticker vs portafolio no son comparables entre sí
+# (ver Obsidian feedback_dividend-invariante-roc-nra: un audit previo mezcló ambas escalas).
+
+def _load_real_ib_1():
+    """DataFrame normalizado del caso real ib_1 (real_examples/), o skip si no está disponible
+    (dato privado, no versionado — igual que el resto de real_examples/)."""
+    base = os.path.dirname(__file__)
+    real_dir = os.environ.get(
+        "DIVIDEND_REAL_EXAMPLES_DIR", os.path.join(base, "real_examples"))
+    csv_path = os.path.join(
+        real_dir, "interactive_brokers_data", "1",
+        "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    if not os.path.exists(csv_path):
+        pytest.skip("real_examples/interactive_brokers_data/1 no disponible")
+    with open(csv_path, "rb") as f:
+        df, broker = logic.load_and_detect_csv(FakeFile(f.read(), "ib_1.csv"))
+    assert broker == "ibkr"
+    return logic.normalize_csv(df)
+
+
+@pytest.mark.parametrize("ticker,expected_net", [
+    ("MSTY", -545.52),   # cargos -2056.12 + reversos .OLD +1510.60
+    ("TSLY", -495.01),   # cargos -975.52  + reversos .OLD +480.51
+    ("CONY", -202.98),   # cargos -890.02  + reversos .OLD +687.04
+])
+def test_ib_withheld_tax_neto_por_ticker(ticker, expected_net):
+    """ESCALA: por ticker (NO el portafolio). Retención neta = cargos + reversos .OLD,
+    con el ticker .OLD ya fusionado al base por normalize_csv."""
+    dfc = _load_real_ib_1()
+    sub = dfc[dfc["Ticker"] == ticker]
+    assert len(sub) > 0, f"{ticker}: sin filas tras normalizar"
+    neto = logic.withheld_tax_total(sub)
+    assert neto == pytest.approx(-expected_net, abs=0.01), (
+        f"{ticker}: retención neta {neto} != {-expected_net} esperado (escala: por ticker)")
+
+
+def test_ib_withheld_tax_neto_portafolio_completo():
+    """ESCALA: portafolio completo (los 38 tickers de las 462 filas 'Foreign Tax
+    Withholding' del CSV crudo, no solo los 9 reconocidos por analyze_portfolio).
+    NO comparar este número contra el de un ticker individual — son escalas distintas."""
+    dfc = _load_real_ib_1()
+    neto_total = logic.withheld_tax_total(dfc)
+    assert neto_total == pytest.approx(2121.43, abs=0.01), (
+        f"retención neta del portafolio completo {neto_total} != 2121.43 (escala: portafolio)")
+
+
+def test_ib_withheld_tax_no_rompe_schwab():
+    """No-regresión (fixtures/schwab_synth_2, versionado): el fix de IB no debe tocar el
+    resultado ya correcto de Schwab. MSTY: withheld=138.6 (30% de 462 bruto), cash=462.0."""
+    raw = open(os.path.join(os.path.dirname(__file__),
+                             "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    assert broker == "schwab"
+    dfc = logic.normalize_csv(df)
+    sub = dfc[dfc["Ticker"] == "MSTY"]
+    assert logic.withheld_tax_total(sub) == pytest.approx(138.6, abs=0.01)
+    res = logic.analyze_portfolio(dfc, version="TEST_SCHWAB_SYNTH_2")
+    r = res.get("MSTY", {})
+    assert r.get("withheld_tax_total") == pytest.approx(138.6, abs=0.01)
+    assert r.get("dividends_collected_cash") == pytest.approx(462.0, abs=0.01)
+
+
+@pytest.mark.parametrize("ticker", ["SMCY", "NKE"])
+def test_ib_smcy_nke_no_se_pierden_en_ingesta_solo_en_clasificacion(ticker):
+    """SMCY y NKE tienen filas de retención en el CSV crudo y NO aparecen en la salida de
+    analyze_portfolio — pero la causa NO es la ingesta (fuera del alcance de este PR, que es
+    SOLO la capa de ingesta): withheld_tax_total() sí calcula su retención correctamente sobre
+    el df normalizado (la fusión .OLD y el neteo de reversos aplican igual a cualquier ticker).
+
+    La pérdida ocurre después, en analyze_portfolio (logic.py ~1052): classify_tickers()
+    los marca 'mode_skip' → 'reason': 'not_known_etf' y el ticker nunca entra al loop que
+    llama a withheld_tax_total() por ticker. Es el filtro v2.1 "descartar tickers no
+    reconocidos como ETF de largo plazo" (NKE es una acción de crecimiento normal, no un
+    fondo de dividendos — correcto excluirla; SMCY sí es un fondo YieldMax pero falta en
+    knowledge/instruments.yaml — tarea de /aprende-portafolio, no de este PR).
+    """
+    dfc = _load_real_ib_1()
+    sub = dfc[dfc["Ticker"] == ticker]
+    assert len(sub) > 0, f"{ticker}: debe sobrevivir la ingesta con filas propias"
+    assert logic.withheld_tax_total(sub) > 0, (
+        f"{ticker}: la ingesta SÍ calcula su retención; no se pierde ahí")
+    res = logic.analyze_portfolio(dfc)
+    assert res.get(ticker, {}).get("skipped") is True
+    assert res.get(ticker, {}).get("reason") == "not_known_etf", (
+        f"{ticker}: se esperaba que se filtrara por clasificación de instrumento "
+        "(not_known_etf), no por otra causa — si esto cambia, la Fase 0 debe revisarse")
+
+
+@pytest.mark.parametrize("ticker", ["MSTY", "TSLY", "CONY"])
+def test_ib_observed_refund_no_confunde_reverso_de_split_con_reembolso(ticker):
+    """Efecto colateral del fix de ingesta que hay que blindar: al dejar de fundir
+    'Foreign Tax Withholding' en 'Dividend' puro, los reversos positivos .OLD (mecánica del
+    split inverso, NO una devolución de impuesto real) podrían colarse en
+    observed_tax_refund_by_year() y mostrarle al usuario un "ya te devolvieron $X" falso.
+    observed_tax_refund_by_year() debe seguir devolviendo {} para IB (mismo comportamiento
+    documentado de antes del fix) — separar reembolso genuino de reverso de split es del
+    objeto fiscal único (PR B), no de esta capa de ingesta."""
+    dfc = _load_real_ib_1()
+    sub = dfc[dfc["Ticker"] == ticker]
+    assert len(sub) > 0
+    assert logic.withheld_tax_total(sub) > 0, "la retención neta SÍ debe calcularse (fix)"
+    assert logic.observed_tax_refund_by_year(sub) == {}, (
+        f"{ticker}: no debe inventar un reembolso observado a partir del reverso .OLD")
 
 
 # ── Regresión: correcciones negativas de dividendo IB ────────────────────────

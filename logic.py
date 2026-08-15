@@ -2501,7 +2501,14 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                 'Buy':                   'Buy',
                 'Sell':                  'Sell',
                 'Payment in Lieu':       'Dividend',   # pago sustituto de dividendo (securities lending)
-                'Foreign Tax Withholding': 'Dividend', # retención de impuesto — monto negativo, reduce dividendos
+                # Retención de impuesto — monto con signo (negativo=cargo, positivo=reverso).
+                # Se mantiene 'Dividend' en el nombre para que siga neteando dentro de
+                # dividends_collected_cash (is_div_payout matchea por 'dividend' en Action,
+                # ver línea ~1150), pero ahora conserva 'Foreign Tax Withholding' como rastro
+                # explícito para que withheld_tax_total() / *_by_year() / observed_tax_refund_by_year()
+                # (que buscan 'foreign tax'/'withholding' en Action) puedan detectarla — antes se
+                # perdía al fundirse en 'Dividend' puro y withheld_tax_total() reportaba $0 para IB.
+                'Foreign Tax Withholding': 'Dividend - Foreign Tax Withholding',
             }
             tx_type_col = next((c for c in tx_df.columns if 'transaction type' in c.lower() or 'tipo' in c.lower()), None)
             if tx_type_col:
@@ -2527,7 +2534,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                 net_raw = str(row.get(net_col, '-')).strip() if net_col else '-'
                 qty = 0.0 if qty_raw in ('-', '') else _safe_float(qty_raw)
                 price = 0.0 if price_raw in ('-', '') else _safe_float(price_raw)
-                amount_raw = (net_raw if net_raw not in ('-', '') else gross_raw) if action == 'Dividend' else gross_raw
+                amount_raw = (net_raw if net_raw not in ('-', '') else gross_raw) if action.startswith('Dividend') else gross_raw
                 amount = 0.0 if amount_raw in ('-', '') else _safe_float(amount_raw)
                 raw_ticker = str(row.get(symbol_col, '')).strip()
                 # Normalizar sufijos IB: TSLY.OLD → TSLY, XYZ.WS → XYZ, etc.
@@ -4489,10 +4496,13 @@ def withheld_tax_total(history_df) -> float:
     """Retención de impuesto NETA REAL registrada en el CSV (retenciones − reembolsos), ≥0.
 
     Schwab deja la retención en filas aparte ('NRA Tax Adj') que sobreviven en el historial;
-    se detectan por palabra clave en la columna Action. (En IB la retención 'Foreign Tax
-    Withholding' ya viene plegada como dividendo negativo durante el parseo, así que ahí el
-    dividendo del CSV ya es neto y esta función devolverá 0.) Sirve para mostrar la tasa
-    efectiva real cuando el dato existe, en vez de la tasa asumida.
+    se detectan por palabra clave en la columna Action. IB usa 'Foreign Tax Withholding': el
+    parseo (parse_ibkr_csv, action_map) la mapea a 'Dividend - Foreign Tax Withholding' —
+    sigue conteniendo 'dividend' (así que analyze_portfolio la sigue neteando dentro de
+    dividends_collected_cash, que para IB YA es neto) y también 'foreign tax'/'withholding'
+    (así que esta función la detecta y reporta la retención por separado, en vez de $0 como
+    antes del fix de ingesta IB/.OLD). Sirve para mostrar la tasa efectiva real cuando el dato
+    existe, en vez de la tasa asumida.
 
     NETEA POR SIGNO: en el CSV la retención es un monto NEGATIVO (sale efectivo) y un
     reembolso/reclasificación (p.ej. la devolución de la porción ROC) es POSITIVO. Antes se
@@ -4560,9 +4570,16 @@ def observed_tax_refund_by_year(history_df) -> dict:
     Schwab, o un 'Foreign Tax Withholding' positivo en IB). Sirve para distinguir en la UI
     "ya te devolvieron $X" (dato real) de "pendiente" (estimado).
 
-    Limitación conocida: en IB los 'Foreign Tax Withholding' —negativos y positivos— se pliegan
-    como dividendo durante el parseo (`action_map`), así que ahí esta función devuelve {} y el
-    reembolso IB queda absorbido en el dividendo neto (pendiente: separarlo, traspaso 2026-07-14).
+    Limitación conocida (INTENCIONAL, no re-resolver aquí): en IB las filas 'Foreign Tax
+    Withholding' —negativas y positivas— quedan etiquetadas 'Dividend - Foreign Tax
+    Withholding' durante el parseo (`action_map`, fix de ingesta .OLD/reversos) precisamente
+    para que sigan neteando dentro de `dividends_collected_cash` como antes. Esta función las
+    EXCLUYE a propósito (filtro `'dividend' not in action` abajo): sus reversos positivos son
+    en su mayoría mecánica de los splits inversos .OLD (MSTY/TSLY/CONY dic-2025), no créditos
+    de reclasificación ROC reales — contarlos aquí inventaría un "ya te devolvieron $X"
+    falso. Separar reembolso genuino de reverso de split para IB es trabajo del objeto fiscal
+    único (PR B, `estimate_roc_refund`/`build_tax_summary`), no de la capa de ingesta. Con esta
+    exclusión el comportamiento para IB es igual al de antes del fix: devuelve {} (pendiente).
     """
     out = {}
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
@@ -4571,6 +4588,7 @@ def observed_tax_refund_by_year(history_df) -> dict:
         action = str(row.get('Action', '')).lower()
         is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
                   or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        is_tax = is_tax and 'dividend' not in action  # excluye IB (ver docstring)
         if not is_tax:
             continue
         amt = _clean_money(row.get('Amount', 0))
