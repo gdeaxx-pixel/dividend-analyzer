@@ -58,6 +58,43 @@ def test_pdf_usa_efectivo_real_pocket_investment():
     assert captured.get("Total Invertido") == "$3,000.00"
 
 
+def _fake_results_schwab_style():
+    """Como `_fake_results`, pero con la asimetría Schwab real: `dividends_collected_cash`
+    trae el BRUTO (462.0, retención en fila aparte que ese campo nunca ve) y
+    `dividends_net_total` — el objeto fiscal único, `logic.build_dividend_tax_totals` — trae
+    el NETO correcto (323.40, retención $138.60). Ground truth de `fixtures/schwab_synth_2`
+    MSTY (ver test_logic.py)."""
+    res = _fake_results()
+    res["MSTY"]["dividends_net_total"] = 323.40
+    res["MSTY"]["dividends_gross_total"] = 462.00
+    return res
+
+
+def test_pdf_dividendos_neto_impuestos_es_realmente_neto():
+    """PR C, Parte 3: `report.py:226,291` rotulan la cifra "(neto impuestos)" — antes leían
+    `dividends_collected_cash`, que para Schwab es BRUTO ($462.00, la retención vive en una
+    fila aparte que ese campo nunca resta). La etiqueta prometía neto y mostraba bruto. Ahora
+    debe leer `dividends_net_total` (el objeto fiscal único) y mostrar $323.40 — y ese mismo
+    número debe alimentar Retorno Total/ROI (Parte 1: la retención no puede desaparecer de
+    ninguno de los dos)."""
+    captured = {}  # label -> lista de valores (la fila por-ticker se repite, una por página)
+    orig = _PDF._row
+
+    def _spy_row(self, label, value, **kw):
+        captured.setdefault(label, []).append(value)
+        return orig(self, label, value, **kw)
+
+    _PDF._row = _spy_row
+    try:
+        generate_report_pdf(_fake_results_schwab_style(), "schwab", version="2.0")
+    finally:
+        _PDF._row = orig
+    # Resumen global: 323.40 (MSTY, objeto fiscal único) + 20 (SCHB, sin objeto fiscal -> degrada al crudo)
+    assert captured.get("Dividendos Cobrados (neto impuestos)") == ["$343.40"]
+    # Página por ticker: MSTY primero (Modo A), SCHB después (Modo B)
+    assert captured.get("Dividendos Efectivo (neto impuestos)") == ["$323.40", "$20.00"]
+
+
 def test_pdf_unicode_dinamico_en_ticker_no_crashea():
     """Si un dato dinámico trae un carácter unicode, tampoco debe romper el export."""
     res = _fake_results()

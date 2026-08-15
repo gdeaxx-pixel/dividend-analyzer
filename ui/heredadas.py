@@ -735,9 +735,17 @@ def _cuadricula_roc_consolidada(items, resultados: dict, roc19a_asof: dict) -> N
         roc_p = rs.get("roc_percent")
         roc_src = rs.get("roc_source")
         basis = rs.get("ib_cost_basis")
+        # "Div. pagados (neto)" — antes leía `total_dividends`, que mezcla bases (bruto para
+        # el cash de Schwab, neto para IB/DRIP): la columna decía "neto" y mostraba una
+        # mezcla. `dividends_net_total` es el objeto fiscal único (`build_dividend_tax_totals`,
+        # corrido dentro de `analyze_portfolio`), ya resuelto por ticker; si no está (stats
+        # legado sin pasar por `analyze_portfolio`) degrada al campo anterior.
+        pagado_neto = rs.get("dividends_net_total")
+        if pagado_neto is None:
+            pagado_neto = rs.get("total_dividends") or 0
         filas.append({
             "ETF": t,
-            "Div. pagados (neto)": _money(rs.get("total_dividends"), 0),
+            "Div. pagados (neto)": _money(pagado_neto, 0),
             "ROC": (f"{_money(roc_a, 0)} ({roc_p:.0f}%)" if roc_a is not None else "n/d")
                    + (" est.19a" if roc_src == "19a" else ""),
             "Reinvertidos": _money(rs.get("dividends_collected_drip"), 0),
@@ -746,7 +754,7 @@ def _cuadricula_roc_consolidada(items, resultados: dict, roc19a_asof: dict) -> N
             "Costo bróker": _money(basis, 0),
             "Valor actual": _money(rs.get("market_value"), 0),
         })
-        total["pagado"] += rs.get("total_dividends") or 0
+        total["pagado"] += pagado_neto
         total["drip"] += rs.get("dividends_collected_drip") or 0
         total["cash"] += rs.get("dividends_collected_cash") or 0
         total["pkt"] += rs.get("pocket_investment") or 0

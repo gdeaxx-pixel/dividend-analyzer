@@ -38,6 +38,48 @@ class DatosIncompletos(ValueError):
     """El ticker no tiene lo mínimo para dibujar el recorrido."""
 
 
+def _bruto_independiente_del_csv(history_df) -> float:
+    """Recalcula el dividendo BRUTO desde cero, releyendo el historial fila por fila —
+    para el guard de `verificar_identidades`, que necesita una fuente que NO pase por
+    `_dividend_tax_netted`/`dividend_base_convention`.
+
+    Auditoría al PR B (objeto fiscal único): la versión anterior de este guard leía
+    `stats['dividend_base_convention']` para decidir si comparar contra NETO o BRUTO. Esa
+    convención la calcula la MISMA función que el guard debería estar auditando
+    (`logic._dividend_tax_netted`) — si esa detección se rompe, `dividend_base_convention`
+    se rompe con ella y el guard compara el lado equivocado, cuadrando por casualidad.
+    Comprobado: forzando `_dividend_tax_netted` a devolver siempre `True`, `BRUTO` vuelve a
+    mostrar $600.60 en vez de $462.00 (el bug que arregló el PR B) y el guard viejo no lo
+    veía.
+
+    Este helper no depende de la convención: suma toda fila 'dividend'/'dividendo' EXCLUYENDO
+    las de impuesto (nra tax/tax adj/withholding/foreign tax/retención/retencion) y las de
+    compra DRIP ('Reinvest Shares', monto neto post-impuesto, no un cobro). CON SIGNO — hay
+    reversos/correcciones negativas en el CSV real, `abs()` los convertiría en más dividendo.
+    Verificado contra ground truth: Schwab MSTY $462.00, IB MSTY $7,224.59 (el bruto real en
+    ambas convenciones, sin pasar por la detección que se está auditando).
+    """
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return 0.0
+    total = 0.0
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        if 'dividend' not in action and 'dividendo' not in action:
+            continue
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if is_tax:
+            continue
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        if is_drip and ('share' in action or 'acciones' in action):
+            continue
+        amount = logic._clean_money(row.get('Amount', 0))
+        if amount != amount:  # NaN
+            continue
+        total += float(amount)
+    return round(total, 2)
+
+
 def _f(valor, defecto: float = 0.0) -> float:
     """Convierte a float tolerando None — `analyze_portfolio` deja campos vacíos cuando
     yfinance no responde, y ahí es mejor un cero explícito que un TypeError."""
@@ -255,14 +297,17 @@ def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0
 
     history = (stats or {}).get("history")
     if history is not None and len(history):
-        ledger = logic._csv_dividends_in_window(history)
-        netted = (stats or {}).get("dividend_base_convention") == "neto_leido"
-        nombre_esperado = "NETO" if netted else "BRUTO"
-        valor_esperado = datos["NETO"] if netted else datos["BRUTO"]
-        if abs(ledger - valor_esperado) > tolerancia:
+        # Compara SIEMPRE contra BRUTO, sin mirar `dividend_base_convention` — ese campo es
+        # el resultado de la misma detección (`_dividend_tax_netted`) que este guard debe
+        # poder auditar. Leerlo para decidir qué lado comparar lo hacía tautológico: si la
+        # detección se rompe, el campo se rompe con ella y el guard termina comparando
+        # NETO (mal etiquetado) contra un ledger que por casualidad también da ese número.
+        # `_bruto_independiente_del_csv` relee el CSV sin pasar por esa convención.
+        bruto_independiente = _bruto_independiente_del_csv(history)
+        if abs(bruto_independiente - datos["BRUTO"]) > tolerancia:
             fallos.append(
-                f"{nombre_esperado} vs CSV releído independiente ({'IB' if netted else 'Schwab'}"
-                f"-style): {valor_esperado:.2f} ≠ {ledger:.2f}")
+                f"BRUTO vs CSV releído independiente: {datos['BRUTO']:.2f} "
+                f"≠ {bruto_independiente:.2f}")
 
     return fallos
 
