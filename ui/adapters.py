@@ -75,9 +75,7 @@ def cashflow_data(stats: dict, ticker: str) -> dict:
         raise DatosIncompletos(f"{ticker}: sin datos analizables")
 
     pocket = _f(stats.get("pocket_investment"))
-    neto = _f(stats.get("total_dividends"))
     drip = _f(stats.get("dividends_collected_drip"))
-    cash = _f(stats.get("dividends_collected_cash"))
     valor_hoy = _f(stats.get("market_value"))
 
     # Regla 3: la retención sale del objeto fiscal único, no de una resta propia.
@@ -86,9 +84,30 @@ def cashflow_data(stats: dict, ticker: str) -> dict:
     tax = stats.get("tax_summary") or {}
     impuesto = _f(tax.get("withheld_real"), _f(stats.get("withheld_tax_total")))
 
-    # No existe `dividends_gross` en stats (sí en el dict de fila de build_hoja_excel,
-    # otro namespace). El bruto se reconstruye: lo que llegó + lo que se retuvo.
-    bruto = neto + impuesto
+    # Objeto fiscal único (`logic.build_dividend_tax_totals`, corrido dentro de
+    # `analyze_portfolio`): bruto/neto NO se reconstruyen aquí sumando/restando el impuesto a
+    # `total_dividends` — ese campo mezcla bases distintas según el broker (para Schwab sin
+    # DRIP YA es el bruto; sumarle la retención de nuevo la duplica). `dividends_gross_total`/
+    # `dividends_net_total` declaran su propia procedencia en `dividend_base_convention`.
+    _gross_total = stats.get("dividends_gross_total")
+    _net_total = stats.get("dividends_net_total")
+    if _gross_total is None or _net_total is None:
+        # Legado: stats sin el objeto fiscal único (fixture armado a mano, no vía
+        # analyze_portfolio). Degrada al supuesto anterior — incorrecto para Schwab, pero
+        # es la mejor aproximación disponible sin el CSV.
+        neto = _f(stats.get("total_dividends"))
+        bruto = neto + impuesto
+        cash = _f(stats.get("dividends_collected_cash"))
+    else:
+        bruto = _f(_gross_total)
+        neto = _f(_net_total)
+        # `dividends_collected_cash` puede venir en base BRUTA (Schwab, retención en fila
+        # aparte) — usarlo tal cual aquí inflaría CAPITAL_ACTUAL/RESULTADO con dinero que en
+        # realidad se fue en impuesto. El efectivo que de verdad quedó líquido es el residuo
+        # del neto ya declarado una vez descontado lo reinvertido (`drip`, que siempre es
+        # neto: el DRIP se compra con el monto post-retención) — no se reconstruye sumando,
+        # se deriva del objeto fiscal único que ya trae el neto correcto.
+        cash = round(neto - drip, 2)
 
     total_trabajando = pocket + drip
     mercado = valor_hoy - total_trabajando
@@ -192,11 +211,22 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     }
 
 
-def verificar_identidades(datos: dict, tolerancia: float = 0.02) -> list:
+def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0.02) -> list:
     """Comprueba las identidades contables del recorrido. Devuelve la lista de fallos.
 
     No es decorativo: son las relaciones que el waterfall dibuja. Si no se cumplen, las
     barras mienten aunque cada cifra por separado sea correcta.
+
+    `stats` (opcional, el dict crudo de `analyze_portfolio` para este ticker): si se pasa,
+    además reconcilia BRUTO/NETO contra una RELECTURA INDEPENDIENTE del CSV
+    (`logic._csv_dividends_in_window` sobre `stats['history']`) — no contra la fórmula que
+    los generó. Los checks de arriba (`bruto = neto + impuesto`, `neto = reinvertido +
+    efectivo`, …) son identidades DEFINITORIAS de `cashflow_data`/`hoja_data`: cada cifra de
+    la derecha participa en construir la de la izquierda, así que nunca pueden fallar por
+    construcción — sirven para cazar un error de tecleo, no un bug real en el objeto fiscal.
+    Este check sí es real: vuelve a sumar el ledger desde cero, sin tocar ningún campo ya
+    cacheado en `stats`/`datos`, así que si `build_dividend_tax_totals` (o su cableado en
+    `analyze_portfolio`/`cashflow_data`) se rompe, esto lo detecta.
     """
     fallos = []
 
@@ -222,6 +252,17 @@ def verificar_identidades(datos: dict, tolerancia: float = 0.02) -> list:
     # pero sí detecta el caso burdo de haberlo mezclado con el impuesto.
     if datos["POCKET"] < 0:
         fallos.append(f"bolsillo negativo: {datos['POCKET']:.2f}")
+
+    history = (stats or {}).get("history")
+    if history is not None and len(history):
+        ledger = logic._csv_dividends_in_window(history)
+        netted = (stats or {}).get("dividend_base_convention") == "neto_leido"
+        nombre_esperado = "NETO" if netted else "BRUTO"
+        valor_esperado = datos["NETO"] if netted else datos["BRUTO"]
+        if abs(ledger - valor_esperado) > tolerancia:
+            fallos.append(
+                f"{nombre_esperado} vs CSV releído independiente ({'IB' if netted else 'Schwab'}"
+                f"-style): {valor_esperado:.2f} ≠ {ledger:.2f}")
 
     return fallos
 
