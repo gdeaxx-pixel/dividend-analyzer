@@ -94,7 +94,16 @@ def _agregados(resultados: dict, tickers: list[str]) -> tuple:
     filas = [(t, resultados[t]) for t in tickers if _tiene_datos(resultados.get(t))]
     inv = sum(s["pocket_investment"] for _, s in filas)
     mv = sum(s["market_value"] for _, s in filas)
-    div = sum(s.get("dividends_collected_cash", 0) for _, s in filas)
+    # `dividends_collected_cash` no se puede sumar entre tickers: viene BRUTO en Schwab
+    # y NETO en IB (misma mezcla de bases que ya resolvió el PR C en `_cuadricula_roc_
+    # consolidada` de este archivo y en `report._dividendos_netos`). `dividends_net_total`
+    # es el objeto fiscal único (`logic.build_dividend_tax_totals`, corrido dentro de
+    # `analyze_portfolio`) y ya resuelve la convención por ticker — sumarlo hace que el
+    # "Retorno total" reste la retención NRA también para Schwab. Si no está presente
+    # (stats legado sin pasar por `analyze_portfolio`) degrada al campo crudo.
+    div = sum(s.get("dividends_net_total") if s.get("dividends_net_total") is not None
+              else s.get("dividends_collected_cash", 0)
+              for _, s in filas)
     tr = mv + div - inv
     pct = tr / inv * 100 if inv > 0 else 0
     return inv, mv, div, tr, pct
