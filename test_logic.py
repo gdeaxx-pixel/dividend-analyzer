@@ -3235,6 +3235,63 @@ def test_agregados_excluye_skipped_sin_crash(monkeypatch):
     assert con_skipped == solo_valido
 
 
+def test_agregados_schwab_resta_retencion_nra_en_retorno_total(monkeypatch):
+    """Cuarta instancia de la Clase B (PR D, anotada durante el PR C): `_agregados`
+    (`ui/heredadas.py`, alimenta las tarjetas de "Tus dos portafolios") sumaba
+    `dividends_collected_cash` entre tickers — BRUTO en Schwab, NETO en IB — así que el
+    "Retorno total" mostrado no restaba la retención NRA para Schwab. `fixtures/schwab_synth_2`
+    completo (MSTY + SCHB): retención total $138.60 + $1.47 = $140.07. Como `inv` y `mv` no
+    cambian con el fix, el retorno correcto (con `dividends_net_total`) debe ser exactamente
+    $140.07 más negativo que el que arrojaba la suma bruta — ni más ni menos."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_SCHWAB_NETO")
+
+    tickers = ["MSTY", "SCHB"]
+    inv, mv, div, tr, pct = _agregados(results, tickers)
+
+    div_bruto_buggy = sum(results[t]["dividends_collected_cash"] for t in tickers)
+    tr_buggy = mv + div_bruto_buggy - inv
+    retencion_total = sum(
+        results[t]["dividends_gross_total"] - results[t]["dividends_net_total"]
+        for t in tickers)
+
+    assert retencion_total == pytest.approx(140.07, abs=0.01)
+    assert div == pytest.approx(326.83, abs=0.01)          # neto: 323.40 + 3.43
+    assert div != pytest.approx(466.90, abs=0.01)           # el bruto que sumaba el bug
+    assert round(tr_buggy - tr, 2) == pytest.approx(140.07, abs=0.01)
+
+
+def test_agregados_ib_no_cambia_dividendos_ya_netos(monkeypatch):
+    """No-regresión del fix anterior: en IB `dividends_collected_cash` YA es neto
+    (`build_dividend_tax_totals` detecta la convención 'netted' y no deriva nada), así que
+    `_agregados` sobre un portafolio IB debe dar el MISMO retorno que antes del fix — si
+    cambia, el fix está restando la retención dos veces. `fixtures/ib_synth_1`."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "ib_synth_1",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(FakeFile(raw, "ib_synth_1.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_IB_NETO")
+
+    from ui.adapters import _tiene_datos
+    tickers = [t for t in results if _tiene_datos(results.get(t))]
+    assert tickers  # confirma la fixture antes de usarla
+
+    inv, mv, div, tr, pct = _agregados(results, tickers)
+    div_bruto_style = sum(results[t]["dividends_collected_cash"] for t in tickers)
+    tr_bruto_style = mv + div_bruto_style - inv
+
+    for t in tickers:
+        assert results[t]["dividends_net_total"] == pytest.approx(
+            results[t]["dividends_collected_cash"], abs=0.01)
+    assert div == pytest.approx(div_bruto_style, abs=0.01)
+    assert tr == pytest.approx(tr_bruto_style, abs=0.01)
+
+
 def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
     """PR C, Parte 3: `ui/heredadas.py:740,763` — la columna "Div. pagados (neto)" leía
     `total_dividends` (`dividends_collected_cash + dividends_collected_drip`), que mezcla
