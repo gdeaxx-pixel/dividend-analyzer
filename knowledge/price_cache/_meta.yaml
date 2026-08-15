@@ -1,0 +1,42 @@
+# Generado por fetch_price_cache.py. Fecha de generacion y rango cubierto por ticker del cache en knowledge/price_cache/*.parquet.
+# Refresco semanal via .github/workflows/refresh-price-cache.yml. No editar a mano.
+NVDY:
+  generated_at: '2026-08-15'
+  start: '2023-05-11'
+  end: '2026-08-14'
+  rows: 818
+TSLY:
+  generated_at: '2026-08-15'
+  start: '2022-11-23'
+  end: '2026-08-14'
+  rows: 933
+CONY:
+  generated_at: '2026-08-15'
+  start: '2023-08-15'
+  end: '2026-08-14'
+  rows: 753
+MSTY:
+  generated_at: '2026-08-15'
+  start: '2024-02-22'
+  end: '2026-08-14'
+  rows: 622
+CHPY:
+  generated_at: '2026-08-15'
+  start: '2025-04-08'
+  end: '2026-08-14'
+  rows: 340
+SCHB:
+  generated_at: '2026-08-15'
+  start: '2022-11-23'
+  end: '2026-08-14'
+  rows: 933
+XLK:
+  generated_at: '2026-08-15'
+  start: '2022-11-23'
+  end: '2026-08-14'
+  rows: 933
+SMH:
+  generated_at: '2026-08-15'
+  start: '2022-11-23'
+  end: '2026-08-14'
+  rows: 933

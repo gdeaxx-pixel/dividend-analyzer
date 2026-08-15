@@ -1,0 +1,68 @@
+name: Refresh price/dividend/split cache
+
+# Refresca knowledge/price_cache/ (precio diario crudo + dividendo/accion + splits, por
+# ticker) que usa price_cache.py para alimentar backtest.run_backtest() sin llamar a yfinance
+# en cada carga de Streamlit Cloud. Mismo patron que refresh-roc-19a.yml, corriendo
+# fetch_price_cache.py en vez de fetch_roc_19a.py. Commitea si hubo cambios -> Streamlit Cloud
+# redespliega con el dato fresco. Avisa por TELEGRAM si el refresco falla para un ticker que
+# ya tenia cache (regresion real, no un ticker nuevo).
+
+on:
+  schedule:
+    - cron: '47 12 * * 6'   # sabados 12:47 UTC (30 min despues de refresh-roc-19a.yml, mismo
+                             # dia, para no pelear por el runner ni el commit concurrente)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write             # para commitear los archivos de cache (usa el GITHUB_TOKEN, sin secretos)
+
+concurrency:
+  group: refresh-price-cache
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Refrescar cache de precio/dividendo/split
+        id: fetch
+        run: python fetch_price_cache.py
+        # exit 1 solo si un ticker que YA tenia cache ahora fallo (regresion) -> la corrida
+        # sale roja y dispara el aviso de Telegram; un ticker nuevo sin cache previo que falla
+        # es solo un warning (ver fetch_price_cache.py).
+
+      - name: Commitear si cambio
+        if: always()
+        run: |
+          git add knowledge/price_cache/
+          if git diff --cached --quiet; then
+            echo "Sin cambios en knowledge/price_cache/."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: refresh price/dividend/split cache (automated)"
+            git push
+          fi
+
+      - name: Avisar por Telegram si el refresco fallo
+        if: failure()
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Sin secrets de Telegram, omito."; exit 0; fi
+          RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MSG="⚠️ <b>Dividend Analyzer</b>: el refresco del cache de precios fallo para un ticker que ya tenia datos (¿yfinance cambio algo?). Revisa fetch_price_cache.py. Run: ${RUN}"
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d chat_id="${CHAT}" -d parse_mode=HTML --data-urlencode "text=${MSG}" >/dev/null
