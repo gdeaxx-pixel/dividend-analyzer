@@ -40,3 +40,8 @@ SMH:
   start: '2022-11-23'
   end: '2026-08-14'
   rows: 933
+NFLY:
+  generated_at: '2026-08-16'
+  start: '2023-08-08'
+  end: '2026-08-14'
+  rows: 757

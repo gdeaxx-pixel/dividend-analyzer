@@ -634,3 +634,129 @@ def comparacion_data() -> dict | None:
         "faltantes": faltantes,
         "roc19a": roc_ventana,
     }
+
+
+# Caso de estudio de «Método tradicional · La matriz» (Fase 3.3b) — el portafolio de la
+# clase de Greco. Decisión de producto de Daniel: la LECCIÓN queda fija (mismos 5
+# tickers, misma fecha de apertura, mismo aporte inicial — la cifra que literalmente
+# salió del bolsillo de Greco, con centavos); lo que deja de estar hardcodeado es todo
+# lo que un mercado real puede recalcular por su cuenta — dividendos cobrados, valor de
+# mercado, último pago. `dr` (RENDI) también queda literal a propósito: el propio
+# modal (`modal-tmrend`) explica que es "copiada a mano el día que se armó, y nunca se
+# refrescó" — es un dato histórico sobre lo que decía la hoja ese día, no una medición
+# en vivo, así que no hay nada que derivar.
+MET_CASO = (
+    {"t": "CONY", "ini": "9/6/2023", "start": "2023-09-06", "dr": 74.05, "inv": 9004.87},
+    {"t": "NVDY", "ini": "6/23/2023", "start": "2023-06-23", "dr": 47.18, "inv": 7670.26},
+    {"t": "MSTY", "ini": "7/2/2024", "start": "2024-07-02", "dr": 77.28, "inv": 13599.57},
+    {"t": "TSLY", "ini": "5/5/2023", "start": "2023-05-05", "dr": 44.84, "inv": 10020.32},
+    {"t": "NFLY", "ini": "12/8/2023", "start": "2023-12-08", "dr": 69.73, "inv": 7991.20},
+)
+
+
+def metodo_data() -> dict | None:
+    """JSON para `ui/componentes/metodo.html` (Método tradicional · La matriz, Fase
+    3.3b). Reemplaza los `var MATRIZ`/`var ROC_19A` congelados que tenía el componente
+    (copiados a mano de la hoja fechada 5/1/2026, ya desfasados del yaml vivo) por
+    cifras derivadas de `price_cache.load_history` + `backtest.run_backtest` — el mismo
+    motor reconciliado al 0.013% contra el extracto real de IB (Fase 3.1) que ya usa
+    `comparacion_data`.
+
+    Por fila de `MET_CASO` (ticker/fecha de apertura/aporte — el caso de estudio fijo,
+    ver docstring de `MET_CASO`), con capital inicial = `inv` y DRIP bruto (`nra_rate=0`,
+    igual que Greco: reside en EE. UU. y no sufre retención NRA):
+
+      - `div`: total de distribuciones brutas cobradas hasta hoy (`gross_dividends_total`
+        de la corrida CON DRIP — el dinero que de verdad entró, incluidas las
+        distribuciones que generaron las acciones que el propio DRIP fue comprando).
+      - `val`: valor de mercado de la posición hoy (`final_total_value` de la misma
+        corrida) — las acciones originales más las que compró el DRIP.
+      - `ult`: el último pago individual (`gross_dividend` del evento ex-dividendo más
+        reciente), no un promedio.
+      - `tot`: `inv + div` — la suma que hace la hoja de la clase y que esta sección
+        entera existe para desmentir como "lo que ganaste" (double-counting: esos
+        dividendos ya viven dentro de `val`).
+      - `max`: techo teórico sin reinversión — acciones originales, ni una más,
+        valoradas al precio de hoy (`portfolio_value` final de una segunda corrida SIN
+        DRIP). Alimenta las matrices "Con DRIP"/"Sin DRIP" del componente (columna
+        «Inversión Hoy»).
+
+    `ROC_19A` sale de `logic.load_roc_19a()` (yaml vivo, refrescado semanalmente) en vez
+    de la copia congelada — ya no hay drift entre lo que muestra el componente y
+    `knowledge/roc_19a.yaml`.
+
+    Devuelve `None` si algún ticker del caso de estudio no cargó historia (ni caché ni
+    yfinance en vivo): con solo 5 filas fijas, una faltante deja la lección incompleta —
+    a diferencia de `comparacion_data` (8 tickers, degrada individualmente), aquí no hay
+    "universo parcial" que tenga sentido mostrar.
+    """
+    filas = []
+    fuente: dict[str, str] = {}
+    asof_candidatos = []
+
+    for caso in MET_CASO:
+        tk = caso["t"]
+        try:
+            hr = price_cache.load_history(tk)
+        except Exception:
+            return None
+        if hr.history is None or hr.history.empty:
+            return None
+
+        r_con = backtest.run_backtest(tk, start_date=caso["start"], initial_capital=caso["inv"],
+                                      drip=True, nra_rate=0.0, history=hr.history)
+        r_sin = backtest.run_backtest(tk, start_date=caso["start"], initial_capital=caso["inv"],
+                                      drip=False, nra_rate=0.0, history=hr.history)
+        if r_con.daily.empty or r_sin.daily.empty:
+            return None
+
+        div = r_con.gross_dividends_total
+        val = r_con.final_total_value
+        pagos = r_con.daily[r_con.daily["gross_dividend"] > 0]
+        ult = float(pagos["gross_dividend"].iloc[-1]) if len(pagos) else 0.0
+        max_sin_drip = float(r_sin.daily["portfolio_value"].iloc[-1])
+
+        filas.append({
+            "t": tk, "ini": caso["ini"], "dr": caso["dr"], "inv": caso["inv"],
+            "div": round(div, 2), "tot": round(caso["inv"] + div, 2),
+            "val": round(val, 2), "ult": round(ult, 2), "max": round(max_sin_drip, 2),
+        })
+        fuente[tk] = hr.source
+        if hr.cache_asof:
+            asof_candidatos.append(hr.cache_asof)
+
+    tot = {
+        "inv": round(sum(f["inv"] for f in filas), 2),
+        "div": round(sum(f["div"] for f in filas), 2),
+        "val": round(sum(f["val"] for f in filas), 2),
+        "ult": round(sum(f["ult"] for f in filas), 2),
+    }
+    tot["tot"] = round(tot["inv"] + tot["div"], 2)
+    tot["totHoja"] = round(tot["tot"])
+
+    roc19a_raw = logic.load_roc_19a()
+    roc19a = {}
+    roc19a_asof = []
+    for caso in MET_CASO:
+        tk = caso["t"]
+        info = roc19a_raw.get(tk)
+        weighted = info.get("weighted_pct") if info else None
+        try:
+            roc19a[tk] = max(0.0, min(1.0, float(weighted) / 100.0)) if weighted is not None else 0.0
+        except (TypeError, ValueError):
+            roc19a[tk] = 0.0
+        if info and info.get("asof"):
+            roc19a_asof.append(str(info["asof"]))
+
+    degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
+    asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
+
+    return {
+        "matriz": filas,
+        "tot": tot,
+        "roc19a": roc19a,
+        "roc19aAsof": max(roc19a_asof) if roc19a_asof else None,
+        "asof": asof,
+        "fuente": fuente,
+        "degradado": degradado,
+    }

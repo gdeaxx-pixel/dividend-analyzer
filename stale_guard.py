@@ -44,7 +44,7 @@ _RAIZ = os.path.dirname(os.path.abspath(__file__))
 # Lo que no esté aquí se recarga al final, que es el lugar seguro por defecto —
 # `test_stale_guard.py` avisa cuando aparece un módulo nuevo sin sitio asignado.
 _ORDEN = (
-    "logic", "storage", "report", "demo_mode",
+    "logic", "storage", "report", "demo_mode", "backtest", "price_cache",
     "ui.tokens", "ui.nav", "ui.componentes", "ui.heredadas", "ui.adapters",
     "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
 )

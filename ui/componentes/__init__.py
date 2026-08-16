@@ -182,15 +182,18 @@ def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION
     components.html(html, height=alto, scrolling=False)
 
 
-def render_metodo(vista_activa: str, tema: str, alto: int = ALTO_METODO) -> None:
+def render_metodo(vista_activa: str, tema: str, datos: dict, alto: int = ALTO_METODO) -> None:
     """Dibuja «Método tradicional». `vista_activa` es una de matriz/rendimiento/payback/
     tasa/otras (`ui.nav.MET_ORDER`). El componente trae sus 5 sub-vistas ya calculadas
-    (initMetodo las llena de una pasada, igual que en el demo) y solo oculta las que no
-    tocan — sin datos de Python: la cartera que audita es ajena (mapa-datos.md § 6).
+    (initMetodo las llena de una pasada, igual que en el demo); de las cinco, hoy solo
+    «La matriz» recibe `{{DATA_JSON}}` (Fase 3.3b, `ui.adapters.metodo_data`) — el resto
+    sigue con cifras propias sin datos de Python, ajenas al portafolio del usuario
+    (mapa-datos.md § 6).
     """
     html = _plantilla("metodo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
 
 

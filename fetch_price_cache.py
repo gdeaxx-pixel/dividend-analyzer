@@ -53,7 +53,7 @@ SPLITS_PATH = os.path.join(CACHE_DIR, "_splits.yaml")
 # comparacion nunca usa.
 CACHE_START = "2022-11-23"
 
-TICKERS = ["NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH"]
+TICKERS = ["NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH", "NFLY"]
 
 
 def _parquet_path(ticker: str) -> str:

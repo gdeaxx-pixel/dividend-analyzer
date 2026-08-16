@@ -1053,7 +1053,7 @@
           <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC 19a</button>
           <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · peor caso 30%</button>
         </div>
-        <p class="he-switch-cap" id="tmModoCap" style="margin:10px 0 0;">Como está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención. Todas las cifras son observadas.</p>
+        <p class="he-switch-cap" id="tmModoCap" style="margin:10px 0 0;">Como está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención. La fecha de apertura y el aporte inicial son literales de la hoja; el resto se recalcula con datos reales de mercado.</p>
       </div>
 
       <p class="cmp-notes" id="tmResumenFijo" style="margin-top:18px;"></p>
@@ -1190,7 +1190,7 @@
         </tr>
         <tr>
           <td class="mf-label">Valor de mercado hoy</td>
-          <td class="mf-val accent">= $8,231</td>
+          <td class="mf-val accent" id="mRealVal">= $8,231</td>
         </tr>
       </table>
     </div>
@@ -1218,15 +1218,15 @@
         </tr>
         <tr>
           <td class="mf-label">Retorno de precio del ETF</td>
-          <td class="mf-val loss">−86.5%</td>
+          <td class="mf-val loss" id="mMaxRet">−86.5%</td>
         </tr>
         <tr>
-          <td class="mf-label">$9,005 × (1 − 0.865)</td>
-          <td class="mf-val cash">= $1,216</td>
+          <td class="mf-label" id="mMaxEqLabel">$9,005 × (1 − 0.865)</td>
+          <td class="mf-val cash" id="mMaxVal">= $1,216</td>
         </tr>
       </table>
     </div>
-    <p class="modal-note">
+    <p class="modal-note" id="mMaxNote">
       Sin DRIP, CONY valdría hoy <b>$1,216</b>. Pero la posición real marca <b>$8,231</b> — <b>6.8× más</b>. Esa diferencia no puede venir del precio (cayó 86.5%) ni de depósitos nuevos (no los hubo). Solo puede ser que los dividendos se reinvirtieron comprando más acciones. El <b>Factor</b> es la prueba matemática de que el DRIP ocurrió.
     </p>
   </div>
@@ -1254,7 +1254,7 @@
         </tr>
         <tr>
           <td class="mf-label">Valor de mercado hoy</td>
-          <td class="mf-val accent">= $8,231</td>
+          <td class="mf-val accent" id="mDripVal">= $8,231</td>
         </tr>
       </table>
     </div>
@@ -1278,7 +1278,7 @@
       <table class="mf-table">
         <tr>
           <td class="mf-label">Máx. sin DRIP (CONY)</td>
-          <td class="mf-val">$1,216</td>
+          <td class="mf-val" id="mCashMax">$1,216</td>
         </tr>
         <tr>
           <td class="mf-label">+ Dividendos acumulados</td>
@@ -1346,11 +1346,11 @@
         </tr>
         <tr>
           <td class="mf-label">Retorno de precio del ETF</td>
-          <td class="mf-val loss">−86.5%</td>
+          <td class="mf-val loss" id="mSinmaxRet">−86.5%</td>
         </tr>
         <tr>
-          <td class="mf-label">$9,005 × (1 − 0.865)</td>
-          <td class="mf-val">= $1,216</td>
+          <td class="mf-label" id="mSinmaxEqLabel">$9,005 × (1 − 0.865)</td>
+          <td class="mf-val" id="mSinmaxVal">= $1,216</td>
         </tr>
       </table>
     </div>
@@ -1438,11 +1438,11 @@
         </tr>
         <tr>
           <td class="mf-label">Retorno de precio del ETF</td>
-          <td class="mf-val loss">−86.5%</td>
+          <td class="mf-val loss" id="mConinvhoyRet">−86.5%</td>
         </tr>
         <tr>
-          <td class="mf-label">$9,005 × (1 − 0.865)</td>
-          <td class="mf-val">= $1,216</td>
+          <td class="mf-label" id="mConinvhoyEqLabel">$9,005 × (1 − 0.865)</td>
+          <td class="mf-val" id="mConinvhoyVal">= $1,216</td>
         </tr>
       </table>
     </div>
@@ -1498,7 +1498,7 @@
         </tr>
         <tr>
           <td class="mf-label">− Inversión Hoy</td>
-          <td class="mf-val he-muted">$1,216</td>
+          <td class="mf-val he-muted" id="mCondriphoyMax">$1,216</td>
         </tr>
         <tr id="mCondriphoyDevueltoRow" hidden>
           <td class="mf-label">− Devuelto</td>
@@ -1530,7 +1530,7 @@
       <table class="mf-table">
         <tr>
           <td class="mf-label">Inversión Hoy (CONY)</td>
-          <td class="mf-val he-muted">$1,216</td>
+          <td class="mf-val he-muted" id="mContotMax">$1,216</td>
         </tr>
         <tr>
           <td class="mf-label">+ DRIP Hoy</td>
@@ -1566,7 +1566,7 @@
       <table class="mf-table">
         <tr>
           <td class="mf-label">Máx. sin DRIP (CONY)</td>
-          <td class="mf-val">$1,216</td>
+          <td class="mf-val" id="mSintotMax">$1,216</td>
         </tr>
         <tr>
           <td class="mf-label">+ Dividendos acumulados</td>
@@ -1606,10 +1606,10 @@
       </table>
     </div>
     <p class="modal-lede">
-      Pero la hoja calcula <b>Valor mer. + Dividendos − Inversión</b> = $200 + $300 − $100 = <b class="he-loss">$400</b> (+400%). Le sumó los $300 completos por fuera, y esos $300 ya viven convertidos en las acciones extra que forman parte de los $200. Se cuentan dos veces: una como acciones, otra como fila de Dividendos. En la hoja real las cifras son otras, pero el mecanismo es idéntico: <b class="he-loss">+281%</b> en vez del <b class="he-cash">+50.2%</b> real.
+      Pero la hoja calcula <b>Valor mer. + Dividendos − Inversión</b> = $200 + $300 − $100 = <b class="he-loss">$400</b> (+400%). Le sumó los $300 completos por fuera, y esos $300 ya viven convertidos en las acciones extra que forman parte de los $200. Se cuentan dos veces: una como acciones, otra como fila de Dividendos. En la hoja real las cifras son otras, pero el mecanismo es idéntico: <b class="he-loss" id="mCmpWrongPct">+281%</b> en vez del <b class="he-cash" id="mCmpCorrectPct1">+50.2%</b> real.
     </p>
     <p class="modal-note">
-      <b>El mismo error, disfrazado de color:</b> la hoja pinta Valor mer. en verde apenas supera a Inversión, aunque sea por un dólar — y eso se lee como «ya recuperamos lo invertido con los dividendos, y encima nos quedan los dividendos». Como <i>signo</i> el color acierta: con DRIP total, Valor mer. &gt; Inversión sí significa retorno positivo. Lo que no dice es <b>cuánto</b>, ni <b>en cuánto tiempo</b>. Un verde raspando significa que después de 3 años tienes lo mismo que pusiste, y los dividendos no están «de más»: son la razón de que no cayera más. La propia hoja lo demuestra — se cobraron <b>$111,689.71</b> sobre <b>$48,286.22</b> aportados, o sea <b>2.31×</b> la inversión devuelta en pagos, y aun así la ganancia real es <b>+50.2%</b>. Cobrar no es ganar; recuperar no es ganar.
+      <b>El mismo error, disfrazado de color:</b> la hoja pinta Valor mer. en verde apenas supera a Inversión, aunque sea por un dólar — y eso se lee como «ya recuperamos lo invertido con los dividendos, y encima nos quedan los dividendos». Como <i>signo</i> el color acierta: con DRIP total, Valor mer. &gt; Inversión sí significa retorno positivo. Lo que no dice es <b>cuánto</b>, ni <b>en cuánto tiempo</b>. Un verde raspando significa que después de 3 años tienes lo mismo que pusiste, y los dividendos no están «de más»: son la razón de que no cayera más. La propia hoja lo demuestra — se cobraron <b id="mCmpDiv">$111,689.71</b> sobre <b>$48,286.22</b> aportados, o sea <b id="mCmpRatio">2.31×</b> la inversión devuelta en pagos, y aun así la ganancia real es <b id="mCmpCorrectPct2">+50.2%</b>. Cobrar no es ganar; recuperar no es ganar.
     </p>
   </div>
 </div>
@@ -1670,8 +1670,8 @@
     <div class="modal-formula">
       <span class="mf-eq">Suma de todas las distribuciones (antes de impuesto)</span>
       <table class="mf-table">
-        <tr><td class="mf-label">CONY</td><td class="mf-val cash">$22,873.37</td></tr>
-        <tr><td class="mf-label">Los cinco fondos</td><td class="mf-val cash">= $111,689.71</td></tr>
+        <tr><td class="mf-label">CONY</td><td class="mf-val cash" id="mTmdivCony">$22,873.37</td></tr>
+        <tr><td class="mf-label">Los cinco fondos</td><td class="mf-val cash" id="mTmdivTot">= $111,689.71</td></tr>
       </table>
     </div>
     <p class="modal-note">
@@ -1692,18 +1692,23 @@
       <span class="mf-eq">Inversión + Dividendos reinvertidos ≈ base de costo</span>
       <table class="mf-table">
         <tr><td class="mf-label">Inversión</td><td class="mf-val">$48,286.22</td></tr>
-        <tr><td class="mf-label">+ Dividendos</td><td class="mf-val">$111,689.71</td></tr>
-        <tr><td class="mf-label">= Suma real</td><td class="mf-val">$159,975.93</td></tr>
+        <tr><td class="mf-label">+ Dividendos</td><td class="mf-val" id="mTmtotDiv">$111,689.71</td></tr>
+        <tr><td class="mf-label">= Suma real</td><td class="mf-val" id="mTmtotSuma">$159,975.93</td></tr>
       </table>
     </div>
     <p class="modal-lede">
-      Por eso <b>Valor mer. − Total inv.</b> tampoco es un disparate: es tu <b>pérdida de capital no realizada</b>, y cuadra al centavo. Los <b>$111,689.71</b> de dividendos, ya gravados como ingreso, menos <b>$87,466.72</b> de pérdida de capital, dan los <b class="he-cash">+$24,222.99</b> de ganancia económica real.
+      Por eso <b>Valor mer. − Total inv.</b> tampoco es un disparate: es tu <b>pérdida de capital no realizada</b>, y cuadra al centavo. Los <b id="mTmtotDivCita">$111,689.71</b> de dividendos, ya gravados como ingreso, menos <b id="mTmtotPerdida">$87,466.72</b> de pérdida de capital, dan los <b class="he-cash" id="mTmtotGanancia">+$24,222.99</b> de ganancia económica real.
     </p>
+    <!-- El siguiente párrafo cita el payback de NVDY (RATIOS, panel «Payback ≠
+    ganancia») — ese panel sigue congelado a la hoja fechada 5/1/2026 hasta que le
+    toque su propia fase (ver nota al inicio del Bloque 3 en el script). No lo hagas
+    dinámico aquí sin portar RATIOS también, o quedaría cruzado con un dato de otra
+    fuente. -->
     <p class="modal-lede">
       <b>El error no es el número: es usarlo para juzgar rendimiento.</b> «¿Gané dinero?» y «¿cuánta ganancia gravable me queda al vender?» son preguntas distintas, y pueden apuntar en direcciones opuestas — NVDY rindió <b class="he-cash">+244.1%</b> real y al mismo tiempo arrastra una pérdida de capital de <b class="he-loss">$11,673.52</b> frente a su Total inv. No hay contradicción: son dos preguntas. Leer la segunda como si fuera la primera es lo que descarrila la hoja.
     </p>
     <p class="modal-note">
-      Dos detalles de la cifra en sí: la hoja marca <b>$159,980</b>, que arrastra $4.07 de más por la fila de NVDY, tecleada a mano. Y como número fiscal está sin afinar — el <b>ROC baja la base</b> y esta columna no lo descuenta, así que la sobreestima justo en el monto del ROC.
+      Dos detalles de la cifra en sí: la hoja original marcaba <b>$159,980</b> (con $4.07 de más por una fila tecleada a mano — ya no aplica: esta cifra se recalcula limpia). Y como número fiscal sigue sin afinar — el <b>ROC baja la base</b> y esta columna no lo descuenta, así que la sobreestima justo en el monto del ROC.
     </p>
   </div>
 </div>
@@ -1719,9 +1724,9 @@
     <div class="modal-formula">
       <span class="mf-eq">Precio de hoy × acciones (originales + compradas con DRIP)</span>
       <table class="mf-table">
-        <tr><td class="mf-label">Valor hoy</td><td class="mf-val">$72,509.21</td></tr>
+        <tr><td class="mf-label">Valor hoy</td><td class="mf-val" id="mTmvalHoy">$72,509.21</td></tr>
         <tr><td class="mf-label">− Inversión</td><td class="mf-val">$48,286.22</td></tr>
-        <tr><td class="mf-label">= Retorno real</td><td class="mf-val cash">+$24,222.99</td></tr>
+        <tr><td class="mf-label">= Retorno real</td><td class="mf-val cash" id="mTmvalRet">+$24,222.99</td></tr>
       </table>
     </div>
     <p class="modal-note">
@@ -1741,8 +1746,8 @@
     <div class="modal-formula">
       <span class="mf-eq">Última distribución recibida</span>
       <table class="mf-table">
-        <tr><td class="mf-label">CONY</td><td class="mf-val">$697.70</td></tr>
-        <tr><td class="mf-label">Los cinco fondos</td><td class="mf-val">= $4,409.09</td></tr>
+        <tr><td class="mf-label">CONY</td><td class="mf-val" id="mTmultCony">$697.70</td></tr>
+        <tr><td class="mf-label">Los cinco fondos</td><td class="mf-val" id="mTmultTot">= $4,409.09</td></tr>
       </table>
     </div>
     <p class="modal-note">
@@ -1755,30 +1760,35 @@
   "use strict";
   var ajustarMetodoNra;
 (function initMetodo() {
-    // ---- Bloque 1 · la matriz tal cual (hoja fechada 5/1/2026) ----
-    var MATRIZ = [
-      { t:"CONY", ini:"9/6/2023",  dr:74.05, inv: 9004.87, div:22873.37, tot:31878.24, val: 8231.43, ult: 697.70 },
-      { t:"NVDY", ini:"6/23/2023", dr:47.18, inv: 7670.26, div:30400.31, tot:38074.57, val:26397.05, ult:1403.96 },
-      { t:"MSTY", ini:"7/2/2024",  dr:77.28, inv:13599.57, div:23232.56, tot:36832.13, val:10955.18, ult:1025.00 },
-      { t:"TSLY", ini:"5/5/2023",  dr:44.84, inv:10020.32, div:22665.63, tot:32685.95, val:15170.68, ult: 866.46 },
-      { t:"NFLY", ini:"12/8/2023", dr:69.73, inv: 7991.20, div:12517.84, tot:20509.04, val:11754.87, ult: 415.97 }
-    ];
-    var TOT = { inv:48286.22, div:111689.71, totHoja:159980, val:72509.21, ult:4409.09 };
+    // ---- Bloque 0 · datos reales de `ui.adapters.metodo_data` (Fase 3.3b) ----
+    // El caso de estudio (ticker/fecha de apertura/aporte inicial — el dinero que
+    // literalmente salió del bolsillo de Greco) sigue fijo; lo que antes era una
+    // copia congelada de la hoja fechada 5/1/2026 ahora se deriva en Python con
+    // `price_cache.load_history` + `backtest.run_backtest` (mismo motor reconciliado
+    // al 0.013% contra el extracto real de IB, Fase 3.1) y se auto-refresca con el
+    // caché de precio (semanal). Ver `ui.adapters.metodo_data`/`MET_CASO` para el
+    // detalle de cada campo.
+    var DATA = {{DATA_JSON}};
+
+    // ---- Bloque 1 · la matriz (derivada, ver Bloque 0) ----
+    var MATRIZ = DATA.matriz;
+    var TOT = DATA.tot;
 
     // ---- Bloque 2 · la prueba del DRIP ----
-    // Solo sobreviven t/max/real: .pr/.x/.cash/.div (por fila) y el objeto
-    // PRUEBA_TOTAL entero se borraron en el traspaso 2026-08-03 (hallazgo
-    // L2) — eran de una base mezclada de julio ($35 y $1 distintos de la
-    // correcta) y ya no los lee nadie desde que computeAll() deriva todo de
-    // MATRIZ + TASA_NRA/ROC_19A y suma sus propias filas redondeadas (L1).
-    var PRUEBA_DRIP = [
-      { t:"CONY", max: 1216, real: 8231 },
-      { t:"NVDY", max: 4265, real:26397 },
-      { t:"MSTY", max: 2502, real:10955 },
-      { t:"TSLY", max: 2235, real:15171 },
-      { t:"NFLY", max: 4459, real:11755 }
-    ];
+    // `max` (techo sin reinversión, «Inversión Hoy») viene de MATRIZ — ya no es una
+    // segunda tabla congelada aparte: computeAll() lo lee directo de cada fila. `real`
+    // es el mismo `val` de MATRIZ, redondeado a dólar (ver `computeAll`, que usa
+    // `r.real - r.max` para aislar cuánto de Total es «DRIP Hoy»).
+    var PRUEBA_DRIP = MATRIZ.map(function (r) {
+      return { t: r.t, max: r.max, real: Math.round(r.val) };
+    });
 
+    // ---- Bloques 3-5 (Escalera/Payback/Tasa) · SIGUEN congelados a la hoja
+    // fechada 5/1/2026 a propósito — Fase 3.3b solo cablea «La matriz» (Bloque 1/2 +
+    // sus modales). Portarlos a datos reales es trabajo de una fase futura; hasta
+    // entonces estas tres vistas citan las cifras viejas de la hoja, no `MATRIZ`/`TOT`
+    // recién derivados — no busques coherencia numérica entre esta sección y la de
+    // arriba todavía.
     // ---- Bloque 3 · la escalera del rendimiento ----
     // Fila 3 corregida (auditoría del traspaso 2026-08-02, hallazgo H1): la
     // cifra vieja (+281.5%) sumaba div bruto (111,689.71) al VALOR CON DRIP
@@ -1827,11 +1837,13 @@
     // TASA_NRA/ROC_19A, en tiempo de render. No se reutilizan netos
     // precalculados. ----
     var TASA_NRA = 0.30;   // única fuente de verdad de la retención estatutaria simulada
-    // ROC ponderado real por ticker — knowledge/roc_19a.yaml · weighted_pct ·
-    // asof 2026-07-25. El ROC no sufre retención NRA de verdad (se
-    // reclasifica y vuelve vía 1042-S): 30% plano es una cota superior, y
-    // "roc" es la estimación de lo que de verdad retiene un no residente.
-    var ROC_19A = { CONY:0.5307, NVDY:0.4108, MSTY:0.7156, TSLY:0.5459, NFLY:0.6129 };
+    // ROC ponderado real por ticker — knowledge/roc_19a.yaml · weighted_pct, vía
+    // `logic.load_roc_19a()` (Fase 3.3b: ya no es una copia congelada — DATA.roc19a
+    // se refresca cada vez que corre `metodo_data()`, semanal como el yaml). El ROC
+    // no sufre retención NRA de verdad (se reclasifica y vuelve vía 1042-S): 30%
+    // plano es una cota superior, y "roc" es la estimación de lo que de verdad
+    // retiene un no residente.
+    var ROC_19A = DATA.roc19a;
     var modo = "bruto";    // bruto | roc | plano — bruto (observado) por defecto
     function baseVal(bruto) { return modo === "bruto" ? bruto : bruto * (1 - TASA_NRA); }
     function baseRound(bruto) { return Math.round(baseVal(bruto)); }
@@ -1873,6 +1885,14 @@
     // Dólar entero sin signo — el formato que usan las dos matrices y sus modales.
     function fmtD(x) { return "$" + Math.round(x).toLocaleString("en-US"); }
     function setHtml(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+    var MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    function fmtFechaCorta(iso) {
+      if (!iso) return "";
+      var p = String(iso).split("-");
+      if (p.length !== 3) return "";
+      var mIdx = parseInt(p[1], 10) - 1;
+      return parseInt(p[2], 10) + " " + (MESES_ES[mIdx] || p[1]) + " " + p[0];
+    }
 
     // ============ VISTA 1 · LA MATRIZ ============
     (function renderMatriz() {
@@ -1902,10 +1922,16 @@
         '<div class="he-c num he-muted">' + fmtMoney(TOT.ult) + '</div>';
       document.getElementById("tmGrid").insertAdjacentHTML("beforeend", rows);
 
+      var fuenteTxt = 'Inicio y Inversión son literales de la hoja de la clase; Dividendos, Total inv., Valor mer. y Último div. se recalculan con precios y distribuciones reales de mercado' +
+        (DATA.asof ? ' (datos al ' + fmtFechaCorta(DATA.asof) + ')' : '') + '.' +
+        (DATA.degradado && DATA.degradado.length
+          ? ' ' + DATA.degradado.join(', ') + ': el caché de precio estaba vencido, se usó la última copia disponible en vez de una descarga en vivo.'
+          : '');
       setHtml("tmNotes",
         '<ul>' +
         '<li><span class="flag">Lo correcto:</span> <span class="num">Retorno total real = Valor mer. + efectivo − Inversión</span> — el valor de hoy más lo que sí quedó en el bolsillo, contra lo que aportaste. Aquí el efectivo es cero porque se reinvirtió todo; si parte se hubiera guardado, el color de Valor mer. por sí solo ya no bastaría.</li>' +
         '<li>Sin NRA</li>' +
+        '<li>' + fuenteTxt + '</li>' +
         '</ul>');
     })();
 
@@ -2075,6 +2101,61 @@
         'Los <b>5 fondos</b> favorecen al efectivo sobre el DRIP: el precio de los cinco cayó lo bastante para que las acciones compradas con cada distribución valieran hoy menos que haber guardado ese dinero en efectivo. El total de la cartera: <b class="he-cash" id="mCashTotalCash">' + fmtD(D.sinDripTotAll) + '</b> en efectivo frente a <b id="mCashTotalDrip">' + fmtD(D.conDripTotAll) + '</b> con DRIP — <b id="mCashDelta">' + fmtD(D.sinDripTotAll - D.conDripTotAll) + ' a favor del efectivo</b>.');
     }
 
+    // ---- Ejemplos con CONY (y totales de cartera) que citan modales fuera del
+    // alcance de renderNraModales: no varían con `modo`/`vistaDrip` (retorno de
+    // precio, factor DRIP, «Inversión Hoy»/«Máx. sin DRIP» de CONY, y el puente
+    // Inversión-vs-Valor mer.), así que basta correrlos una vez al cargar — no en
+    // cada aplicarModo(). Antes eran literales congelados de la hoja; ahora leen
+    // MATRIZ/TOT (Fase 3.3b). ----
+    function renderEjemplosCony() {
+      var c = null;
+      MATRIZ.forEach(function (r) { if (r.t === "CONY") c = r; });
+      if (!c || !c.inv) return;
+      var ret = (c.max / c.inv - 1) * 100;           // retorno de precio (no-DRIP)
+      var retTxt = Math.abs(ret).toFixed(1) + "%";
+      var factor = c.max > 0 ? (c.val / c.max) : 0;
+      var eqLabel = fmtD(c.inv) + " × (1 − " + Math.abs(ret / 100).toFixed(3) + ")";
+
+      ["mMax", "mSinmax", "mConinvhoy"].forEach(function (pfx) {
+        setHtml(pfx + "Ret", retTxt);
+        setHtml(pfx + "EqLabel", eqLabel);
+        setHtml(pfx + "Val", "= " + fmtD(c.max));
+      });
+      setHtml("mMaxNote",
+        'Sin DRIP, CONY valdría hoy <b>' + fmtD(c.max) + '</b>. Pero la posición real marca <b>' + fmtD(c.val) + '</b> — <b>' + factor.toFixed(1) + '× más</b>. Esa diferencia no puede venir del precio (cayó ' + retTxt + ') ni de depósitos nuevos (no los hubo). Solo puede ser que los dividendos se reinvirtieron comprando más acciones. El <b>Factor</b> es la prueba matemática de que el DRIP ocurrió.');
+
+      setHtml("mRealVal", "= " + fmtD(c.val));
+      setHtml("mDripVal", "= " + fmtD(c.val));
+      setHtml("mCashMax", fmtD(c.max));
+      setHtml("mCondriphoyMax", fmtD(c.max));
+      setHtml("mContotMax", fmtD(c.max));
+      setHtml("mSintotMax", fmtD(c.max));
+
+      setHtml("mTmdivCony", fmtMoney(c.div));
+      setHtml("mTmdivTot", "= " + fmtMoney(TOT.div));
+      setHtml("mTmultCony", fmtMoney(c.ult));
+      setHtml("mTmultTot", "= " + fmtMoney(TOT.ult));
+      setHtml("mTmvalHoy", fmtMoney(TOT.val));
+      setHtml("mTmvalRet", (TOT.val - TOT.inv >= 0 ? "+" : "−") + fmtMoney(Math.abs(TOT.val - TOT.inv)));
+      setHtml("mTmtotDiv", fmtMoney(TOT.div));
+      setHtml("mTmtotSuma", fmtMoney(TOT.inv + TOT.div));
+      setHtml("mTmtotDivCita", fmtMoney(TOT.div));
+      setHtml("mTmtotPerdida", fmtMoney((TOT.inv + TOT.div) - TOT.val));
+      setHtml("mTmtotGanancia", (TOT.val - TOT.inv >= 0 ? "+" : "−") + fmtMoney(Math.abs(TOT.val - TOT.inv)));
+
+      // ---- modal-tmcmp: el puente "Inversión vs. Valor mer." (botón "se comparan
+      // entre sí"). El ejemplo $100/$300/$200 es ilustrativo, se queda igual; lo
+      // que cita la cartera real de Greco sí se recalcula. ----
+      var wrongPct = ((TOT.val + TOT.div - TOT.inv) / TOT.inv) * 100;
+      var correctPct = ((TOT.val - TOT.inv) / TOT.inv) * 100;
+      var ratio = TOT.div / TOT.inv;
+      setHtml("mCmpWrongPct", fmtPct1(wrongPct));
+      setHtml("mCmpCorrectPct1", fmtPct1(correctPct));
+      setHtml("mCmpCorrectPct2", fmtPct1(correctPct));
+      setHtml("mCmpDiv", fmtMoney(TOT.div));
+      setHtml("mCmpRatio", ratio.toFixed(2) + "×");
+    }
+
     // ---- chips: grupo de 3 botones .cmp-chip (mismo patrón que la vista
     // Comparación) gobierna las matrices Con DRIP y Sin DRIP a la vez — no
     // tiene sentido compararlas sobre bases distintas. A diferencia del
@@ -2082,10 +2163,34 @@
     // en el HTML: no hay un solo rótulo que cambie de texto, así que activar
     // uno solo cambia el color de los tres, nunca su ancho. ----
     var modoBtns = Array.prototype.slice.call(document.querySelectorAll("#tmModoGroup .cmp-chip"));
+    // ---- MODO_CAP.roc/.plano citan cifras derivadas de DATA.roc19a — ya no
+    // literales congeladas (CONY 53%/MSTY 72%/25 jul 2026/$15,118/$33,507 eran de
+    // ROC_19A vieja). fmtFechaCorta está definida arriba, junto a fmtD. ----
+    function calcRocRango() {
+      var min = null, max = null;
+      MATRIZ.forEach(function (r) {
+        var v = Math.round((ROC_19A[r.t] || 0) * 100);
+        if (min === null || v < min.v) min = { t: r.t, v: v };
+        if (max === null || v > max.v) max = { t: r.t, v: v };
+      });
+      return min.t + " " + min.v + "% … " + max.t + " " + max.v + "%";
+    }
+    // Misma aritmética que `devueltoRound`/`computeAll`, pero fija en "roc" para
+    // poder comparar contra "plano" (30% liso) sin depender del modo activo.
+    function calcRocVsPlano() {
+      var plano = Math.round(TASA_NRA * TOT.div);
+      var devuelto = 0;
+      MATRIZ.forEach(function (r) { devuelto += Math.round(TASA_NRA * (ROC_19A[r.t] || 0) * r.div); });
+      return { plano: plano, roc: plano - devuelto };
+    }
+    var _rocVsPlano = calcRocVsPlano();
     var MODO_CAP = {
-      bruto: "",
-      roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (CONY 53% … MSTY 72%, al 25 jul 2026). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones.",
-      plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, $15,118 en vez de $33,507."
+      bruto: "Escenario base — así está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención NRA. La fecha de apertura y el aporte inicial son los literales de la hoja; <b>Dividendos</b>, <b>Total inv.</b>, <b>Valor mer.</b> y <b>Último div.</b> se recalculan con precios y distribuciones reales de mercado (ver «Fuente» abajo).",
+      roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (" + calcRocRango() +
+        (DATA.roc19aAsof ? ", al " + fmtFechaCorta(DATA.roc19aAsof) : "") +
+        "). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones.",
+      plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, " +
+        fmtD(_rocVsPlano.roc) + " en vez de " + fmtD(_rocVsPlano.plano) + "."
     };
 
     // ---- toggle de nivel 1: Con DRIP / Sin DRIP. Solo muestra el he-block
@@ -2147,6 +2252,7 @@
     });
     aplicarModo();          // primer render: contenido correcto aunque el panel esté oculto (mide 0)
     aplicarVistaDrip();     // aplica la visibilidad inicial (Con DRIP)
+    renderEjemplosCony();   // modales invariantes al modo — una sola vez basta
 
     // Alto de la leyenda (tmModoCap, compartida por las dos vistas) y de la
     // nota de cada matriz (tmConDripNotes / tmSinDripNotes), medidos EN VIVO
