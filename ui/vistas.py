@@ -10,8 +10,8 @@ import streamlit as st
 
 import logic
 from ui import heredadas, nav
-from ui.adapters import (DatosIncompletos, cashflow_data, hoja_data, salud_nav_data,
-                         trg_real_data, verificar_identidades)
+from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
+                         salud_nav_data, trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodologia, render_rail)
@@ -157,6 +157,24 @@ def render_salud_nav(ruta: Ruta) -> None:
                 st.markdown(parrafo)
 
 
+def render_comparacion_simulacion(ruta: Ruta) -> None:
+    """«Comparación · Simulación» (Total Return Graph, Fase 3.3a). No depende del
+    portafolio del usuario — vive fuera del wizard —, así que a diferencia de
+    `render_trg_real` no hay `_resultados()` que esperar. `comparacion_data` sí baja
+    historia (del caché de precio, casi nunca de red — ver `ui.adapters.comparacion_data`),
+    así que se cachea en la sesión con el mismo criterio que `_resultados()`: recalcularlo
+    en cada rerun del rail sería lento sin motivo, sobre datos que no cambian por sesión.
+    """
+    if st.session_state.get("_vd_comparacion_data") is None:
+        st.session_state["_vd_comparacion_data"] = comparacion_data()
+    datos = st.session_state["_vd_comparacion_data"]
+    if datos is None:
+        st.warning("No se pudo cargar la historia de precios (ni caché ni yfinance en "
+                  "vivo) — inténtalo de nuevo en unos minutos.")
+        return
+    render_comparacion(datos, ruta.tema)
+
+
 def render_trg_real(ruta: Ruta) -> None:
     """Total Return Graph con datos reales — el mismo componente del artifact que
     Comparación · Simulación (`ui/componentes/comparacion_real.html`, derivado de
@@ -223,7 +241,7 @@ def render_vista(ruta: Ruta) -> None:
             return
     if ruta.categoria == "comparacion":
         if ruta.vista == "simulacion":
-            render_comparacion(ruta.tema)
+            render_comparacion_simulacion(ruta)
             return
         if ruta.vista == "real":
             render_trg_real(ruta)
