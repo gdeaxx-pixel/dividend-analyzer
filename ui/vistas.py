@@ -11,7 +11,7 @@ import streamlit as st
 import logic
 from ui import heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
-                         salud_nav_data, trg_real_data, verificar_identidades)
+                         metodo_data, salud_nav_data, trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodologia, render_rail)
@@ -175,6 +175,23 @@ def render_comparacion_simulacion(ruta: Ruta) -> None:
     render_comparacion(datos, ruta.tema)
 
 
+def render_metodo_tradicional(ruta: Ruta) -> None:
+    """«Método tradicional» (las 5 sub-vistas de `nav.MET_ORDER`). Como
+    `render_comparacion_simulacion`, no depende del portafolio del usuario — es el caso
+    de estudio fijo de la clase de Greco — así que `metodo_data()` (que sí baja historia,
+    del caché casi siempre) se cachea en la sesión con el mismo criterio que
+    `_vd_comparacion_data`.
+    """
+    if st.session_state.get("_vd_metodo_data") is None:
+        st.session_state["_vd_metodo_data"] = metodo_data()
+    datos = st.session_state["_vd_metodo_data"]
+    if datos is None:
+        st.warning("No se pudo cargar la historia de precios del caso de estudio (ni "
+                  "caché ni yfinance en vivo) — inténtalo de nuevo en unos minutos.")
+        return
+    render_metodo(ruta.vista, ruta.tema, datos)
+
+
 def render_trg_real(ruta: Ruta) -> None:
     """Total Return Graph con datos reales — el mismo componente del artifact que
     Comparación · Simulación (`ui/componentes/comparacion_real.html`, derivado de
@@ -247,7 +264,7 @@ def render_vista(ruta: Ruta) -> None:
             render_trg_real(ruta)
             return
     if ruta.categoria == "metodo" and ruta.vista in nav.MET_ORDER:
-        render_metodo(ruta.vista, ruta.tema)
+        render_metodo_tradicional(ruta)
         return
     if ruta.categoria == heredadas.CAT_CLAVE:
         heredadas.render_vista(ruta.vista, ruta)
