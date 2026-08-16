@@ -146,13 +146,17 @@ def render_hoja(datos: dict, tema: str, alto: int = ALTO_HOJA) -> None:
     components.html(html, height=alto, scrolling=False)
 
 
-def render_comparacion(tema: str, alto: int = ALTO_COMPARACION) -> None:
-    """Dibuja «Comparación · Simulación» (Total Return Graph). Sin datos: es un modelo
-    paramétrico que se porta tal cual (mapa-datos.md § 4), así que no hay `{{DATA_JSON}}`
-    que rellenar — el componente trae sus propias cifras, igual que en el demo.
+def render_comparacion(datos: dict, tema: str, alto: int = ALTO_COMPARACION) -> None:
+    """Dibuja «Comparación · Simulación» (Total Return Graph). `datos` viene de
+    `ui.adapters.comparacion_data`: índice mensual real (caché de precio/dividendo +
+    `backtest.run_backtest`, Fase 3.3a del plan de remediación) para los 8 tickers de
+    `TRG_UNIVERSO`, sin depender del portafolio del usuario — mismo patrón
+    `{{DATA_JSON}}` que `render_hoja`/`render_comparacion_real`, ya no el modelo
+    paramétrico (`F`/`shapeOf`) que tenía antes.
     """
     html = _plantilla("comparacion.html")
     html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
 
 

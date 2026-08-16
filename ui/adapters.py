@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import datetime
 
+import backtest
 import logic
+import price_cache
 
 # Universo del Total Return Graph — 5 fondos YieldMax + 3 ETFs de crecimiento. Paleta y
 # agrupación literales del demo (`viaje-dinero-waterfall.html:2781`). Viven aquí (no en
@@ -433,4 +435,202 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         "grp": grp,
         "col": {tk: TRG_COLORES[tk] for tk in meta_por_ticker if tk in TRG_COLORES},
         "idx": idx,
+    }
+
+
+# Capital arbitrario para las corridas de `backtest.run_backtest`: como `comparacion_data`
+# solo entrega RATIOS (cada serie se renormaliza en JS contra su propio valor de arranque,
+# igual que `trg_real_data`), la escala no importa — 100 hace que el primer punto de cada
+# serie (su propia incepcion) caiga en el mismo numero que un indice base-100 clasico, util
+# para depurar el JSON a ojo.
+_CMP_CAPITAL = 100.0
+
+# Retencion NRA plana del modo "Peor caso" — literal del demo (`RATE = 0.30` que tenia
+# `comparacion.html` antes de esta fase). Fijo, no depende del pais del usuario: a
+# diferencia de "Comparacion Real" (`trg_real_data`, atada al portafolio cargado),
+# "Simulacion" es un panel pedagogico independiente del CSV — no hay pais que leer.
+_CMP_FLAT_RATE = 0.30
+
+
+def _cmp_nra_rate(ticker: str, modo: str, roc19a: dict) -> float:
+    """Retencion NRA efectiva por modo fiscal (mapa-datos § 3.3a del plan de remediacion):
+
+      - 'bruto': 0.0 — sin retencion (residente EE.UU.).
+      - 'plano': `_CMP_FLAT_RATE` sobre TODA la distribucion — peor caso, sin escudo ROC.
+      - 'roc':   `_CMP_FLAT_RATE * (1 - weighted_pct/100)` — el escudo fiscal del ROC
+        ponderado que publica YieldMax en sus avisos 19(a) (`knowledge/roc_19a.yaml`).
+        Fondos sin avisos 19(a) (ETFs de crecimiento, o un YieldMax que aun no publico
+        ninguno) no tienen escudo que aplicar: caen a la tasa plana, igual que hace
+        `logic.build_roc_aware_withholding`/`build_drip_comparison_series` para el mismo
+        caso.
+
+    `weighted_pct` es un PROMEDIO PONDERADO sobre una ventana rodante (~52 avisos mas
+    recientes, ver `logic.load_roc_19a`) — no la historia completa del fondo desde su
+    incepcion. Aplicarlo aqui a TODO el horizonte del backtest (incluidos los tramos
+    anteriores a esa ventana) es, por construccion, una EXTRAPOLACION: la mejor tasa
+    disponible, pero no una medida directa de esos tramos viejos. `comparacion_data`
+    declara esto en `roc19a` (rango de fechas de la ventana) para que la UI lo diga en
+    vez de presentarlo como si fuera medido — ese es el punto entero de esta fase.
+    """
+    if modo == "bruto":
+        return 0.0
+    if modo == "plano":
+        return _CMP_FLAT_RATE
+    info = roc19a.get(ticker)
+    weighted = info.get("weighted_pct") if info else None
+    if weighted is None:
+        return _CMP_FLAT_RATE
+    try:
+        weighted = float(weighted)
+    except (TypeError, ValueError):
+        return _CMP_FLAT_RATE
+    return max(0.0, min(1.0, _CMP_FLAT_RATE * (1.0 - weighted / 100.0)))
+
+
+def comparacion_data() -> dict | None:
+    """JSON para `ui/componentes/comparacion.html` (Total Return Graph · Simulación).
+
+    Mismo patrón de índice mensual (`origen`/`last`/`idx[modo][tk][m]`) que
+    `trg_real_data`, pero con dos diferencias deliberadas (Fase 3.3a del plan de
+    remediación — reemplaza las cifras inventadas `F`/`shapeOf`/`targetEnd` que tenía
+    `comparacion.html`):
+
+      1. **No depende del portafolio del usuario.** `comparacion.html` es el panel
+         pedagógico "y si hubiera invertido en..." — vive fuera del wizard, sin CSV
+         cargado (a diferencia de "Comparación · Real", que sí necesita `resultados`).
+      2. **La fuente es `price_cache.load_history` + `backtest.run_backtest`**, no
+         `logic.build_drip_comparison_series`. Ese motor ya reconcilió al 0.013% contra
+         el extracto real de IB (Fase 3.1, `test_backtest.py`) y lee del caché en disco
+         (Fase 3.2, `test_price_cache.py`) — cero llamadas a yfinance en este código;
+         el único punto que puede tocar red es el fallback YA declarado dentro de
+         `price_cache.load_history` (cache ausente/vencido), y ese fallback se
+         propaga aquí vía `fuente`/`degradado`, nunca en silencio.
+
+    Además del índice "Con DRIP" (`idx`, para los 8 tickers de `TRG_UNIVERSO`), calcula
+    "Sin DRIP" (`idxSin`/`precioSin`, solo para `TRG_YM` — es la única familia que puede
+    ser fondo base, y el toggle "Cómo se reinvirtió" solo aplica al fondo base) separando
+    el retorno de precio puro del efectivo acumulado sin componer — la misma separación
+    que `seriesSin` dibuja en JS, ahora con datos reales en vez de una rampa lineal
+    fabricada sobre un `shapeOf` senoidal.
+
+    Devuelve `None` solo si NINGÚN ticker del universo pudo cargar historia (ni caché ni
+    yfinance en vivo) — la vista entera se degrada con un aviso explícito en vez de
+    dibujar un gráfico vacío o a medias.
+    """
+    historias: dict[str, price_cache.HistoryResult] = {}
+    for tk in TRG_UNIVERSO:
+        try:
+            hr = price_cache.load_history(tk)
+        except Exception:
+            continue
+        if hr.history is None or hr.history.empty:
+            continue
+        historias[tk] = hr
+
+    if not historias:
+        return None
+
+    ancla, ancla_start = None, None
+    for tk in TRG_YM:
+        if tk not in historias:
+            continue
+        start = historias[tk].history.sort_index().index.min()
+        if ancla_start is None or start < ancla_start:
+            ancla, ancla_start = tk, start
+    if ancla is None:
+        return None
+
+    origen = [int(ancla_start.year), int(ancla_start.month) - 1]
+    roc19a = logic.load_roc_19a()
+
+    def _mensualizar(serie) -> dict:
+        """Remuestreo mensual (último cierre de cada mes) con la misma excepción de
+        primer-mes que `trg_real_data`: el primer bin suele ser parcial (la incepción
+        real casi nunca cae el día 1), y `.resample().last()` ahí devolvería el cierre
+        de FIN de ese mes en vez del valor real de arranque — que es justo el punto que
+        cada serie usa como su propio 100% (ver `_CMP_CAPITAL`)."""
+        serie = serie.sort_index()
+        mensual = serie.resample("ME").last().dropna()
+        if len(mensual):
+            mensual.iloc[0] = serie.iloc[0]
+        out = {}
+        for fecha, valor in mensual.items():
+            m = (int(fecha.year) - origen[0]) * 12 + (int(fecha.month) - 1 - origen[1])
+            out[str(m)] = round(float(valor), 4)
+        return out
+
+    idx: dict = {modo: {} for modo in TRG_MODOS}
+    idx_sin: dict = {modo: {} for modo in TRG_MODOS}
+    precio_sin: dict = {}
+    incep: dict = {}
+    grp: dict = {}
+    last = 0
+
+    def _actualizar_last(valores: dict) -> None:
+        nonlocal last
+        if valores:
+            last = max(last, max(int(k) for k in valores))
+
+    for tk, hr in historias.items():
+        history = hr.history.sort_index()
+        start = history.index.min()
+        incep[tk] = (int(start.year) - origen[0]) * 12 + (int(start.month) - 1 - origen[1])
+        grp[tk] = "ym" if tk in TRG_YM else "growth"
+
+        for modo in TRG_MODOS:
+            rate = _cmp_nra_rate(tk, modo, roc19a)
+            r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+                                          drip=True, nra_rate=rate, history=history)
+            valores_con = _mensualizar(r_con.daily["total_value"])
+            idx[modo][tk] = valores_con
+            _actualizar_last(valores_con)
+
+            if tk in TRG_YM:
+                r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+                                              drip=False, nra_rate=rate, history=history)
+                valores_sin = _mensualizar(r_sin.daily["total_value"])
+                idx_sin[modo][tk] = valores_sin
+                _actualizar_last(valores_sin)
+                if tk not in precio_sin:
+                    # El componente de precio NO depende de la retencion (nra_rate solo
+                    # afecta cuanto efectivo se acumula, nunca el precio de mercado) —
+                    # basta una corrida por ticker, no una por modo.
+                    precio_sin[tk] = _mensualizar(r_sin.daily["portfolio_value"])
+
+    fuente = {tk: hr.source for tk, hr in historias.items()}
+    degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
+    faltantes = sorted(t for t in TRG_UNIVERSO if t not in historias)
+
+    roc_ventana: dict = {}
+    for tk in TRG_YM:
+        info = roc19a.get(tk)
+        if not info:
+            continue
+        fechas = [str(r["date"]) for r in (info.get("per_distribution") or []) if r.get("date")]
+        if not fechas:
+            continue
+        roc_ventana[tk] = {
+            "min": min(fechas), "max": max(fechas),
+            "weighted_pct": info.get("weighted_pct"), "asof": info.get("asof"),
+        }
+
+    asof_candidatos = [hr.cache_asof for hr in historias.values() if hr.cache_asof]
+    asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
+
+    return {
+        "origen": origen,
+        "last": last,
+        "base_defecto": "NVDY" if "NVDY" in historias else ancla,
+        "tasa_pct": round(_CMP_FLAT_RATE * 100.0),
+        "asof": asof,
+        "incep": incep,
+        "grp": grp,
+        "col": {tk: TRG_COLORES[tk] for tk in historias if tk in TRG_COLORES},
+        "idx": idx,
+        "idxSin": idx_sin,
+        "precioSin": precio_sin,
+        "fuente": fuente,
+        "degradado": degradado,
+        "faltantes": faltantes,
+        "roc19a": roc_ventana,
     }
