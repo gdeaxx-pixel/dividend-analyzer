@@ -1420,15 +1420,36 @@ def _yield_audit(resultados: dict, classify_map: dict) -> None:
 # ── Fila 20 — Comparativa de estrategias ────────────────────────────────────
 
 _ESTR_ETF_MAP = {"SCHB": "Todo en SCHB", "XLK": "Todo en XLK", "YMAX": "Todo en YMAX", "SMH": "Todo en SMH"}
+# Retencion aplicada a las distribuciones del ETF alternativo al reinvertirlas. 0.0 = bruto,
+# que es lo que medía la version anterior (`auto_adjust=True` de yfinance reinvierte el
+# dividendo integro). Se deja explicito en vez de implicito: subirlo a la tasa real del
+# inversor haria el benchmark mas honesto, pero es una decision de producto — cambiarlo aqui
+# mueve las cifras de la comparacion.
+_ESTR_NRA_RATE = 0.0
 _ESTR_MONO = "'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
 
 
 def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
     """Reconstruye la serie temporal Portafolio Real vs «todo en un solo ETF».
-    Literal de `app_old.py:5682-5794`, cacheada en sesión por `_file_id` (evita repetir
-    las descargas de yfinance en cada rerun del rail)."""
+    Cacheada en sesión por `_file_id` (evita repetir el trabajo en cada rerun del rail).
+
+    Portado de `app_old.py:5682-5794`, con un cambio de FUENTE y de MOTOR: antes llamaba
+    `yf.download(..., auto_adjust=True)` en cada render —la única vista de la app que seguía
+    bajando de la red en runtime— y derivaba el valor como `acciones × precio ajustado`.
+    Ahora lee de `price_cache.load_history` (caché primero, vivo sólo si falta o venció) y
+    delega la simulación a `backtest.run_backtest`, el motor event-driven ya reconciliado
+    contra el extracto real de IB.
+
+    **Por qué no basta cambiar la fuente.** `auto_adjust=True` mete el dividendo dentro del
+    precio, así que la serie vieja medía RETORNO TOTAL. El caché guarda `auto_adjust=False`
+    a propósito (`Close` crudo + `Dividends` aparte) para que el DRIP no se cuente dos veces.
+    Sustituir una serie por la otra sin reinvertir las distribuciones convierte el benchmark
+    en sólo-precio: medido sobre 3 tranches de $5k, YMAX caía de $16,741 a $7,102 (−58%) y
+    los ETF amplios ~1-2%. Vía motor la equivalencia se mantiene dentro del 0.5%."""
     import pandas as pd
-    import yfinance as yf
+
+    import backtest
+    import price_cache
 
     ts_key = f"vd_her_strat_ts_{st.session_state.get('_file_id', 'x')}"
     if ts_key in st.session_state:
@@ -1494,37 +1515,32 @@ def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
         ts_end = pd.Timestamp.today()
         for etf_tk, etf_lbl in _ESTR_ETF_MAP.items():
             try:
-                raw = yf.download(etf_tk, start=ts_start, end=ts_end, auto_adjust=True, progress=False)
-                if raw is None or raw.empty:
+                hr = price_cache.load_history(etf_tk, start=ts_start, end=ts_end)
+                hist = hr.history
+                if hist is None or hist.empty:
                     continue
-                if isinstance(raw.columns, pd.MultiIndex):
-                    raw.columns = raw.columns.get_level_values(0)
-                prices = raw["Close"]
-                if isinstance(prices, pd.DataFrame):
-                    prices = prices.iloc[:, 0]
-                prices = prices.dropna()
-                if prices.empty:
-                    continue
-                if getattr(prices.index, "tz", None) is not None:
-                    prices.index = prices.index.tz_localize(None)
-                prices.index = prices.index.normalize()
-                port_val = pd.Series(0.0, index=prices.index)
+                # Un tranche por compra: cada uno es independiente y el valor total es su
+                # suma (linealidad), igual que el calculo anterior. `run_backtest` recorre el
+                # calendario real y reinvierte cada distribucion NETA de `nra_rate` al cierre
+                # del propio dia ex-div.
+                port_val = None
                 for bd, amt in buy_flows:
                     if float(amt) <= 0:
                         continue
                     bd_norm = pd.Timestamp(bd).normalize()
-                    future = prices[prices.index >= bd_norm]
-                    if future.empty:
+                    if bd_norm > hist.index.max():
                         continue
-                    buy_p = float(future.iloc[0])
-                    if buy_p <= 0:
-                        continue
-                    shares = float(amt) / buy_p
-                    mask = prices.index >= bd_norm
-                    port_val[mask] += shares * prices[mask]
+                    r = backtest.run_backtest(
+                        etf_tk, start_date=bd_norm, initial_capital=float(amt),
+                        drip=True, nra_rate=_ESTR_NRA_RATE, end_date=ts_end, history=hist)
+                    serie = r.daily["total_value"]
+                    port_val = serie if port_val is None else port_val.add(serie, fill_value=0.0)
+                if port_val is None:
+                    continue
                 vals = port_val[port_val > 0]
-                if not vals.empty:
-                    etf_final_vals[etf_lbl] = float(vals.iloc[-1])
+                if vals.empty:
+                    continue
+                etf_final_vals[etf_lbl] = float(vals.iloc[-1])
                 e_df = vals.reset_index()
                 e_df.columns = ["Fecha", "Valor"]
                 e_df["Estrategia"] = etf_lbl
