@@ -45,7 +45,10 @@ _RAIZ = os.path.dirname(os.path.abspath(__file__))
 # `test_stale_guard.py` avisa cuando aparece un módulo nuevo sin sitio asignado.
 _ORDEN = (
     "logic", "storage", "report", "demo_mode", "backtest", "price_cache",
-    "ui.tokens", "ui.nav", "ui.componentes", "ui.heredadas", "ui.adapters",
+    # `ui.estado` va antes que sus consumidores (carga, vistas, heredadas): es el dueño de
+    # las claves de sesión compartidas, y recargarlo después dejaría a los demás apuntando
+    # al módulo viejo.
+    "ui.tokens", "ui.estado", "ui.nav", "ui.componentes", "ui.heredadas", "ui.adapters",
     "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
 )
 

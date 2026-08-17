@@ -9,7 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
-from ui import heredadas, nav
+from ui import estado, heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
                          metodo_data, salud_nav_data, trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
@@ -60,14 +60,59 @@ def _stats_o_aviso(ruta: Ruta) -> dict | None:
     return stats
 
 
+def _tax_summary(ticker: str) -> dict | None:
+    """Objeto fiscal del ticker re-derivado por la residencia declarada (capa 2, Regla 3).
+
+    `analyze_portfolio` cachea la capa 1 SIN DECLARAR porque está bajo `@st.cache_data` y no
+    puede ver `session_state`. Aquí sí: se re-deriva una vez por render con el perfil vigente
+    y se le entrega a la vista, que solo lo RENDERIZA. Sin país declarado devuelve el mismo
+    objeto sin devolución estimada — no una versión con 30% asumido.
+    """
+    resultados = _resultados()
+    if not resultados:
+        return None
+    tasa, pais = estado.tasa_y_pais()
+    return logic.build_tax_summaries(resultados, base_rate_pct=tasa, country=pais).get(ticker)
+
+
+def render_aviso_retencion(stats: dict, ticker: str) -> None:
+    """Contrasta la tasa que le APLICARON contra la que le corresponde por su país.
+
+    El país da el derecho; los números dicen qué pasó. Que no coincidan es la señal de que
+    el W-8BEN no está presentado o venció — y eso es dinero que no vuelve solo, a diferencia
+    de la sobre-retención por ROC. Por eso los dos buckets se muestran SEPARADOS: tienen
+    causas, tiempos y acciones distintas, y sumarlos sería repetir el bug de las dos verdades
+    del mismo dólar.
+    """
+    tasa, pais = estado.tasa_y_pais()
+    diag = logic.build_withholding_diagnosis(
+        stats, ticker, entitled_pct=None if tasa == logic.RATE_UNDECLARED else tasa,
+        country=pais)
+
+    if diag["verdict"] == "tratado_no_aplicado":
+        st.warning(f"**Revisa tu W-8BEN.** {diag['label']}")
+        if diag["gap_w8ben"] > 0.01 or diag["refund_roc"] > 0.01:
+            c1, c2 = st.columns(2)
+            c1.metric("Vuelve solo (ROC)", f"${diag['refund_roc']:,.2f}",
+                      help="Se reclasifica en el cierre anual del bróker: IB devuelve entre "
+                           "enero y marzo, Schwab entre junio y septiembre.")
+            c2.metric("No vuelve solo (W-8BEN)", f"${diag['gap_w8ben']:,.2f}",
+                      help="Retención por encima de tu tratado. Hay que presentar el "
+                           "W-8BEN y reclamar lo cobrado de más con el 1040-NR.")
+    elif diag["verdict"] == "menor_de_lo_esperado":
+        st.info(diag["label"])
+
+
 def render_cash_flow(ruta: Ruta) -> None:
     """El recorrido del dinero para el ETF seleccionado."""
     stats = _stats_o_aviso(ruta)
     if stats is None:
         return
 
+    render_aviso_retencion(stats, ruta.etf)
+
     try:
-        datos = cashflow_data(stats, ruta.etf)
+        datos = cashflow_data(stats, ruta.etf, tax_summary=_tax_summary(ruta.etf))
     except DatosIncompletos as error:
         st.warning(str(error))
         return
@@ -97,7 +142,7 @@ def render_hoja_excel(ruta: Ruta) -> None:
 
     df = st.session_state.get("_wizard_df_clean")
     try:
-        datos = hoja_data(stats, ruta.etf, df)
+        datos = hoja_data(stats, ruta.etf, df, tax_summary=_tax_summary(ruta.etf))
     except DatosIncompletos as error:
         st.warning(str(error))
         return
@@ -211,9 +256,12 @@ def render_trg_real(ruta: Ruta) -> None:
         st.info("Carga tu CSV para ver esta gráfica con datos reales.")
         return
 
-    pais = st.session_state.get("proj_country")
-    pais = pais if pais in logic.NRA_COUNTRY_RATES else None
-    tasa_pct = logic.NRA_COUNTRY_RATES[pais][0] if pais else logic.NRA_DEFAULT_RATE
+    # Antes: `st.session_state.get("proj_country")` — una clave que ningún widget vivo
+    # escribía (el selector usaba `vd_her_proj_country`), así que `pais` siempre salía None
+    # y esta vista corría a 30% para todo el mundo. El perfil ahora tiene un dueño único.
+    perfil = estado.perfil_fiscal()
+    pais = perfil["country"]
+    tasa_pct = perfil["rate_pct"] if perfil["rate_declared"] else logic.NRA_DEFAULT_RATE
 
     datos = trg_real_data(resultados, tasa_pct, pais)
     if datos is None:

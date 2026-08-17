@@ -15,6 +15,7 @@ import os
 import streamlit as st
 
 import logic
+from ui import estado
 
 
 def _clave_gemini():
@@ -198,6 +199,50 @@ def render_bloque_transacciones() -> bool:
     return False
 
 
+_SIN_DECLARAR = "— No lo sé / prefiero no decirlo —"
+
+
+def _render_residencia_fiscal() -> None:
+    """Residencia fiscal del cliente — vive aquí porque es una propiedad de ÉL, no de una
+    vista. Antes el único selector estaba enterrado en Detalle → Proyección, dentro de un
+    expander colapsado, y su valor no salía de esa función: todas las cifras fiscales de la
+    app corrían a 30% pasara lo que pasara.
+
+    Sin declarar es el default a propósito. La alternativa —asumir 30%— le inventa a un
+    mexicano una retención tres veces mayor a la que le corresponde; y asumir 0% le dice a
+    cualquiera que toda su retención vuelve. Ninguna de las dos es un dato.
+    """
+    opciones = [_SIN_DECLARAR] + list(logic.NRA_COUNTRY_RATES.keys())
+    actual = estado.perfil_fiscal()["country"]
+    idx = opciones.index(actual) if actual in opciones else 0
+
+    col_sel, col_nota = st.columns([1, 1.4])
+    with col_sel:
+        elegido = st.selectbox(
+            "Tu residencia fiscal", opciones, index=idx, key="_vd_residencia",
+            help="Determina la retención a la que tienes DERECHO sobre dividendos de "
+                 "fuente EE.UU.: 30% base para no-residentes, 10% México y 15% Chile por "
+                 "tratado, 0% si eres residente fiscal en EE.UU. Sin este dato no "
+                 "estimamos cuánto de lo retenido puedes recuperar.")
+    estado.declarar_pais(None if elegido == _SIN_DECLARAR else elegido)
+
+    perfil = estado.perfil_fiscal()
+    with col_nota:
+        if not perfil["rate_declared"]:
+            st.markdown(
+                '<p class="vd-nota">Sin este dato mostramos la retención <b>real</b> de tu '
+                'archivo, pero no estimamos cuánto vuelve — esa cifra dependería por '
+                'completo del supuesto.</p>', unsafe_allow_html=True)
+        else:
+            tasa = perfil["rate_pct"]
+            extra = (" por el tratado fiscal — solo aplica si tu <b>W-8BEN</b> está "
+                     "presentado y vigente" if perfil["has_treaty"] else "")
+            st.markdown(
+                f'<p class="vd-nota">Retención con derecho: <b>{tasa:.0f}%</b>{extra}. '
+                'Verificamos contra tu archivo si es la que te aplicaron de verdad.</p>',
+                unsafe_allow_html=True)
+
+
 def render_bloque_posiciones() -> bool:
     """Bloque 2. Confirma acciones y costo real por ETF."""
     if st.session_state.get("_wizard_pos_confirmed"):
@@ -286,6 +331,8 @@ def render_bloque_posiciones() -> bool:
         'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
         'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
 
+    _render_residencia_fiscal()
+
     # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
     # el bloque. Mismo tratamiento que `app_old.py:6289`.
     if excluidos:
@@ -301,6 +348,46 @@ def render_bloque_posiciones() -> bool:
     return False
 
 
+def _render_residencia_detectada() -> None:
+    """El 1042-S declara la residencia del cliente (casilla 13b) y la tasa que le APLICARON
+    (casilla 3b). Es la fuente autoritativa: la emite el agente de retención ante el IRS.
+
+    **Se propone, no se aplica.** El mapeo de código IRS a país es best-effort (el IRS tiene
+    su propia tabla y no siempre coincide con ISO), así que un código mal traducido lo tiene
+    que cazar el humano antes de que mueva una sola cifra. Mismo criterio que el uploader
+    del crédito ROC, que ya exige confirmación.
+    """
+    datos = st.session_state.get("_wizard_1042s") or {}
+    codigo = datos.get("recipient_country_code")
+    if not codigo:
+        return
+
+    detectado = logic.pais_desde_codigo_1042s(codigo)
+    perfil = estado.perfil_fiscal()
+    if perfil["rate_declared"] and perfil["country"] == detectado:
+        return                                    # ya está declarado y coincide: nada que hacer
+
+    if detectado is None:
+        st.info(f"Tu 1042-S declara el país **{codigo}** (casilla 13b), que no está en "
+                "nuestra tabla de tasas. Elige tu residencia a mano en el Paso 2.")
+        return
+
+    tasa = logic.NRA_COUNTRY_RATES[detectado][0]
+    if perfil["rate_declared"]:
+        aviso = (f"Tu 1042-S dice **{detectado}** ({codigo}), pero declaraste "
+                 f"**{perfil['country']}**.")
+    else:
+        aviso = f"Tu 1042-S declara residencia en **{detectado}** ({codigo})."
+
+    st.info(f"{aviso} Con ese país la retención con derecho es del **{tasa:.0f}%**.")
+    col, _ = st.columns([1, 2])
+    with col:
+        if st.button(f"Usar {detectado}", key="_vd_conf_pais_1042s", type="primary",
+                     use_container_width=True):
+            estado.declarar_pais(detectado, source="1042s")
+            st.rerun()
+
+
 def _render_1042s_resumen() -> None:
     """1042-S ya leído: tarjeta resumen + editar. Extraído de `render_bloque_1042s` para
     poder mostrarse junto al resumen de ingresos (fila 5: las dos fuentes conviven)."""
@@ -312,6 +399,7 @@ def _render_1042s_resumen() -> None:
     if credito:
         detalle += f" · crédito ROC ${credito:,.2f}"
     st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+    _render_residencia_detectada()
     _, col = st.columns([5, 1])
     with col:
         if st.button("editar", key="_vd_edit_1042s", type="tertiary",

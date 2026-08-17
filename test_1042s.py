@@ -29,20 +29,27 @@ GROUND_TRUTH = [
 ]
 
 
-def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3):
+def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3, country_code="CO"):
     """Genera un 1042-S sintético: cada formulario se repite `copies` veces (copias
-    B/C/D), replicando el layout de texto real que exige el parser determinista."""
+    B/C/D), replicando el layout de texto real que exige el parser determinista.
+
+    Tasas de la casilla 3b y país de la 13b copiados del 1042-S real de `real_examples`:
+    el ROC (código 37) va al 0% y el resto al 30%, y el país del receptor va al FINAL de la
+    línea siguiente a su etiqueta, detrás del nombre. Las copias alternan `30..00` y
+    `30.0.0` porque el documento real lo hace — el parser tiene que tolerar ambos."""
     pdf = FPDF()
     pdf.set_font("Helvetica", size=10)
     for unique_form_id, code, gross, withheld, credit in forms:
         spaced_id = " ".join(list(unique_form_id))
+        base = "00" if code == "37" else "30"
         for _copy in range(copies):
+            rate = f"{base}..00" if _copy < copies - 1 else f"{base}.0.0"
             pdf.add_page()
             lines = [
                 "Form 1042-S Foreign Person's U.S. Source Income Subject to Withholding",
                 f"{spaced_id} UNIQUE FORM IDENTIFIER AMENDED AMENDMENT NO.",
                 "1 Income 2 Gross income 3 Chapter indicator. Enter 3 or 4",
-                f"{code} {gross:.2f} 3b Tax rate 30..00 4b Tax rate 00..00",
+                f"{code} {gross:.2f} 3b Tax rate {rate} 4b Tax rate 00..00",
                 "5 Withholding allowance 00.00",
                 "6 Net income 00.00",
                 f"7a Federal tax withheld {withheld:.2f}",
@@ -50,6 +57,8 @@ def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3):
                 "10 Total withholding credit (combine boxes 7a, 8, and 9)",
                 f"{credit:.2f}",
                 "11 Tax paid by withholding agent (amounts not withheld)",
+                "13a Recipient's name 13b Recipient's country code",
+                f"NOMBRE DE PRUEBA {country_code}",
             ]
             for line in lines:
                 pdf.cell(0, 6, line, new_x="LMARGIN", new_y="NEXT")
@@ -269,3 +278,137 @@ def test_validation_acepta_codigos_no_normalizados():
 def test_validation_sin_formularios_devuelve_none():
     assert logic.build_1042s_validation({}, None) is None
     assert logic.build_1042s_validation({}, {"tax_year": 2025, "forms": []}) is None
+
+
+# ── Casillas 3b (tasa aplicada) y 13b (país) — PR B ─────────────────────────────────────
+#
+# El país da la tasa a la que el cliente tiene DERECHO; la casilla 3b dice la que le
+# APLICARON. No son la misma cantidad: el 10% de México solo corre si el W-8BEN está
+# presentado y vigente, y sin él retienen 30% igual. Estos campos son la fuente autoritativa
+# de ambas mitades del diagnóstico.
+
+def test_extrae_la_tasa_aplicada_de_la_casilla_3b():
+    """La tasa venía JUSTO al lado del ancla que el parser ya usaba, y se tiraba."""
+    r = logic.parse_1042s_pdf(_build_synthetic_1042s_pdf())
+    tasas = {f["income_code"]: f["tax_rate"] for f in r["forms"]}
+    assert tasas["06"] == pytest.approx(30.0), "dividendo ordinario: 30% estatutario"
+    assert tasas["37"] == pytest.approx(0.0), "ROC: no es renta gravable, tasa 0"
+    assert tasas["01"] == pytest.approx(30.0)
+
+
+def test_el_parser_no_fabrica_una_tasa_cuando_la_3b_viene_corta():
+    """Ejercita el RECORTE del caller, no solo el helper.
+
+    Con una 3b de 3 dígitos, si el parser no corta antes de «4b» los dígitos de esa casilla
+    completan el hueco y sale una tasa inventada (0.04) en vez de admitir que no se pudo
+    leer. Se prefiere `None` — una tasa fabricada es peor que ninguna: alimenta el
+    diagnóstico de W-8BEN, y ahí un número falso acusa al cliente de algo que no pasó."""
+    pdf = FPDF()
+    pdf.set_font("Helvetica", size=10)
+    pdf.add_page()
+    for linea in [
+        "Form 1042-S Foreign Person's U.S. Source Income Subject to Withholding",
+        "2 0 2 5 4 1 7 4 9 3 UNIQUE FORM IDENTIFIER AMENDED AMENDMENT NO.",
+        "1 Income 2 Gross income 3 Chapter indicator. Enter 3 or 4",
+        "06 28.00 3b Tax rate 0..00 4b Tax rate 30..00",     # 3b corta, 4b con valor
+        "7a Federal tax withheld 8.00",
+        "10 Total withholding credit (combine boxes 7a, 8, and 9)",
+        "8.00",
+    ]:
+        pdf.cell(0, 6, linea, new_x="LMARGIN", new_y="NEXT")
+
+    r = logic.parse_1042s_pdf(bytes(pdf.output()))
+    assert r is not None and r["forms"], "el resto del formulario debe seguir leyéndose"
+    assert r["forms"][0]["tax_rate"] is None, (
+        f'tasa fabricada: {r["forms"][0]["tax_rate"]} — los dígitos de la casilla 4b se '
+        "colaron en la 3b")
+
+
+def test_extrae_el_pais_del_receptor_de_la_casilla_13b():
+    r = logic.parse_1042s_pdf(_build_synthetic_1042s_pdf(country_code="MX"))
+    assert r["recipient_country_code"] == "MX"
+    assert logic.pais_desde_codigo_1042s("MX") == "México"
+
+
+def test_la_tasa_tolera_las_tres_variantes_del_formulario():
+    """Regresión de las tres variantes que el documento real imprime en el MISMO PDF
+    (copias B/C/D). No pretende ser mejor que un parseo decimal: medido, para estas
+    entradas dan lo mismo. Fija el contrato, que es lo que puede romperse al refactorizar."""
+    assert logic._tasa_3b(" 30..00 ") == pytest.approx(30.0)
+    assert logic._tasa_3b(" 00..00 ") == pytest.approx(0.0)
+    assert logic._tasa_3b(" 00.0.0 ") == pytest.approx(0.0)
+    assert logic._tasa_3b(" 15..00 ") == pytest.approx(15.0)
+    assert logic._tasa_3b("") is None
+    assert logic._tasa_3b("basura") is None
+
+
+def test_la_tasa_3b_no_se_contamina_con_la_4b():
+    """Las dos casillas comparten línea: `3b Tax rate 30..00 4b Tax rate 00..00`. Si el
+    caller no recorta antes de «4b», una 3b con menos dígitos de los esperados absorbe los
+    de la 4b y sale una tasa inventada."""
+    linea = " 0..00 4b Tax rate 30..00"
+    # Recortado: 3 dígitos no alcanzan para NN.NN, así que se rechaza en vez de adivinar.
+    assert logic._tasa_3b(linea.split("4b")[0]) is None
+    # Sin recortar sale una tasa FABRICADA: el «4» de la etiqueta «4b» y los dígitos de esa
+    # casilla completan el hueco (000 + 4 + 3000 → los 4 primeros son 0004 → 00.04).
+    fabricada = logic._tasa_3b(linea)
+    assert fabricada is not None and fabricada == pytest.approx(0.04)
+
+
+@pytest.mark.parametrize("codigo,esperado", [
+    ("MX", "México"),
+    ("CO", "Colombia"),
+    ("CI", "Chile"),        # código IRS
+    ("CL", "Chile"),        # variante ISO — se aceptan ambas
+    ("US", "Estados Unidos"),
+    ("mx", "México"),       # insensible a mayúsculas
+    ("ZZ", None),           # desconocido: NO se adivina
+    ("", None),
+    (None, None),
+])
+def test_mapeo_de_codigos_de_pais(codigo, esperado):
+    assert logic.pais_desde_codigo_1042s(codigo) == esperado
+
+
+def test_los_dos_caminos_de_gemini_piden_las_dos_casillas():
+    """Estructural: hay tres extractores (pdfplumber + dos de Gemini) y los tres tienen que
+    traer los mismos campos, o el resultado dependería de cuál respondió."""
+    import inspect
+    fuente = inspect.getsource(logic)
+    assert fuente.count('"tax_rate": types.Schema') == 2, "falta tax_rate en algún schema"
+    assert fuente.count('"recipient_country_code": types.Schema') == 2
+    assert fuente.count("'tax_rate' = Box 3b") == 2, "falta la casilla 3b en algún prompt"
+    assert fuente.count("'recipient_country_code' = Box 13b") == 2
+
+
+def test_contra_el_1042s_real():
+    """Ground truth del documento real de `real_examples` (privado, symlink): código 06
+    dividendo al 30%, código 37 ROC al 0%, receptor en Colombia. Si el symlink no está
+    montado el test hace SKIP — y un skip no es un pass."""
+    import glob
+    patron = os.path.join(os.path.dirname(__file__), "real_examples",
+                          "charles_schwab_data", "*", "*.pdf")
+    pdfs = glob.glob(patron)
+    if not pdfs:
+        pytest.skip("real_examples no montado (data privada)")
+
+    r = None
+    for ruta in pdfs:
+        with open(ruta, "rb") as fh:
+            r = logic.parse_1042s_pdf(fh.read())
+        if r:
+            break
+    if not r:
+        pytest.skip("ningún PDF de real_examples es un 1042-S legible")
+
+    tasas = {f["income_code"]: f["tax_rate"] for f in r["forms"]}
+    assert tasas.get("06") == pytest.approx(30.0)
+    assert tasas.get("37") == pytest.approx(0.0)
+    assert r["recipient_country_code"] == "CO"
+    assert logic.pais_desde_codigo_1042s(r["recipient_country_code"]) == "Colombia"
+
+    # La aritmética tiene que coincidir con la tasa declarada: $8 sobre $28 ≈ 30%. Es el
+    # cruce que hace posible el diagnóstico de W-8BEN (PR C).
+    div = next(f for f in r["forms"] if f["income_code"] == "06")
+    observada = div["federal_tax_withheld"] / div["gross_income"] * 100
+    assert observada == pytest.approx(tasas["06"], abs=2.0)

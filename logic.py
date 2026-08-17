@@ -156,14 +156,75 @@ def income_code_str(value):
     return f"{int(m.group()):02d}" if m else ""
 
 
+# Codigos de pais del 1042-S (casilla 13b) -> nombre en NRA_COUNTRY_RATES.
+#
+# El IRS usa su propia tabla de country codes; coincide con ISO 3166-1 alfa-2 en casi todo,
+# pero no siempre (Chile aparece como 'CI' en las tablas del IRS y como 'CL' en ISO). Se
+# aceptan ambas variantes donde difieren. Un codigo que no este aqui NO se adivina: se
+# devuelve tal cual y la UI pide que el cliente lo confirme a mano.
+#
+# Esta tabla nunca aplica sola: el flujo es detectar -> proponer -> el cliente confirma. Un
+# mapeo equivocado lo caza el humano antes de que mueva una sola cifra.
+_1042S_COUNTRY_CODES = {
+    'MX': 'México',
+    'CI': 'Chile', 'CL': 'Chile',
+    'CO': 'Colombia',
+    'PE': 'Perú',
+    'AR': 'Argentina',
+    'BR': 'Brasil',
+    'US': 'Estados Unidos',
+}
+
+
+def pais_desde_codigo_1042s(code):
+    """Nombre de país de `NRA_COUNTRY_RATES` a partir del código de la casilla 13b.
+
+    Devuelve None si el código no está mapeado — que es distinto de "no hay código". El
+    llamador debe pedir confirmación en ambos casos; aquí solo se traduce.
+    """
+    if not code:
+        return None
+    return _1042S_COUNTRY_CODES.get(str(code).strip().upper())
+
+
+def _tasa_3b(fragmento):
+    """Tasa de la casilla 3b a partir del texto que la sigue.
+
+    El PDF real la imprime con los puntos decorativos del formulario y el layout no es
+    estable: `30..00`, `00..00` y `00.0.0` aparecen en el MISMO documento (copias B/C/D del
+    1042-S de `real_examples`). Se toman los 4 primeros dígitos y se leen como NN.NN, que es
+    como está impreso el campo.
+
+    Medido: para esas tres variantes un parseo decimal ingenuo (`(\\d+)\\.+(\\d+)`) da el
+    mismo resultado — no se gana robustez ahí. Lo que sí aporta este enfoque es un contrato
+    más simple y tolerar la ausencia de puntos. El caller DEBE recortar el fragmento antes
+    de "4b" (la línea trae las dos casillas): si la 3b viniera con menos de 4 dígitos, los
+    de la 4b se colarían en el número.
+    """
+    digitos = re.sub(r"\D", "", fragmento or "")[:4]
+    if len(digitos) < 4:
+        return None
+    try:
+        return float(f"{digitos[:2]}.{digitos[2:]}")
+    except ValueError:
+        return None
+
+
 def parse_1042s_pdf(pdf_bytes):
     """Extraccion determinista (sin LLM) de un Formulario 1042-S en PDF via pdfplumber.
 
     Deduplica por UNIQUE FORM IDENTIFIER: cada formulario trae 3 copias (B/C/D) con
     los mismos numeros, y un parser ingenuo los sumaria 3 veces. Devuelve:
-    {'tax_year': int, 'forms': [{'unique_form_id', 'income_code', 'gross_income',
-    'federal_tax_withheld', 'withholding_credit', 'conflict'}, ...], 'source': 'pdfplumber'}
+    {'tax_year': int, 'recipient_country_code': str|None,
+     'forms': [{'unique_form_id', 'income_code', 'gross_income', 'federal_tax_withheld',
+     'withholding_credit', 'tax_rate', 'conflict'}, ...], 'source': 'pdfplumber'}
     o None si el documento no parece un 1042-S o ante cualquier excepcion.
+
+    `tax_rate` (casilla 3b) es la tasa que el agente de retencion APLICO de verdad —
+    distinta de la tasa a la que el cliente tiene DERECHO por su pais. La diferencia entre
+    ambas es el diagnostico de W-8BEN: el tratado de Mexico (10%) solo corre si el
+    formulario esta presentado y vigente; sin el retienen 30% igual. Verificado contra el
+    1042-S real de `real_examples`: codigo 06 (dividendo) 30%, codigo 37 (ROC) 0%.
     """
     try:
         import pdfplumber
@@ -188,11 +249,16 @@ def parse_1042s_pdf(pdf_bytes):
             block = text[start:end]
             unique_form_id = re.sub(r"\s+", "", m.group(1))
 
-            code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate", block)
+            # "3b Tax rate" ya se usaba como ancla para localizar income_code + bruto; la
+            # tasa que venía justo detrás se tiraba. Ahora se captura: es el dato oficial de
+            # qué retención aplicaron.
+            code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate([^\n]*)", block)
             if not code_m:
                 continue
             income_code = code_m.group(1)
             gross_income = float(code_m.group(2).replace(",", ""))
+            # El resto de la línea trae también "4b Tax rate ..."; solo interesa lo anterior.
+            tax_rate = _tasa_3b(code_m.group(3).split("4b")[0])
 
             fed_m = re.search(r"7a Federal tax withheld\s+([\d,]+\.\d{2})", block)
             federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else 0.0
@@ -206,6 +272,7 @@ def parse_1042s_pdf(pdf_bytes):
                 "gross_income": gross_income,
                 "federal_tax_withheld": federal_tax_withheld,
                 "withholding_credit": withholding_credit,
+                "tax_rate": tax_rate,
                 "conflict": False,
             }
 
@@ -226,7 +293,14 @@ def parse_1042s_pdf(pdf_bytes):
             return None
 
         tax_year = int(forms[0]["unique_form_id"][:4])
-        return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber"}
+        # Casilla 13b — el país del receptor va al FINAL de la línea siguiente a la etiqueta,
+        # detrás del nombre (verificado contra el 1042-S real de `real_examples`). Es dato
+        # del documento, no del formulario: un 1042-S trae varios códigos de ingreso pero un
+        # solo receptor.
+        pais_m = re.search(r"13b [^\n]*country code\s*\n[^\n]*?\b([A-Z]{2})\s*$",
+                           text, re.MULTILINE)
+        return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber",
+                "recipient_country_code": pais_m.group(1) if pais_m else None}
     except Exception:
         return None
 
@@ -307,7 +381,13 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
         "4) 'withholding_credit' = Box 10 (Total withholding credit); "
         "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
         "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
-        "no deben contarse dos veces. "
+        "no deben contarse dos veces; "
+        "6) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
+        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
+        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
+        "Ademas, una sola vez para todo el documento (no por formulario): "
+        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
+        "letras del pais de residencia del receptor. "
         "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
         "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
         "el filtrado lo hace otro sistema."
@@ -326,10 +406,14 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
                         "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
                         "withholding_credit": types.Schema(type=types.Type.NUMBER),
                         "unique_form_id": types.Schema(type=types.Type.STRING),
+                        "tax_rate": types.Schema(type=types.Type.NUMBER),
                     },
                     required=["income_code"],
                 ),
-            )
+            ),
+            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
+            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
+            "recipient_country_code": types.Schema(type=types.Type.STRING),
         },
         required=["forms"],
     )
@@ -401,7 +485,13 @@ def extract_1042s(pdf_bytes, api_key):
         "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
         "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
         "no deben contarse dos veces; "
-        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario. "
+        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario; "
+        "7) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
+        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
+        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
+        "Ademas, una sola vez para todo el documento (no por formulario): "
+        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
+        "letras del pais de residencia del receptor. "
         "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
         "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
         "el filtrado lo hace otro sistema."
@@ -421,10 +511,14 @@ def extract_1042s(pdf_bytes, api_key):
                         "withholding_credit": types.Schema(type=types.Type.NUMBER),
                         "unique_form_id": types.Schema(type=types.Type.STRING),
                         "tax_year": types.Schema(type=types.Type.INTEGER),
+                        "tax_rate": types.Schema(type=types.Type.NUMBER),
                     },
                     required=["income_code"],
                 ),
-            )
+            ),
+            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
+            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
+            "recipient_country_code": types.Schema(type=types.Type.STRING),
         },
         required=["forms"],
     )
@@ -480,11 +574,15 @@ def extract_1042s(pdf_bytes, api_key):
                         "gross_income": row.get("gross_income"),
                         "federal_tax_withheld": row.get("federal_tax_withheld"),
                         "withholding_credit": row.get("withholding_credit"),
+                        "tax_rate": row.get("tax_rate"),
                         "conflict": False,
                     })
                 if not forms:
                     return None
-                return {"tax_year": tax_year, "forms": forms, "source": "gemini"}
+                _cc = data.get("recipient_country_code")
+                return {"tax_year": tax_year, "forms": forms, "source": "gemini",
+                        "recipient_country_code": (str(_cc).strip().upper()[:2]
+                                                   if _cc else None)}
             except Exception as _e:
                 _msg = str(_e)
                 _transient = any(s in _msg for s in (
@@ -2049,11 +2147,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "fund_dividends_series": _fund_divs,
             "underlying_dividends_series": _underlying_divs,
         }
-        # Objeto fiscal único (Regla 3, specs/roc-nra-invariants.md): capa 1, tasa base
-        # NRA_DEFAULT_RATE (no depende del país elegido en la UI — analyze_portfolio está
-        # cacheada con @st.cache_data y el país vive en session_state). app.py re-deriva por
-        # país vía build_tax_summaries cuando corresponde (capa 2, aritmética pura barata).
-        results[ticker]['tax_summary'] = build_tax_summary(results[ticker], ticker)
+        # Objeto fiscal único (Regla 3, specs/roc-nra-invariants.md): capa 1, SIN DECLARAR.
+        # Esta función está cacheada con @st.cache_data y el país vive en session_state, así
+        # que aquí no se puede conocer la residencia del cliente. Antes se rellenaba con
+        # NRA_DEFAULT_RATE (30%) "provisionalmente" y la capa 2 nunca llegó a cablearse: el
+        # provisional se convirtió en el número que veía todo el mundo, mexicanos incluidos.
+        # Sin declarar no se estima devolución; la capa 2 (`build_tax_summaries` desde
+        # `ui.estado.perfil_fiscal()`) re-deriva en cuanto el cliente declara su país.
+        results[ticker]['tax_summary'] = build_tax_summary(
+            results[ticker], ticker, base_rate_pct=RATE_UNDECLARED)
 
     return results
 
@@ -4326,8 +4428,15 @@ def detect_cadence_change(history_df, window=6):
 # ── Módulo fiscal NRA (no-residente): tasa por país × escudo del ROC ──────────
 # Tasas de retención sobre dividendos de fuente EE.UU. para residentes de cada país
 # (tablas IRS / tratados). (tasa_%, ¿tiene_tratado?). Default 30% sin tratado.
+#
+# IMPORTANTE — esto es la tasa a la que el inversor tiene DERECHO, no la que le
+# APLICARON. El 10% de México solo corre si el W-8BEN está presentado y vigente (vence a
+# los 3 años del año de firma); sin él, el bróker retiene 30% aunque el tratado diga otra
+# cosa. La tasa realmente aplicada se mide contra los números —casilla 3b del 1042-S, o
+# retenido/bruto del CSV— y se reconcilia contra esta tabla. No son la misma cantidad.
 NRA_DEFAULT_RATE = 30.0
 NRA_COUNTRY_RATES = {
+    'Estados Unidos': (0.0, False),   # residente fiscal US: no hay retención NRA
     'México':      (10.0, True),
     'Chile':       (15.0, True),
     'Colombia':    (30.0, False),
@@ -4336,6 +4445,41 @@ NRA_COUNTRY_RATES = {
     'Brasil':      (30.0, False),
     'Otros LATAM': (30.0, False),
 }
+
+# Centinela de "el cliente no ha declarado su residencia fiscal".
+#
+# NO es lo mismo que 0%. Con tasa 0 el objeto fiscal calcula retención justa = $0 y, por
+# tanto, devolución estimada = TODO lo retenido ("te vuelven los $105 completos"): la
+# lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. Sin
+# país declarado la app no estima devolución: muestra la retención REAL del CSV y pide la
+# residencia. Regla 2 del contrato — una cifra sin base declarada no se publica.
+RATE_UNDECLARED = 'undeclared'
+
+
+def build_fiscal_profile(country=None, source=None) -> dict:
+    """Perfil fiscal del cliente — fuente ÚNICA de la tasa NRA para toda la app.
+
+    Mismo patrón que `build_tax_summary` (Regla 3): se construye una vez y las vistas lo
+    RENDERIZAN; ninguna resuelve el país por su cuenta. Antes cada vista leía
+    `st.session_state` con su propia clave, y bastó que dos strings divergieran
+    (`proj_country` vs `vd_her_proj_country`) para que Comparación · Real quedara clavada
+    en 30% sin que nadie lo notara.
+
+    `country=None` significa **sin declarar**, no 0%: `rate_pct` sale `RATE_UNDECLARED` y
+    las vistas no deben estimar devolución (ver el centinela de arriba).
+
+    `rate_pct` es la tasa CON DERECHO (país + tratado). La tasa APLICADA —lo que el bróker
+    de verdad retuvo— se mide aparte contra los números; la diferencia entre ambas es el
+    diagnóstico de W-8BEN, no un dato de esta función.
+
+    Campos: country, rate_pct, rate_declared, has_treaty, source.
+    """
+    if country not in NRA_COUNTRY_RATES:
+        return {'country': None, 'rate_pct': RATE_UNDECLARED, 'rate_declared': False,
+                'has_treaty': False, 'source': None}
+    rate, treaty = NRA_COUNTRY_RATES[country]
+    return {'country': country, 'rate_pct': float(rate), 'rate_declared': True,
+            'has_treaty': bool(treaty), 'source': source or 'manual'}
 
 
 def nra_tax_breakdown(country, roc_fraction_pct, nominal_income=None):
@@ -4492,12 +4636,19 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
     basis='gross_withheld', moment='annual_reclass_estimate', is_estimate=True, label_short,
     label_long.
     """
-    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+    # `RATE_UNDECLARED` no es una tasa: es la ausencia de una. Con él nunca se estima
+    # devolución — `withheld_real` (real del CSV) se sigue mostrando, pero la aritmética
+    # que necesita una tasa no corre. `None` conserva el default histórico para los
+    # llamadores pedagógicos que sí quieren el 30% estatutario.
+    _undeclared = base_rate_pct == RATE_UNDECLARED
+    _rate = (None if _undeclared
+             else (base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE))
 
     def _null(withheld_real=0.0, label_long='Sin retención NRA o sin % ROC calculado para '
               'este fondo: no aplica devolución estimada.'):
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
+            'rate_declared': not _undeclared,
             'roc_pct_used': None, 'roc_source': None,
             'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
@@ -4513,6 +4664,12 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         withheld_real = float(stats.get('withheld_tax_total') or 0.0)
         if withheld_real <= 0.01:
             return _null(withheld_real, 'No hay retención NRA registrada para este fondo.')
+
+        if _undeclared:
+            return _null(withheld_real,
+                         'Declara tu residencia fiscal para saber cuánto de esta retención '
+                         'te corresponde recuperar. Sin país no estimamos la devolución: la '
+                         'cifra dependería por completo del supuesto.')
 
         roc_pct = stats.get('roc_percent')
         if roc_pct is None:
@@ -4563,6 +4720,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         )
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
+            'rate_declared': True,
             'roc_pct_used': roc_pct, 'roc_source': stats.get('roc_source'),
             'withheld_real': round(withheld_real, 2),
             'fair_withholding': refund_info['fair_withholding'],
@@ -4589,20 +4747,28 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
 def build_tax_summaries(results, base_rate_pct: float = None, country: str = None) -> dict:
     """Agregador `{ticker: tax_summary}` — capa 2 del objeto fiscal único (Regla 3). Reusa por
     IDENTIDAD el `tax_summary` que `analyze_portfolio` ya calculó y cacheó por ticker (capa 1,
-    tasa `NRA_DEFAULT_RATE`) cuando la tasa pedida coincide; si el usuario eligió en la UI un
-    país con tasa de tratado distinta, re-deriva con `build_tax_summary` — aritmética pura
-    sobre dicts ya calculados en memoria, sin tocar red ni YAML, así que es barato llamarlo
-    una vez por render aunque `analyze_portfolio` esté cacheada con `@st.cache_data`.
+    sin declarar) cuando la tasa pedida coincide; si el usuario declaró un país con tasa de
+    tratado distinta, re-deriva con `build_tax_summary` — aritmética pura sobre dicts ya
+    calculados en memoria, sin tocar red ni YAML, así que es barato llamarlo una vez por
+    render aunque `analyze_portfolio` esté cacheada con `@st.cache_data`.
+
+    `base_rate_pct=None` significa **sin declarar** (`RATE_UNDECLARED`), no 30%: es la capa
+    de la UI, y aquí la ausencia de país es un hecho del cliente, no un default que valga
+    inventar. Los llamadores pedagógicos que quieran el 30% estatutario lo piden explícito.
     """
-    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+    _rate = base_rate_pct if base_rate_pct is not None else RATE_UNDECLARED
+    _undeclared = _rate == RATE_UNDECLARED
     out = {}
     for tk, s in (results or {}).items():
         if not isinstance(s, dict) or 'error' in s:
             continue
         cached = s.get('tax_summary')
-        if (cached is not None
-                and abs((cached.get('base_rate_pct') or 0.0) - _rate) < 0.001
-                and cached.get('country') == country):
+        _cached_rate = (cached or {}).get('base_rate_pct')
+        _hit = (cached is not None and cached.get('country') == country
+                and ((_undeclared and not cached.get('rate_declared'))
+                     or (not _undeclared and _cached_rate is not None
+                         and abs(_cached_rate - _rate) < 0.001)))
+        if _hit:
             out[tk] = cached
         else:
             out[tk] = build_tax_summary(s, tk, base_rate_pct=_rate, country=country)
@@ -4720,6 +4886,39 @@ def withheld_tax_total_by_year(history_df) -> dict:
         signed[y] = signed.get(y, 0.0) + float(amt)
     for y, s in signed.items():
         out[y] = round(max(0.0, -s), 2)  # retención neta del año (≥0)
+    return out
+
+
+def withheld_at_payment_by_year(history_df) -> dict:
+    """Retención AL COBRO por año: solo las filas negativas, SIN netear reembolsos.
+
+    Es el complemento de `withheld_tax_total_by_year`, que netea. La diferencia importa por
+    el MOMENTO (Regla 2 del contrato): para inferir a qué tasa te retuvieron hay que mirar lo
+    que el agente descontó cuando pagó el dividendo, no el saldo después de la devolución.
+
+    Sin esta separación, un cliente de IB con reembolso automático de la porción ROC mostraría
+    una tasa efectiva de ~7.5% y parecería tener un tratado que no tiene. La devolución del
+    ROC es un carril distinto (Regla 4) y ya se mide aparte.
+
+    Misma detección de filas de impuesto que `withheld_tax_total` — incluidas las de IB, que
+    llevan 'dividend' en el Action.
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return out
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if not is_tax:
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt) or float(amt) >= 0:       # solo retenciones (montos negativos)
+            continue
+        y = _row_year(row.get('Date'))
+        if y is None:
+            continue
+        out[y] = round(out.get(y, 0.0) - float(amt), 2)
     return out
 
 
@@ -5852,3 +6051,147 @@ def build_drip_comparison_series(base_ticker: str, compare_tickers: tuple, mode:
         return empty, {}
     return pd.concat(frames, ignore_index=True), meta
 
+
+
+# ── Validación de la tasa APLICADA (PR C) ────────────────────────────────────────────────
+#
+# El país da la tasa a la que el cliente tiene DERECHO. Lo que el bróker le APLICÓ está en
+# los números, y no tienen por qué coincidir: el 10% de México solo corre si el W-8BEN está
+# presentado y vigente (vence a los 3 años del año de firma). Sin él retienen 30% igual.
+#
+# Caso real que originó esta regla: un cliente veía un "Estimated industry fee" de $9.00 al
+# vender $37.50 de NVDY. No era comisión — $37.50 x 24% = $9.00 al centavo, backup withholding
+# del IRS (IRC §3406) por no tener W-8BEN en archivo. Regla de método que sale de ahí:
+# **un cargo que es un porcentaje redondo del bruto es una retención fiscal, no una comisión.**
+
+# Margen de tolerancia al comparar tasas. La observada casi nunca da el porcentaje exacto:
+# hay redondeos al centavo, dividendos a caballo entre años y correcciones del bróker. 2
+# puntos porcentuales distinguen 10 de 30 sin gritar por ruido.
+TASA_TOLERANCIA_PP = 2.0
+
+
+def applied_withholding_rate(stats: dict) -> dict:
+    """Tasa de retención que el bróker APLICÓ de verdad, medida sobre los números del CSV.
+
+    `retenido al cobro / bruto`, en total y por año. Usa `withheld_at_payment_by_year` (solo
+    filas negativas) y NO la retención neteada: mezclar el cobro con la devolución del ROC
+    daría una tasa efectiva que ningún tratado explica (Regla 2 — base y momento).
+
+    Devuelve {'applied_pct', 'gross', 'withheld_at_payment', 'by_year', 'years'} o
+    `applied_pct=None` cuando no hay bruto suficiente para dividir.
+    """
+    hist = (stats or {}).get('history')
+    gross_by_year = (stats or {}).get('dividends_gross_by_year') or {}
+    gross_total = (stats or {}).get('dividends_gross_total')
+
+    wh_by_year = withheld_at_payment_by_year(hist)
+    wh_total = round(sum(wh_by_year.values()), 2)
+
+    if gross_total is None:
+        totals = build_dividend_tax_totals(hist)
+        gross_total = totals.get('gross')
+        gross_by_year = gross_by_year or totals.get('gross_by_year') or {}
+
+    by_year = {}
+    for y, g in (gross_by_year or {}).items():
+        try:
+            g = float(g)
+        except (TypeError, ValueError):
+            continue
+        if g <= 0.01:
+            continue
+        by_year[y] = round(wh_by_year.get(y, 0.0) / g * 100.0, 2)
+
+    applied = None
+    try:
+        if gross_total and float(gross_total) > 0.01:
+            applied = round(wh_total / float(gross_total) * 100.0, 2)
+    except (TypeError, ValueError):
+        applied = None
+
+    return {'applied_pct': applied, 'gross': gross_total,
+            'withheld_at_payment': wh_total, 'by_year': by_year,
+            'years': sorted(by_year)}
+
+
+def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
+                                country: str = None) -> dict:
+    """Reconcilia la tasa CON DERECHO contra la APLICADA y separa las dos causas de
+    sobre-retención, que NO se pueden sumar en una sola cifra.
+
+    - `refund_roc`: el bróker retuvo sobre la porción que luego se reclasifica como ROC.
+      **Vuelve sola** (IB ene–mar, Schwab jun–sep).
+    - `gap_w8ben`: le aplicaron una tasa mayor a la que le corresponde por tratado.
+      **No vuelve sola**: hay que presentar el W-8BEN y reclamar con 1040-NR.
+
+    Meterlas en el mismo número sería repetir el bug que originó el contrato fiscal: dos
+    verdades del mismo dólar. La descomposición es exacta —`refund_roc + gap_w8ben` da la
+    misma sobre-retención total que `build_tax_summary`— pero cada mitad lleva su causa,
+    su timing y su acción.
+
+    `verdict`:
+      'sin_declarar'        — no sabemos el país: no se diagnostica nada.
+      'sin_datos'           — no hay bruto o retención suficientes para medir.
+      'coincide'            — la aplicada cuadra con la que corresponde.
+      'tratado_no_aplicado' — le retienen de más para su país. Señal de W-8BEN.
+      'menor_de_lo_esperado'— le retienen de menos; puede ser ROC ya reclasificado.
+    """
+    diag = applied_withholding_rate(stats)
+    applied = diag['applied_pct']
+    out = {
+        'ticker': ticker, 'country': country,
+        'entitled_pct': entitled_pct if entitled_pct != RATE_UNDECLARED else None,
+        'applied_pct': applied,
+        'gross': diag['gross'], 'withheld_at_payment': diag['withheld_at_payment'],
+        'by_year': diag['by_year'],
+        'refund_roc': 0.0, 'gap_w8ben': 0.0,
+        'verdict': 'sin_datos', 'label': '',
+    }
+
+    if entitled_pct is None or entitled_pct == RATE_UNDECLARED:
+        out['verdict'] = 'sin_declarar'
+        out['label'] = ('Declara tu residencia fiscal para saber si te están reteniendo lo '
+                        'que te corresponde.')
+        return out
+    if applied is None or diag['withheld_at_payment'] <= 0.01:
+        out['label'] = 'No hay retención registrada en este archivo para medir la tasa.'
+        return out
+
+    entitled = float(entitled_pct)
+    delta = applied - entitled
+
+    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y
+    # deja de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención.
+    # Sin dato de ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no
+    # "desconocido": no hay reclasificación que esperar, así que todo el exceso sobre la tasa
+    # con derecho es gap de tratado. Dejarlo en None ponía los dos buckets en $0 y hacía
+    # desaparecer un exceso que sí existe.
+    roc_pct = stats.get('roc_percent')
+    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
+    gross = float(diag['gross'] or 0.0)
+    if gross > 0:
+        justa_a_la_aplicada = gross * (applied / 100.0) * escudo
+        out['refund_roc'] = round(max(0.0, diag['withheld_at_payment'] - justa_a_la_aplicada), 2)
+        justa_con_derecho = gross * (entitled / 100.0) * escudo
+        out['gap_w8ben'] = round(max(0.0, justa_a_la_aplicada - justa_con_derecho), 2)
+        out['roc_pct_usado'] = float(roc_pct) if roc_pct is not None else 0.0
+
+    if abs(delta) <= TASA_TOLERANCIA_PP:
+        out['verdict'] = 'coincide'
+        out['label'] = (f'Te retienen al {applied:.1f}%, que es lo que te corresponde'
+                        + (f' en {country}.' if country else '.'))
+    elif delta > TASA_TOLERANCIA_PP:
+        out['verdict'] = 'tratado_no_aplicado'
+        pais = country or 'tu país'
+        out['label'] = (
+            f'Te están reteniendo al {applied:.1f}% cuando por {pais} te corresponde '
+            f'{entitled:.0f}%. Suele significar que tu W-8BEN no está presentado o venció '
+            f'(caduca a los 3 años). Lo retenido de más no vuelve solo: se reclama con el '
+            f'1040-NR, y conviene presentar el formulario para que deje de pasar.')
+    else:
+        out['verdict'] = 'menor_de_lo_esperado'
+        out['label'] = (
+            f'Te retienen al {applied:.1f}%, por debajo del {entitled:.0f}% que te '
+            f'correspondería. Puede ser que parte de la distribución ya venga clasificada '
+            f'como Retorno de Capital. Verifícalo contra tu 1042-S.')
+    return out
