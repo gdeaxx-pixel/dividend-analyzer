@@ -38,7 +38,7 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ## Cómo validar
 
 ```bash
-./.venv/bin/python -m pytest -q          # suite completa — línea base: 410 passed, 2 skipped
+./.venv/bin/python -m pytest -q          # suite completa — línea base: 464 passed, 2 skipped
 ./.venv/bin/python validate_real_cases.py
 ```
 
@@ -76,8 +76,15 @@ no está montado, los tests hacen **skip** — y un skip no es un pass: hay que 
 
 - Rama + PR. **Nunca commit directo a `main`** — `main` auto-despliega a Streamlit Cloud.
 - Daniel mergea. Siempre. Nunca auto-merge. **Mergear no es desplegar.**
-- Función nueva en `logic.py` que `app.py` llame → registrarla en `_LOGIC_SENTINELS` (`app.py` ~L16)
-  **en el mismo commit**, o Streamlit crashea con `AttributeError` sirviendo el módulo viejo.
+- **Módulo nuevo propio** → añadirlo a `stale_guard._ORDEN`, **antes** de quienes lo importan.
+  Streamlit Cloud reescribe los archivos al desplegar sin reiniciar el proceso, y
+  `asegurar_frescura()` recarga por fecha de modificación: lo que no esté en `_ORDEN` se recarga
+  al final, que es seguro salvo si otros módulos importan nombres sueltos de él. Hay un test que
+  avisa (`test_stale_guard.py`) — cazó `ui.estado` el 2026-08-17.
+- **No hace falta registrar funciones nuevas en ninguna lista.** El guard por símbolos
+  (`_LOGIC_SENTINELS`) se retiró: solo veía símbolos nuevos, había que alimentarlo a mano en cada
+  PR y no detectaba el caso más común —un arreglo dentro de una función existente—. Hoy solo vive
+  en `app_old.py`, que no se ejecuta; editarlo ahí no hace nada.
 - `git pull --rebase` antes de push: el workflow de refresco del caché commitea solo.
 
 ## Skills
