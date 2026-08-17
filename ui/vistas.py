@@ -75,11 +75,41 @@ def _tax_summary(ticker: str) -> dict | None:
     return logic.build_tax_summaries(resultados, base_rate_pct=tasa, country=pais).get(ticker)
 
 
+def render_aviso_retencion(stats: dict, ticker: str) -> None:
+    """Contrasta la tasa que le APLICARON contra la que le corresponde por su país.
+
+    El país da el derecho; los números dicen qué pasó. Que no coincidan es la señal de que
+    el W-8BEN no está presentado o venció — y eso es dinero que no vuelve solo, a diferencia
+    de la sobre-retención por ROC. Por eso los dos buckets se muestran SEPARADOS: tienen
+    causas, tiempos y acciones distintas, y sumarlos sería repetir el bug de las dos verdades
+    del mismo dólar.
+    """
+    tasa, pais = estado.tasa_y_pais()
+    diag = logic.build_withholding_diagnosis(
+        stats, ticker, entitled_pct=None if tasa == logic.RATE_UNDECLARED else tasa,
+        country=pais)
+
+    if diag["verdict"] == "tratado_no_aplicado":
+        st.warning(f"**Revisa tu W-8BEN.** {diag['label']}")
+        if diag["gap_w8ben"] > 0.01 or diag["refund_roc"] > 0.01:
+            c1, c2 = st.columns(2)
+            c1.metric("Vuelve solo (ROC)", f"${diag['refund_roc']:,.2f}",
+                      help="Se reclasifica en el cierre anual del bróker: IB devuelve entre "
+                           "enero y marzo, Schwab entre junio y septiembre.")
+            c2.metric("No vuelve solo (W-8BEN)", f"${diag['gap_w8ben']:,.2f}",
+                      help="Retención por encima de tu tratado. Hay que presentar el "
+                           "W-8BEN y reclamar lo cobrado de más con el 1040-NR.")
+    elif diag["verdict"] == "menor_de_lo_esperado":
+        st.info(diag["label"])
+
+
 def render_cash_flow(ruta: Ruta) -> None:
     """El recorrido del dinero para el ETF seleccionado."""
     stats = _stats_o_aviso(ruta)
     if stats is None:
         return
+
+    render_aviso_retencion(stats, ruta.etf)
 
     try:
         datos = cashflow_data(stats, ruta.etf, tax_summary=_tax_summary(ruta.etf))

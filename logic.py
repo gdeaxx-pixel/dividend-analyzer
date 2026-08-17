@@ -4889,6 +4889,39 @@ def withheld_tax_total_by_year(history_df) -> dict:
     return out
 
 
+def withheld_at_payment_by_year(history_df) -> dict:
+    """Retención AL COBRO por año: solo las filas negativas, SIN netear reembolsos.
+
+    Es el complemento de `withheld_tax_total_by_year`, que netea. La diferencia importa por
+    el MOMENTO (Regla 2 del contrato): para inferir a qué tasa te retuvieron hay que mirar lo
+    que el agente descontó cuando pagó el dividendo, no el saldo después de la devolución.
+
+    Sin esta separación, un cliente de IB con reembolso automático de la porción ROC mostraría
+    una tasa efectiva de ~7.5% y parecería tener un tratado que no tiene. La devolución del
+    ROC es un carril distinto (Regla 4) y ya se mide aparte.
+
+    Misma detección de filas de impuesto que `withheld_tax_total` — incluidas las de IB, que
+    llevan 'dividend' en el Action.
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return out
+    for _, row in history_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
+                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+        if not is_tax:
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt) or float(amt) >= 0:       # solo retenciones (montos negativos)
+            continue
+        y = _row_year(row.get('Date'))
+        if y is None:
+            continue
+        out[y] = round(out.get(y, 0.0) - float(amt), 2)
+    return out
+
+
 def observed_tax_refund_by_year(history_df) -> dict:
     """Reembolsos de retención NRA REALES ya acreditados en el CSV, por año calendario.
 
@@ -6018,3 +6051,147 @@ def build_drip_comparison_series(base_ticker: str, compare_tickers: tuple, mode:
         return empty, {}
     return pd.concat(frames, ignore_index=True), meta
 
+
+
+# ── Validación de la tasa APLICADA (PR C) ────────────────────────────────────────────────
+#
+# El país da la tasa a la que el cliente tiene DERECHO. Lo que el bróker le APLICÓ está en
+# los números, y no tienen por qué coincidir: el 10% de México solo corre si el W-8BEN está
+# presentado y vigente (vence a los 3 años del año de firma). Sin él retienen 30% igual.
+#
+# Caso real que originó esta regla: un cliente veía un "Estimated industry fee" de $9.00 al
+# vender $37.50 de NVDY. No era comisión — $37.50 x 24% = $9.00 al centavo, backup withholding
+# del IRS (IRC §3406) por no tener W-8BEN en archivo. Regla de método que sale de ahí:
+# **un cargo que es un porcentaje redondo del bruto es una retención fiscal, no una comisión.**
+
+# Margen de tolerancia al comparar tasas. La observada casi nunca da el porcentaje exacto:
+# hay redondeos al centavo, dividendos a caballo entre años y correcciones del bróker. 2
+# puntos porcentuales distinguen 10 de 30 sin gritar por ruido.
+TASA_TOLERANCIA_PP = 2.0
+
+
+def applied_withholding_rate(stats: dict) -> dict:
+    """Tasa de retención que el bróker APLICÓ de verdad, medida sobre los números del CSV.
+
+    `retenido al cobro / bruto`, en total y por año. Usa `withheld_at_payment_by_year` (solo
+    filas negativas) y NO la retención neteada: mezclar el cobro con la devolución del ROC
+    daría una tasa efectiva que ningún tratado explica (Regla 2 — base y momento).
+
+    Devuelve {'applied_pct', 'gross', 'withheld_at_payment', 'by_year', 'years'} o
+    `applied_pct=None` cuando no hay bruto suficiente para dividir.
+    """
+    hist = (stats or {}).get('history')
+    gross_by_year = (stats or {}).get('dividends_gross_by_year') or {}
+    gross_total = (stats or {}).get('dividends_gross_total')
+
+    wh_by_year = withheld_at_payment_by_year(hist)
+    wh_total = round(sum(wh_by_year.values()), 2)
+
+    if gross_total is None:
+        totals = build_dividend_tax_totals(hist)
+        gross_total = totals.get('gross')
+        gross_by_year = gross_by_year or totals.get('gross_by_year') or {}
+
+    by_year = {}
+    for y, g in (gross_by_year or {}).items():
+        try:
+            g = float(g)
+        except (TypeError, ValueError):
+            continue
+        if g <= 0.01:
+            continue
+        by_year[y] = round(wh_by_year.get(y, 0.0) / g * 100.0, 2)
+
+    applied = None
+    try:
+        if gross_total and float(gross_total) > 0.01:
+            applied = round(wh_total / float(gross_total) * 100.0, 2)
+    except (TypeError, ValueError):
+        applied = None
+
+    return {'applied_pct': applied, 'gross': gross_total,
+            'withheld_at_payment': wh_total, 'by_year': by_year,
+            'years': sorted(by_year)}
+
+
+def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
+                                country: str = None) -> dict:
+    """Reconcilia la tasa CON DERECHO contra la APLICADA y separa las dos causas de
+    sobre-retención, que NO se pueden sumar en una sola cifra.
+
+    - `refund_roc`: el bróker retuvo sobre la porción que luego se reclasifica como ROC.
+      **Vuelve sola** (IB ene–mar, Schwab jun–sep).
+    - `gap_w8ben`: le aplicaron una tasa mayor a la que le corresponde por tratado.
+      **No vuelve sola**: hay que presentar el W-8BEN y reclamar con 1040-NR.
+
+    Meterlas en el mismo número sería repetir el bug que originó el contrato fiscal: dos
+    verdades del mismo dólar. La descomposición es exacta —`refund_roc + gap_w8ben` da la
+    misma sobre-retención total que `build_tax_summary`— pero cada mitad lleva su causa,
+    su timing y su acción.
+
+    `verdict`:
+      'sin_declarar'        — no sabemos el país: no se diagnostica nada.
+      'sin_datos'           — no hay bruto o retención suficientes para medir.
+      'coincide'            — la aplicada cuadra con la que corresponde.
+      'tratado_no_aplicado' — le retienen de más para su país. Señal de W-8BEN.
+      'menor_de_lo_esperado'— le retienen de menos; puede ser ROC ya reclasificado.
+    """
+    diag = applied_withholding_rate(stats)
+    applied = diag['applied_pct']
+    out = {
+        'ticker': ticker, 'country': country,
+        'entitled_pct': entitled_pct if entitled_pct != RATE_UNDECLARED else None,
+        'applied_pct': applied,
+        'gross': diag['gross'], 'withheld_at_payment': diag['withheld_at_payment'],
+        'by_year': diag['by_year'],
+        'refund_roc': 0.0, 'gap_w8ben': 0.0,
+        'verdict': 'sin_datos', 'label': '',
+    }
+
+    if entitled_pct is None or entitled_pct == RATE_UNDECLARED:
+        out['verdict'] = 'sin_declarar'
+        out['label'] = ('Declara tu residencia fiscal para saber si te están reteniendo lo '
+                        'que te corresponde.')
+        return out
+    if applied is None or diag['withheld_at_payment'] <= 0.01:
+        out['label'] = 'No hay retención registrada en este archivo para medir la tasa.'
+        return out
+
+    entitled = float(entitled_pct)
+    delta = applied - entitled
+
+    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y
+    # deja de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención.
+    # Sin dato de ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no
+    # "desconocido": no hay reclasificación que esperar, así que todo el exceso sobre la tasa
+    # con derecho es gap de tratado. Dejarlo en None ponía los dos buckets en $0 y hacía
+    # desaparecer un exceso que sí existe.
+    roc_pct = stats.get('roc_percent')
+    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
+    gross = float(diag['gross'] or 0.0)
+    if gross > 0:
+        justa_a_la_aplicada = gross * (applied / 100.0) * escudo
+        out['refund_roc'] = round(max(0.0, diag['withheld_at_payment'] - justa_a_la_aplicada), 2)
+        justa_con_derecho = gross * (entitled / 100.0) * escudo
+        out['gap_w8ben'] = round(max(0.0, justa_a_la_aplicada - justa_con_derecho), 2)
+        out['roc_pct_usado'] = float(roc_pct) if roc_pct is not None else 0.0
+
+    if abs(delta) <= TASA_TOLERANCIA_PP:
+        out['verdict'] = 'coincide'
+        out['label'] = (f'Te retienen al {applied:.1f}%, que es lo que te corresponde'
+                        + (f' en {country}.' if country else '.'))
+    elif delta > TASA_TOLERANCIA_PP:
+        out['verdict'] = 'tratado_no_aplicado'
+        pais = country or 'tu país'
+        out['label'] = (
+            f'Te están reteniendo al {applied:.1f}% cuando por {pais} te corresponde '
+            f'{entitled:.0f}%. Suele significar que tu W-8BEN no está presentado o venció '
+            f'(caduca a los 3 años). Lo retenido de más no vuelve solo: se reclama con el '
+            f'1040-NR, y conviene presentar el formulario para que deje de pasar.')
+    else:
+        out['verdict'] = 'menor_de_lo_esperado'
+        out['label'] = (
+            f'Te retienen al {applied:.1f}%, por debajo del {entitled:.0f}% que te '
+            f'correspondería. Puede ser que parte de la distribución ya venga clasificada '
+            f'como Retorno de Capital. Verifícalo contra tu 1042-S.')
+    return out
