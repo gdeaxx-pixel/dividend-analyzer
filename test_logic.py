@@ -2652,19 +2652,25 @@ def _tax_summary_multi_year_setup(monkeypatch):
 def test_tax_summary_is_single_source_across_views(monkeypatch):
     """Regla 3: tax_summary reusa estimate_roc_refund_by_year tal cual (no reimplementa su
     matemática), declara base/momento como estimado (Regla 2), y build_tax_summaries /
-    build_hoja_excel lo consumen por IDENTIDAD — no una copia recalculada."""
+    build_hoja_excel lo consumen por IDENTIDAD — no una copia recalculada.
+
+    Se parte de un summary DECLARADO (capa 2, país sin tratado) porque la capa 1 ya no
+    declara tasa: sin residencia no hay devolución que estimar, y este test es sobre la
+    aritmética de la devolución. La rama sin declarar la cubre `test_capa_1_no_declara_tasa`."""
     results = _tax_summary_multi_year_setup(monkeypatch)
     s = results["MSTY"]
-    ts = s["tax_summary"]
+    ts = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
     assert ts is not None
+    assert ts["rate_declared"] is True
 
     # (a) devolución estimada + neto estimado deben sumar exactamente el retenido real.
     assert ts["refund_estimated"] + ts["net_estimated"] == pytest.approx(
         ts["withheld_real"], abs=0.01)
     assert ts["withheld_real"] == pytest.approx(s["withheld_tax_total"], abs=0.01)
 
-    # (b) coincide con llamar estimate_roc_refund_by_year directamente — misma tasa (capa 1 =
-    # NRA_DEFAULT_RATE) y mismo roc_fallback_pct (roc_percent del holder) que usa build_tax_summary.
+    # (b) coincide con llamar estimate_roc_refund_by_year directamente — misma tasa declarada
+    # y mismo roc_fallback_pct (roc_percent del holder) que usa build_tax_summary.
     direct = logic.estimate_roc_refund_by_year(
         s["dividends_gross_by_year"], s["withheld_by_year"], "MSTY",
         base_rate=logic.NRA_DEFAULT_RATE / 100.0, roc_fallback_pct=s["roc_percent"])
@@ -2677,13 +2683,16 @@ def test_tax_summary_is_single_source_across_views(monkeypatch):
     assert ts["moment"] == "annual_reclass_estimate"
     assert ts["basis"] == "gross_withheld"
 
-    # (d) build_tax_summaries reusa por IDENTIDAD el tax_summary cacheado en capa 1 (misma
-    # tasa) — no lo recalcula ni lo copia; build_hoja_excel propaga esa misma identidad.
-    sums = logic.build_tax_summaries(results)
-    assert sums["MSTY"] is s["tax_summary"]
-
+    # (d) build_hoja_excel propaga por IDENTIDAD el mismo objeto que recibe — no lo recalcula
+    # ni lo copia. Es lo que impide que dos vistas muestren dos verdades del mismo dólar.
+    sums = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")
     he = logic.build_hoja_excel(results, classify_map={"MSTY": "mode_a"}, tax_summaries=sums)
     assert he["rows"][0]["tax_summary"] is sums["MSTY"]
+
+    # Y la reutilización por identidad sigue viva para el caso sin declarar: pedir dos veces
+    # lo mismo devuelve el objeto cacheado de capa 1, no una copia nueva.
+    assert logic.build_tax_summaries(results)["MSTY"] is s["tax_summary"]
 
 
 def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
@@ -2722,29 +2731,78 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
     # roc_dollars sigue viniendo de _roc_pct_for (weighted_pct 19a) — no del tax_summary.
     assert r["roc_pct"] == pytest.approx(65.0, abs=0.01)
     assert round(r["roc_dollars"], 2) == round(0.65 * gross, 2)
-    ts = s["tax_summary"]
+    # Regla 4 sobre un summary declarado: la capa 1 ya no trae `roc_pct_used` porque sin
+    # residencia no corre la aritmética fiscal. Los carriles siguen sin cruzarse.
+    ts = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
     assert ts["roc_pct_used"] == pytest.approx(s["roc_percent"], abs=0.01)
     assert ts["roc_pct_used"] != pytest.approx(r["roc_pct"], abs=0.01)  # carriles distintos
 
 
 def test_build_tax_summaries_respeta_tasa_de_tratado(monkeypatch):
     """Capa 2: build_tax_summaries re-deriva con la tasa de tratado del país (México, 10%) en
-    vez de la NRA_DEFAULT_RATE (30%) de capa 1 — la retención justa baja, la devolución
-    estimada sube, y el objeto declara la tasa usada."""
+    vez del 30% estatutario — la retención justa baja, la devolución estimada sube, y el
+    objeto declara la tasa usada.
+
+    La referencia contra la que se compara cambió a propósito: la capa 1 ya no rellena 30%
+    "provisionalmente" (ver `test_capa_1_no_declara_tasa`), así que el contraste se hace
+    contra el 30% pedido EXPLÍCITAMENTE, que es el caso real de un residente sin tratado."""
     results = _tax_summary_multi_year_setup(monkeypatch)
-    s = results["MSTY"]
-    default_ts = s["tax_summary"]
-    assert default_ts["base_rate_pct"] == pytest.approx(logic.NRA_DEFAULT_RATE)
+    sin_tratado = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
+    assert sin_tratado["base_rate_pct"] == pytest.approx(logic.NRA_DEFAULT_RATE)
+    assert sin_tratado["rate_declared"] is True
 
     treaty_rate = logic.NRA_COUNTRY_RATES["México"][0]  # 10.0, con tratado
-    sums = logic.build_tax_summaries(results, base_rate_pct=treaty_rate)
-    treaty_ts = sums["MSTY"]
+    treaty_ts = logic.build_tax_summaries(
+        results, base_rate_pct=treaty_rate, country="México")["MSTY"]
 
-    assert treaty_ts is not default_ts   # tasa distinta → no reusa por identidad, re-deriva
+    assert treaty_ts is not sin_tratado   # tasa distinta → no reusa por identidad, re-deriva
     assert treaty_ts["base_rate_pct"] == pytest.approx(treaty_rate)
-    assert treaty_ts["fair_withholding"] < default_ts["fair_withholding"]
-    assert treaty_ts["refund_estimated"] > default_ts["refund_estimated"]
-    assert treaty_ts["net_estimated"] < default_ts["net_estimated"]
+    assert treaty_ts["fair_withholding"] < sin_tratado["fair_withholding"]
+    assert treaty_ts["refund_estimated"] > sin_tratado["refund_estimated"]
+    assert treaty_ts["net_estimated"] < sin_tratado["net_estimated"]
+
+
+def test_capa_1_no_declara_tasa(monkeypatch):
+    """`analyze_portfolio` (capa 1) corre bajo `@st.cache_data` y no puede ver el país del
+    cliente, así que construye el objeto fiscal SIN DECLARAR — no con el 30% estatutario.
+
+    Antes lo rellenaba con `NRA_DEFAULT_RATE` "provisionalmente" y la capa 2 nunca llegó a
+    cablearse desde la UI: el provisional acabó siendo el número que veía todo el mundo,
+    incluidos los residentes de México (10% por tratado). Sin país no se estima devolución;
+    la retención REAL del CSV sí se sigue mostrando."""
+    results = _tax_summary_multi_year_setup(monkeypatch)
+    ts = results["MSTY"]["tax_summary"]
+
+    assert ts["rate_declared"] is False
+    assert ts["base_rate_pct"] is None
+    assert ts["country"] is None
+    assert ts["refund_estimated"] == 0.0
+    assert ts["fair_withholding"] == 0.0
+    # Lo que SÍ es un dato —lo que el bróker retuvo— no desaparece por no saber el país.
+    assert ts["withheld_real"] == pytest.approx(results["MSTY"]["withheld_tax_total"], abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(ts["withheld_real"], abs=0.01)
+
+
+def test_sin_declarar_no_es_cero_por_ciento(monkeypatch):
+    """El centinela y la tasa 0% son cosas distintas, y confundirlas es la trampa de todo esto.
+
+    Con 0% declarado (residente fiscal en EE.UU.) la retención justa es $0 y por tanto TODO
+    lo retenido se estima como devolución. Esa lectura es correcta para quien declara 0% —
+    y catastróficamente optimista como default para quien no declaró nada."""
+    results = _tax_summary_multi_year_setup(monkeypatch)
+    retenido = results["MSTY"]["withheld_tax_total"]
+
+    cero = logic.build_tax_summaries(
+        results, base_rate_pct=0.0, country="Estados Unidos")["MSTY"]
+    assert cero["rate_declared"] is True
+    assert cero["refund_estimated"] == pytest.approx(retenido, abs=0.01)   # todo vuelve
+
+    sin_declarar = logic.build_tax_summaries(results)["MSTY"]
+    assert sin_declarar["rate_declared"] is False
+    assert sin_declarar["refund_estimated"] == 0.0        # no se estima, no es que sea cero
+    assert sin_declarar["withheld_real"] == pytest.approx(retenido, abs=0.01)
 
 
 def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
@@ -2753,25 +2811,28 @@ def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
     tasa: si no, un objeto de capa 1 (country=None) se reusaría para un país con tratado y la
     vista mostraría la etiqueta equivocada."""
     results = _tax_summary_multi_year_setup(monkeypatch)
-    default_ts = results["MSTY"]["tax_summary"]
-    assert default_ts["country"] is None          # capa 1: tasa por defecto, sin país
+    capa1_ts = results["MSTY"]["tax_summary"]
+    assert capa1_ts["country"] is None             # capa 1: sin declarar, sin país
 
     treaty_rate = logic.NRA_COUNTRY_RATES["México"][0]
     sums = logic.build_tax_summaries(results, base_rate_pct=treaty_rate, country="México")
     assert sums["MSTY"]["country"] == "México"
     assert sums["MSTY"]["base_rate_pct"] == pytest.approx(treaty_rate)
 
-    # Sin país explícito pero con la MISMA tasa por defecto → sí reusa por identidad (capa 1).
-    assert logic.build_tax_summaries(results)["MSTY"] is default_ts
+    # Sin argumentos = sin declarar, igual que capa 1 → sí reusa por identidad.
+    assert logic.build_tax_summaries(results)["MSTY"] is capa1_ts
 
-    # Misma tasa por defecto pero con país declarado → NO puede reusar el de capa 1, porque
-    # su etiqueta de país no coincide.
-    same_rate_named = logic.build_tax_summaries(
-        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")
-    assert same_rate_named["MSTY"] is not default_ts
-    assert same_rate_named["MSTY"]["country"] == "Colombia"
-    assert same_rate_named["MSTY"]["refund_estimated"] == pytest.approx(
-        default_ts["refund_estimated"], abs=0.01)   # la etiqueta no altera la aritmética
+    # Dos países SIN tratado comparten tasa (30%) pero no etiqueta: la reutilización por
+    # identidad debe mirar ambas, o una vista pintaría el país equivocado.
+    colombia = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
+    peru = logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Perú")["MSTY"]
+    assert colombia is not capa1_ts                 # capa 1 no declara tasa: no puede reusarse
+    assert colombia is not peru
+    assert colombia["country"] == "Colombia" and peru["country"] == "Perú"
+    assert colombia["refund_estimated"] == pytest.approx(
+        peru["refund_estimated"], abs=0.01)         # la etiqueta no altera la aritmética
 
 
 # ── Objeto fiscal único: bruto/retención/neto (PR B, build_dividend_tax_totals) ─────────────

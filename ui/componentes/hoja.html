@@ -1292,7 +1292,13 @@
       inversion: "Lo que pusiste de tu <b>bolsillo</b> (costo base): el capital real que aportaste, sin contar dividendos.",
       netos: "Los dividendos que de verdad entraron a tu cuenta, <b>ya descontado</b> el impuesto NRA. Incluye lo reinvertido (DRIP) y el efectivo.",
       bruto: "El dividendo <b>bruto</b>: lo que el fondo declaró, <b>antes</b> de la retención de impuesto a extranjeros.",
-      nra: "El impuesto que EE.UU. retiene a extranjeros (~30%) <b>antes</b> de depositarte el dividendo. Por eso el neto es menor que el bruto.",
+      // La tasa se rotula con el perfil declarado, no con un literal: esta columna muestra
+      // la retención REAL del bróker, y decir "~30%" al lado le mentiría a un residente de
+      // México (10% por tratado) o de EE.UU. (0%). Sin residencia declarada se omite el
+      // número en vez de inventar uno.
+      nra: "El impuesto que EE.UU. retiene a extranjeros" +
+           (D.tasa_declarada && D.tasa_pct != null ? " (" + D.tasa_pct + "%)" : "") +
+           " <b>antes</b> de depositarte el dividendo. Por eso el neto es menor que el bruto.",
       drip: "La parte del dividendo que se <b>reinvirtió</b>: compró más acciones del fondo. Ese dinero <b>ya está dentro del «Valor mer.»</b> — sumarlo otra vez al retorno es contarlo dos veces.",
       efectivo: "La parte del dividendo que se quedó <b>en efectivo</b>, a salvo del mercado. Es lo <b>único</b> que se suma al retorno además del valor de mercado.",
       totalinv: "⚠ El método viejo: <b>Inversión + Dividendos</b>, como si los dividendos fueran capital que aportaste. <b>No lo son</b>: son retorno —y en YieldMax buena parte es tu propio capital de vuelta (ROC)—. Esta cifra infla el «invertido».",

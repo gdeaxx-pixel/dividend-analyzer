@@ -35,6 +35,7 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
+from ui import estado
 
 CAT_CLAVE = "detalle"
 CAT_LABEL = "Detalle"
@@ -261,14 +262,19 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
                 for parrafo in why:
                     st.markdown(parrafo)
 
+    # La tasa se lee del perfil: este callout va pegado a las cifras reales del bróker, así
+    # que fijar "~30%" le mentiría a un mexicano (10% por tratado) o a un residente US (0%).
+    _perfil = estado.perfil_fiscal()
+    _imp = (f'menos ~{_perfil["rate_pct"]:.0f}% de impuesto' if _perfil["rate_declared"]
+            else 'menos la retención de impuestos que te corresponda')
     st.markdown(
         '<div class="vd-her-callout" style="border-left-color: var(--warn);">'
         '<p class="vd-her-callout-eyebrow">El trato completo, en una línea</p>'
         '<p class="vd-her-callout-cuerpo">'
         '<b>Cuándo sí:</b> quieres ingreso mensual real hoy y lo entiendes como renta, no '
         'crecimiento. &nbsp;·&nbsp; <b>El precio:</b> renuncias a la subida de la acción, '
-        "el NAV tiende a erosionarse, y parte del 'pago' es tu dinero de vuelta (ROC) menos "
-        '~30% de impuesto. &nbsp;·&nbsp; <b>Regla de bolsillo:</b> yield alto ≠ ganancia '
+        "el NAV tiende a erosionarse, y parte del 'pago' es tu dinero de vuelta (ROC) "
+        f'{_imp}. &nbsp;·&nbsp; <b>Regla de bolsillo:</b> yield alto ≠ ganancia '
         'alta — la cifra que manda es el retorno total de la portada.</p></div>',
         unsafe_allow_html=True)
 
@@ -1158,14 +1164,19 @@ def _proyeccion_escenario(resultados: dict, classify_map: dict) -> None:
             p_contrib = st.number_input("Aporte mensual ($)", min_value=0.0, value=0.0,
                                         step=50.0, key="vd_her_proj_contrib")
         with c3:
-            countries = ["— sin impuesto —", "Colombia", "México", "Chile", "Perú",
-                        "Argentina", "Brasil", "Otros LATAM"]
-            p_country_sel = st.selectbox(
-                "Tu país (retención NRA)", countries, index=1, key="vd_her_proj_country",
-                help="No-residentes (NRA): 30% base sobre dividendos de fuente EE.UU.; "
-                    "México 10% y Chile 15% por tratado. El Retorno de Capital (ROC) "
-                    "reduce la retención real.")
-            p_country = p_country_sel if p_country_sel in logic.NRA_COUNTRY_RATES else None
+            # El selector de país ya no vive aquí: se declara una vez en el Paso 2 y esta
+            # vista LEE el perfil, como todas las demás. Estar enterrado en un expander
+            # colapsado de una sub-vista fue justo lo que permitió que su valor no llegara
+            # a ninguna otra cifra fiscal de la app durante todo el port.
+            _perfil = estado.perfil_fiscal()
+            p_country = _perfil["country"]
+            if _perfil["rate_declared"]:
+                st.metric("Retención NRA", f'{_perfil["rate_pct"]:.0f}%',
+                          help=f'Residencia declarada: {p_country}. Se cambia en el Paso 2.')
+            else:
+                st.metric("Retención NRA", "sin declarar",
+                          help="Declara tu residencia fiscal en el Paso 2 para proyectar "
+                               "los ingresos netos de retención.")
         with c4:
             p_drip = st.checkbox("Reinvertir (DRIP)", value=True, key="vd_her_proj_drip")
         c5, c6, c7 = st.columns(3)
@@ -1310,7 +1321,10 @@ def _yield_audit(resultados: dict, classify_map: dict) -> None:
     auditados (titular → mecanismo hoy → realizado) por fondo, con `st.pills` cuando
     está disponible. Reusa `logic.build_tax_summaries` una sola vez (Regla 3: mismo
     objeto fiscal por ticker, no se recalcula por segunda vez)."""
-    tax_summaries = logic.build_tax_summaries(resultados)
+    # Antes se llamaba sin argumentos → 30% plano para todos. La residencia declarada por el
+    # cliente tiene que llegar hasta aquí como a cualquier otra vista fiscal.
+    _tasa, _pais = estado.tasa_y_pais()
+    tax_summaries = logic.build_tax_summaries(resultados, base_rate_pct=_tasa, country=_pais)
     hoja = logic.build_hoja_excel(resultados, classify_map, tax_summaries=tax_summaries)
     rows = hoja.get("rows") or []
     if not rows:
@@ -1420,13 +1434,23 @@ def _yield_audit(resultados: dict, classify_map: dict) -> None:
 # ── Fila 20 — Comparativa de estrategias ────────────────────────────────────
 
 _ESTR_ETF_MAP = {"SCHB": "Todo en SCHB", "XLK": "Todo en XLK", "YMAX": "Todo en YMAX", "SMH": "Todo en SMH"}
-# Retencion aplicada a las distribuciones del ETF alternativo al reinvertirlas. 0.0 = bruto,
-# que es lo que medía la version anterior (`auto_adjust=True` de yfinance reinvierte el
-# dividendo integro). Se deja explicito en vez de implicito: subirlo a la tasa real del
-# inversor haria el benchmark mas honesto, pero es una decision de producto — cambiarlo aqui
-# mueve las cifras de la comparacion.
-_ESTR_NRA_RATE = 0.0
 _ESTR_MONO = "'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+
+
+def _estr_nra_rate() -> float:
+    """Retención aplicada a las distribuciones del ETF alternativo al reinvertirlas.
+
+    Sale de la residencia declarada por el cliente. Antes era `0.0` fijo, lo que hacía la
+    comparación asimétrica: el portafolio real cargaba la retención observada de su CSV
+    mientras el benchmark reinvertía dividendos íntegros — una ventaja que el cliente no
+    tendría en la vida real, justo en la vista que existe para responder "¿me habría ido
+    mejor en un solo ETF?".
+
+    Sin residencia declarada sigue en 0.0 (bruto) y la vista lo ROTULA como tal: es el único
+    sitio donde «sin declarar» colapsa a cero, porque el motor necesita un número para
+    simular. Ver `ui.estado.tasa_para_motor`.
+    """
+    return estado.tasa_para_motor()
 
 
 def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
@@ -1451,7 +1475,10 @@ def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
     import backtest
     import price_cache
 
-    ts_key = f"vd_her_strat_ts_{st.session_state.get('_file_id', 'x')}"
+    # La tasa entra en la clave: si no, cambiar de residencia dejaría la serie cacheada de
+    # la tasa anterior y la gráfica contradiría al resto de la app en silencio.
+    ts_key = (f"vd_her_strat_ts_{st.session_state.get('_file_id', 'x')}"
+              f"_{_estr_nra_rate():.4f}")
     if ts_key in st.session_state:
         return st.session_state[ts_key]
 
@@ -1510,6 +1537,8 @@ def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
         r_df["Estrategia"] = "Tu Portafolio Real"
         frames_ts.append(r_df)
 
+    nra_rate = _estr_nra_rate()
+
     if buy_flows:
         ts_start = buy_flows[0][0] - pd.Timedelta(days=10)
         ts_end = pd.Timestamp.today()
@@ -1532,7 +1561,7 @@ def _serie_temporal_estrategias(resultados: dict, sr_invested: float) -> dict:
                         continue
                     r = backtest.run_backtest(
                         etf_tk, start_date=bd_norm, initial_capital=float(amt),
-                        drip=True, nra_rate=_ESTR_NRA_RATE, end_date=ts_end, history=hist)
+                        drip=True, nra_rate=nra_rate, end_date=ts_end, history=hist)
                     serie = r.daily["total_value"]
                     port_val = serie if port_val is None else port_val.add(serie, fill_value=0.0)
                 if port_val is None:

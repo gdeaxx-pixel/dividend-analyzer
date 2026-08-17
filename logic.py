@@ -2049,11 +2049,15 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "fund_dividends_series": _fund_divs,
             "underlying_dividends_series": _underlying_divs,
         }
-        # Objeto fiscal único (Regla 3, specs/roc-nra-invariants.md): capa 1, tasa base
-        # NRA_DEFAULT_RATE (no depende del país elegido en la UI — analyze_portfolio está
-        # cacheada con @st.cache_data y el país vive en session_state). app.py re-deriva por
-        # país vía build_tax_summaries cuando corresponde (capa 2, aritmética pura barata).
-        results[ticker]['tax_summary'] = build_tax_summary(results[ticker], ticker)
+        # Objeto fiscal único (Regla 3, specs/roc-nra-invariants.md): capa 1, SIN DECLARAR.
+        # Esta función está cacheada con @st.cache_data y el país vive en session_state, así
+        # que aquí no se puede conocer la residencia del cliente. Antes se rellenaba con
+        # NRA_DEFAULT_RATE (30%) "provisionalmente" y la capa 2 nunca llegó a cablearse: el
+        # provisional se convirtió en el número que veía todo el mundo, mexicanos incluidos.
+        # Sin declarar no se estima devolución; la capa 2 (`build_tax_summaries` desde
+        # `ui.estado.perfil_fiscal()`) re-deriva en cuanto el cliente declara su país.
+        results[ticker]['tax_summary'] = build_tax_summary(
+            results[ticker], ticker, base_rate_pct=RATE_UNDECLARED)
 
     return results
 
@@ -4326,8 +4330,15 @@ def detect_cadence_change(history_df, window=6):
 # ── Módulo fiscal NRA (no-residente): tasa por país × escudo del ROC ──────────
 # Tasas de retención sobre dividendos de fuente EE.UU. para residentes de cada país
 # (tablas IRS / tratados). (tasa_%, ¿tiene_tratado?). Default 30% sin tratado.
+#
+# IMPORTANTE — esto es la tasa a la que el inversor tiene DERECHO, no la que le
+# APLICARON. El 10% de México solo corre si el W-8BEN está presentado y vigente (vence a
+# los 3 años del año de firma); sin él, el bróker retiene 30% aunque el tratado diga otra
+# cosa. La tasa realmente aplicada se mide contra los números —casilla 3b del 1042-S, o
+# retenido/bruto del CSV— y se reconcilia contra esta tabla. No son la misma cantidad.
 NRA_DEFAULT_RATE = 30.0
 NRA_COUNTRY_RATES = {
+    'Estados Unidos': (0.0, False),   # residente fiscal US: no hay retención NRA
     'México':      (10.0, True),
     'Chile':       (15.0, True),
     'Colombia':    (30.0, False),
@@ -4336,6 +4347,41 @@ NRA_COUNTRY_RATES = {
     'Brasil':      (30.0, False),
     'Otros LATAM': (30.0, False),
 }
+
+# Centinela de "el cliente no ha declarado su residencia fiscal".
+#
+# NO es lo mismo que 0%. Con tasa 0 el objeto fiscal calcula retención justa = $0 y, por
+# tanto, devolución estimada = TODO lo retenido ("te vuelven los $105 completos"): la
+# lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. Sin
+# país declarado la app no estima devolución: muestra la retención REAL del CSV y pide la
+# residencia. Regla 2 del contrato — una cifra sin base declarada no se publica.
+RATE_UNDECLARED = 'undeclared'
+
+
+def build_fiscal_profile(country=None, source=None) -> dict:
+    """Perfil fiscal del cliente — fuente ÚNICA de la tasa NRA para toda la app.
+
+    Mismo patrón que `build_tax_summary` (Regla 3): se construye una vez y las vistas lo
+    RENDERIZAN; ninguna resuelve el país por su cuenta. Antes cada vista leía
+    `st.session_state` con su propia clave, y bastó que dos strings divergieran
+    (`proj_country` vs `vd_her_proj_country`) para que Comparación · Real quedara clavada
+    en 30% sin que nadie lo notara.
+
+    `country=None` significa **sin declarar**, no 0%: `rate_pct` sale `RATE_UNDECLARED` y
+    las vistas no deben estimar devolución (ver el centinela de arriba).
+
+    `rate_pct` es la tasa CON DERECHO (país + tratado). La tasa APLICADA —lo que el bróker
+    de verdad retuvo— se mide aparte contra los números; la diferencia entre ambas es el
+    diagnóstico de W-8BEN, no un dato de esta función.
+
+    Campos: country, rate_pct, rate_declared, has_treaty, source.
+    """
+    if country not in NRA_COUNTRY_RATES:
+        return {'country': None, 'rate_pct': RATE_UNDECLARED, 'rate_declared': False,
+                'has_treaty': False, 'source': None}
+    rate, treaty = NRA_COUNTRY_RATES[country]
+    return {'country': country, 'rate_pct': float(rate), 'rate_declared': True,
+            'has_treaty': bool(treaty), 'source': source or 'manual'}
 
 
 def nra_tax_breakdown(country, roc_fraction_pct, nominal_income=None):
@@ -4492,12 +4538,19 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
     basis='gross_withheld', moment='annual_reclass_estimate', is_estimate=True, label_short,
     label_long.
     """
-    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+    # `RATE_UNDECLARED` no es una tasa: es la ausencia de una. Con él nunca se estima
+    # devolución — `withheld_real` (real del CSV) se sigue mostrando, pero la aritmética
+    # que necesita una tasa no corre. `None` conserva el default histórico para los
+    # llamadores pedagógicos que sí quieren el 30% estatutario.
+    _undeclared = base_rate_pct == RATE_UNDECLARED
+    _rate = (None if _undeclared
+             else (base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE))
 
     def _null(withheld_real=0.0, label_long='Sin retención NRA o sin % ROC calculado para '
               'este fondo: no aplica devolución estimada.'):
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
+            'rate_declared': not _undeclared,
             'roc_pct_used': None, 'roc_source': None,
             'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
@@ -4513,6 +4566,12 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         withheld_real = float(stats.get('withheld_tax_total') or 0.0)
         if withheld_real <= 0.01:
             return _null(withheld_real, 'No hay retención NRA registrada para este fondo.')
+
+        if _undeclared:
+            return _null(withheld_real,
+                         'Declara tu residencia fiscal para saber cuánto de esta retención '
+                         'te corresponde recuperar. Sin país no estimamos la devolución: la '
+                         'cifra dependería por completo del supuesto.')
 
         roc_pct = stats.get('roc_percent')
         if roc_pct is None:
@@ -4563,6 +4622,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         )
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
+            'rate_declared': True,
             'roc_pct_used': roc_pct, 'roc_source': stats.get('roc_source'),
             'withheld_real': round(withheld_real, 2),
             'fair_withholding': refund_info['fair_withholding'],
@@ -4589,20 +4649,28 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
 def build_tax_summaries(results, base_rate_pct: float = None, country: str = None) -> dict:
     """Agregador `{ticker: tax_summary}` — capa 2 del objeto fiscal único (Regla 3). Reusa por
     IDENTIDAD el `tax_summary` que `analyze_portfolio` ya calculó y cacheó por ticker (capa 1,
-    tasa `NRA_DEFAULT_RATE`) cuando la tasa pedida coincide; si el usuario eligió en la UI un
-    país con tasa de tratado distinta, re-deriva con `build_tax_summary` — aritmética pura
-    sobre dicts ya calculados en memoria, sin tocar red ni YAML, así que es barato llamarlo
-    una vez por render aunque `analyze_portfolio` esté cacheada con `@st.cache_data`.
+    sin declarar) cuando la tasa pedida coincide; si el usuario declaró un país con tasa de
+    tratado distinta, re-deriva con `build_tax_summary` — aritmética pura sobre dicts ya
+    calculados en memoria, sin tocar red ni YAML, así que es barato llamarlo una vez por
+    render aunque `analyze_portfolio` esté cacheada con `@st.cache_data`.
+
+    `base_rate_pct=None` significa **sin declarar** (`RATE_UNDECLARED`), no 30%: es la capa
+    de la UI, y aquí la ausencia de país es un hecho del cliente, no un default que valga
+    inventar. Los llamadores pedagógicos que quieran el 30% estatutario lo piden explícito.
     """
-    _rate = base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE
+    _rate = base_rate_pct if base_rate_pct is not None else RATE_UNDECLARED
+    _undeclared = _rate == RATE_UNDECLARED
     out = {}
     for tk, s in (results or {}).items():
         if not isinstance(s, dict) or 'error' in s:
             continue
         cached = s.get('tax_summary')
-        if (cached is not None
-                and abs((cached.get('base_rate_pct') or 0.0) - _rate) < 0.001
-                and cached.get('country') == country):
+        _cached_rate = (cached or {}).get('base_rate_pct')
+        _hit = (cached is not None and cached.get('country') == country
+                and ((_undeclared and not cached.get('rate_declared'))
+                     or (not _undeclared and _cached_rate is not None
+                         and abs(_cached_rate - _rate) < 0.001)))
+        if _hit:
             out[tk] = cached
         else:
             out[tk] = build_tax_summary(s, tk, base_rate_pct=_rate, country=country)

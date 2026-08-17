@@ -110,10 +110,15 @@ def _tiene_datos(stats) -> bool:
     return isinstance(stats, dict) and "error" not in stats and not stats.get("skipped")
 
 
-def cashflow_data(stats: dict, ticker: str) -> dict:
+def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
     """Las 12 constantes del Cash flow, más lo que el componente necesita para rotular.
 
     Equivale al bloque `viaje-dinero-waterfall.html:2124-2127`, pero con datos del CSV.
+
+    `tax_summary` permite inyectar el objeto fiscal ya re-derivado por el país declarado
+    (capa 2, `logic.build_tax_summaries`). Sin él se usa el cacheado en `stats` — que es la
+    capa 1, SIN DECLARAR, y por tanto no trae devolución estimada. Nunca se recalcula el
+    concepto aquí (Regla 3): o llega el objeto, o se lee el de `stats`.
     """
     if not stats or stats.get("skipped"):
         raise DatosIncompletos(f"{ticker}: sin datos analizables")
@@ -125,7 +130,7 @@ def cashflow_data(stats: dict, ticker: str) -> dict:
     # Regla 3: la retención sale del objeto fiscal único, no de una resta propia.
     # `withheld_tax_total` está en stats y coincide, pero la fuente canónica es
     # `tax_summary` — si algún día divergen, manda el objeto.
-    tax = stats.get("tax_summary") or {}
+    tax = tax_summary if tax_summary is not None else (stats.get("tax_summary") or {})
     impuesto = _f(tax.get("withheld_real"), _f(stats.get("withheld_tax_total")))
 
     # Objeto fiscal único (`logic.build_dividend_tax_totals`, corrido dentro de
@@ -185,10 +190,16 @@ def cashflow_data(stats: dict, ticker: str) -> dict:
         "devolucion_estimada": round(_f(tax.get("refund_estimated")), 2),
         "devolucion_es_estimacion": bool(tax.get("is_estimate", True)),
         "devolucion_momento": tax.get("moment", "annual_reclass_estimate"),
+        # Sin residencia declarada la devolución no se estima (Regla 2: una cifra sin base
+        # declarada no se publica). El componente debe ocultarla, no pintar $0 — que se
+        # leería como "no te vuelve nada" en vez de "no lo sabemos todavía".
+        "tasa_declarada": bool(tax.get("rate_declared", False)),
+        "tasa_pais": tax.get("country"),
+        "tasa_pct": tax.get("base_rate_pct"),
     }
 
 
-def hoja_data(stats: dict, ticker: str, df) -> dict:
+def hoja_data(stats: dict, ticker: str, df, tax_summary: dict = None) -> dict:
     """Las 12 constantes del Cash flow más `INICIO`/`TICKER`, para la Hoja Excel.
 
     Equivale al bloque `viaje-dinero-waterfall.html:3000-3006` (`initHoja`), que no
@@ -198,7 +209,7 @@ def hoja_data(stats: dict, ticker: str, df) -> dict:
     (`ticker_df['Date'].min()`), no persistido en `stats`, así que se recalcula aquí
     leyendo el mismo `df` que ya validó la carga.
     """
-    datos = cashflow_data(stats, ticker)
+    datos = cashflow_data(stats, ticker, tax_summary=tax_summary)
     primera = df.loc[df["Ticker"] == ticker, "Date"].min()
     datos["INICIO"] = "" if primera is None or primera != primera else primera.strftime("%Y-%m-%d")
     datos["TICKER"] = ticker
