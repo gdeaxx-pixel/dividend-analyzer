@@ -156,14 +156,75 @@ def income_code_str(value):
     return f"{int(m.group()):02d}" if m else ""
 
 
+# Codigos de pais del 1042-S (casilla 13b) -> nombre en NRA_COUNTRY_RATES.
+#
+# El IRS usa su propia tabla de country codes; coincide con ISO 3166-1 alfa-2 en casi todo,
+# pero no siempre (Chile aparece como 'CI' en las tablas del IRS y como 'CL' en ISO). Se
+# aceptan ambas variantes donde difieren. Un codigo que no este aqui NO se adivina: se
+# devuelve tal cual y la UI pide que el cliente lo confirme a mano.
+#
+# Esta tabla nunca aplica sola: el flujo es detectar -> proponer -> el cliente confirma. Un
+# mapeo equivocado lo caza el humano antes de que mueva una sola cifra.
+_1042S_COUNTRY_CODES = {
+    'MX': 'México',
+    'CI': 'Chile', 'CL': 'Chile',
+    'CO': 'Colombia',
+    'PE': 'Perú',
+    'AR': 'Argentina',
+    'BR': 'Brasil',
+    'US': 'Estados Unidos',
+}
+
+
+def pais_desde_codigo_1042s(code):
+    """Nombre de país de `NRA_COUNTRY_RATES` a partir del código de la casilla 13b.
+
+    Devuelve None si el código no está mapeado — que es distinto de "no hay código". El
+    llamador debe pedir confirmación en ambos casos; aquí solo se traduce.
+    """
+    if not code:
+        return None
+    return _1042S_COUNTRY_CODES.get(str(code).strip().upper())
+
+
+def _tasa_3b(fragmento):
+    """Tasa de la casilla 3b a partir del texto que la sigue.
+
+    El PDF real la imprime con los puntos decorativos del formulario y el layout no es
+    estable: `30..00`, `00..00` y `00.0.0` aparecen en el MISMO documento (copias B/C/D del
+    1042-S de `real_examples`). Se toman los 4 primeros dígitos y se leen como NN.NN, que es
+    como está impreso el campo.
+
+    Medido: para esas tres variantes un parseo decimal ingenuo (`(\\d+)\\.+(\\d+)`) da el
+    mismo resultado — no se gana robustez ahí. Lo que sí aporta este enfoque es un contrato
+    más simple y tolerar la ausencia de puntos. El caller DEBE recortar el fragmento antes
+    de "4b" (la línea trae las dos casillas): si la 3b viniera con menos de 4 dígitos, los
+    de la 4b se colarían en el número.
+    """
+    digitos = re.sub(r"\D", "", fragmento or "")[:4]
+    if len(digitos) < 4:
+        return None
+    try:
+        return float(f"{digitos[:2]}.{digitos[2:]}")
+    except ValueError:
+        return None
+
+
 def parse_1042s_pdf(pdf_bytes):
     """Extraccion determinista (sin LLM) de un Formulario 1042-S en PDF via pdfplumber.
 
     Deduplica por UNIQUE FORM IDENTIFIER: cada formulario trae 3 copias (B/C/D) con
     los mismos numeros, y un parser ingenuo los sumaria 3 veces. Devuelve:
-    {'tax_year': int, 'forms': [{'unique_form_id', 'income_code', 'gross_income',
-    'federal_tax_withheld', 'withholding_credit', 'conflict'}, ...], 'source': 'pdfplumber'}
+    {'tax_year': int, 'recipient_country_code': str|None,
+     'forms': [{'unique_form_id', 'income_code', 'gross_income', 'federal_tax_withheld',
+     'withholding_credit', 'tax_rate', 'conflict'}, ...], 'source': 'pdfplumber'}
     o None si el documento no parece un 1042-S o ante cualquier excepcion.
+
+    `tax_rate` (casilla 3b) es la tasa que el agente de retencion APLICO de verdad —
+    distinta de la tasa a la que el cliente tiene DERECHO por su pais. La diferencia entre
+    ambas es el diagnostico de W-8BEN: el tratado de Mexico (10%) solo corre si el
+    formulario esta presentado y vigente; sin el retienen 30% igual. Verificado contra el
+    1042-S real de `real_examples`: codigo 06 (dividendo) 30%, codigo 37 (ROC) 0%.
     """
     try:
         import pdfplumber
@@ -188,11 +249,16 @@ def parse_1042s_pdf(pdf_bytes):
             block = text[start:end]
             unique_form_id = re.sub(r"\s+", "", m.group(1))
 
-            code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate", block)
+            # "3b Tax rate" ya se usaba como ancla para localizar income_code + bruto; la
+            # tasa que venía justo detrás se tiraba. Ahora se captura: es el dato oficial de
+            # qué retención aplicaron.
+            code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate([^\n]*)", block)
             if not code_m:
                 continue
             income_code = code_m.group(1)
             gross_income = float(code_m.group(2).replace(",", ""))
+            # El resto de la línea trae también "4b Tax rate ..."; solo interesa lo anterior.
+            tax_rate = _tasa_3b(code_m.group(3).split("4b")[0])
 
             fed_m = re.search(r"7a Federal tax withheld\s+([\d,]+\.\d{2})", block)
             federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else 0.0
@@ -206,6 +272,7 @@ def parse_1042s_pdf(pdf_bytes):
                 "gross_income": gross_income,
                 "federal_tax_withheld": federal_tax_withheld,
                 "withholding_credit": withholding_credit,
+                "tax_rate": tax_rate,
                 "conflict": False,
             }
 
@@ -226,7 +293,14 @@ def parse_1042s_pdf(pdf_bytes):
             return None
 
         tax_year = int(forms[0]["unique_form_id"][:4])
-        return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber"}
+        # Casilla 13b — el país del receptor va al FINAL de la línea siguiente a la etiqueta,
+        # detrás del nombre (verificado contra el 1042-S real de `real_examples`). Es dato
+        # del documento, no del formulario: un 1042-S trae varios códigos de ingreso pero un
+        # solo receptor.
+        pais_m = re.search(r"13b [^\n]*country code\s*\n[^\n]*?\b([A-Z]{2})\s*$",
+                           text, re.MULTILINE)
+        return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber",
+                "recipient_country_code": pais_m.group(1) if pais_m else None}
     except Exception:
         return None
 
@@ -307,7 +381,13 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
         "4) 'withholding_credit' = Box 10 (Total withholding credit); "
         "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
         "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
-        "no deben contarse dos veces. "
+        "no deben contarse dos veces; "
+        "6) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
+        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
+        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
+        "Ademas, una sola vez para todo el documento (no por formulario): "
+        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
+        "letras del pais de residencia del receptor. "
         "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
         "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
         "el filtrado lo hace otro sistema."
@@ -326,10 +406,14 @@ def extract_roc_credit_from_pdf(pdf_bytes, api_key):
                         "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
                         "withholding_credit": types.Schema(type=types.Type.NUMBER),
                         "unique_form_id": types.Schema(type=types.Type.STRING),
+                        "tax_rate": types.Schema(type=types.Type.NUMBER),
                     },
                     required=["income_code"],
                 ),
-            )
+            ),
+            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
+            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
+            "recipient_country_code": types.Schema(type=types.Type.STRING),
         },
         required=["forms"],
     )
@@ -401,7 +485,13 @@ def extract_1042s(pdf_bytes, api_key):
         "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
         "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
         "no deben contarse dos veces; "
-        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario. "
+        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario; "
+        "7) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
+        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
+        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
+        "Ademas, una sola vez para todo el documento (no por formulario): "
+        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
+        "letras del pais de residencia del receptor. "
         "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
         "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
         "el filtrado lo hace otro sistema."
@@ -421,10 +511,14 @@ def extract_1042s(pdf_bytes, api_key):
                         "withholding_credit": types.Schema(type=types.Type.NUMBER),
                         "unique_form_id": types.Schema(type=types.Type.STRING),
                         "tax_year": types.Schema(type=types.Type.INTEGER),
+                        "tax_rate": types.Schema(type=types.Type.NUMBER),
                     },
                     required=["income_code"],
                 ),
-            )
+            ),
+            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
+            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
+            "recipient_country_code": types.Schema(type=types.Type.STRING),
         },
         required=["forms"],
     )
@@ -480,11 +574,15 @@ def extract_1042s(pdf_bytes, api_key):
                         "gross_income": row.get("gross_income"),
                         "federal_tax_withheld": row.get("federal_tax_withheld"),
                         "withholding_credit": row.get("withholding_credit"),
+                        "tax_rate": row.get("tax_rate"),
                         "conflict": False,
                     })
                 if not forms:
                     return None
-                return {"tax_year": tax_year, "forms": forms, "source": "gemini"}
+                _cc = data.get("recipient_country_code")
+                return {"tax_year": tax_year, "forms": forms, "source": "gemini",
+                        "recipient_country_code": (str(_cc).strip().upper()[:2]
+                                                   if _cc else None)}
             except Exception as _e:
                 _msg = str(_e)
                 _transient = any(s in _msg for s in (
