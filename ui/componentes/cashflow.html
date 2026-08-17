@@ -294,6 +294,9 @@
   .seg.s-transito{ background: var(--accent-tint); border: 2px solid var(--accent); }
   .seg.s-cash    { background: var(--cash); }
   .seg.s-loss    { background: var(--loss); }
+  /* Mismo azul que `.cap-amt.up` (abajo): "Impacto del mercado" puede ser positivo
+     (el precio subió) — antes ese segmento SIEMPRE se pintaba de rojo (s-loss). */
+  .seg.s-gain    { background: var(--drip); }
 
   .costline { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--loss); z-index: 3; animation: fadeIn .4s ease both; }
   /* El rótulo se parte en dos líneas y se acota al ancho de UNA columna: con 8
@@ -312,6 +315,15 @@
     font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--loss);
     background: var(--ground); padding: 3px 8px; white-space: nowrap;
   }
+  /* Variante ganadora: la franja rayada mide lo que el mercado AÑADIÓ, no lo que se
+     llevó — antes esta franja se pintaba de rojo con "−$" sin importar el signo de
+     RESULTADO, y con RESULTADO positivo su alto salía negativo (CSS inválido, la
+     franja simplemente desaparecía en vez de contar la historia correcta). */
+  .gap-band.gap-gain {
+    background: var(--accent-tint);
+    background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--drip) 6px 7px);
+  }
+  .gap-band.gap-gain span { color: var(--drip); }
 
   .col-cap { position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center; }
   .cap-amt { font-family: var(--font-mono); font-size: 13.5px; font-weight: 700; }
@@ -1181,6 +1193,13 @@
   // ---------- columns (un solo carril de 8, 1:1 con los pasos) ----------
   var resultadoAmt = (RESULTADO >= 0 ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2);
   var resultadoCap = RESULTADO >= 0 ? "up" : "dn";
+  // MERCADO = VALOR_HOY − TOTAL_TRABAJANDO: puede ser positivo (el precio subió desde
+  // que entró el capital). Antes esta columna asumía pérdida siempre — signo, color
+  // y el texto ("La caída del precio...") cableados sin mirar el dato.
+  var mercadoAmt = (MERCADO >= 0 ? "+$" : "−$") + Math.abs(MERCADO).toFixed(2);
+  var mercadoCap = MERCADO >= 0 ? "up" : "dn";
+  var mercadoSegCls = MERCADO >= 0 ? "s-gain" : "s-loss";
+  var mercadoVerbo = MERCADO >= 0 ? "La subida" : "La caída";
   var COLS = [
     { segs:[{cls:"s-anchor", lo:0, hi:POCKET}],
       amt:"$" + POCKET.toFixed(2), cap:"base", lab:"Tu bolsillo", run:POCKET,
@@ -1202,10 +1221,10 @@
       amt:"$" + TOTAL_TRABAJANDO.toFixed(2), cap:"base", lab:"Capital trabajando", sub:"= Bolsillo + DRIP", run:null,
       th:"Capital trabajando", tv:"$" + TOTAL_TRABAJANDO.toFixed(2),
       td:"Tu bolsillo ($" + POCKET.toFixed(2) + ") + lo reinvertido ($" + DRIP.toFixed(2) + "). Esto es lo que queda expuesto al mercado." },
-    { segs:[{cls:"s-loss", lo:VALOR_HOY, hi:TOTAL_TRABAJANDO}],
-      amt:"−$" + Math.abs(MERCADO).toFixed(2), cap:"dn", lab:"Impacto del mercado", run:VALOR_HOY,
-      th:"Impacto del mercado", tv:"−$" + Math.abs(MERCADO).toFixed(2),
-      td:"La caída del precio del fondo. Tu capital de trabajo pasa de $" + TOTAL_TRABAJANDO.toFixed(2) + " a $" + VALOR_HOY.toFixed(2) + "." },
+    { segs:[{cls:mercadoSegCls, lo:VALOR_HOY, hi:TOTAL_TRABAJANDO}],
+      amt:mercadoAmt, cap:mercadoCap, lab:"Impacto del mercado", run:VALOR_HOY,
+      th:"Impacto del mercado", tv:mercadoAmt,
+      td:mercadoVerbo + " del precio del fondo. Tu capital de trabajo pasa de $" + TOTAL_TRABAJANDO.toFixed(2) + " a $" + VALOR_HOY.toFixed(2) + "." },
     { segs:[{cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
       amt:"+$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo cobrado", run:CAPITAL_ACTUAL,
       th:"Efectivo cobrado", tv:"+$" + CASH.toFixed(2),
@@ -1213,7 +1232,8 @@
     { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}, {cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
       amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:"vs. tu bolsillo", run:null,
       th:"Resultado real", tv:resultadoAmt,
-      td:"Lo que tienes hoy ($" + CAPITAL_ACTUAL.toFixed(2) + ") frente a lo que pusiste ($" + POCKET.toFixed(2) + "). La diferencia es lo que el mercado se llevó." }
+      td:"Lo que tienes hoy ($" + CAPITAL_ACTUAL.toFixed(2) + ") frente a lo que pusiste ($" + POCKET.toFixed(2) + "). La diferencia es lo que el mercado " +
+        (RESULTADO >= 0 ? "sumó" : "se llevó") + "." }
   ];
   function colsForStep(step) { return COLS.slice(0, step + 1); }
   var SLOT_COUNT = 8;
@@ -1280,11 +1300,16 @@
       col.appendChild(cap);
 
       if (step === 7 && ci === 7) {
+        // Antes asumía pérdida siempre: alto = POCKET − CAPITAL_ACTUAL sale negativo
+        // (CSS inválido → la franja no se dibujaba) en cuanto CAPITAL_ACTUAL > POCKET,
+        // y el rótulo llevaba "−$" cableado incluso cuando el resultado era positivo.
         var gap = document.createElement("div");
-        gap.className = "gap-band";
-        gap.style.bottom = (CAPITAL_ACTUAL * sc) + "px";
-        gap.style.height = ((POCKET - CAPITAL_ACTUAL) * sc) + "px";
-        gap.innerHTML = "<span>−$" + Math.abs(RESULTADO).toFixed(2) + "</span>";
+        var gapGain = RESULTADO >= 0;
+        gap.className = "gap-band" + (gapGain ? " gap-gain" : "");
+        var gapLo = Math.min(POCKET, CAPITAL_ACTUAL), gapHi = Math.max(POCKET, CAPITAL_ACTUAL);
+        gap.style.bottom = (gapLo * sc) + "px";
+        gap.style.height = ((gapHi - gapLo) * sc) + "px";
+        gap.innerHTML = "<span>" + (gapGain ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2) + "</span>";
         col.appendChild(gap);
       }
 
@@ -1302,9 +1327,11 @@
     fall.appendChild(plot);
 
     if (step === 7) {
-      document.getElementById("stepNote").innerHTML =
-        "<b>Resultado real</b> · La franja rayada mide el hueco entre lo que pusiste " +
-        "(la línea roja) y lo que te queda hoy: eso es lo que el mercado se llevó.";
+      document.getElementById("stepNote").innerHTML = RESULTADO >= 0
+        ? ("<b>Resultado real</b> · La franja rayada mide lo que tienes hoy por encima de " +
+           "lo que pusiste (la línea roja): eso es lo que el mercado sumó.")
+        : ("<b>Resultado real</b> · La franja rayada mide el hueco entre lo que pusiste " +
+           "(la línea roja) y lo que te queda hoy: eso es lo que el mercado se llevó.");
     } else {
       var last = cols[lastRealIdx];
       document.getElementById("stepNote").innerHTML = "<b>" + last.th + "</b> · " + last.td;
@@ -1474,9 +1501,14 @@
     if (step === 7) {
       var pctAlive = Math.round(((segs[0].n + segs[2].n) / (N_PK + N_DR)) * 100);
       var pctDead = 100 - pctAlive;
-      surv.innerHTML = 'De cada $100 invertidos, <b class="alive">' + pctAlive +
-                        ' siguen vivos</b> y <b class="dead">' + pctDead +
-                        ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.';
+      // "se destruyeron" solo si de verdad hubo destrucción — con 0, decirlo igual
+      // afirma un daño que no ocurrió (Clase D).
+      surv.innerHTML = pctDead > 0
+        ? ('De cada $100 invertidos, <b class="alive">' + pctAlive +
+           ' siguen vivos</b> y <b class="dead">' + pctDead +
+           ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.')
+        : ('De cada $100 invertidos, <b class="alive">' + pctAlive +
+           ' siguen vivos</b> — ninguno se destruyó · <b>+' + N_CA + '</b> ya en efectivo.');
     } else {
       surv.innerHTML = 'Todavía no sabemos cuánto sobrevive — eso se revela en el <b>paso 8</b>, cuando se conoce el impacto del mercado.';
     }

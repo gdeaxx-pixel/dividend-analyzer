@@ -240,7 +240,15 @@ def render_vista(ruta: Ruta) -> None:
             st.session_state["vd_panel"] = None
             st.rerun()
         if panel == "metodologia":
-            render_metodologia(ruta.tema, anchor=st.session_state.get("vd_metodologia_anchor"))
+            # Mismo caché de sesión que `render_metodo_tradicional` (`_vd_metodo_data`):
+            # § 9 «Anualizar bien» cita el mismo caso de estudio que «Método tradicional»,
+            # así que reutiliza la corrida en vez de bajar la historia dos veces. `None`
+            # (sin caché ni yfinance en vivo) degrada con gracia dentro del componente —
+            # no hay banner aquí porque Metodología no depende de que esto cargue.
+            if st.session_state.get("_vd_metodo_data") is None:
+                st.session_state["_vd_metodo_data"] = metodo_data()
+            render_metodologia(ruta.tema, anchor=st.session_state.get("vd_metodologia_anchor"),
+                                datos=st.session_state["_vd_metodo_data"])
         elif panel == "validacion":
             render_validacion_datos(_resultados())
         else:

@@ -659,8 +659,12 @@
   .he-c.he-tk { font-family: var(--font-sans); font-weight: 800; color: var(--ink); }
   .he-c.he-muted { color: var(--ink-mut); font-weight: 600; }
   .he-c.he-nra { color: var(--loss); }
-  .he-c.he-cash { color: var(--cash); }
-  .he-c.he-loss { color: var(--loss); }
+  /* Compuesta (misma etiqueta) para las celdas estáticas que ya traen la clase en el
+     div; descendiente (con espacio) para `retornoCell` (JS), que la aplica al <span>
+     interior — sin esta segunda regla el span quedaba sin colorear, sin importar el
+     signo del valor. */
+  .he-c.he-cash, .he-c .he-cash { color: var(--cash); }
+  .he-c.he-loss, .he-c .he-loss { color: var(--loss); }
 
   /* La advertencia la lleva el color, no una caja: con once columnas, un bloque
      de fondo pesa más que la cifra que señala. */
@@ -1018,7 +1022,7 @@
 <div class="panel" id="panel-hoja" role="tabpanel">
     <header class="cmp-head">
       <h2 class="cmp-title">Hoja Excel · con el error y sin él</h2>
-      <p class="cmp-lede">Esta es la hoja de cálculo de toda la vida, con tus números. Enciende el interruptor y verás qué le falta — y por qué la pérdida que muestra <b>no es la real</b>.</p>
+      <p class="cmp-lede" id="heLede">Esta es la hoja de cálculo de toda la vida, con tus números. Enciende el interruptor y verás qué le falta.</p>
     </header>
 
     <section class="he-block">
@@ -1133,9 +1137,21 @@
     // filas; cuál es cuál lo dice la etiqueta de la fila, así que aquí basta la
     // cifra y su porcentaje.
     function retornoCell(id, val) {
-      setHtml(id, '<span class="he-loss">' + signed(val) + '</span>' +
+      // El signo manda el color: la hoja no puede pintar de rojo una posición que
+      // ganó solo porque "he-loss" era la única clase que existía aquí. "he-cash"
+      // (verde) es el mismo vocabulario que ya usa la matriz de «Método tradicional»
+      // para "ganó" — no se inventa uno nuevo.
+      var cls = val >= 0 ? "he-cash" : "he-loss";
+      setHtml(id, '<span class="' + cls + '">' + signed(val) + '</span>' +
         '<span class="he-sub">(' + pctOf(val) + ")</span>");
     }
+
+    // La lede anunciaba "la pérdida que muestra" como si la hoja SIEMPRE mostrara una
+    // pérdida — falso con una posición ganadora (Clase D). Sigue el signo de APARENTE,
+    // que es la cifra que "Tu hoja" de verdad muestra antes de corregir nada.
+    setHtml("heLede", "Esta es la hoja de cálculo de toda la vida, con tus números. " +
+      "Enciende el interruptor y verás qué le falta — y por qué " +
+      (APARENTE >= 0 ? "la ganancia" : "la pérdida") + " que muestra <b>no es la real</b>.");
 
     // El contexto de la posición va arriba: con un solo ETF, fecha y ticker serían
     // dos columnas constantes repetidas en las dos filas.
@@ -1250,17 +1266,25 @@
     // Conclusión única, con los números del usuario. Apagada explica la primera
     // trampa (sumar retorno como si fuera capital); encendida, la de fondo: el
     // reinvertido contado dos veces.
+    // El verbo y el color siguen el signo real — antes decían "perdiste"/"pérdida"
+    // sin importar si APARENTE/RESULTADO eran positivos (Clase D, sesgo de pérdida
+    // cableado). "up"/"dn" ya existen para este contenedor (.cmp-summary), igual que
+    // en el waterfall de cashflow.html.
+    var naiveVerbo = APARENTE >= 0 ? "ganaste" : "perdiste";
+    var naiveCls = APARENTE >= 0 ? "up" : "dn";
     setHtml("heCompareNaive",
-      'Tu hoja dice que perdiste <b>' + money(APARENTE) + '</b>. Pero de los ' + money(TOTALINV) +
+      'Tu hoja dice que ' + naiveVerbo + ' <b class="' + naiveCls + '">' + money(APARENTE) + '</b>. Pero de los ' + money(TOTALINV) +
       ' que llama «total invertido», solo <b>' + money(POCKET) + '</b> salieron de tu bolsillo: ' +
       'los otros ' + money(NETO) + ' son retorno que el fondo te devolvió, no capital que pusiste. ' +
       'Enciende <b>«Corregir la hoja»</b> para ver qué más le falta.');
+    var honestVerbo = RESULTADO >= 0 ? "la ganancia real es" : "la pérdida real es";
+    var honestCls = RESULTADO >= 0 ? "up" : "dn";
     setHtml("heCompareHonest",
       'Los <b>' + money(DRIP) + '</b> que reinvertiste ya compraron más acciones del fondo: ' +
       'viven dentro de los ' + money(VALOR_HOY) + ' del valor de mercado. La hoja vieja los suma ' +
       '<b>otra vez</b> como si además los tuvieras en el bolsillo — el mismo dinero contado dos ' +
-      'veces, cuando solo debe contarse una. Contándolo una sola vez, la pérdida real es ' +
-      '<b class="dn">' + signed(RESULTADO) + '</b>, no ' + signed(APARENTE) + '.');
+      'veces, cuando solo debe contarse una. Contándolo una sola vez, ' + honestVerbo + ' ' +
+      '<b class="' + honestCls + '">' + signed(RESULTADO) + '</b>, no ' + signed(APARENTE) + '.');
 
     // tooltips por encabezado — mismo patrón que el waterfall (showTip global en mouseenter/mousemove)
     var HE_TIP = {
