@@ -348,6 +348,46 @@ def render_bloque_posiciones() -> bool:
     return False
 
 
+def _render_residencia_detectada() -> None:
+    """El 1042-S declara la residencia del cliente (casilla 13b) y la tasa que le APLICARON
+    (casilla 3b). Es la fuente autoritativa: la emite el agente de retención ante el IRS.
+
+    **Se propone, no se aplica.** El mapeo de código IRS a país es best-effort (el IRS tiene
+    su propia tabla y no siempre coincide con ISO), así que un código mal traducido lo tiene
+    que cazar el humano antes de que mueva una sola cifra. Mismo criterio que el uploader
+    del crédito ROC, que ya exige confirmación.
+    """
+    datos = st.session_state.get("_wizard_1042s") or {}
+    codigo = datos.get("recipient_country_code")
+    if not codigo:
+        return
+
+    detectado = logic.pais_desde_codigo_1042s(codigo)
+    perfil = estado.perfil_fiscal()
+    if perfil["rate_declared"] and perfil["country"] == detectado:
+        return                                    # ya está declarado y coincide: nada que hacer
+
+    if detectado is None:
+        st.info(f"Tu 1042-S declara el país **{codigo}** (casilla 13b), que no está en "
+                "nuestra tabla de tasas. Elige tu residencia a mano en el Paso 2.")
+        return
+
+    tasa = logic.NRA_COUNTRY_RATES[detectado][0]
+    if perfil["rate_declared"]:
+        aviso = (f"Tu 1042-S dice **{detectado}** ({codigo}), pero declaraste "
+                 f"**{perfil['country']}**.")
+    else:
+        aviso = f"Tu 1042-S declara residencia en **{detectado}** ({codigo})."
+
+    st.info(f"{aviso} Con ese país la retención con derecho es del **{tasa:.0f}%**.")
+    col, _ = st.columns([1, 2])
+    with col:
+        if st.button(f"Usar {detectado}", key="_vd_conf_pais_1042s", type="primary",
+                     use_container_width=True):
+            estado.declarar_pais(detectado, source="1042s")
+            st.rerun()
+
+
 def _render_1042s_resumen() -> None:
     """1042-S ya leído: tarjeta resumen + editar. Extraído de `render_bloque_1042s` para
     poder mostrarse junto al resumen de ingresos (fila 5: las dos fuentes conviven)."""
@@ -359,6 +399,7 @@ def _render_1042s_resumen() -> None:
     if credito:
         detalle += f" · crédito ROC ${credito:,.2f}"
     st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+    _render_residencia_detectada()
     _, col = st.columns([5, 1])
     with col:
         if st.button("editar", key="_vd_edit_1042s", type="tertiary",
