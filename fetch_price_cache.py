@@ -53,7 +53,10 @@ SPLITS_PATH = os.path.join(CACHE_DIR, "_splits.yaml")
 # comparacion nunca usa.
 CACHE_START = "2022-11-23"
 
-TICKERS = ["NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH", "NFLY"]
+# YMAX entra por la vista «Estrategias» (`ui/heredadas._ESTR_ETF_MAP`), que compara el
+# portafolio real contra poner todo en un solo ETF. Sin el en el cache esa vista seguia
+# bajando de yfinance en cada render.
+TICKERS = ["NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH", "NFLY", "YMAX"]
 
 
 def _parquet_path(ticker: str) -> str:
