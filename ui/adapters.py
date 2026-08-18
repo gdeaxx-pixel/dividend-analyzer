@@ -269,11 +269,23 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     }
 
 
+# Las cifras que este guard compara. Todas tienen que ser números reales antes de
+# entrar a cualquier resta: ver la nota sobre NaN en `verificar_identidades`.
+_CLAVES_FINITAS = (
+    "BRUTO", "NETO", "IMPUESTO", "DRIP", "CASH", "POCKET",
+    "TOTAL_TRABAJANDO", "MERCADO", "VALOR_HOY", "CAPITAL_ACTUAL", "RESULTADO",
+)
+
+
 def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0.02) -> list:
     """Comprueba las identidades contables del recorrido. Devuelve la lista de fallos.
 
     No es decorativo: son las relaciones que el waterfall dibuja. Si no se cumplen, las
     barras mienten aunque cada cifra por separado sea correcta.
+
+    Antes de comparar nada, exige que las cifras sean **finitas**. Un NaN no falla una
+    identidad: la desactiva (toda comparación con NaN es falsa), y el guard pasaría en
+    silencio justo cuando los datos están rotos. Ver la nota extensa en el cuerpo.
 
     `stats` (opcional, el dict crudo de `analyze_portfolio` para este ticker): si se pasa,
     además reconcilia BRUTO/NETO contra una RELECTURA INDEPENDIENTE del CSV
@@ -286,6 +298,27 @@ def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0
     cacheado en `stats`/`datos`, así que si `build_dividend_tax_totals` (o su cableado en
     `analyze_portfolio`/`cashflow_data`) se rompe, esto lo detecta.
     """
+    # Un NaN no FALLA los checks de abajo: los DESACTIVA. Toda comparación con NaN es
+    # falsa, así que `abs(nan - x) > tolerancia` da False y la identidad «pasa» — el guard
+    # que existe precisamente para no dibujar algo que miente se queda ciego justo en el
+    # caso donde más falta hace. Y el silencio es total: la posición tampoco aparecería
+    # como ganadora ni como perdedora, porque esas comparaciones también son falsas.
+    #
+    # No es hipotético: yfinance devolvió cierres NaN el 2026-08-18, `market_value` salió
+    # NaN y las cifras llegaron rotas a pantalla sin que nada lo reportara.
+    # `metodo_real_data` ya se defendía por su cuenta con `math.isfinite`; el guard común
+    # no, así que cada vista tenía que acordarse de hacerlo. Ahora lo hace el guard.
+    #
+    # Se comprueba ANTES de restar, y con `math.isfinite`, que también caza ±inf (un
+    # infinito sí dispararía los checks, pero imprimiría «inf ≠ inf» en vez de decir qué
+    # pasó). Se devuelve de inmediato: con una cifra no numérica en el objeto, cualquier
+    # identidad que la toque es indecidible, y las que no la tocan no salvan la vista.
+    no_finitos = [c for c in _CLAVES_FINITAS
+                  if c in datos and not math.isfinite(_f(datos[c], float("nan")))]
+    if no_finitos:
+        return [f"cifra no numérica en {', '.join(no_finitos)} — sin precio de mercado "
+                f"utilizable hoy la posición no se puede valorar"]
+
     fallos = []
 
     def check(nombre, izquierda, derecha):

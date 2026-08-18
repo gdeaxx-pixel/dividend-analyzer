@@ -173,3 +173,52 @@ def test_verificar_identidades_detecta_objeto_fiscal_roto(monkeypatch):
     fallos_con_guard = verificar_identidades(datos_rotos, s)       # con stats: sí lo ve
     assert fallos_sin_guard == []
     assert any("CSV releído independiente" in f for f in fallos_con_guard)
+
+
+# ── El guard y el NaN: toda comparación con NaN es falsa ──────────────────────────────
+
+def test_verificar_identidades_caza_nan_en_vez_de_pasar_en_silencio(monkeypatch):
+    """El hueco que dejó abierto el traspaso 2026-08-17. `abs(nan - x) > tolerancia` es
+    **False**: un NaN no rompe las identidades, las desactiva. El guard que existe para no
+    dibujar algo que miente pasaba limpio justo cuando los datos estaban rotos.
+
+    No es hipotético: yfinance devolvió cierres NaN el 2026-08-18 y `market_value` salió
+    NaN. Se prueba con cada clave por separado, porque bastaba UNA para cegar el guard.
+    """
+    s = _schwab_msty_stats(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    assert verificar_identidades(datos) == []          # sano, para no probar sobre ruido
+
+    for clave in ("VALOR_HOY", "CAPITAL_ACTUAL", "RESULTADO", "MERCADO",
+                  "TOTAL_TRABAJANDO", "BRUTO", "NETO", "IMPUESTO", "DRIP", "CASH",
+                  "POCKET"):
+        rotos = dict(datos)
+        rotos[clave] = float("nan")
+        fallos = verificar_identidades(rotos)
+        assert fallos, f"un NaN en {clave} no fue reportado — el guard sigue ciego"
+        assert clave in fallos[0]
+
+
+def test_verificar_identidades_caza_infinito_y_none(monkeypatch):
+    """±inf sí dispararía las restas, pero el mensaje sería «inf ≠ inf» en vez de decir qué
+    pasó; y un `None` reventaba con TypeError. Los dos son «no es un número», y el guard
+    tiene que nombrarlos igual que al NaN."""
+    s = _schwab_msty_stats(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    for valor in (float("inf"), float("-inf"), None):
+        rotos = dict(datos)
+        rotos["VALOR_HOY"] = valor
+        fallos = verificar_identidades(rotos)
+        assert fallos and "VALOR_HOY" in fallos[0], f"{valor!r} no fue reportado"
+
+
+def test_el_guard_de_nan_no_le_gana_al_guard_de_convencion(monkeypatch):
+    """La comprobación de finitud va ANTES y devuelve de inmediato — pero solo debe
+    dispararse cuando hay una cifra no numérica. Con datos sanos y una convención rota, el
+    fallo que se reporta tiene que seguir siendo el del CSV releído, no un falso NaN."""
+    monkeypatch.setattr(logic, "_dividend_tax_netted", lambda history_df: True)
+    s = _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_NAN_NO_TAPA_CONVENCION")
+    datos = cashflow_data(s, "MSTY")
+    fallos = verificar_identidades(datos, s)
+    assert any("CSV releído independiente" in f for f in fallos)
+    assert not any("no numérica" in f for f in fallos)
