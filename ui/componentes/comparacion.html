@@ -1029,7 +1029,7 @@
 
       <div class="cmp-controls">
         <div class="cmp-field">
-          <span class="cmp-lab">Paso 1 · Fondo base (YieldMax)</span>
+          <span class="cmp-lab">Fondo base</span>
           <div class="cmp-row" id="cmpBase" role="group" aria-label="Fondo base"></div>
         </div>
         <div class="cmp-pair">
@@ -1048,7 +1048,7 @@
             <div class="cmp-row" id="cmpGrowth" role="group" aria-label="ETFs de crecimiento"></div>
           </div>
           <div class="cmp-field">
-            <span class="cmp-lab">Otros YieldMax</span>
+            <span class="cmp-lab">Dividendos</span>
             <div class="cmp-row" id="cmpYm" role="group" aria-label="Otros fondos YieldMax"></div>
           </div>
         </div>
@@ -1128,7 +1128,7 @@
 
     var state = { base:DATA.base_defecto, mode:"bruto", vista:"con", growth:new Set(GROWTH), ym:new Set() };
     var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
-    var VISTAS = [ {k:"con", lab:"Con DRIP · reinversión"}, {k:"sin", lab:"Sin DRIP · efectivo"} ];
+    var VISTAS = [ {k:"con", lab:"Con DRIP"}, {k:"sin", lab:"Sin DRIP"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
         elVista = document.getElementById("cmpVista"),
