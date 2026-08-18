@@ -1109,6 +1109,68 @@ def _snap_to_trading_days(daily, index):
     return snapped.groupby(level=0).sum()
 
 
+def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
+    """Retorno anual exacto de flujos de caja en fechas arbitrarias (TIR extendida).
+
+    Es la respuesta exacta a «¿cuánto rindió al año?» cuando el dinero entró en fechas
+    distintas — que es el caso real de cualquier portafolio. Un CAGR necesita un plazo
+    único `n`, y elegirlo obliga a inventar una convención: sobre el caso de estudio de
+    «Método tradicional» (5 aportes entre may-2023 y jul-2024) el N=3 redondeado daba
+    +16.93%/año y la ventana ponderada +18.44%, contra el exacto **+18.32%**. La
+    diferencia no es cosmética: mueve el múltiplo con el que se contrasta el anuncio de
+    la clase (29.5× vs 27.2×).
+
+    `flows` es una secuencia de `(fecha, monto)` con el signo del BOLSILLO del inversor:
+    negativo lo que sale (compras, aportes), positivo lo que entra (dividendos cobrados
+    en efectivo, ventas) más el valor de mercado final. Las fechas aceptan `date`,
+    `datetime` o `pd.Timestamp`. Un dividendo REINVERTIDO no es un flujo — no salió ni
+    entró al bolsillo, y su efecto ya vive dentro del valor de mercado final; meterlo
+    aquí lo contaría dos veces.
+
+    Bisección y no Newton a propósito: no necesita derivada, no diverge con flujos
+    irregulares y no depende de una semilla afortunada. `npf.irr` (que usa la app en
+    `analyze_portfolio` para `irr_anual`, agrupando por mes) devuelve `NaN` cuando no
+    converge — de hecho hoy devuelve `None` para varias posiciones reales.
+
+    Devuelve `None` —nunca `0.0`— cuando la pregunta no tiene respuesta: sin al menos un
+    flujo negativo y uno positivo, o sin cambio de signo del VPN en el intervalo. Un 0%
+    es un resultado; `None` es «no se puede calcular», y la UI tiene que poder
+    distinguirlos en vez de mostrar un cero que parece medido.
+    """
+    puntos = []
+    for fecha, monto in flows or []:
+        try:
+            ts = pd.Timestamp(fecha)
+            valor = float(monto)
+        except (TypeError, ValueError):
+            continue
+        if ts is pd.NaT or ts != ts or valor != valor:
+            continue
+        puntos.append((ts, valor))
+    if not puntos:
+        return None
+    if not any(v < 0 for _, v in puntos) or not any(v > 0 for _, v in puntos):
+        return None
+
+    t0 = min(ts for ts, _ in puntos)
+    exponentes = [((ts - t0).days / 365.25, valor) for ts, valor in puntos]
+
+    def vpn(tasa: float) -> float:
+        return sum(valor / ((1.0 + tasa) ** anios) for anios, valor in exponentes)
+
+    lo, hi = guess_lo, guess_hi
+    v_lo, v_hi = vpn(lo), vpn(hi)
+    if v_lo != v_lo or v_hi != v_hi or (v_lo > 0) == (v_hi > 0):
+        return None
+    for _ in range(200):
+        medio = (lo + hi) / 2.0
+        if (vpn(medio) > 0) == (v_lo > 0):
+            lo = medio
+        else:
+            hi = medio
+    return (lo + hi) / 2.0
+
+
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -2099,6 +2161,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "splits_detected":    splits_detected,
             # Fases 2, 3, 6, 7, 8
             "irr_anual":           irr_anual,
+            # Los mismos flujos fechados con los que se calcula `irr_anual`, expuestos
+            # para que una vista pueda anualizar a nivel CARTERA sin reclasificar filas
+            # por su cuenta. Importa que salgan de aquí: distinguir aporte propio de
+            # compra por DRIP no se puede hacer mirando `Action` —IB rotula ambas `Buy`,
+            # Schwab usa `Reinvest Shares`—, y ese es justo el error «decidir por
+            # bróker» que CLAUDE.md prohíbe. Aquí ya está resuelto fila por fila.
+            "cash_flows_dated":    list(irr_flows_dated),
             "price_discrepancies": price_discrepancies,
             "benchmark_value":     benchmark_value,
             "benchmark_roi":       benchmark_roi,

@@ -72,6 +72,14 @@ ALTO_METODO = 2650
 # siendo el respaldo seguro; no hace falta subirlo.
 ALTO_METODOLOGIA = 7000
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. «Matriz 2» apila las 4 secciones
+# en un solo panel (a diferencia de `metodo.html`, que reparte 5 sub-vistas): matriz +
+# escalera + payback + tasa. Estimado inicial sobre el orden de magnitud de «El
+# rendimiento»/«Payback»/«Rendimiento vs tasa» combinados en `ALTO_METODO` — pendiente
+# de medición en vivo con un portafolio real (`?demo=ib`/`schwab`/`schwab2`).
+ALTO_METODO_REAL = 2600
+
 
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
@@ -193,6 +201,21 @@ def render_metodo(vista_activa: str, tema: str, datos: dict, alto: int = ALTO_ME
     html = _plantilla("metodo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> None:
+    """Dibuja «Matriz 2» (Método tradicional · las cuatro lecciones de «La matriz»
+    sobre el portafolio real del CSV cargado). Componente propio, no una sexta
+    sub-vista de `metodo.html` (Duda 1 del traspaso 2026-08-17: ese componente pesa
+    170 KB y ya dibuja sus 5 sub-vistas de una pasada con un ciclo de vida cacheado
+    por sesión; esta vista se invalida cada vez que se reedita la carga del CSV, un
+    ciclo de vida distinto). `datos` viene de `ui.adapters.metodo_real_data` — `None`
+    lo maneja quien llama (mismo patrón que `render_comparacion_real`/`render_trg_real`).
+    """
+    html = _plantilla("metodo_real.html")
+    html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
 
