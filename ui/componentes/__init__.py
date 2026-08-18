@@ -39,7 +39,7 @@ ALTO_HOJA = 700
 # envuelven en más filas y el panel crece. Re-medido en la auditoría del 2026-08-10 a
 # 375px: `body.scrollHeight` = 1025px. Se fija por encima de ESE caso, no del de
 # escritorio: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
-ALTO_COMPARACION = 1100
+ALTO_COMPARACION = 1200
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Mismo panel que ALTO_COMPARACION, pero el lede declara la fecha de corte y la nota
