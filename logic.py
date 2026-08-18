@@ -1237,7 +1237,20 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             results[ticker] = {"error": f"No market data found: {error_msg}"}
             continue
 
-        current_price = market_data['Close'].iloc[-1]
+        # Último cierre CON DATO, no la última fila. yfinance devuelve una barra para la
+        # sesión en curso desde antes de la apertura, con `Close` = NaN: consultado a las
+        # 07:22 ET del 2026-08-18, MSTY traía 21 filas con el último cierre válido el
+        # viernes 14 y NaN en la del lunes 17. `.iloc[-1]` a secas se llevaba ese NaN, y
+        # de ahí `market_value = shares * NaN` contaminaba por aritmética TODOS los
+        # agregados del portafolio — con el agravante de que ninguna comparación con NaN
+        # es verdadera, así que la cifra corrupta no disparaba ningún guard: se veía como
+        # dato faltante, no como error. Afectaba a cualquiera que abriera la app antes de
+        # la apertura del mercado.
+        _closes = market_data['Close'].dropna()
+        if _closes.empty:
+            results[ticker] = {"error": f"No usable close price: {error_msg or 'serie sin cierres'}"}
+            continue
+        current_price = _closes.iloc[-1]
         
         # --- Split data for per-transaction adjustment ---
         # market_data is fetched with actions=True so it includes Stock Splits column.

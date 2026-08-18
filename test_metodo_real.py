@@ -218,3 +218,38 @@ def test_el_componente_no_reintroduce_literales_de_la_escalera():
     assert "{{DATA_JSON}}" in html
     for muerta in ("esc.cagrPct", "esc.naivePct", "esc.N."):
         assert muerta not in html, f"`{muerta}` ya no existe en el adapter — quedó código muerto"
+
+
+# ── El precio de hoy cuando el mercado aún no abrió ──────────────────────────────────────
+
+def _mkt_mock_con_barra_vacia(precio: float):
+    """Reproduce lo que devuelve yfinance antes de la apertura: la serie histórica normal
+    MÁS una barra para la sesión en curso con `Close` = NaN."""
+    return lambda t, d: (pd.DataFrame(
+        {"Close": [precio, float("nan")],
+         "Dividends": [0.0, 0.0],
+         "Stock Splits": [0.0, 0.0]},
+        index=pd.to_datetime(["2026-01-01", "2026-01-02"])), None)
+
+
+def test_precio_ignora_la_barra_en_curso_sin_datos(monkeypatch):
+    """`analyze_portfolio` tomaba `Close.iloc[-1]` a ciegas. yfinance entrega una barra para
+    el día en curso desde antes de la apertura, con `Close` = NaN — así que abrir la app por
+    la mañana daba `market_value = shares * NaN` en TODAS las posiciones, y como ninguna
+    comparación con NaN es verdadera, ningún guard lo veía: parecía dato faltante, no error.
+
+    Se saltea la barra vacía y se usa el último cierre con dato.
+    """
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                            "synthetic_transactions.csv"), "rb").read()
+    df, _ = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _mkt_mock_con_barra_vacia(20.0))
+    res = logic.analyze_portfolio(dfc, version="TEST_BARRA_VACIA")
+
+    valorados = [s for s in res.values()
+                 if isinstance(s, dict) and not s.get("skipped") and "error" not in s]
+    assert valorados, "ninguna posición se analizó: el fixture no ejercita esta rama"
+    for s in valorados:
+        mv = s.get("market_value")
+        assert mv == mv, "market_value salió NaN: volvió a colarse la barra en curso"
