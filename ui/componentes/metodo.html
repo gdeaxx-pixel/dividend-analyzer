@@ -1,5 +1,9 @@
-<!-- GENERADO POR tools/extract_metodo.py — NO EDITAR A MANO.
-     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<!-- Derivado del demo del artifact en su ORIGEN, y mantenido a mano desde entonces.
+     Las fases 3.3a/3.3b cablearon este componente a datos reales ({{DATA_JSON}}) y ahí
+     murió el contrato: el demo YA NO es su fuente. `tools/extract_metodo.py` quedó como
+     referencia histórica y ya no escribe — regenerarlo borraría el cableado.
+     Lo que SÍ se sigue generando del demo es la taxonomía y los tokens, con
+     `tools/extract_design_system.py`. Ese contrato está vivo y su `--check` pasa. -->
 <meta charset="utf-8">
 <style>
   :root {
@@ -1691,7 +1695,7 @@
     <div class="modal-formula">
       <span class="mf-eq">Inversión + Dividendos reinvertidos ≈ base de costo</span>
       <table class="mf-table">
-        <tr><td class="mf-label">Inversión</td><td class="mf-val">$48,286.22</td></tr>
+        <tr><td class="mf-label">Inversión</td><td class="mf-val" id="mTmtotInv">$48,286.22</td></tr>
         <tr><td class="mf-label">+ Dividendos</td><td class="mf-val" id="mTmtotDiv">$111,689.71</td></tr>
         <tr><td class="mf-label">= Suma real</td><td class="mf-val" id="mTmtotSuma">$159,975.93</td></tr>
       </table>
@@ -1699,22 +1703,11 @@
     <p class="modal-lede">
       Por eso <b>Valor mer. − Total inv.</b> tampoco es un disparate: es tu <b>pérdida de capital no realizada</b>, y cuadra al centavo. Los <b id="mTmtotDivCita">$111,689.71</b> de dividendos, ya gravados como ingreso, menos <b id="mTmtotPerdida">$87,466.72</b> de pérdida de capital, dan los <b class="he-cash" id="mTmtotGanancia">+$24,222.99</b> de ganancia económica real.
     </p>
-    <!-- Traspaso 2026-08-17, Duda 3: el panel «Payback ≠ ganancia» (RATIOS) ya se
-    portó a DATA.ratios, así que la restricción original de este comentario
-    (no tocar sin portar RATIOS) desapareció. Pero al releerlo, el párrafo de abajo
-    cita DOS cifras, no una: el retorno real de NVDY (+244.1%, sí viene de
-    RATIOS/ratios) Y una pérdida de capital de $11,673.52 «frente a su Total inv.»,
-    que NO es RATIOS — es Total inv. − Valor mer. por ticker (la versión per-fila del
-    agregado que ya alimentan mTmtotPerdida/mTmtotGanancia arriba, pero no existe
-    todavía por ticker en ningún DATA.*). Por eso queda literal: cablear solo el
-    +244.1% dejaría la misma oración con una cifra viva y otra congelada — la propia
-    Regla 2 que este traspaso vino a reparar en otro lado. Pendiente para Daniel, no
-    resuelto aquí (ver Traspaso de vuelta). -->
-    <p class="modal-lede">
-      <b>El error no es el número: es usarlo para juzgar rendimiento.</b> «¿Gané dinero?» y «¿cuánta ganancia gravable me queda al vender?» son preguntas distintas, y pueden apuntar en direcciones opuestas — NVDY rindió <b class="he-cash">+244.1%</b> real y al mismo tiempo arrastra una pérdida de capital de <b class="he-loss">$11,673.52</b> frente a su Total inv. No hay contradicción: son dos preguntas. Leer la segunda como si fuera la primera es lo que descarrila la hoja.
+    <p class="modal-lede" id="mTmtotParadoja">
+      <b>El error no es el número: es usarlo para juzgar rendimiento.</b> «¿Gané dinero?» y «¿cuánta ganancia gravable me queda al vender?» son preguntas distintas, y pueden apuntar en direcciones opuestas.
     </p>
     <p class="modal-note">
-      Dos detalles de la cifra en sí: la hoja original marcaba <b>$159,980</b> (con $4.07 de más por una fila tecleada a mano — ya no aplica: esta cifra se recalcula limpia). Y como número fiscal sigue sin afinar — el <b>ROC baja la base</b> y esta columna no lo descuenta, así que la sobreestima justo en el monto del ROC.
+      Dos detalles de la cifra en sí: la hoja de la clase, fechada 5/1/2026, marcaba <b>$159,980</b> en esta columna — con $4.07 de más que su propia suma, por una fila tecleada a mano. No la compares con la de arriba: aquélla era una foto congelada de ese día y ésta se recalcula con los dividendos y precios de hoy, así que la diferencia entre las dos es tiempo, no error. Y como número fiscal sigue sin afinar — el <b>ROC baja la base</b> y esta columna no lo descuenta, así que la sobreestima justo en el monto del ROC.
     </p>
   </div>
 </div>
@@ -1800,10 +1793,12 @@
     // incepción): esas se quedan literales y fechadas, y el contraste "métrica de
     // marketing vs métrica regulada" ES la lección, no un defecto a corregir.
     // ---- Bloque 3 · la escalera del rendimiento ----
-    // `escalera` viene de `DATA` (`ui.adapters.metodo_data`): misma anualización que
-    // `metodologia.html` § 9 «Anualizar bien» (N=3 fijo, CAGR compuesto) sobre el mismo
-    // `TOT.val`/`TOT.inv` de arriba — un solo lugar de cómputo (Python), nunca dos
-    // convenciones que puedan divergir.
+    // `escalera` viene de `DATA` (`ui.adapters.metodo_data`), ya anualizada por TIR
+    // exacta (XIRR) sobre los aportes de `MET_CASO` y el `TOT.val` de arriba. Ni este
+    // bloque ni `metodologia.html` § 9 calculan nada: los dos LEEN las mismas claves,
+    // así que no pueden mostrar dos anualizados distintos. `ventanaPondAnos` está ahí
+    // solo para que el ÷N que el panel denuncia use una ventana medida y no un 3
+    // redondeado a mano.
     var ESC = DATA.escalera;
 
     // ---- Bloque 4 · payback ≠ ganancia ----
@@ -2146,11 +2141,41 @@
       setHtml("mTmultTot", "= " + fmtMoney(TOT.ult));
       setHtml("mTmvalHoy", fmtMoney(TOT.val));
       setHtml("mTmvalRet", (TOT.val - TOT.inv >= 0 ? "+" : "−") + fmtMoney(Math.abs(TOT.val - TOT.inv)));
+      setHtml("mTmtotInv", fmtMoney(TOT.inv));
       setHtml("mTmtotDiv", fmtMoney(TOT.div));
       setHtml("mTmtotSuma", fmtMoney(TOT.inv + TOT.div));
       setHtml("mTmtotDivCita", fmtMoney(TOT.div));
       setHtml("mTmtotPerdida", fmtMoney((TOT.inv + TOT.div) - TOT.val));
       setHtml("mTmtotGanancia", (TOT.val - TOT.inv >= 0 ? "+" : "−") + fmtMoney(Math.abs(TOT.val - TOT.inv)));
+
+      // El párrafo de la paradoja citaba a mano las dos cifras de NVDY (+244.1% y
+      // $11,673.52) del día que se armó la hoja; hoy son +282.9% y $12,281.41. Estaban
+      // en el mismo modal que los cuatro números de arriba, que sí se alimentan de
+      // `TOT` en vivo: dos momentos distintos a dos párrafos de distancia. Ahora las dos
+      // salen de la MISMA fila de `ratios`, elegida en Python por `_tmtot_ejemplo`.
+      (function renderParadojaTmtot() {
+        var base = '<b>El error no es el número: es usarlo para juzgar rendimiento.</b> ' +
+          '«¿Gané dinero?» y «¿cuánta ganancia gravable me queda al vender?» son ' +
+          'preguntas distintas, y pueden apuntar en direcciones opuestas';
+        var tk = DATA.tmtotEjemplo;
+        var fila = null;
+        if (tk) { fila = ratios.filter(function (r) { return r.t === tk; })[0] || null; }
+        // Sin protagonista no se inventa uno: esta corrida simplemente no tiene ningún
+        // ticker con las dos preguntas en direcciones opuestas, y decirlo es más honesto
+        // que dejar congelado al que las tenía hace meses.
+        if (!fila) {
+          setHtml("mTmtotParadoja", base + '. En esta corrida ningún ticker de la matriz ' +
+            'las tiene apuntando en direcciones opuestas — pero la distinción se sostiene ' +
+            'igual: son dos preguntas, y leer la segunda como si fuera la primera es lo ' +
+            'que descarrila la hoja.');
+          return;
+        }
+        setHtml("mTmtotParadoja", base + ' — <b>' + fila.t + '</b> rindió <b class="he-cash">' +
+          fmtPct1(fila.ret) + '</b> real y al mismo tiempo arrastra una pérdida de capital de ' +
+          '<b class="he-loss">' + fmtMoney(fila.perdidaCapital) + '</b> frente a su Total inv. ' +
+          'No hay contradicción: son dos preguntas. Leer la segunda como si fuera la primera ' +
+          'es lo que descarrila la hoja.');
+      })();
 
       // ---- modal-tmcmp: el puente "Inversión vs. Valor mer." (botón "se comparan
       // entre sí"). El ejemplo $100/$300/$200 es ilustrativo, se queda igual; lo
@@ -2317,17 +2342,27 @@
       // signo y un decimal), ya definida arriba.
       function pctAnuncio(x) { return Math.round(x) + "%"; }
       function signedMoney(x) { return (x >= 0 ? "+" : "") + fmtMoney(x); }
-      // Sin signo, para frases tipo "50.2% ÷ 3 = 16.7%" donde el + ya lo pone el
+      // Sin signo, para frases tipo "59.9% ÷ 2.77 = 21.6%" donde el + ya lo pone el
       // contexto de la oración y añadirlo dos veces se lee raro.
       function pctPlano(x) { return (x < 0 ? "−" : "") + Math.abs(x).toFixed(1) + "%"; }
+      // `xirrPct`/`efectivoXirrPct` son `null` —no 0— cuando la TIR no tiene solución
+      // (sin cambio de signo en los flujos). Un 0% es una respuesta; «—» es «no se puede
+      // responder», y la escalera tiene que poder distinguirlas en vez de dibujar un
+      // cero que parece medido.
+      function pctOna(x) { return x == null ? "—" : fmtPct1(x); }
+      function pctPlanoOna(x) { return x == null ? "—" : pctPlano(x); }
+      function anosStr(x) { return x.toFixed(2) + " años"; }
       var multTotStr = ESC.multTot != null ? ESC.multTot.toFixed(1) + "×" : "—";
       var multAnualStr = ESC.multAnual != null ? ESC.multAnual.toFixed(1) + "×" : "—";
+      // El anualizado correcto es la TIR (XIRR), no un CAGR: no hay un plazo único que
+      // elegir cuando los cinco aportes entraron en fechas distintas.
+      var anualReal = pctOna(ESC.xirrPct) + "/año";
 
       var ESCALERA = [
         { lab:"Lo que se anunció en la llamada",   total: pctAnuncio(ESC.anuncioTotal),   anual: pctAnuncio(ESC.anuncioAnual) + "/año",   estado:"mal" },
-        { lab:"Su misma fórmula, bien aplicada",    total: fmtPct1(ESC.realPct),  anual: fmtPct1(ESC.cagrPct) + "/año", estado:"ok"  },
-        { lab:"Si los dividendos fueran efectivo",  total: fmtPct1(ESC.efectivoPct), anual: fmtPct1(ESC.efectivoCagrPct) + "/año", estado:"na"  },
-        { lab:"Con DRIP probado — el número real",  total: fmtPct1(ESC.realPct),  anual: fmtPct1(ESC.cagrPct) + "/año", estado:"real"}
+        { lab:"Su misma fórmula, bien aplicada",    total: fmtPct1(ESC.realPct),  anual: anualReal, estado:"ok"  },
+        { lab:"Si los dividendos fueran efectivo",  total: fmtPct1(ESC.efectivoPct), anual: pctOna(ESC.efectivoXirrPct) + "/año", estado:"na"  },
+        { lab:"Con DRIP probado — el número real",  total: fmtPct1(ESC.realPct),  anual: anualReal, estado:"real"}
       ];
       var SUB = {
         0: "Error del anuncio: <b>" + multTotStr + "</b> sobre el total real, <b>" + multAnualStr + "</b> sobre el anualizado real.",
@@ -2345,10 +2380,14 @@
       });
       document.getElementById("tmEscalera").innerHTML = html;
 
+      // El cierre ya no dice «parecido a un índice». Lo decía cuando el anualizado que
+      // se mostraba era +14.5%; con la TIR exacta el número subió, y una comparación que
+      // el dato ya no sostiene es exactamente el defecto que este panel denuncia. Lo que
+      // sí sostiene el dato es el contraste con el anuncio, que además ya está medido.
       setHtml("tmEscaleraCierre",
-        'El portafolio no rindió ' + pctAnuncio(ESC.anuncioAnual) + ' al año. Rindió cerca de <b>' + fmtPct1(ESC.cagrPct) + ' anual</b> — parecido a un índice, con mucho más riesgo, más impuesto y mucho más trabajo.');
+        'El portafolio no rindió ' + pctAnuncio(ESC.anuncioAnual) + ' al año. Rindió <b>' + pctOna(ESC.xirrPct) + ' anual</b> — un buen resultado, y aun así <b>' + multAnualStr + '</b> por debajo de lo que se anunció, con mucho más riesgo, más impuesto y mucho más trabajo.');
       setHtml("tmEscaleraNotas",
-        'Este es el error más común al medir un portafolio de dividendos: primero se anualiza mal (÷3 en vez de componer — ' + pctPlano(ESC.realPct) + ' ÷ 3 = ' + pctPlano(ESC.naivePct) + ', no el ' + pctPlano(ESC.cagrPct) + ' real), y sobre todo se suma un dinero que ya estaba contado. La fila <b>«Si los dividendos fueran efectivo»</b> de arriba usa siempre base bruta, igual que el resto de este panel; las matrices de <b>«La matriz»</b> tienen su propio selector de base fiscal.');
+        'Este es el error más común al medir un portafolio de dividendos: primero se anualiza mal (÷N en vez de componer — ' + pctPlano(ESC.realPct) + ' ÷ ' + anosStr(ESC.ventanaPondAnos) + ' = ' + pctPlano(ESC.naivePct) + ', no el ' + pctPlanoOna(ESC.xirrPct) + ' real), y sobre todo se suma un dinero que ya estaba contado. El número correcto es la <b>TIR</b>: pondera cada aporte por el tiempo que estuvo invertido de verdad, en vez de repartir el retorno sobre un plazo promedio — y por eso no necesita elegir ningún N. Los ' + anosStr(ESC.ventanaPondAnos) + ' de arriba son la ventana media ponderada por capital aportado, y están ahí solo para mostrar de dónde sale el ÷N que falla. La fila <b>«Si los dividendos fueran efectivo»</b> usa siempre base bruta, igual que el resto de este panel; las matrices de <b>«La matriz»</b> tienen su propio selector de base fiscal.');
     })();
 
     // ============ VISTA 4 · PAYBACK ≠ GANANCIA ============

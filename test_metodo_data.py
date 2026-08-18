@@ -13,14 +13,15 @@ semanal), así que las cifras se mueven cada semana por diseño. Lo que se prote
 FORMA y las INVARIANTES matemáticas — no un número puntual que cambiaría solo y rompería
 el test sin que hubiera ningún bug real.
 """
-import math
 import os
 import re
 import sys
 
+import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
+import logic  # noqa: E402
 from ui.adapters import MET_CASO, _payback_contraejemplo, metodo_data  # noqa: E402
 
 _COMPONENTE = os.path.join(os.path.dirname(__file__), "ui", "componentes", "metodo.html")
@@ -114,7 +115,6 @@ def test_roc19a_viene_del_yaml_vivo_no_de_una_copia_congelada(datos):
     el valor exacto (el yaml se refresca semanalmente), pero si algún día vuelve a leer
     53.07%/41.08% en vez de lo que hay en el yaml, este test lo caza: son números
     incompatibles con `logic.load_roc_19a()` en cualquier semana razonable."""
-    import logic
     yaml_vivo = logic.load_roc_19a()
     for tk in ("CONY", "NVDY", "MSTY", "TSLY", "NFLY"):
         assert tk in datos["roc19a"], f"falta {tk} en roc19a"
@@ -212,16 +212,22 @@ def test_render_metodo_inyecta_data_json():
 
 def test_escalera_tiene_las_claves_declaradas(datos):
     esc = datos["escalera"]
-    esperadas = {"N", "anuncioTotal", "anuncioAnual", "realPct", "realD", "cagrPct",
-                 "naivePct", "efectivoPct", "efectivoD", "efectivoCagrPct", "maxTot",
-                 "multTot", "multAnual"}
+    esperadas = {"anuncioTotal", "anuncioAnual", "realPct", "realD", "xirrPct",
+                 "ventanaPondAnos", "naivePct", "efectivoPct", "efectivoD",
+                 "efectivoXirrPct", "maxTot", "multTot", "multAnual"}
     assert esperadas <= set(esc)
 
 
-def test_escalera_n_es_3_la_misma_convencion_que_metodologia_9(datos):
-    # Decisión 2 del traspaso: N=3 se queda, es la MISMA convención que ya fija y
-    # documenta `metodologia.html:1209` — no se inventa una segunda aquí.
-    assert datos["escalera"]["N"] == 3
+def test_escalera_no_expone_ningun_plazo_inventado(datos):
+    """Decisión de Daniel (2026-08-17): «prefiero que sea exacto». `N` era un 3
+    redondeado a mano y `cagrPct` la anualización que dependía de él; los dos salieron.
+    Dejar conviviendo dos anualizaciones del mismo retorno en el mismo objeto es
+    exactamente el defecto que este trabajo cierra."""
+    esc = datos["escalera"]
+    for prohibida in ("N", "cagrPct", "efectivoCagrPct"):
+        assert prohibida not in esc, (
+            f"`{prohibida}` volvió a la escalera: el anualizado es TIR exacta, no un "
+            "CAGR sobre un plazo elegido a mano")
 
 
 def test_escalera_anuncio_es_el_literal_fijo_de_la_llamada(datos):
@@ -240,17 +246,46 @@ def test_escalera_real_pct_reconcilia_contra_tot(datos):
     assert datos["escalera"]["realD"] == pytest.approx(tot["val"] - tot["inv"], abs=0.01)
 
 
-def test_escalera_cagr_es_el_compuesto_sobre_real_pct_no_el_naive(datos):
-    """El error que denuncia el panel: ÷N (`naivePct`) no es lo mismo que componer
-    (`cagrPct`). Si algún día `cagrPct` == `naivePct`, el CAGR se rompió y quedó
-    reducido al mismo atajo que la sección existe para desmentir."""
+def test_escalera_ventana_ponderada_es_medida_no_un_plazo_redondeado(datos):
+    """La ventana que alimenta el ÷N ingenuo es `Σ(inv·años)/Σinv` sobre las fechas de
+    apertura reales de `MET_CASO`, contra el `asof` de la corrida. Se recalcula aquí
+    desde las mismas fuentes: si alguien vuelve a cablear un 3, esto cae."""
     esc = datos["escalera"]
-    cagr_esperado = (math.pow(1 + esc["realPct"] / 100.0, 1.0 / esc["N"]) - 1.0) * 100.0
-    assert esc["cagrPct"] == pytest.approx(cagr_esperado, abs=0.01)
-    assert esc["naivePct"] == pytest.approx(esc["realPct"] / esc["N"], abs=0.01)
+    asof = pd.Timestamp(datos["asof"])
+    pares = [(c["inv"], (asof - pd.Timestamp(c["start"])).days / 365.25) for c in MET_CASO]
+    esperada = round(sum(inv * a for inv, a in pares) / sum(inv for inv, _ in pares), 2)
+    assert esc["ventanaPondAnos"] == pytest.approx(esperada, abs=0.001)
+    # Ningún aporte es más viejo que el más viejo ni más nuevo que el más nuevo.
+    assert min(a for _, a in pares) <= esc["ventanaPondAnos"] <= max(a for _, a in pares)
+
+
+def test_escalera_naive_es_la_division_por_esa_ventana(datos):
+    """El ÷N que el panel denuncia tiene que ser el ÷N que el panel muestra — si la
+    frase dice «÷ 2.77 años» y la cifra salió de dividir entre otra cosa, la lección
+    miente sobre su propio ejemplo."""
+    esc = datos["escalera"]
+    assert esc["naivePct"] == pytest.approx(esc["realPct"] / esc["ventanaPondAnos"], abs=0.01)
+
+
+def test_escalera_xirr_es_la_tir_de_los_aportes_reales_contra_tot_val(datos):
+    """`xirrPct` es la TIR de los cinco aportes de `MET_CASO` en sus fechas contra el
+    valor de mercado de hoy. Los dividendos NO entran: se reinvirtieron, nunca tocaron el
+    bolsillo, y su efecto ya está dentro de `tot.val` — meterlos los contaría dos veces.
+    """
+    esc, tot = datos["escalera"], datos["tot"]
+    esperado = logic.xirr(
+        [(c["start"], -c["inv"]) for c in MET_CASO] + [(datos["asof"], tot["val"])]
+    )
+    assert esperado is not None
+    assert esc["xirrPct"] == pytest.approx(esperado * 100.0, abs=0.01)
+
+
+def test_escalera_la_tir_no_coincide_con_el_atajo_que_denuncia(datos):
+    """Si `xirrPct` == `naivePct`, el panel dejó de ilustrar nada: estaría denunciando un
+    error y mostrando ese mismo error como respuesta correcta."""
+    esc = datos["escalera"]
     if esc["realPct"] > 0:
-        assert esc["cagrPct"] != pytest.approx(esc["naivePct"], abs=0.05), (
-            "cagrPct quedó igual a naivePct — dejó de componer")
+        assert esc["xirrPct"] != pytest.approx(esc["naivePct"], abs=0.05)
 
 
 def test_escalera_max_tot_es_la_suma_de_max_de_la_matriz(datos):
@@ -281,10 +316,65 @@ def test_escalera_mult_son_none_o_positivos_y_reconcilian(datos):
         assert esc["multTot"] == pytest.approx(esc["anuncioTotal"] / esc["realPct"], abs=0.1)
     else:
         assert esc["multTot"] is None
-    if esc["cagrPct"] > 0:
-        assert esc["multAnual"] == pytest.approx(esc["anuncioAnual"] / esc["cagrPct"], abs=0.1)
+    if esc["xirrPct"] is not None and esc["xirrPct"] > 0:
+        assert esc["multAnual"] == pytest.approx(esc["anuncioAnual"] / esc["xirrPct"], abs=0.1)
     else:
         assert esc["multAnual"] is None
+
+
+# ── modal-tmtot · la paradoja «ganó y perdió» (traspaso 2026-08-17, Duda 3) ────────────
+
+def test_ratios_tienen_perdida_capital_por_fila(datos):
+    """Es la versión per-fila del agregado que ya dibuja el modal arriba
+    (`mTmtotPerdida`): Total inv. − Valor mer. Si la suma de las filas no da el agregado,
+    una de las dos está mirando otra base."""
+    ratios = {r["t"]: r["perdidaCapital"] for r in datos["ratios"]}
+    for f in datos["matriz"]:
+        assert ratios[f["t"]] == pytest.approx((f["inv"] + f["div"]) - f["val"], abs=0.02)
+    tot = datos["tot"]
+    assert sum(ratios.values()) == pytest.approx((tot["inv"] + tot["div"]) - tot["val"], abs=0.1)
+
+
+def test_perdida_capital_es_contra_total_inv_no_contra_lo_aportado(datos):
+    """Regla 2 del contrato de auditoría: declarar la base. La cifra que el modal
+    presenta como «pérdida de capital frente a su Total inv.» tiene que estar medida
+    contra Total inv. (aportado + dividendos reinvertidos), no contra el aportado — son
+    bases distintas y confundirlas es justo lo que el modal existe para desenredar."""
+    for f, r in zip(datos["matriz"], datos["ratios"]):
+        assert r["t"] == f["t"]
+        contra_aportado = f["inv"] - f["val"]
+        if abs(f["div"]) > 1.0:
+            assert r["perdidaCapital"] != pytest.approx(contra_aportado, abs=0.5), (
+                f"{f['t']}: `perdidaCapital` quedó medida contra el aportado, no contra "
+                "Total inv. — cambió de base sin decirlo")
+
+
+def test_tmtot_ejemplo_es_el_mayor_retorno_entre_los_que_perdieron_capital(datos):
+    """El protagonista del párrafo se elige en cada corrida, no se cablea: es el ticker
+    donde la paradoja se ve mejor (ganó más y aun así está bajo su Total inv.)."""
+    tk = datos["tmtotEjemplo"]
+    candidatos = [r for r in datos["ratios"] if r["perdidaCapital"] > 0]
+    if not candidatos:
+        assert tk is None
+        return
+    assert tk == max(candidatos, key=lambda r: r["ret"])["t"]
+    fila = [r for r in datos["ratios"] if r["t"] == tk][0]
+    # La paradoja tiene que ser una paradoja: ganó Y perdió capital a la vez.
+    assert fila["perdidaCapital"] > 0
+
+
+def test_modal_tmtot_no_conserva_las_dos_cifras_congeladas_de_nvdy():
+    """Los dos literales que el modal citaba a mano (+244.1% de retorno y $11,673.52 de
+    pérdida de capital) eran del día que se armó la hoja; medidos hoy dan +282.9% y
+    $12,281.41. Vivían a dos párrafos de cuatro cifras que sí se alimentaban en vivo."""
+    with open(_COMPONENTE, encoding="utf-8") as f:
+        html = f.read()
+    for literal in ("+244.1%", "$11,673.52"):
+        assert literal not in html.split("<script")[0], (
+            f"el literal congelado {literal!r} volvió al marcado de modal-tmtot")
+    assert 'id="mTmtotParadoja"' in html, "falta el punto de inyección del párrafo"
+    assert "DATA.tmtotEjemplo" in html, (
+        "el modal no lee `tmtotEjemplo` — ¿volvió a cablear el protagonista a mano?")
 
 
 # ── Payback ≠ ganancia (Bloque 4) ─────────────────────────────────────────────────────
