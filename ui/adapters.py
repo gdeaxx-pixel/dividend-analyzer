@@ -11,6 +11,7 @@ El mapa cifra→campo está en `specs/port-artifact/mapa-datos.md` § 1, verific
 from __future__ import annotations
 
 import datetime
+import math
 
 import backtest
 import logic
@@ -665,6 +666,24 @@ MET_CASO = (
 )
 
 
+def _payback_contraejemplo(ratios: list[dict]) -> str | None:
+    """Elige el ticker que ilustra «cobró y perdió» en el panel Payback ≠ ganancia: el
+    de mayor payback bruto (`pb`) entre los que tienen retorno real negativo (`ret`).
+
+    Antes estaba cableado a mano a CONY, literal desde la hoja fechada 5/1/2026. Con
+    datos vivos CONY dejó de perder (traspaso 2026-08-17: retorno pasó de -8.6% a
+    +18.4%), así que el contraejemplo tiene que salir del dato en cada corrida, no
+    quedarse fijo al ticker que lo ilustraba el día que se armó la hoja.
+
+    Devuelve `None` si en la corrida actual ningún ticker perdió capital — el panel no
+    puede inventar un contraejemplo que no existe esa semana (Duda 2 del traspaso).
+    """
+    negativos = [r for r in ratios if r["ret"] < 0]
+    if not negativos:
+        return None
+    return max(negativos, key=lambda r: r["pb"])["t"]
+
+
 def metodo_data() -> dict | None:
     """JSON para `ui/componentes/metodo.html` (Método tradicional · La matriz, Fase
     3.3b). Reemplaza los `var MATRIZ`/`var ROC_19A` congelados que tenía el componente
@@ -700,10 +719,32 @@ def metodo_data() -> dict | None:
     yfinance en vivo): con solo 5 filas fijas, una faltante deja la lección incompleta —
     a diferencia de `comparacion_data` (8 tickers, degrada individualmente), aquí no hay
     "universo parcial" que tenga sentido mostrar.
+
+    Fase 3.3c (traspaso 2026-08-17) agrega los Bloques 3-5 del componente (Escalera,
+    Payback, Tasa), que hasta ahora citaban la hoja congelada fechada 5/1/2026 aparte de
+    `matriz`/`tot` — la desincronización entre ambos es justo lo que este traspaso cierra:
+
+      - `escalera`: la anualización de `tot.val`/`tot.inv` con N=3 fijo (misma convención
+        que `metodologia.html` § 9 «Anualizar bien» — no se inventa una segunda aquí).
+      - `ratios`/`ratiosTot`: payback bruto/neto y retorno real por fila, derivados de
+        `matriz` (nunca de un neto reusado — Regla 2 del contrato).
+      - `nra`: los tres números de la frase "bruto → neto (retenido)" del panel Payback,
+        todos derivados de `tot.div` y `tasaNra` — no pueden volver a desincronizarse.
+      - `tasaNra`: 0.30, única fuente de la retención NRA simulada (cota superior, no el
+        perfil fiscal de nadie — Decisión 4 del traspaso).
+      - `paybackContraejemplo`: el ticker que ilustra "cobró y perdió" (mayor payback
+        bruto entre los que tienen retorno negativo), o `None` si ninguno perdió esta
+        semana — antes era CONY cableado a mano; con datos vivos dejó de ser válido en
+        cuanto CONY dejó de perder. Ver `_payback_contraejemplo`.
+      - `ymMedido`: lo que la app puede medir por ticker (yield realizado = dividendos
+        cobrados sobre lo aportado; retorno de precio) — lo que publicó el emisor
+        (`dr`/`sec`/`x`/`trc`/`tra` del panel Tasa) se queda literal y fechado en el
+        componente, porque no hay fuente viva de 30-Day SEC Yield en el repo.
     """
     filas = []
     fuente: dict[str, str] = {}
     asof_candidatos = []
+    ym_medido: dict[str, dict] = {}
 
     for caso in MET_CASO:
         tk = caso["t"]
@@ -736,6 +777,18 @@ def metodo_data() -> dict | None:
         if hr.cache_asof:
             asof_candidatos.append(hr.cache_asof)
 
+        # Panel 5 (Tasa) parte en dos: `dr`/`sec`/`x`/`trc`/`tra` (YM en el componente)
+        # siguen citando lo que publicó el emisor, literal y fechado — no hay fuente viva
+        # de 30-Day SEC Yield en el repo. Pero lo que la app SÍ puede medir con su propio
+        # motor (yield realizado = dividendos cobrados sobre lo aportado, y el retorno de
+        # precio que lo explica) se deriva aquí, reusando `r_con`/`r_sin` de este mismo
+        # bucle — no se corre el motor una tercera vez. `priceRetPct` es negativo cuando
+        # el precio cayó (mismo signo que `backtest.price_return_pct`, sin invertir).
+        ym_medido[tk] = {
+            "realYieldPct": round(div / caso["inv"] * 100.0, 2),
+            "priceRetPct": round(r_sin.price_return_pct, 2),
+        }
+
     tot = {
         "inv": round(sum(f["inv"] for f in filas), 2),
         "div": round(sum(f["div"] for f in filas), 2),
@@ -744,6 +797,76 @@ def metodo_data() -> dict | None:
     }
     tot["tot"] = round(tot["inv"] + tot["div"], 2)
     tot["totHoja"] = round(tot["tot"])
+
+    # Panel 5 → renombrado a "quien retiene": única fuente de verdad de la retención
+    # NRA simulada (Decisión 3 del traspaso 2026-08-17). El valor no cambia (0.30, la
+    # cota superior de siempre) — solo deja de estar escrito una segunda vez en el JS.
+    tasa_nra = 0.30
+
+    # ---- Bloque 3 · la escalera del rendimiento ----
+    # Misma convención que ya vive (y queda) en `metodologia.html` § 9
+    # (`computeAnualizar`): N=3 años fijo, CAGR compuesto sobre TOT.val/TOT.inv — no se
+    # inventa una convención nueva aquí, se deriva la MISMA cuenta en el mismo lugar
+    # (Python) para que ambas vistas dejen de poder desincronizarse.
+    n_anos = 3
+    max_tot = round(sum(f["max"] for f in filas), 2)
+    real_pct = (tot["val"] - tot["inv"]) / tot["inv"] * 100.0
+    real_d = tot["val"] - tot["inv"]
+    cagr_pct = (math.pow(1 + real_pct / 100.0, 1.0 / n_anos) - 1.0) * 100.0
+    naive_pct = real_pct / n_anos
+    efectivo_d = max_tot + tot["div"] - tot["inv"]
+    efectivo_pct = efectivo_d / tot["inv"] * 100.0
+    efectivo_cagr_pct = (math.pow(1 + efectivo_pct / 100.0, 1.0 / n_anos) - 1.0) * 100.0
+    anuncio_total, anuncio_anual = 1499.0, 499.0
+
+    escalera = {
+        "N": n_anos,
+        "anuncioTotal": anuncio_total, "anuncioAnual": anuncio_anual,
+        "realPct": round(real_pct, 2), "realD": round(real_d, 2),
+        "cagrPct": round(cagr_pct, 2),
+        "naivePct": round(naive_pct, 2),
+        "efectivoPct": round(efectivo_pct, 2), "efectivoD": round(efectivo_d, 2),
+        "efectivoCagrPct": round(efectivo_cagr_pct, 2),
+        "maxTot": max_tot,
+        "multTot": round(anuncio_total / real_pct, 1) if real_pct > 0 else None,
+        "multAnual": round(anuncio_anual / cagr_pct, 1) if cagr_pct > 0 else None,
+    }
+
+    # ---- Bloque 4 · payback ≠ ganancia ----
+    # `pbn` es cota superior sintética al 30% plano (Decisión 4): NO se conecta al
+    # perfil fiscal del usuario, es la simulación de un NRA sobre la cartera de un
+    # residente de EE. UU. Deriva de los BRUTOS de cada fila, nunca de un neto reusado
+    # (Regla 2 del contrato: no mezclar bases).
+    ratios = []
+    for f in filas:
+        pb = f["div"] / f["inv"]
+        ret = (f["val"] - f["inv"]) / f["inv"] * 100.0
+        ratios.append({
+            "t": f["t"],
+            "pb": round(pb, 4),
+            "pbn": round(pb * (1 - tasa_nra), 4),
+            "ret": round(ret, 2),
+            "retD": round(f["val"] - f["inv"], 2),
+        })
+
+    pb_tot = tot["div"] / tot["inv"]
+    ret_tot = (tot["val"] - tot["inv"]) / tot["inv"] * 100.0
+    ratios_tot = {
+        "pb": round(pb_tot, 4),
+        "pbn": round(pb_tot * (1 - tasa_nra), 4),
+        "ret": round(ret_tot, 2),
+        "retD": round(tot["val"] - tot["inv"], 2),
+    }
+
+    # Los tres números de `tmPaybackNra` salen todos de aquí — nunca vuelven a poder
+    # desincronizarse (el bug del traspaso: un TOT.div vivo concatenado con dos mitades
+    # de la hoja congelada, en la misma oración).
+    nra = {
+        "divBruto": tot["div"],
+        "divNeto": round(tot["div"] * (1 - tasa_nra), 2),
+        "retenido": round(tot["div"] * tasa_nra, 2),
+    }
+    payback_contraejemplo = _payback_contraejemplo(ratios)
 
     roc19a_raw = logic.load_roc_19a()
     roc19a = {}
@@ -770,4 +893,11 @@ def metodo_data() -> dict | None:
         "asof": asof,
         "fuente": fuente,
         "degradado": degradado,
+        "tasaNra": tasa_nra,
+        "escalera": escalera,
+        "ratios": ratios,
+        "ratiosTot": ratios_tot,
+        "nra": nra,
+        "paybackContraejemplo": payback_contraejemplo,
+        "ymMedido": ym_medido,
     }
