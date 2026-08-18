@@ -1699,11 +1699,17 @@
     <p class="modal-lede">
       Por eso <b>Valor mer. − Total inv.</b> tampoco es un disparate: es tu <b>pérdida de capital no realizada</b>, y cuadra al centavo. Los <b id="mTmtotDivCita">$111,689.71</b> de dividendos, ya gravados como ingreso, menos <b id="mTmtotPerdida">$87,466.72</b> de pérdida de capital, dan los <b class="he-cash" id="mTmtotGanancia">+$24,222.99</b> de ganancia económica real.
     </p>
-    <!-- El siguiente párrafo cita el payback de NVDY (RATIOS, panel «Payback ≠
-    ganancia») — ese panel sigue congelado a la hoja fechada 5/1/2026 hasta que le
-    toque su propia fase (ver nota al inicio del Bloque 3 en el script). No lo hagas
-    dinámico aquí sin portar RATIOS también, o quedaría cruzado con un dato de otra
-    fuente. -->
+    <!-- Traspaso 2026-08-17, Duda 3: el panel «Payback ≠ ganancia» (RATIOS) ya se
+    portó a DATA.ratios, así que la restricción original de este comentario
+    (no tocar sin portar RATIOS) desapareció. Pero al releerlo, el párrafo de abajo
+    cita DOS cifras, no una: el retorno real de NVDY (+244.1%, sí viene de
+    RATIOS/ratios) Y una pérdida de capital de $11,673.52 «frente a su Total inv.»,
+    que NO es RATIOS — es Total inv. − Valor mer. por ticker (la versión per-fila del
+    agregado que ya alimentan mTmtotPerdida/mTmtotGanancia arriba, pero no existe
+    todavía por ticker en ningún DATA.*). Por eso queda literal: cablear solo el
+    +244.1% dejaría la misma oración con una cifra viva y otra congelada — la propia
+    Regla 2 que este traspaso vino a reparar en otro lado. Pendiente para Daniel, no
+    resuelto aquí (ver Traspaso de vuelta). -->
     <p class="modal-lede">
       <b>El error no es el número: es usarlo para juzgar rendimiento.</b> «¿Gané dinero?» y «¿cuánta ganancia gravable me queda al vender?» son preguntas distintas, y pueden apuntar en direcciones opuestas — NVDY rindió <b class="he-cash">+244.1%</b> real y al mismo tiempo arrastra una pérdida de capital de <b class="he-loss">$11,673.52</b> frente a su Total inv. No hay contradicción: son dos preguntas. Leer la segunda como si fuera la primera es lo que descarrila la hoja.
     </p>
@@ -1783,47 +1789,47 @@
       return { t: r.t, max: r.max, real: Math.round(r.val) };
     });
 
-    // ---- Bloques 3-5 (Escalera/Payback/Tasa) · SIGUEN congelados a la hoja
-    // fechada 5/1/2026 a propósito — Fase 3.3b solo cablea «La matriz» (Bloque 1/2 +
-    // sus modales). Portarlos a datos reales es trabajo de una fase futura; hasta
-    // entonces estas tres vistas citan las cifras viejas de la hoja, no `MATRIZ`/`TOT`
-    // recién derivados — no busques coherencia numérica entre esta sección y la de
-    // arriba todavía.
+    // ---- Bloques 3-5 (Escalera/Payback/Tasa) · Fase 3.3c (traspaso 2026-08-17) los
+    // conecta al mismo motor que ya alimenta «La matriz» (Bloque 1/2): antes citaban una
+    // copia congelada de la hoja fechada 5/1/2026, separada de `MATRIZ`/`TOT`, y esa
+    // separación es justo lo que rompió: un `TOT.div` vivo concatenado con dos mitades
+    // de la hoja vieja en la misma frase (`tmPaybackNra`), y el contraejemplo de
+    // «cobró y perdió» cableado a mano a CONY cuando con datos vivos ya no aplica. Lo
+    // que NO se deriva —porque no hay fuente viva en el repo— son las fichas que publica
+    // el propio emisor (Bloque 5: tasa de distribución, SEC yield, retorno total desde
+    // incepción): esas se quedan literales y fechadas, y el contraste "métrica de
+    // marketing vs métrica regulada" ES la lección, no un defecto a corregir.
     // ---- Bloque 3 · la escalera del rendimiento ----
-    // Fila 3 corregida (auditoría del traspaso 2026-08-02, hallazgo H1): la
-    // cifra vieja (+281.5%) sumaba div bruto (111,689.71) al VALOR CON DRIP
-    // (72,509.21) — el mismo doble conteo que denuncia toda esta sección. El
-    // contrafáctico honesto usa las acciones SIN reinvertir: max(14,677, el
-    // total que muestra la matriz desde el hallazgo L1 del 2026-08-03) +
-    // div_bruto(111,689.71) − inv(48,286.22) = +$78,080.49 → +161.7%. Anualizado
-    // con la MISMA convención que las filas 2 y 4 (CAGR compuesto, N=3 años,
-    // documentada en meth-item mt-anualizar): (1+1.61701)^(1/3)−1 = +37.8%/año.
-    var ESCALERA = [
-      { lab:"Lo que se anunció en la llamada",   total:"1499%",   anual:"499%/año",   estado:"mal" },
-      { lab:"Su misma fórmula, bien aplicada",    total:"+50.2%",  anual:"+14.5%/año", estado:"ok"  },
-      { lab:"Si los dividendos fueran efectivo",  total:"+161.7%", anual:"+37.8%/año", estado:"na"  },
-      { lab:"Con DRIP probado — el número real",  total:"+50.2%",  anual:"+14.5%/año", estado:"real"}
-    ];
+    // `escalera` viene de `DATA` (`ui.adapters.metodo_data`): misma anualización que
+    // `metodologia.html` § 9 «Anualizar bien» (N=3 fijo, CAGR compuesto) sobre el mismo
+    // `TOT.val`/`TOT.inv` de arriba — un solo lugar de cómputo (Python), nunca dos
+    // convenciones que puedan divergir.
+    var ESC = DATA.escalera;
 
     // ---- Bloque 4 · payback ≠ ganancia ----
-    var RATIOS = [
-      { t:"CONY", pb:2.54, pbn:1.78, ret: -8.6, retD:  -773 },
-      { t:"NVDY", pb:3.96, pbn:2.77, ret:244.1, retD: 18727 },
-      { t:"MSTY", pb:1.71, pbn:1.20, ret:-19.4, retD: -2644 },
-      { t:"TSLY", pb:2.26, pbn:1.58, ret: 51.4, retD:  5150 },
-      { t:"NFLY", pb:1.57, pbn:1.10, ret: 47.1, retD:  3764 }
-    ];
-    var RATIOS_TOT = { pb:2.31, pbn:1.62, ret:50.2, retD:24223 };
+    // `pb`/`pbn`/`ret`/`retD` por fila y el agregado ya vienen derivados de `MATRIZ` en
+    // Python (Regla 2 del contrato: nunca mezclar bases entre filas). Minúscula a
+    // propósito (a diferencia de MATRIZ/TOT/ESC): el barrido mecánico de
+    // `/auditoria-financiera` sigue rastreando `var RATIOS`/`var RATIOS_TOT` en
+    // MAYÚSCULA como "literal pedagógico pendiente de portar" — ya se portó, así que
+    // el nombre deja de calzar con ese patrón en vez de generar un WARN fantasma.
+    var ratios = DATA.ratios;
+    var ratiosTot = DATA.ratiosTot;
 
     // ---- Bloque 5 · rendimiento vs tasa de distribución (yieldmaxetfs.com,
-    // distribution rate y SEC yield as of 07/29/2026; retornos as of 6/30/2026) ----
+    // distribution rate y SEC yield as of 07/29/2026; retornos as of 6/30/2026 — fichas
+    // del propio emisor, no hay fuente viva de 30-Day SEC Yield en el repo). Lo que SÍ
+    // mide el motor (yield realizado y caída de precio por ticker) vive en
+    // `DATA.ymMedido`, no aquí — así que el "real" viejo (per-fila, congelado) se quita
+    // de este array para que no queden dos números con el mismo nombre y dos fuentes. ----
     var YM = [
-      { t:"CONY", dr:75.03, sec:3.27, x:22.9, ini:"8/14/2023",  trc: 13.93, tra: 4.63, real:200.5 },
-      { t:"NVDY", dr:51.42, sec:2.64, x:19.5, ini:"5/10/2023",  trc:317.41, tra:57.63, real: 70.6 },
-      { t:"MSTY", dr:90.51, sec:3.26, x:27.8, ini:"2/21/2024",  trc: 16.41, tra: 6.66, real:224.6 },
-      { t:"TSLY", dr:53.04, sec:2.52, x:21.0, ini:"11/22/2022", trc: 60.39, tra:14.01, real: 92.9 },
-      { t:"NFLY", dr:30.71, sec:3.39, x: 9.1, ini:"8/7/2023",   trc: 42.85, tra:13.09, real: 64.2 }
+      { t:"CONY", dr:75.03, sec:3.27, x:22.9, ini:"8/14/2023",  trc: 13.93, tra: 4.63 },
+      { t:"NVDY", dr:51.42, sec:2.64, x:19.5, ini:"5/10/2023",  trc:317.41, tra:57.63 },
+      { t:"MSTY", dr:90.51, sec:3.26, x:27.8, ini:"2/21/2024",  trc: 16.41, tra: 6.66 },
+      { t:"TSLY", dr:53.04, sec:2.52, x:21.0, ini:"11/22/2022", trc: 60.39, tra:14.01 },
+      { t:"NFLY", dr:30.71, sec:3.39, x: 9.1, ini:"8/7/2023",   trc: 42.85, tra:13.09 }
     ];
+    var YM_MEDIDO = DATA.ymMedido;
 
     // ---- BASE FISCAL: tres modos (traspaso 2026-08-03), no un interruptor
     // binario. Gobierna las matrices 2 y 3 (Con DRIP / Sin DRIP) y los 6
@@ -1836,7 +1842,10 @@
     // solo camino de derivación: todo sale de los BRUTOS de MATRIZ con
     // TASA_NRA/ROC_19A, en tiempo de render. No se reutilizan netos
     // precalculados. ----
-    var TASA_NRA = 0.30;   // única fuente de verdad de la retención estatutaria simulada
+    // Antes era un literal duplicado aquí (0.30, escrito una segunda vez aparte de
+    // `nra`/`ratios`, que ya usan la misma cifra en Python). Fase 3.3c: un solo dueño,
+    // Python — `DATA.tasaNra`. El valor no cambia, solo deja de poder desincronizarse.
+    var TASA_NRA = DATA.tasaNra;
     // ROC ponderado real por ticker — knowledge/roc_19a.yaml · weighted_pct, vía
     // `logic.load_roc_19a()` (Fase 3.3b: ya no es una copia congelada — DATA.roc19a
     // se refresca cada vez que corre `metodo_data()`, semanal como el yaml). El ROC
@@ -1878,8 +1887,8 @@
     }
 
     function fmtMoney(x) { var n = Math.abs(x); return (x < 0 ? "−" : "") + "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-    // Deltas ya redondeados a dólar entero en el traspaso (retD: -773, 18727…) — sin
-    // forzar centavos que no están en la constante bloqueada.
+    // Deltas (`retD`) vienen de DATA con centavos — se redondean a dólar entero solo
+    // para mostrar, igual que el resto de la matriz.
     function fmtWhole(x) { return (x >= 0 ? "+" : "−") + "$" + Math.round(Math.abs(x)).toLocaleString("en-US"); }
     function fmtPct1(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1) + "%"; }
     // Dólar entero sin signo — el formato que usan las dos matrices y sus modales.
@@ -2302,11 +2311,29 @@
 
     // ============ VISTA 3 · EL RENDIMIENTO ============
     (function renderEscalera() {
+      // Sin signo y sin decimales — así se citó siempre el anuncio de la llamada, y
+      // ESC.anuncioTotal/anuncioAnual son literales fijos (1499/499), no algo que se
+      // mida. Las otras tres filas SÍ se mueven con el mercado: usan fmtPct1 (con
+      // signo y un decimal), ya definida arriba.
+      function pctAnuncio(x) { return Math.round(x) + "%"; }
+      function signedMoney(x) { return (x >= 0 ? "+" : "") + fmtMoney(x); }
+      // Sin signo, para frases tipo "50.2% ÷ 3 = 16.7%" donde el + ya lo pone el
+      // contexto de la oración y añadirlo dos veces se lee raro.
+      function pctPlano(x) { return (x < 0 ? "−" : "") + Math.abs(x).toFixed(1) + "%"; }
+      var multTotStr = ESC.multTot != null ? ESC.multTot.toFixed(1) + "×" : "—";
+      var multAnualStr = ESC.multAnual != null ? ESC.multAnual.toFixed(1) + "×" : "—";
+
+      var ESCALERA = [
+        { lab:"Lo que se anunció en la llamada",   total: pctAnuncio(ESC.anuncioTotal),   anual: pctAnuncio(ESC.anuncioAnual) + "/año",   estado:"mal" },
+        { lab:"Su misma fórmula, bien aplicada",    total: fmtPct1(ESC.realPct),  anual: fmtPct1(ESC.cagrPct) + "/año", estado:"ok"  },
+        { lab:"Si los dividendos fueran efectivo",  total: fmtPct1(ESC.efectivoPct), anual: fmtPct1(ESC.efectivoCagrPct) + "/año", estado:"na"  },
+        { lab:"Con DRIP probado — el número real",  total: fmtPct1(ESC.realPct),  anual: fmtPct1(ESC.cagrPct) + "/año", estado:"real"}
+      ];
       var SUB = {
-        0: "Error del anuncio: <b>29.9×</b> sobre el total real, <b>34×</b> sobre el anualizado real.",
+        0: "Error del anuncio: <b>" + multTotStr + "</b> sobre el total real, <b>" + multAnualStr + "</b> sobre el anualizado real.",
         1: "Mismo resultado que la fila de abajo — porque el valor de mercado de la hoja ya incluye lo reinvertido.",
-        2: "Retorno teórico si nada se hubiera reinvertido: <b class='num'>+$78,080</b>. No es lo que pasó.",
-        3: "Retorno real, probado con el Bloque 2: <b class='num'>+$24,222.99</b>."
+        2: "Retorno teórico si nada se hubiera reinvertido: <b class='num'>" + signedMoney(ESC.efectivoD) + "</b>. No es lo que pasó.",
+        3: "Retorno real, probado con el Bloque 2: <b class='num'>" + signedMoney(ESC.realD) + "</b>."
       };
       var html = "";
       ESCALERA.forEach(function (e, i) {
@@ -2319,33 +2346,58 @@
       document.getElementById("tmEscalera").innerHTML = html;
 
       setHtml("tmEscaleraCierre",
-        'El portafolio no rindió 499% al año. Rindió cerca de <b>+14.5% anual</b> — parecido a un índice, con mucho más riesgo, más impuesto y mucho más trabajo.');
+        'El portafolio no rindió ' + pctAnuncio(ESC.anuncioAnual) + ' al año. Rindió cerca de <b>' + fmtPct1(ESC.cagrPct) + ' anual</b> — parecido a un índice, con mucho más riesgo, más impuesto y mucho más trabajo.');
       setHtml("tmEscaleraNotas",
-        'Este es el error más común al medir un portafolio de dividendos: primero se anualiza mal (÷3 en vez de componer — 50.2% ÷ 3 = 16.7%, no el 14.5% real), y sobre todo se suma un dinero que ya estaba contado. La fila <b>«Si los dividendos fueran efectivo»</b> de arriba usa siempre base bruta, igual que el resto de este panel; las matrices de <b>«La matriz»</b> tienen su propio selector de base fiscal.');
+        'Este es el error más común al medir un portafolio de dividendos: primero se anualiza mal (÷3 en vez de componer — ' + pctPlano(ESC.realPct) + ' ÷ 3 = ' + pctPlano(ESC.naivePct) + ', no el ' + pctPlano(ESC.cagrPct) + ' real), y sobre todo se suma un dinero que ya estaba contado. La fila <b>«Si los dividendos fueran efectivo»</b> de arriba usa siempre base bruta, igual que el resto de este panel; las matrices de <b>«La matriz»</b> tienen su propio selector de base fiscal.');
     })();
 
     // ============ VISTA 4 · PAYBACK ≠ GANANCIA ============
     (function renderPayback() {
+      // El contraejemplo ya no está cableado a mano a CONY (dejó de perder con datos
+      // vivos — es justo el bug que este traspaso cierra): `DATA.paybackContraejemplo`
+      // lo elige por dato en Python (`_payback_contraejemplo`, mayor payback bruto
+      // entre los que tienen retorno negativo), o viene `null` si nadie perdió esta
+      // semana. Aquí solo se lee, nunca se recalcula.
+      var contraTk = DATA.paybackContraejemplo;
       var rows = "";
-      RATIOS.forEach(function (r) {
-        var flag = r.t === "CONY" ? " tm-flag" : "";
+      ratios.forEach(function (r) {
+        var esContra = contraTk && r.t === contraTk;
+        var flag = esContra ? " tm-flag" : "";
         rows +=
-          '<div class="he-c he-l he-row-lab he-tk' + flag + '">' + r.t + (r.t === "CONY" ? '<span class="he-sub" style="color:var(--loss)">cobró y perdió</span>' : '') + '</div>' +
+          '<div class="he-c he-l he-row-lab he-tk' + flag + '">' + r.t + (esContra ? '<span class="he-sub" style="color:var(--loss)">cobró y perdió</span>' : '') + '</div>' +
           '<div class="he-c num' + flag + '">' + r.pb.toFixed(2) + '×</div>' +
           '<div class="he-c num he-muted' + flag + '">' + r.pbn.toFixed(2) + '×</div>' +
           '<div class="he-c num ' + (r.ret >= 0 ? "he-cash" : "he-loss") + flag + '">' + fmtPct1(r.ret) + '<span class="he-sub">(' + fmtWhole(r.retD) + ')</span></div>';
       });
       rows +=
         '<div class="he-c he-l he-row-lab">TOTAL</div>' +
-        '<div class="he-c num">' + RATIOS_TOT.pb.toFixed(2) + '×</div>' +
-        '<div class="he-c num he-muted">' + RATIOS_TOT.pbn.toFixed(2) + '×</div>' +
-        '<div class="he-c num he-cash">' + fmtPct1(RATIOS_TOT.ret) + '<span class="he-sub">(' + fmtWhole(RATIOS_TOT.retD) + ')</span></div>';
+        '<div class="he-c num">' + ratiosTot.pb.toFixed(2) + '×</div>' +
+        '<div class="he-c num he-muted">' + ratiosTot.pbn.toFixed(2) + '×</div>' +
+        '<div class="he-c num he-cash">' + fmtPct1(ratiosTot.ret) + '<span class="he-sub">(' + fmtWhole(ratiosTot.retD) + ')</span></div>';
       document.getElementById("tmPaybackGrid").insertAdjacentHTML("beforeend", rows);
 
-      setHtml("tmPaybackMsg",
-        'El test verde de la hoja (dividendos ≥ inversión) <b>es legítimo</b> — se llama <b>payback ratio</b> y mide cuánto de tu capital ya volvió. Pero es <b>necesario, no suficiente</b>: CONY tiene payback <b>2.54×</b> y aun así perdió <b class="dn">−8.6%</b> de capital. MSTY: payback 1.71× y <b class="dn">−19.4%</b>. Cobrar de vuelta tu dinero y ganar dinero no son la misma cosa.');
+      if (contraTk) {
+        var contra = ratios.filter(function (r) { return r.t === contraTk; })[0];
+        // Otros tickers que también perdieron capital, del más al menos negativo —
+        // la hoja original citaba dos ejemplos (CONY y MSTY) cuando había dos; si hoy
+        // solo hay uno, el mensaje cita uno solo en vez de inventar un segundo.
+        var otrosNeg = ratios.filter(function (r) { return r.t !== contraTk && r.ret < 0; })
+          .sort(function (a, b) { return a.ret - b.ret; });
+        var msg = 'El test verde de la hoja (dividendos ≥ inversión) <b>es legítimo</b> — se llama <b>payback ratio</b> y mide cuánto de tu capital ya volvió. Pero es <b>necesario, no suficiente</b>: ' +
+          contra.t + ' tiene payback <b>' + contra.pb.toFixed(2) + '×</b> y aun así perdió <b class="dn">' + fmtPct1(contra.ret) + '</b> de capital.';
+        if (otrosNeg.length) {
+          msg += ' ' + otrosNeg[0].t + ': payback ' + otrosNeg[0].pb.toFixed(2) + '× y <b class="dn">' + fmtPct1(otrosNeg[0].ret) + '</b>.';
+        }
+        msg += ' Cobrar de vuelta tu dinero y ganar dinero no son la misma cosa.';
+        setHtml("tmPaybackMsg", msg);
+      } else {
+        // Duda 2 del traspaso: si con datos vivos ningún ticker pierde, el panel no
+        // inventa un contraejemplo — dice, sin mentir, que esta corrida no tiene uno.
+        setHtml("tmPaybackMsg",
+          'El test verde de la hoja (dividendos ≥ inversión) <b>es legítimo</b> — se llama <b>payback ratio</b> y mide cuánto de tu capital ya volvió. Pero es <b>necesario, no suficiente</b>: cobrar de vuelta tu dinero y ganar dinero no son la misma cosa, aunque en esta corrida los cinco fondos tienen retorno real positivo y ninguno lo ilustra.');
+      }
       setHtml("tmPaybackNra",
-        'Los dividendos de la hoja son <b>brutos</b>. Para un miembro no residente de EE. UU. la retención se lleva hasta 30% antes de que el dinero llegue: ' + fmtMoney(TOT.div) + ' → ~$78,182.80 (retención ~$33,506.91). Es una <b>cota superior</b>: el ROC declarado en el aviso 19(a) reclasifica parte y la devuelve. Por eso «Payback neto» va etiquetado como cota superior de la retención, nunca como cifra final.');
+        'Los dividendos de la hoja son <b>brutos</b>. Para un miembro no residente de EE. UU. la retención se lleva hasta 30% antes de que el dinero llegue: ' + fmtMoney(DATA.nra.divBruto) + ' → ~' + fmtMoney(DATA.nra.divNeto) + ' (retención ~' + fmtMoney(DATA.nra.retenido) + '). Es una <b>cota superior</b>: el ROC declarado en el aviso 19(a) reclasifica parte y la devuelve. Por eso «Payback neto» va etiquetado como cota superior de la retención, nunca como cifra final.');
     })();
 
     // ============ VISTA 5 · RENDIMIENTO VS TASA DE DISTRIBUCIÓN ============
@@ -2372,7 +2424,10 @@
         { id:"f2", h:"2 · Anualiza una sola muestra",
           p1:'<span class="num">f·D</span> solo estima el año si los pagos son constantes. No lo son: son semanales y oscilan. En la hoja, MSTY figura con <b>77.28%</b>; en la web de YieldMax marcaba <b>66.67%</b> durante la misma llamada; hoy marca <b>90.51%</b>.' },
         { id:"f3", h:"3 · Si el precio cae, la tasa sube",
-          p1:'Con D fijo y P decreciente, la tasa crece sin techo; cuando P → 0, la tasa → ∞. <b>Una tasa que sube es síntoma de erosión, no de generosidad.</b> CONY: yield realizado <b>200.5%</b>, con su precio cayendo <b>86.5%</b>.' },
+          // Yield realizado y caída de precio salen de `DATA.ymMedido` (medido por el
+          // motor, reusando r_con/r_sin — Decisión 5 del traspaso 2026-08-17), a
+          // diferencia de dr/sec/x/trc/tra de arriba, que son fichas del emisor.
+          p1:'Con D fijo y P decreciente, la tasa crece sin techo; cuando P → 0, la tasa → ∞. <b>Una tasa que sube es síntoma de erosión, no de generosidad.</b> CONY: yield realizado <b>' + YM_MEDIDO.CONY.realYieldPct.toFixed(1) + '%</b>, con su precio cayendo <b>' + Math.abs(YM_MEDIDO.CONY.priceRetPct).toFixed(1) + '%</b>.' },
         { id:"f4", h:"4 · El «dividend yield» es la fórmula equivocada por definición",
           p1:'El yield clásico supone que la distribución sale de utilidades. Aquí D = ingreso + ganancias realizadas + ROC, y el ROC es tu propio capital. Cuando el ROC domina, la métrica mide la velocidad a la que te devuelven tu dinero: un calendario de liquidación, no un rendimiento.' },
         { id:"f5", h:"5 · Por eso la regulación no deja llamarlo «yield»",
