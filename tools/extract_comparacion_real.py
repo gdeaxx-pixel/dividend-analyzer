@@ -211,10 +211,12 @@ def extraer(html: str) -> str:
     tooltip_helper = cargar_tooltip(html)
     script = transformar_script(cargar_script_comparacion(html))
 
-    return f"""<!-- GENERADO POR tools/extract_comparacion_real.py — NO EDITAR A MANO.
-     Fuente: `ui/componentes/comparacion.html` (mismo demo), derivado — no hay diseño
-     propio que extraer (`cmp-panel-real` sigue siendo un placeholder «En diseño» en
-     el demo). Para cambiar algo, se cambia el demo o este extractor y se regenera. -->
+    return f"""<!-- Derivado del demo del artifact en su ORIGEN, y mantenido a mano desde entonces.
+     Las fases 3.3a/3.3b cablearon este componente a datos reales ({{{{DATA_JSON}}}}) y ahí
+     murió el contrato: el demo YA NO es su fuente. `tools/extract_comparacion_real.py` quedó como
+     referencia histórica y ya no escribe — regenerarlo borraría el cableado.
+     Lo que SÍ se sigue generando del demo es la taxonomía y los tokens, con
+     `tools/extract_design_system.py`. Ese contrato está vivo y su `--check` pasa. -->
 <meta charset="utf-8">
 {css}
 <style>
@@ -235,30 +237,34 @@ def extraer(html: str) -> str:
 """
 
 
+_DESARMADO = """Este extractor ya NO escribe (desarmado el 2026-08-18).
+
+Nació con un contrato real: el demo del artifact era la fuente y este script regeneraba
+`ui/componentes/comparacion_real.html`. Ese contrato murió cuando las fases 3.3a/3.3b cablearon el componente a datos
+vivos ({{DATA_JSON}}): desde entonces todo lo que se le añadió —guards, ramas honestas,
+textos derivados de cifras medidas— se escribió a mano en el componente, no en el demo.
+
+Regenerar hoy no actualizaría nada: borraría ese cableado y devolvería cifras congeladas a
+la pantalla, que es justo el bug que este repo lleva meses cerrando. Por eso el comando
+sale con error en vez de escribir.
+
+Tampoco se conserva `--check`: con el componente mantenido a mano, la comparación contra el
+demo solo puede responder DESACTUALIZADO, siempre y por diseño. Un termómetro clavado en
+fiebre no mide nada.
+
+Lo que SÍ sigue vivo es `tools/extract_design_system.py` — taxonomía (`ui/nav.py`) y tokens
+(`ui/tokens.py`) se siguen generando del demo, y su `--check` pasa.
+
+Este archivo se conserva como referencia histórica de cómo se derivó el componente."""
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=_DESARMADO)
     ap.add_argument("--check", action="store_true",
-                    help="no escribe; falla si lo generado difiere de lo que hay en disco")
-    args = ap.parse_args()
-
-    contenido = extraer(load_demo())
-    rel = os.path.relpath(SALIDA, BASE)
-
-    if args.check:
-        actual = open(SALIDA, encoding="utf-8").read() if os.path.exists(SALIDA) else None
-        if actual != contenido:
-            print(f"DESACTUALIZADO respecto al demo: {rel}")
-            return 1
-        print("OK — el componente coincide con el demo")
-        return 0
-
-    os.makedirs(os.path.dirname(SALIDA), exist_ok=True)
-    with open(SALIDA, "w", encoding="utf-8") as f:
-        f.write(contenido)
-    if "{{DATA_JSON}}" not in contenido:
-        sys.exit("El componente salió sin el hueco {{DATA_JSON}} — revisa el extractor.")
-    print(f"generado: {rel}  ({len(contenido):,} caracteres, hueco DATA_JSON)")
-    return 0
+                    help="(retirado) ver la explicación al ejecutar sin argumentos")
+    ap.parse_args()
+    print(_DESARMADO)
+    return 2
 
 
 if __name__ == "__main__":

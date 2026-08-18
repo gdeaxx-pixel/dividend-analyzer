@@ -170,33 +170,36 @@ def test_metodologia_no_tiene_los_literales_congelados():
 def test_metodologia_tiene_el_punto_de_inyeccion_y_los_ids():
     html = _read(_METODOLOGIA)
     assert "{{DATA_JSON}}" in html, "falta el punto de inyección {{DATA_JSON}}"
-    for el_id in ("mtAnTotal", "mtAnNaive", "mtAnCagr", "mtAnMultTot", "mtAnMultAnual"):
+    for el_id in ("mtAnTotal", "mtAnVentana", "mtAnNaive", "mtAnXirr",
+                  "mtAnMultTot", "mtAnMultAnual"):
         assert f'id="{el_id}"' in html, f"falta <b id=\"{el_id}\"> en la § 9"
     # El "anuncio original" (1499%/499%) es una cita textual de la clase grabada — SÍ
     # se queda fijo, a propósito. No confundir con las cifras derivadas de arriba.
     assert "1499%" in html and "499%/año" in html
 
 
-def test_metodologia_calcula_desde_tot_con_la_misma_formula_que_metodo_html():
-    """`correctPct` en `metodo.html` (Bloque 1/2, ya cableado en la Fase 3.3b) es
-    `(TOT.val - TOT.inv) / TOT.inv * 100` — la misma fórmula tiene que vivir en
-    metodologia.html § 9 para que ambas páginas no puedan divergir por lógica distinta,
-    solo por redondeo de presentación."""
+def test_metodologia_no_recalcula_nada_lee_la_escalera():
+    """Antes esta § hacía su propia cuenta en JS (`N=3`, `Math.pow`) y `metodo.html`
+    hacía la suya: dos convenciones para el mismo retorno, que es justo la divergencia
+    que dejó mudo a este párrafo la primera vez. Ahora hay un solo lugar de cómputo
+    —Python, `metodo_data()["escalera"]`— y esta página solo pinta lo que recibe.
+
+    El test protege esa dirección, no un texto: si vuelve a aparecer aritmética de
+    anualización en el JS de metodologia.html, cae."""
     html = _read(_METODOLOGIA)
-    assert re.search(
-        r'real\s*=\s*\(TOT\.val\s*-\s*TOT\.inv\)\s*/\s*TOT\.inv\s*\*\s*100', html), (
-        "la § 9 no deriva el retorno real de TOT.val/TOT.inv — ¿volvió a hardcodearlo?")
-    assert re.search(r'var\s+N\s*=\s*3', html), "la convención N=3 años debe ser explícita"
-    assert re.search(r'Math\.pow\(1\s*\+\s*real\s*/\s*100,\s*1\s*/\s*N\)', html), (
-        "el CAGR debe componer (Math.pow), no dividir (real/N) — esa es justo la "
-        "confusión que denuncia esta sección")
+    assert "D.escalera" in html, "la § 9 no lee `escalera` — ¿volvió a calcular por su cuenta?"
+    seccion = html.split("function computeAnualizar()")[1].split("})();")[0]
+    for aritmetica in ("Math.pow", "TOT.val", "/ N", "/N"):
+        assert aritmetica not in seccion, (
+            f"`{aritmetica}` volvió al JS de la § 9: el anualizado se calcula en Python, "
+            "una sola vez, o las dos vistas pueden volver a divergir")
 
 
 def test_metodologia_degrada_con_gracia_sin_datos():
     """Si `metodo_data()` no pudo bajar historia (`None`), la sección no puede dejar
     los números viejos mudos en pantalla sin avisar — debe mostrar un aviso explícito."""
     html = _read(_METODOLOGIA)
-    assert "!D || !D.tot" in html or "!D.tot" in html
+    assert "!ESC" in html
     assert "No se pudo recalcular" in html
 
 

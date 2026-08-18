@@ -719,6 +719,26 @@ def _payback_contraejemplo(ratios: list[dict]) -> str | None:
     return max(negativos, key=lambda r: r["pb"])["t"]
 
 
+def _tmtot_ejemplo(ratios: list[dict]) -> str | None:
+    """Elige el ticker que ilustra la paradoja de `modal-tmtot`: ganó dinero de verdad y
+    a la vez arrastra pérdida de capital contra su Total inv. — el de mayor `ret` entre
+    los que tienen `perdidaCapital > 0`.
+
+    Estaba cableado a NVDY con dos cifras literales (+244.1% y $11,673.52) copiadas el
+    día que se armó la hoja; medidas hoy dan +282.9% y $12,281.41. Peor que desfasadas:
+    convivían en el mismo modal con el párrafo de arriba, que sí se alimenta en vivo de
+    `TOT` — dos cifras de momentos distintos a dos párrafos de distancia.
+
+    `None` si en esta corrida ningún ticker tiene las dos preguntas apuntando en
+    direcciones opuestas. El modal lo declara en vez de inventar un protagonista, mismo
+    patrón que `_payback_contraejemplo`.
+    """
+    candidatos = [r for r in ratios if r["perdidaCapital"] > 0]
+    if not candidatos:
+        return None
+    return max(candidatos, key=lambda r: r["ret"])["t"]
+
+
 def metodo_data() -> dict | None:
     """JSON para `ui/componentes/metodo.html` (Método tradicional · La matriz, Fase
     3.3b). Reemplaza los `var MATRIZ`/`var ROC_19A` congelados que tenía el componente
@@ -759,14 +779,19 @@ def metodo_data() -> dict | None:
     Payback, Tasa), que hasta ahora citaban la hoja congelada fechada 5/1/2026 aparte de
     `matriz`/`tot` — la desincronización entre ambos es justo lo que este traspaso cierra:
 
-      - `escalera`: la anualización de `tot.val`/`tot.inv` con N=3 fijo (misma convención
-        que `metodologia.html` § 9 «Anualizar bien» — no se inventa una segunda aquí).
+      - `escalera`: la anualización EXACTA (XIRR) de los aportes de `MET_CASO` contra
+        `tot.val`, más la ventana media ponderada por capital que alimenta el ÷N ingenuo
+        que el panel denuncia. `metodologia.html` § 9 «Anualizar bien» LEE estas claves;
+        no calcula una segunda vez ni en otra convención.
       - `ratios`/`ratiosTot`: payback bruto/neto y retorno real por fila, derivados de
         `matriz` (nunca de un neto reusado — Regla 2 del contrato).
       - `nra`: los tres números de la frase "bruto → neto (retenido)" del panel Payback,
         todos derivados de `tot.div` y `tasaNra` — no pueden volver a desincronizarse.
       - `tasaNra`: 0.30, única fuente de la retención NRA simulada (cota superior, no el
         perfil fiscal de nadie — Decisión 4 del traspaso).
+      - `tmtotEjemplo`: el ticker que ilustra la paradoja de `modal-tmtot` (ganó y a la
+        vez perdió capital contra su Total inv.), o `None` si esta semana ninguno la
+        ilustra. Ver `_tmtot_ejemplo`.
       - `paybackContraejemplo`: el ticker que ilustra "cobró y perdió" (mayor payback
         bruto entre los que tienen retorno negativo), o `None` si ninguno perdió esta
         semana — antes era CONY cableado a mano; con datos vivos dejó de ser válido en
@@ -780,6 +805,7 @@ def metodo_data() -> dict | None:
     fuente: dict[str, str] = {}
     asof_candidatos = []
     ym_medido: dict[str, dict] = {}
+    flujos_efectivo: list[tuple] = []
 
     for caso in MET_CASO:
         tk = caso["t"]
@@ -802,6 +828,17 @@ def metodo_data() -> dict | None:
         pagos = r_con.daily[r_con.daily["gross_dividend"] > 0]
         ult = float(pagos["gross_dividend"].iloc[-1]) if len(pagos) else 0.0
         max_sin_drip = float(r_sin.daily["portfolio_value"].iloc[-1])
+
+        # Flujos del contrafáctico «si los dividendos fueran efectivo», para su XIRR. Se
+        # toman de `r_sin` (sin DRIP) porque ahí cada distribución SÍ salió del
+        # instrumento y entró al bolsillo en su fecha — que es exactamente lo que la
+        # fila describe. Fecha a fecha, sin promediar: el momento en que llegó cada peso
+        # es la mitad de la respuesta, y un total anual lo borraría.
+        pagos_sin = r_sin.daily[r_sin.daily["gross_dividend"] > 0]
+        flujos_efectivo.append((caso["start"], -caso["inv"]))
+        flujos_efectivo.extend(
+            (fecha, float(monto)) for fecha, monto in pagos_sin["gross_dividend"].items()
+        )
 
         filas.append({
             "t": tk, "ini": caso["ini"], "dr": caso["dr"], "inv": caso["inv"],
@@ -839,32 +876,64 @@ def metodo_data() -> dict | None:
     tasa_nra = 0.30
 
     # ---- Bloque 3 · la escalera del rendimiento ----
-    # Misma convención que ya vive (y queda) en `metodologia.html` § 9
-    # (`computeAnualizar`): N=3 años fijo, CAGR compuesto sobre TOT.val/TOT.inv — no se
-    # inventa una convención nueva aquí, se deriva la MISMA cuenta en el mismo lugar
-    # (Python) para que ambas vistas dejen de poder desincronizarse.
-    n_anos = 3
+    # Anualización EXACTA por XIRR (decisión de Daniel, 2026-08-17: «prefiero que sea
+    # exacto»). No hay N que elegir: `logic.xirr` resuelve la tasa que descuenta cada
+    # aporte desde su propia fecha. El N=3 que vivía aquí no era medido sino redondeado a
+    # mano, y sobre este mismo caso se desviaba 1.39 pp del exacto (+16.93%/año contra
+    # +18.32%) — suficiente para mover el múltiplo con el que se contrasta el anuncio.
+    #
+    # Pero el N no desaparece de la pantalla, porque la lección del panel es justamente
+    # «÷N no es anualizar»: para que el error sea concreto hace falta un N visible. El que
+    # se muestra —y el que alimenta el ÷N ingenuo— es la ventana media ponderada por
+    # capital aportado, medida, no inventada.
+    asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
+    asof_ts = pd.Timestamp(asof)
     max_tot = round(sum(f["max"] for f in filas), 2)
     real_pct = (tot["val"] - tot["inv"]) / tot["inv"] * 100.0
     real_d = tot["val"] - tot["inv"]
-    cagr_pct = (math.pow(1 + real_pct / 100.0, 1.0 / n_anos) - 1.0) * 100.0
-    naive_pct = real_pct / n_anos
+
+    ventana_por_caso = [
+        (caso["inv"], (asof_ts - pd.Timestamp(caso["start"])).days / 365.25)
+        for caso in MET_CASO
+    ]
+    peso_total = sum(inv for inv, _ in ventana_por_caso)
+    # Se redondea ANTES de dividir, no después: la ventana es un número que el panel
+    # imprime («÷ 2.77 años») y el ÷N que muestra al lado tiene que ser esa división
+    # exacta. Redondear al final dejaría en pantalla una cuenta que no cierra si el
+    # lector la rehace a mano — el mismo tipo de descuadre que este panel denuncia.
+    ventana_pond = round(sum(inv * anios for inv, anios in ventana_por_caso) / peso_total, 2)
+
+    # El XIRR del portafolio con DRIP: cada aporte sale en su fecha, y el valor de mercado
+    # de hoy entra como único flujo positivo. Los dividendos NO son flujo aquí — se
+    # reinvirtieron, nunca tocaron el bolsillo, y su efecto ya vive dentro de `tot["val"]`.
+    xirr_dec = logic.xirr(
+        [(caso["start"], -caso["inv"]) for caso in MET_CASO] + [(asof, tot["val"])]
+    )
+    xirr_pct = None if xirr_dec is None else xirr_dec * 100.0
+
+    naive_pct = real_pct / ventana_pond
+
     efectivo_d = max_tot + tot["div"] - tot["inv"]
     efectivo_pct = efectivo_d / tot["inv"] * 100.0
-    efectivo_cagr_pct = (math.pow(1 + efectivo_pct / 100.0, 1.0 / n_anos) - 1.0) * 100.0
+    # El contrafáctico sí tiene flujos intermedios: cada distribución entró al bolsillo el
+    # día que se pagó (`flujos_efectivo`, recolectado arriba de `r_sin`), y el valor final
+    # es el de la posición que nunca reinvirtió.
+    efectivo_xirr_dec = logic.xirr(flujos_efectivo + [(asof, max_tot)])
+    efectivo_xirr_pct = None if efectivo_xirr_dec is None else efectivo_xirr_dec * 100.0
+
     anuncio_total, anuncio_anual = 1499.0, 499.0
 
     escalera = {
-        "N": n_anos,
         "anuncioTotal": anuncio_total, "anuncioAnual": anuncio_anual,
         "realPct": round(real_pct, 2), "realD": round(real_d, 2),
-        "cagrPct": round(cagr_pct, 2),
+        "xirrPct": round(xirr_pct, 2) if xirr_pct is not None else None,
+        "ventanaPondAnos": ventana_pond,
         "naivePct": round(naive_pct, 2),
         "efectivoPct": round(efectivo_pct, 2), "efectivoD": round(efectivo_d, 2),
-        "efectivoCagrPct": round(efectivo_cagr_pct, 2),
+        "efectivoXirrPct": round(efectivo_xirr_pct, 2) if efectivo_xirr_pct is not None else None,
         "maxTot": max_tot,
         "multTot": round(anuncio_total / real_pct, 1) if real_pct > 0 else None,
-        "multAnual": round(anuncio_anual / cagr_pct, 1) if cagr_pct > 0 else None,
+        "multAnual": round(anuncio_anual / xirr_pct, 1) if xirr_pct and xirr_pct > 0 else None,
     }
 
     # ---- Bloque 4 · payback ≠ ganancia ----
@@ -882,6 +951,13 @@ def metodo_data() -> dict | None:
             "pbn": round(pb * (1 - tasa_nra), 4),
             "ret": round(ret, 2),
             "retD": round(f["val"] - f["inv"], 2),
+            # Versión por fila del agregado que ya usa `modal-tmtot` arriba
+            # (`mTmtotPerdida`): Total inv. − Valor mer. La base es **Total inv.**
+            # (aportado + dividendos reinvertidos ≈ base de costo ajustada), NUNCA el
+            # aportado a secas — mezclar las dos bases en la misma frase es la Regla 2
+            # del contrato, y es lo que hace que esta cifra signifique algo fiscal.
+            # Positiva = pérdida de capital no realizada; negativa = está por encima.
+            "perdidaCapital": round((f["inv"] + f["div"]) - f["val"], 2),
         })
 
     pb_tot = tot["div"] / tot["inv"]
@@ -902,6 +978,7 @@ def metodo_data() -> dict | None:
         "retenido": round(tot["div"] * tasa_nra, 2),
     }
     payback_contraejemplo = _payback_contraejemplo(ratios)
+    tmtot_ejemplo = _tmtot_ejemplo(ratios)
 
     roc19a_raw = logic.load_roc_19a()
     roc19a = {}
@@ -918,7 +995,6 @@ def metodo_data() -> dict | None:
             roc19a_asof.append(str(info["asof"]))
 
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
-    asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
 
     return {
         "matriz": filas,
@@ -934,6 +1010,7 @@ def metodo_data() -> dict | None:
         "ratiosTot": ratios_tot,
         "nra": nra,
         "paybackContraejemplo": payback_contraejemplo,
+        "tmtotEjemplo": tmtot_ejemplo,
         "ymMedido": ym_medido,
     }
 

@@ -1,5 +1,9 @@
-<!-- GENERADO POR tools/extract_metodologia.py — NO EDITAR A MANO.
-     Fuente: el demo del artifact. Para cambiar algo, se cambia el demo y se regenera. -->
+<!-- Derivado del demo del artifact en su ORIGEN, y mantenido a mano desde entonces.
+     Las fases 3.3a/3.3b cablearon este componente a datos reales ({{DATA_JSON}}) y ahí
+     murió el contrato: el demo YA NO es su fuente. `tools/extract_metodologia.py` quedó como
+     referencia histórica y ya no escribe — regenerarlo borraría el cableado.
+     Lo que SÍ se sigue generando del demo es la taxonomía y los tokens, con
+     `tools/extract_design_system.py`. Ese contrato está vivo y su `--check` pasa. -->
 <meta charset="utf-8">
 <style>
   :root {
@@ -1099,10 +1103,10 @@
       </section>
 
       <section class="meth-item" id="mt-anualizar">
-        <h3 class="meth-h">9 · Anualizar: por qué ÷N no es componer</h3>
-        <p class="meth-p"><b>El error:</b> dividir un retorno total entre el número de años (÷N) no es anualizar — es una aproximación lineal que ignora el interés compuesto. Anualizar de verdad es <b>componer</b>: encontrar la tasa constante que, aplicada N veces seguidas, llega al mismo retorno total.</p>
-        <p class="meth-p"><b>El ejemplo real:</b> con un retorno total de <b id="mtAnTotal">—</b> en 3 años, dividir entre 3 da <b id="mtAnNaive">—</b> — un número que parece razonable y por eso pasa desapercibido. El CAGR real (componiendo) es <b id="mtAnCagr">—</b> anual. El error se dispara cuando, además, el retorno anunciado ya viene inflado: en «Método tradicional» el anuncio original (<b>1499%</b> total, <b>499%/año</b>) terminó <b id="mtAnMultTot">—</b> por encima del total real y <b id="mtAnMultAnual">—</b> por encima del anualizado.</p>
-        <p class="meth-src">Fuente: fórmula estándar de CAGR (Compound Annual Growth Rate). Las primeras tres cifras se recalculan en cada carga desde <code>metodo_data()</code> (precio y dividendo en vivo, el mismo motor que «La matriz» de «Método tradicional» § 10) sobre el caso de estudio fijo de esa sección — antes eran una copia congelada y por eso podían divergir de su propia fuente sin que nadie lo notara, igual que le pasó al ROC 19(a). El «anuncio original» (1499% / 499% por año) es la cita textual de la clase grabada — eso sí no cambia con el mercado.<span id="mtAnNota"></span></p>
+        <h3 class="meth-h">9 · Anualizar: por qué ÷N no es componer — y por qué el N sobra</h3>
+        <p class="meth-p"><b>El error:</b> dividir un retorno total entre el número de años (÷N) no es anualizar — es una aproximación lineal que ignora el interés compuesto. Componer ya es mucho mejor, pero arrastra un problema propio: obliga a elegir <i>un</i> N, y cuando el dinero entró en fechas distintas ese N único no existe. La respuesta exacta no necesita elegirlo: es la <b>TIR</b> (XIRR), la tasa que descuenta cada aporte desde su propia fecha.</p>
+        <p class="meth-p"><b>El ejemplo real:</b> con un retorno total de <b id="mtAnTotal">—</b> sobre una ventana media ponderada por capital de <b id="mtAnVentana">—</b>, dividir entre esa ventana da <b id="mtAnNaive">—</b> — un número que parece razonable y por eso pasa desapercibido. La TIR real es <b id="mtAnXirr">—</b> anual. El error se dispara cuando, además, el retorno anunciado ya viene inflado: en «Método tradicional» el anuncio original (<b>1499%</b> total, <b>499%/año</b>) terminó <b id="mtAnMultTot">—</b> por encima del total real y <b id="mtAnMultAnual">—</b> por encima del anualizado.</p>
+        <p class="meth-src">Fuente: TIR de flujos en fechas arbitrarias (XIRR), resuelta por bisección sobre el VPN. Las cifras <b>no se calculan en esta página</b>: llegan ya derivadas de <code>metodo_data()["escalera"]</code>, el mismo objeto que dibuja la escalera de «Método tradicional» § 10 — así las dos vistas no pueden mostrar dos anualizados distintos, que es justo lo que pasaba cuando cada una hacía su propia cuenta. El «anuncio original» (1499% / 499% por año) es la cita textual de la clase grabada — eso sí no cambia con el mercado.<span id="mtAnNota"></span></p>
       </section>
 
       <section class="meth-item" id="mt-metodo">
@@ -1186,36 +1190,34 @@
     if (window.__vdAnchor) { highlight(window.__vdAnchor); }
   })();
 
-  // § 9 «Anualizar bien» — el ejemplo citaba a mano las cifras que tenía «Método
-  // tradicional» ANTES de que la Fase 3.3b cableara esa sección a datos reales; desde
-  // entonces el literal quedó mudo (mismo defecto que originó el ROC 19(a) congelado:
-  // ver ROC_19A en metodo.html). `D.tot` es `ui.adapters.metodo_data()["tot"]` — el
-  // mismo TOT.val/TOT.inv que ya usa metodo.html para `mCmpCorrectPct` en «La matriz».
-  // N=3 años y el «anuncio original» (1499%/499% por año) son la MISMA convención fija
-  // que documenta metodo.html junto a `ESCALERA` (Bloque 3): ese bloque sigue congelado
-  // a la hoja del 5/1/2026 a propósito (Fase 3.3b solo cableó «La matriz», Bloque 1/2) —
-  // no se inventa una fecha nueva aquí, se reutiliza la ya documentada.
+  // § 9 «Anualizar bien» — este bloque ya NO calcula: lee `D.escalera`
+  // (`ui.adapters.metodo_data()["escalera"]`), el mismo objeto que dibuja la escalera de
+  // metodo.html § 10. Antes hacía su propia cuenta en JS (N=3 y CAGR) y metodo.html hacía
+  // la suya; dos convenciones para el mismo retorno es exactamente la divergencia que ya
+  // dejó mudo a este párrafo una vez. Un solo lugar de cómputo, y es Python.
+  //
+  // Los múltiplos tampoco se recalculan aquí: `multTot`/`multAnual` vienen ya divididos
+  // contra el anuncio (1499% total, 499%/año — cita textual de la clase grabada, literal
+  // fijo en el adapter). Si el anualizado no tiene solución, llegan `null` y se pinta «—».
   (function computeAnualizar() {
     var D = {{DATA_JSON}};
     function setHtml(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
-    function pct(x) { return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1) + "%"; }
-    if (!D || !D.tot) {
+    // `null` es «no se puede responder» (TIR sin solución), no un 0% medido.
+    function pct(x) { return x == null ? "—" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(1) + "%"; }
+    function mult(x) { return x == null ? "—" : x.toFixed(1) + "×"; }
+    var ESC = D && D.escalera;
+    if (!ESC) {
       setHtml("mtAnNota",
         ' <b>No se pudo recalcular esta corrida</b> — las cifras de arriba no están ' +
         'disponibles ahora mismo (sin caché de precio ni yfinance en vivo).');
       return;
     }
-    var TOT = D.tot;
-    var N = 3;
-    var ANUNCIO_TOTAL = 1499, ANUNCIO_ANUAL = 499;
-    var real = (TOT.val - TOT.inv) / TOT.inv * 100;
-    var naive = real / N;
-    var cagr = (Math.pow(1 + real / 100, 1 / N) - 1) * 100;
-    setHtml("mtAnTotal", pct(real));
-    setHtml("mtAnNaive", pct(naive));
-    setHtml("mtAnCagr", pct(cagr));
-    setHtml("mtAnMultTot", real > 0 ? (ANUNCIO_TOTAL / real).toFixed(1) + "×" : "—");
-    setHtml("mtAnMultAnual", cagr > 0 ? (ANUNCIO_ANUAL / cagr).toFixed(1) + "×" : "—");
+    setHtml("mtAnTotal", pct(ESC.realPct));
+    setHtml("mtAnVentana", ESC.ventanaPondAnos.toFixed(2) + " años");
+    setHtml("mtAnNaive", pct(ESC.naivePct));
+    setHtml("mtAnXirr", pct(ESC.xirrPct));
+    setHtml("mtAnMultTot", mult(ESC.multTot));
+    setHtml("mtAnMultAnual", mult(ESC.multAnual));
   })();
 })();
 </script>

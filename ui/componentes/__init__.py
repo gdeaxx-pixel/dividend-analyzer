@@ -228,12 +228,12 @@ def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | No
     índice general (ver `ui/chrome.py:_ANCLA_METODOLOGIA`).
 
     `datos` (Fase 4, Clase E) es el mismo `ui.adapters.metodo_data()` que ya consume
-    `render_metodo` — se reutiliza (mismo caché de sesión, no una segunda descarga) para
-    que § 9 «Anualizar bien» recalcule su ejemplo con precios en vivo en vez de citar a
-    mano las cifras que tenía «Método tradicional» ANTES de la Fase 3.3b (que las dejó
-    congeladas — ver comentario "Bloques 3-5... siguen congelados" en metodo.html). Sin
-    `datos` (o si `metodo_data()` no pudo bajar historia), el componente muestra el
-    aviso en vez de una cifra que ya no puede verificar."""
+    `render_metodo` — se reutiliza (mismo caché de sesión, no una segunda descarga). § 9
+    «Anualizar bien» LEE de ahí `escalera` (retorno total, ventana media ponderada, ÷N
+    ingenuo y TIR exacta) en vez de rehacer la cuenta en JS: es el mismo objeto que
+    dibuja la escalera de «Método tradicional» § 10, y por eso las dos vistas no pueden
+    divergir. Sin `datos` (o si `metodo_data()` no pudo bajar historia), el componente
+    muestra el aviso en vez de una cifra que ya no puede verificar."""
     html = _plantilla("metodologia.html")
     html = _con_tema(html, tema)
     html = _con_anchor(html, anchor)
