@@ -399,6 +399,8 @@
 
   .cmp-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
+  .cmp-pair { display: flex; gap: 20px; flex-wrap: wrap; }
+  .cmp-pair > .cmp-field { flex: 1 1 240px; }
   .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
   /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
@@ -1030,21 +1032,25 @@
           <span class="cmp-lab">Paso 1 · Fondo base (YieldMax)</span>
           <div class="cmp-row" id="cmpBase" role="group" aria-label="Fondo base"></div>
         </div>
-        <div class="cmp-field">
-          <span class="cmp-lab">Cómo se reinvirtió (fondo base)</span>
-          <div class="cmp-row" id="cmpVista" role="group" aria-label="Cómo se reinvirtió"></div>
+        <div class="cmp-pair">
+          <div class="cmp-field">
+            <span class="cmp-lab">Reinversión</span>
+            <div class="cmp-row" id="cmpVista" role="group" aria-label="Cómo se reinvirtió"></div>
+          </div>
+          <div class="cmp-field">
+            <span class="cmp-lab">Base fiscal</span>
+            <div class="cmp-row" id="cmpMode" role="group" aria-label="Base fiscal"></div>
+          </div>
         </div>
-        <div class="cmp-field">
-          <span class="cmp-lab">Base fiscal</span>
-          <div class="cmp-row" id="cmpMode" role="group" aria-label="Base fiscal"></div>
-        </div>
-        <div class="cmp-field">
-          <span class="cmp-lab">Paso 3 · Crecimiento</span>
-          <div class="cmp-row" id="cmpGrowth" role="group" aria-label="ETFs de crecimiento"></div>
-        </div>
-        <div class="cmp-field">
-          <span class="cmp-lab">Otros YieldMax</span>
-          <div class="cmp-row" id="cmpYm" role="group" aria-label="Otros fondos YieldMax"></div>
+        <div class="cmp-pair">
+          <div class="cmp-field">
+            <span class="cmp-lab">Crecimiento</span>
+            <div class="cmp-row" id="cmpGrowth" role="group" aria-label="ETFs de crecimiento"></div>
+          </div>
+          <div class="cmp-field">
+            <span class="cmp-lab">Otros YieldMax</span>
+            <div class="cmp-row" id="cmpYm" role="group" aria-label="Otros fondos YieldMax"></div>
+          </div>
         </div>
       </div>
 
