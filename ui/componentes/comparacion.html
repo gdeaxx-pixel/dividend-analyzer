@@ -401,6 +401,7 @@
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
   .cmp-pair { display: flex; gap: 20px; flex-wrap: wrap; }
   .cmp-pair > .cmp-field { flex: 1 1 240px; }
+  .cmp-sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--hair); margin: 0 6px; flex: none; }
   .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
   /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
@@ -1024,7 +1025,7 @@
 <div class="panel" id="cmp-panel-simulacion" role="tabpanel">
       <header class="cmp-head">
         <h2 class="cmp-title">Total Return Graph · simulación</h2>
-        <p class="cmp-lede" id="cmpLede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total, normalizado a <b>0% en la incepción del fondo base</b>.</p>
+        <p class="cmp-lede" id="cmpLede">Comparación en <b>igualdad de condiciones</b>: para el fondo base se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Todas las series arrancan en <b>0% el mismo mes</b>.</p>
       </header>
 
       <div class="cmp-controls">
@@ -1042,15 +1043,9 @@
             <div class="cmp-row" id="cmpMode" role="group" aria-label="Base fiscal"></div>
           </div>
         </div>
-        <div class="cmp-pair">
-          <div class="cmp-field">
-            <span class="cmp-lab">Crecimiento</span>
-            <div class="cmp-row" id="cmpGrowth" role="group" aria-label="ETFs de crecimiento"></div>
-          </div>
-          <div class="cmp-field">
-            <span class="cmp-lab">Dividendos</span>
-            <div class="cmp-row" id="cmpYm" role="group" aria-label="Otros fondos YieldMax"></div>
-          </div>
+        <div class="cmp-field">
+          <span class="cmp-lab">Comparar</span>
+          <div class="cmp-row" id="cmpCmp" role="group" aria-label="Fondos a comparar"></div>
         </div>
       </div>
 
@@ -1105,20 +1100,29 @@
     });
     var _presente = function(t){ return Object.prototype.hasOwnProperty.call(DATA.incep, t); };
     var YM = ["NVDY","TSLY","CONY","MSTY","CHPY"].filter(_presente),
-        GROWTH = ["SCHB","XLK","SMH"].filter(_presente);
+        GROWTH = ["SCHB","XLK","SMH"].filter(_presente),
+        SUB = ["NVDA","TSLA","COIN","MSTR"].filter(_presente);
 
     function idxAt(tk, m, mode){ return DATA.idx[mode][tk][m]; }
-    function series(tk, mode, baseIncep){
-      var startM = Math.max(baseIncep, F[tk].incep), base0 = idxAt(tk, startM, mode), out = {};
-      for (var m = startM; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
-      return { tk:tk, startM:startM, late: F[tk].incep > baseIncep, data:out };
+    // Ventana común: todas las series arrancan en 0% el mismo mes, el de la incepción más
+    // tardía entre las que están en pantalla. Sin esto, un fondo que nació después arrancaba
+    // en su propia fecha y el titular decía «en el mismo horizonte» comparando 45 meses contra
+    // 30. Con el fondo base genérico ese caso pasaba de excepción a norma.
+    function ventanaComun(){
+      var t0 = F[state.base].incep;
+      state.cmp.forEach(function(t){ if (F[t] && F[t].incep > t0) t0 = F[t].incep; });
+      return t0;
+    }
+    function series(tk, t0, mode){
+      var base0 = idxAt(tk, t0, mode), out = {};
+      for (var m = t0; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
+      return { tk:tk, startM:t0, data:out };
     }
     // "Sin DRIP" (efectivo) solo se ofrece para el fondo base: los dividendos salen del
     // mercado apenas se pagan (acumulación sin componer) en vez de reinvertirse en más
     // acciones del fondo. `DATA.idxSin`/`DATA.precioSin` ya separan esas dos series desde
     // Python (`backtest.run_backtest(drip=False)`); aquí solo se normalizan al 0% en la
-    // incepción del fondo base, igual que `series()`. Solo existen para `TRG_YM`: un ETF
-    // de crecimiento nunca es fondo base, así que nunca necesita su "Sin DRIP".
+    // ventana común, igual que `series()`.
     function seriesSin(tk, mode, baseIncep){
       var startM = baseIncep, tot = DATA.idxSin[mode][tk], precio = DATA.precioSin[tk];
       var base0 = tot[startM], out = {}, priceData = {};
@@ -1126,13 +1130,16 @@
       return { tk:tk, startM:startM, late:false, data:out, priceData:priceData };
     }
 
-    var state = { base:DATA.base_defecto, mode:"bruto", vista:"con", growth:new Set(GROWTH), ym:new Set() };
+    var _cmp0 = new Set(GROWTH);
+    var _par0 = DATA.par && DATA.par[DATA.base_defecto];
+    if (_par0 && _presente(_par0)) _cmp0.add(_par0);
+    var state = { base:DATA.base_defecto, mode:"bruto", vista:"con", cmp:_cmp0 };
     var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
     var VISTAS = [ {k:"con", lab:"Con DRIP"}, {k:"sin", lab:"Sin DRIP"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
         elVista = document.getElementById("cmpVista"),
-        elGrowth = document.getElementById("cmpGrowth"), elYm = document.getElementById("cmpYm"),
+        elCmp = document.getElementById("cmpCmp"),
         svg = document.getElementById("cmpSvg"), elSum = document.getElementById("cmpSummary"),
         elNotes = document.getElementById("cmpNotes"), elLede = document.getElementById("cmpLede");
 
@@ -1145,14 +1152,38 @@
     }
     function dot(tk){ return '<span class="cmp-dot" style="background:'+COL[tk]+'"></span>'; }
 
-    function renderControls(){
-      elBase.innerHTML = ""; elMode.innerHTML = ""; elVista.innerHTML = ""; elGrowth.innerHTML = ""; elYm.innerHTML = "";
-      YM.forEach(function(tk){
-        var b = chip(tk, tk === state.base);
-        b.setAttribute("aria-pressed", tk === state.base);
-        b.onclick = function(){ state.base = tk; state.ym.delete(tk); renderControls(); draw(); };
-        elBase.appendChild(b);
+    function sep(el){ var s = document.createElement("span"); s.className = "cmp-sep"; el.appendChild(s); }
+    function grupos(el, listas, hacer){
+      var previo = false;
+      listas.forEach(function(g){
+        if (!g.length) return;
+        if (previo) sep(el);
+        g.forEach(function(tk){ el.appendChild(hacer(tk)); });
+        previo = true;
       });
+    }
+    function chipBase(tk){
+      var b = chip(tk, tk === state.base);
+      b.setAttribute("aria-pressed", tk === state.base);
+      b.onclick = function(){
+        state.base = tk;
+        state.cmp.delete(tk);
+        var par = DATA.par && DATA.par[tk];
+        if (par && _presente(par)) state.cmp.add(par);   // D5: solo suma, nunca apaga
+        renderControls(); draw();
+      };
+      return b;
+    }
+    function chipCmp(tk){
+      var on = state.cmp.has(tk), b = chip(dot(tk)+tk, on, F[tk].grp === "growth" ? " growth" : "");
+      b.setAttribute("aria-pressed", on);
+      b.onclick = function(){ on ? state.cmp.delete(tk) : state.cmp.add(tk); renderControls(); draw(); };
+      return b;
+    }
+
+    function renderControls(){
+      elBase.innerHTML = ""; elMode.innerHTML = ""; elVista.innerHTML = ""; elCmp.innerHTML = "";
+      grupos(elBase, [YM, GROWTH, SUB], chipBase);
       VISTAS.forEach(function(vs){
         var b = chip(vs.lab, vs.k === state.vista);
         b.setAttribute("aria-pressed", vs.k === state.vista);
@@ -1165,18 +1196,8 @@
         b.onclick = function(){ state.mode = md.k; renderControls(); draw(); };
         elMode.appendChild(b);
       });
-      GROWTH.forEach(function(tk){
-        var on = state.growth.has(tk), b = chip(dot(tk)+tk, on, " growth");
-        b.setAttribute("aria-pressed", on);
-        b.onclick = function(){ on ? state.growth.delete(tk) : state.growth.add(tk); renderControls(); draw(); };
-        elGrowth.appendChild(b);
-      });
-      YM.filter(function(t){ return t !== state.base; }).forEach(function(tk){
-        var on = state.ym.has(tk), b = chip(dot(tk)+tk, on);
-        b.setAttribute("aria-pressed", on);
-        b.onclick = function(){ on ? state.ym.delete(tk) : state.ym.add(tk); renderControls(); draw(); };
-        elYm.appendChild(b);
-      });
+      var noBase = function(t){ return t !== state.base; };
+      grupos(elCmp, [GROWTH.filter(noBase), SUB.filter(noBase), YM.filter(noBase)], chipCmp);
     }
 
     function niceStep(range){
@@ -1188,7 +1209,7 @@
     function fmtPct(v){ return (v>0?"+":"") + Math.round(v*100) + "%"; }
 
     var W = 920, H = 380, ML = 48, MR = 96, MT = 14, MB = 26;
-    var _lastList = [], _x = null, _baseIncep = 0;
+    var _lastList = [], _x = null, _t0 = 0;
 
     function draw(){
       var css = getComputedStyle(document.documentElement);
@@ -1197,11 +1218,10 @@
           MUT = css.getPropertyValue("--ink-mut").trim(),
           CASH = css.getPropertyValue("--cash").trim(),
           PANEL = css.getPropertyValue("--panel").trim();
-      var baseIncep = F[state.base].incep; _baseIncep = baseIncep;
-      var baseSeries = state.vista === "sin" ? seriesSin(state.base, state.mode, baseIncep) : series(state.base, state.mode, baseIncep);
+      var t0 = ventanaComun(); _t0 = t0;
+      var baseSeries = state.vista === "sin" ? seriesSin(state.base, state.mode, t0) : series(state.base, t0, state.mode);
       var list = [ baseSeries ];
-      GROWTH.forEach(function(t){ if (state.growth.has(t)) list.push(series(t, state.mode, baseIncep)); });
-      state.ym.forEach(function(t){ list.push(series(t, state.mode, baseIncep)); });
+      state.cmp.forEach(function(t){ list.push(series(t, t0, state.mode)); });
       _lastList = list;
 
       var lo = 0, hi = 0;
@@ -1210,7 +1230,7 @@
         if (s.priceData) for (var m2 in s.priceData){ var v2=s.priceData[m2]; if (v2<lo) lo=v2; if (v2>hi) hi=v2; }
       });
       var pad = (hi - lo) * 0.08 || 0.1; hi += pad; lo -= pad;
-      var x = function(m){ return ML + (m - baseIncep)/(LAST - baseIncep) * (W - ML - MR); };
+      var x = function(m){ return ML + (m - t0)/(LAST - t0) * (W - ML - MR); };
       var y = function(v){ return MT + (hi - v)/(hi - lo) * (H - MT - MB); };
       _x = x;
 
@@ -1221,11 +1241,10 @@
         out.push('<line x1="'+ML+'" y1="'+yy+'" x2="'+(W-MR)+'" y2="'+yy+'" stroke="'+(zero?MUT:HAIR)+'" stroke-width="'+(zero?1.2:1)+'"'+(zero?'':' stroke-dasharray="3 3"')+' opacity="'+(zero?0.7:0.9)+'"/>');
         out.push('<text x="'+(ML-8)+'" y="'+(parseFloat(yy)+3.5)+'" text-anchor="end" font-size="10.5" fill="'+MUT+'">'+fmtPct(g)+'</text>');
       }
-      [8,20,32].forEach(function(m){
-        if (m > baseIncep && m < LAST){
-          out.push('<text x="'+x(m).toFixed(1)+'" y="'+(H-7)+'" text-anchor="middle" font-size="10.5" fill="'+MUT+'">'+mDate(m).getFullYear()+'</text>');
-        }
-      });
+      for (var ty = t0 + 1; ty < LAST; ty++){
+        if (mDate(ty).getMonth() !== 0) continue;
+        out.push('<text x="'+x(ty).toFixed(1)+'" y="'+(H-7)+'" text-anchor="middle" font-size="10.5" fill="'+MUT+'">'+mDate(ty).getFullYear()+'</text>');
+      }
 
       list.forEach(function(s){
         var f = F[s.tk], isBase = s.tk === state.base, color = isBase ? INK : COL[s.tk];
@@ -1244,17 +1263,19 @@
         }
         var d = "";
         for (var m = s.startM; m <= LAST; m++) d += (m===s.startM?"M":"L") + x(m).toFixed(1) + " " + y(s.data[m]).toFixed(1);
-        out.push('<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+(isBase?3.2:2)+'"'+(f.grp==="growth"?' stroke-dasharray="6 4"':'')+' stroke-linejoin="round" stroke-linecap="round"/>');
+        var dash = f.grp === "growth" ? ' stroke-dasharray="6 4"'
+                 : (f.grp === "sub" ? ' stroke-dasharray="2 3"' : '');
+        out.push('<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+(isBase?3.2:2)+'"'+dash+' stroke-linejoin="round" stroke-linecap="round"/>');
         var ex = x(LAST), ey = y(s.data[LAST]);
         out.push('<circle cx="'+ex.toFixed(1)+'" cy="'+ey.toFixed(1)+'" r="3.4" fill="'+color+'" stroke="'+PANEL+'" stroke-width="1.6"/>');
       });
 
-      var labels = list.map(function(s){ return { tk:s.tk, late:s.late, v:s.data[LAST], y:y(s.data[LAST]),
+      var labels = list.map(function(s){ return { tk:s.tk, v:s.data[LAST], y:y(s.data[LAST]),
                                                   base:s.tk===state.base, sin:!!s.priceData }; }).sort(function(a,b){ return a.y-b.y; });
       for (var i=1;i<labels.length;i++) if (labels[i].y - labels[i-1].y < 14) labels[i].y = labels[i-1].y + 14;
       labels.forEach(function(L){
         var color = L.sin ? CASH : (L.base ? INK : COL[L.tk]);
-        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+L.tk+(L.late?"*":"")+'</tspan> '+fmtPct(L.v)+'</text>');
+        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+L.tk+'</tspan> '+fmtPct(L.v)+'</text>');
       });
 
       out.push('<line id="cmpXh" x1="0" y1="'+MT+'" x2="0" y2="'+(H-MB)+'" stroke="'+MUT+'" stroke-width="1" opacity="0"/>');
@@ -1270,8 +1291,8 @@
       function at(e){
         var pt = e.touches ? e.touches[0] : e, r = svg.getBoundingClientRect();
         var sx = (pt.clientX - r.left) * (W / r.width);
-        var m = Math.round(_baseIncep + (sx - ML)/(W - ML - MR) * (LAST - _baseIncep));
-        m = Math.max(_baseIncep, Math.min(LAST, m));
+        var m = Math.round(_t0 + (sx - ML)/(W - ML - MR) * (LAST - _t0));
+        m = Math.max(_t0, Math.min(LAST, m));
         var px = _x(m); xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("opacity", "0.4");
         var rows = _lastList.filter(function(s){ return s.data[m] != null; })
           .sort(function(a,b){ return b.data[m]-a.data[m]; })
@@ -1292,17 +1313,16 @@
         var best = rivals.reduce(function(a,b){ return b.data[LAST] > a.data[LAST] ? b : a; });
         var dpp = Math.round((bv - best.data[LAST]) * 100);
         elSum.innerHTML = '<b class="'+(bv>=0?"up":"dn")+'">'+state.base+" "+fmtPct(bv)+'</b> vs mejor comparador '+
-          '<b>'+best.tk+(best.late?"*":"")+" "+fmtPct(best.data[LAST])+'</b> → diferencia <b class="'+(dpp>=0?"up":"dn")+'">'+
-          (dpp>=0?"+":"")+dpp+' pp</b> en el mismo horizonte'+(sin?"":" y con el mismo supuesto de reinversión")+'.';
+          '<b>'+best.tk+" "+fmtPct(best.data[LAST])+'</b> → diferencia <b class="'+(dpp>=0?"up":"dn")+'">'+
+          (dpp>=0?"+":"")+dpp+' pp</b> en la ventana común ('+mLabel(_t0)+' → '+mLabel(LAST)+')'+(sin?"":" y con el mismo supuesto de reinversión")+'.';
       } else {
         elSum.innerHTML = '<b>'+state.base+" "+fmtPct(bv)+'</b> · activa un comparador para medir la diferencia.';
       }
       elLede.innerHTML = sin
-        ? 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Normalizado a <b>0% en la incepción del fondo base</b>.'
-        : 'Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>.';
-      var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
+        ? 'Comparación en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Todas las series arrancan en <b>0% el mismo mes</b>.'
+        : 'Comparación en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP). Todas las series arrancan en <b>0% el mismo mes</b>.';
       var parts = [
-        "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
+        "Todas las series arrancan el <b>"+mLabel(_t0)+"</b> en 0% — la incepción más tardía entre las que están en pantalla, para que las cifras cubran el mismo horizonte. Línea sólida = fondo YieldMax · guiones = ETF de crecimiento · punteado fino = acción subyacente.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el ' + DATA.asof +
         ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). El <b>neto ROC 19a</b> aplica ' +
         '0.30 × (1 − ROC ponderado) usando el % de retorno de capital que publica cada fondo en sus avisos 19(a); ' +
@@ -1312,10 +1332,9 @@
       // calculado en vivo, no una premisa fija — un NAV que cae fuerte NO implica que el
       // efectivo gane siempre (verificado: TSLY cae 89% y el DRIP igual le gana al
       // efectivo; MSTY, con una caída de NAV parecida, favorece al efectivo).
-      var baseOwnIncep = F[state.base].incep;
-      if (YM.indexOf(state.base) !== -1 && DATA.idxSin[state.mode][state.base]) {
-        var conS = series(state.base, state.mode, baseOwnIncep).data[LAST];
-        var sinS = seriesSin(state.base, state.mode, baseOwnIncep).data[LAST];
+      if (DATA.idxSin[state.mode] && DATA.idxSin[state.mode][state.base]) {
+        var conS = series(state.base, _t0, state.mode).data[LAST];
+        var sinS = seriesSin(state.base, state.mode, _t0).data[LAST];
         var ppCmp = Math.round((conS - sinS) * 100), ganaCon = conS >= sinS;
         parts.push('<span class="flag">Con DRIP vs Sin DRIP (' + state.base + '):</span> reinvertir dio ' +
           fmtPct(conS) + ' y quedarse en efectivo dio ' + fmtPct(sinS) + ' → ' +
@@ -1330,14 +1349,16 @@
             ' (' + rocInfo.weighted_pct + '%, al ' + rocInfo.asof + ') se calcula sobre sus avisos 19(a) más ' +
             'recientes, desde ' + rocInfo.min + '. Los tramos anteriores a esa fecha (incluida la incepción del ' +
             'fondo) usan la MISMA tasa ponderada, <b>extrapolada</b> — no es una medida directa de esos meses.');
-        } else if (YM.indexOf(state.base) !== -1) {
-          parts.push('<span class="flag">Sin avisos 19(a):</span> ' + state.base + ' no tiene avisos 19(a) publicados — el modo Neto ROC 19a retiene la tasa plana para este fondo.');
+        } else {
+          parts.push('<span class="flag">Sin avisos 19(a):</span> ' + state.base + ' no publica avisos 19(a) — en este modo retiene la tasa plana, así que «Neto ROC 19a» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
         }
+      }
+      if (DATA.sin_dividendos && DATA.sin_dividendos.indexOf(state.base) !== -1) {
+        parts.push('<span class="flag">Sin distribuciones:</span> ' + state.base + ' no paga dividendos, así que «Con DRIP» y «Sin DRIP» dan la misma línea y los tres modos fiscales también — no hay nada que reinvertir ni que retener.');
       }
       if (sin) parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> y se acumuló sin componer — nunca se encoge con el precio.');
       if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
       if (DATA.faltantes && DATA.faltantes.length) parts.push('<span class="flag">Sin datos:</span> ' + DATA.faltantes.join(", ") + ' no se pudo descargar (ni caché ni en vivo) — no aparece en el gráfico.');
-      if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
       elNotes.innerHTML = parts.join("<br>");
     }
 

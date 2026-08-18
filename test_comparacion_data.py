@@ -23,7 +23,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from ui.adapters import TRG_UNIVERSO, comparacion_data  # noqa: E402
+from ui.adapters import TRG_SUB, TRG_UNIVERSO, TRG_UNIVERSO_REAL, comparacion_data  # noqa: E402
 
 _COMPONENTE = os.path.join(os.path.dirname(__file__), "ui", "componentes", "comparacion.html")
 
@@ -188,3 +188,69 @@ def test_seriessin_normaliza_series_reales_no_inventadas():
     assert "DATA.idxSin" in cuerpo
     assert "DATA.precioSin" in cuerpo
     assert "Math.sin" not in cuerpo and "Math.cos" not in cuerpo
+
+
+# ── Subyacentes (NVDA/TSLA/COIN/MSTR): universo genérico de fondo base ──────────────────
+
+def test_subyacentes_en_el_payload_con_color_grupo_y_par(datos):
+    """Un ticker sin color entra al CSS como `background:undefined` y no lo caza nada más."""
+    for tk in TRG_SUB:
+        assert tk in datos["col"], f"{tk} sin color en TRG_COLORES"
+        assert datos["grp"][tk] == "sub", f"{tk} debería ser grupo 'sub'"
+    assert datos["par"] == {"NVDY": "NVDA", "TSLY": "TSLA", "CONY": "COIN", "MSTY": "MSTR"}
+    assert "CHPY" not in datos["par"], "CHPY no tiene subyacente en ningún mapeo del repo"
+
+
+def test_idxsin_cubre_todo_el_universo(datos):
+    """Desde que cualquier ticker puede ser fondo base, el toggle «Reinversión» necesita
+    datos Sin DRIP para los 12 — si falta uno, `seriesSin` recibe undefined y la vista
+    revienta al elegirlo como base."""
+    for tk in TRG_UNIVERSO:
+        for modo in ("bruto", "roc", "plano"):
+            assert tk in datos["idxSin"][modo], f"{tk} sin idxSin[{modo}]"
+        assert tk in datos["precioSin"], f"{tk} sin precioSin"
+
+
+def test_la_vista_real_no_arrastra_los_subyacentes():
+    """`trg_real_data` comparte constantes con `comparacion_data`. Si volviera a usar
+    TRG_UNIVERSO bajaría 4 tickers x 3 modos que su HTML nunca dibuja, y los listaría en su
+    aviso «Sin datos»."""
+    for tk in TRG_SUB:
+        assert tk not in TRG_UNIVERSO_REAL
+
+
+@pytest.mark.parametrize("tk", ["TSLA", "COIN", "MSTR"])
+def test_accion_sin_dividendos_es_indiferente_al_drip_y_al_modo(datos, tk):
+    """Invariante independiente de las cifras: sin distribuciones no hay nada que reinvertir
+    ni que retener, así que las 4 series (Con/Sin DRIP x 3 modos) tienen que coincidir. Caza
+    un cableado cruzado sin depender de un número transcrito."""
+    assert tk in datos["sin_dividendos"], f"{tk} no debería tener dividendos en el caché"
+    con = _retorno_total(datos, tk, "bruto", "idx")
+    assert _retorno_total(datos, tk, "bruto", "idxSin") == pytest.approx(con, abs=1e-9)
+    for modo in ("roc", "plano"):
+        assert _retorno_total(datos, tk, modo, "idx") == pytest.approx(con, abs=1e-9)
+
+
+def test_nvda_si_paga_dividendo_y_la_retencion_se_nota(datos):
+    """El contraejemplo de la prueba anterior: NVDA sí distribuye (poco), así que el modo con
+    retención tiene que rendir estrictamente menos. Si diera igual, la retención no se estaría
+    aplicando a ningún ticker."""
+    assert "NVDA" not in datos["sin_dividendos"]
+    assert _retorno_total(datos, "NVDA", "bruto", "idx") > _retorno_total(datos, "NVDA", "plano", "idx")
+
+
+# Ventaja del efectivo (Sin DRIP − Con DRIP, pp) de los ETFs de crecimiento, medida el
+# 2026-08-18 contra el caché pineado. Es el contraste pedagógico con MSTY (+114.1): en un
+# fondo que aprecia, reinvertir gana por poco; en uno con el NAV colapsado, el efectivo gana
+# por mucho.
+_VENTAJA_EFECTIVO_GROWTH = {"SCHB": -3.2, "XLK": -3.5, "SMH": -9.2}
+
+
+@pytest.mark.parametrize("tk,esperado_pp", sorted(_VENTAJA_EFECTIVO_GROWTH.items()))
+def test_growth_sin_drip_pierde_por_poco(datos, tk, esperado_pp):
+    con = _retorno_total(datos, tk, "bruto", "idx") * 100.0
+    sin = _retorno_total(datos, tk, "bruto", "idxSin") * 100.0
+    ventaja_pp = sin - con
+    assert ventaja_pp == pytest.approx(esperado_pp, abs=0.5), (
+        f"{tk}: ventaja del efectivo esperada {esperado_pp} pp, obtenida {ventaja_pp:.1f} pp")
+    assert ventaja_pp < 0, f"{tk}: en un ETF de crecimiento el DRIP debe ganar"

@@ -26,3 +26,29 @@ SMH:
   ratio: 2.0
 NFLY: []
 YMAX: []
+NVDA:
+- date: '2000-06-27'
+  ratio: 2.0
+- date: '2001-09-10'
+  ratio: 2.0
+- date: '2006-04-07'
+  ratio: 2.0
+- date: '2007-09-11'
+  ratio: 1.5
+- date: '2021-07-20'
+  ratio: 4.0
+- date: '2024-06-10'
+  ratio: 10.0
+TSLA:
+- date: '2020-08-31'
+  ratio: 5.0
+- date: '2022-08-25'
+  ratio: 3.0
+COIN: []
+MSTR:
+- date: '2000-01-27'
+  ratio: 2.0
+- date: '2002-07-31'
+  ratio: 0.1
+- date: '2024-08-08'
+  ratio: 10.0

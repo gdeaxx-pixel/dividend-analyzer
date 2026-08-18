@@ -19,16 +19,28 @@ import backtest
 import logic
 import price_cache
 
-# Universo del Total Return Graph — 5 fondos YieldMax + 3 ETFs de crecimiento. Paleta y
-# agrupación literales del demo (`viaje-dinero-waterfall.html:2781`). Viven aquí (no en
-# `ui/vistas.py`, que las tenía antes bajo `_TRG_*`) porque las consume `trg_real_data`;
-# `ui.vistas` ya importa de `ui.adapters`, así que dejarlas en vistas.py habría creado
-# un import circular en cuanto el adapter necesitara leerlas.
+# Universo del Total Return Graph — 5 fondos YieldMax + 3 ETFs de crecimiento + 4 acciones
+# subyacentes. Paleta y agrupación literales del demo (`viaje-dinero-waterfall.html:2781`).
+# Viven aquí (no en `ui/vistas.py`, que las tenía antes bajo `_TRG_*`) porque las consume
+# `trg_real_data`; `ui.vistas` ya importa de `ui.adapters`, así que dejarlas en vistas.py
+# habría creado un import circular en cuanto el adapter necesitara leerlas.
 TRG_YM = ("NVDY", "TSLY", "CONY", "MSTY", "CHPY")
 TRG_GROWTH = ("SCHB", "XLK", "SMH")
-TRG_UNIVERSO = TRG_YM + TRG_GROWTH
+TRG_SUB = ("NVDA", "TSLA", "COIN", "MSTR")
+TRG_UNIVERSO = TRG_YM + TRG_GROWTH + TRG_SUB
+# La vista «Real» (trg_real_data) tiene sus chips hardcodeados aparte y nunca dibujaría los
+# subyacentes: si compartiera TRG_UNIVERSO bajaría 4 tickers x 3 modos para tirarlos, y los
+# listaría en su aviso «Sin datos». Se queda con el universo de 8.
+TRG_UNIVERSO_REAL = TRG_YM + TRG_GROWTH
+# Subyacente de cada YieldMax de un solo nombre. CHPY no tiene: no aparece en instruments.yaml
+# ni en YIELDMAX_RISK_PROFILES.
+TRG_PARES = {"NVDY": "NVDA", "TSLY": "TSLA", "CONY": "COIN", "MSTY": "MSTR"}
 TRG_COLORES = {"NVDY": "#1f86c4", "TSLY": "#d1662f", "CONY": "#b95cae", "MSTY": "#a8b020",
-              "CHPY": "#17a89a", "SCHB": "#b06a3d", "XLK": "#8f76d4", "SMH": "#c99a26"}
+               "CHPY": "#17a89a", "SCHB": "#b06a3d", "XLK": "#8f76d4", "SMH": "#c99a26",
+               # Cada subyacente toma la variante oscura del color de su YieldMax (paleta
+               # CVD-safe ya validada con la skill dataviz, ver app_old.py:6018-6020): el par
+               # comparte familia de color y el ojo lo agrupa solo.
+               "NVDA": "#006497", "TSLA": "#C05621", "COIN": "#A84C9E", "MSTR": "#98A000"}
 TRG_MODOS = ("bruto", "roc", "plano")
 
 
@@ -383,8 +395,9 @@ def _trg_ancla():
 
 def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) -> dict | None:
     """JSON para `ui/componentes/comparacion_real.html` (Total Return Graph · datos
-    reales): el índice TRI crudo de los 8 tickers del universo × 3 modos fiscales
-    sobre la ventana completa (mapa-datos.md § 5).
+    reales): el índice TRI crudo de los 8 tickers de `TRG_UNIVERSO_REAL` × 3 modos
+    fiscales sobre la ventana completa (mapa-datos.md § 5). No incluye los 4 subyacentes
+    (`TRG_SUB`) — este componente nunca dibuja esos chips, se aísla a propósito.
 
     El componente no calcula nada — Python entrega el índice base 100 (normalizado en
     la incepción de cada ticker, o en la del ancla si es posterior) y JS renormaliza
@@ -414,7 +427,7 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         return None
 
     origen = [int(ancla_start.year), int(ancla_start.month) - 1]
-    comparar = tuple(t for t in TRG_UNIVERSO if t != ancla)
+    comparar = tuple(t for t in TRG_UNIVERSO_REAL if t != ancla)
 
     idx: dict = {}
     meta_por_ticker: dict = {}
@@ -553,9 +566,9 @@ def comparacion_data() -> dict | None:
          `price_cache.load_history` (cache ausente/vencido), y ese fallback se
          propaga aquí vía `fuente`/`degradado`, nunca en silencio.
 
-    Además del índice "Con DRIP" (`idx`, para los 8 tickers de `TRG_UNIVERSO`), calcula
-    "Sin DRIP" (`idxSin`/`precioSin`, solo para `TRG_YM` — es la única familia que puede
-    ser fondo base, y el toggle "Cómo se reinvirtió" solo aplica al fondo base) separando
+    Además del índice "Con DRIP" (`idx`, para los 12 tickers de `TRG_UNIVERSO`), calcula
+    "Sin DRIP" (`idxSin`/`precioSin`, para TODO el universo — cualquier ticker puede ser
+    fondo base, y el toggle "Cómo se reinvirtió" solo aplica al fondo base) separando
     el retorno de precio puro del efectivo acumulado sin componer — la misma separación
     que `seriesSin` dibuja en JS, ahora con datos reales en vez de una rampa lineal
     fabricada sobre un `shapeOf` senoidal.
@@ -622,7 +635,7 @@ def comparacion_data() -> dict | None:
         history = hr.history.sort_index()
         start = history.index.min()
         incep[tk] = (int(start.year) - origen[0]) * 12 + (int(start.month) - 1 - origen[1])
-        grp[tk] = "ym" if tk in TRG_YM else "growth"
+        grp[tk] = "ym" if tk in TRG_YM else ("sub" if tk in TRG_SUB else "growth")
 
         for modo in TRG_MODOS:
             rate = _cmp_nra_rate(tk, modo, roc19a)
@@ -632,17 +645,18 @@ def comparacion_data() -> dict | None:
             idx[modo][tk] = valores_con
             _actualizar_last(valores_con)
 
-            if tk in TRG_YM:
-                r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
-                                              drip=False, nra_rate=rate, history=history)
-                valores_sin = _mensualizar(r_sin.daily["total_value"])
-                idx_sin[modo][tk] = valores_sin
-                _actualizar_last(valores_sin)
-                if tk not in precio_sin:
-                    # El componente de precio NO depende de la retencion (nra_rate solo
-                    # afecta cuanto efectivo se acumula, nunca el precio de mercado) —
-                    # basta una corrida por ticker, no una por modo.
-                    precio_sin[tk] = _mensualizar(r_sin.daily["portfolio_value"])
+            # Sin DRIP para TODO el universo: desde que cualquier ticker puede ser
+            # fondo base, el toggle «Reinversión» tiene que tener datos para los 12.
+            r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+                                          drip=False, nra_rate=rate, history=history)
+            valores_sin = _mensualizar(r_sin.daily["total_value"])
+            idx_sin[modo][tk] = valores_sin
+            _actualizar_last(valores_sin)
+            if tk not in precio_sin:
+                # El componente de precio NO depende de la retencion (nra_rate solo
+                # afecta cuanto efectivo se acumula, nunca el precio de mercado) —
+                # basta una corrida por ticker, no una por modo.
+                precio_sin[tk] = _mensualizar(r_sin.daily["portfolio_value"])
 
     fuente = {tk: hr.source for tk, hr in historias.items()}
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
@@ -664,6 +678,10 @@ def comparacion_data() -> dict | None:
     asof_candidatos = [hr.cache_asof for hr in historias.values() if hr.cache_asof]
     asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
 
+    sin_dividendos = sorted(
+        tk for tk, hr in historias.items()
+        if float(hr.history.get("Dividends", pd.Series(dtype=float)).fillna(0).sum()) == 0.0)
+
     return {
         "origen": origen,
         "last": last,
@@ -680,6 +698,8 @@ def comparacion_data() -> dict | None:
         "degradado": degradado,
         "faltantes": faltantes,
         "roc19a": roc_ventana,
+        "par": TRG_PARES,
+        "sin_dividendos": sin_dividendos,
     }
 
 
