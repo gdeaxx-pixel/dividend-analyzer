@@ -380,10 +380,13 @@ _ESTILOS = """
         /* ---- Ruta funcional: un st.popover por segmento. La fila de columnas es la
            misma superficie que la página — fondo --ground exacto, borde dashed — y las
            columnas abrazan su contenido en vez de repartirse el ancho, como el .crumb
-           del demo. ---- */
+           del demo. `flex-wrap: wrap` partía la fila en dos (MSTY caía a una segunda
+           línea) en cuanto los tres popovers no cabían de corrido (~500-650px); con
+           `nowrap` + `overflow-x: auto` la fila se mantiene en una sola línea y, si no
+           entra, se desliza horizontalmente en vez de apilarse. */
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
           border: 1px dashed var(--hair); background: var(--ground);
-          padding: 13px 16px; flex-wrap: wrap; align-items: center;
+          padding: 13px 16px; flex-wrap: nowrap; overflow-x: auto; align-items: center;
         }
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
           flex: 0 0 auto; width: auto; min-width: 0;
