@@ -11,10 +11,12 @@ import streamlit as st
 import logic
 from ui import estado, heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
-                         metodo_data, salud_nav_data, trg_real_data, verificar_identidades)
+                         metodo_data, metodo_real_data, salud_nav_data, trg_real_data,
+                         verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
-                            render_hoja, render_metodo, render_metodologia, render_rail)
+                            render_hoja, render_metodo, render_metodo_real,
+                            render_metodologia, render_rail)
 from ui.pie import render_calculadoras
 from ui.validacion import render_validacion_datos
 
@@ -237,6 +239,32 @@ def render_metodo_tradicional(ruta: Ruta) -> None:
     render_metodo(ruta.vista, ruta.tema, datos)
 
 
+def render_matriz2(ruta: Ruta) -> None:
+    """«Matriz 2» — las cuatro lecciones de «La matriz» sobre el portafolio real del
+    CSV cargado (traspaso 2026-08-17). Nombrada distinto a `ui.componentes.
+    render_metodo_real` a propósito, mismo motivo que `render_trg_real`/
+    `render_comparacion_real`: dos módulos no pueden compartir nombre de función sin
+    que el import de uno choque con la definición del otro.
+
+    Sin CSV cargado, la vista no se dibuja (Decisión 5 del traspaso) — mismo patrón que
+    `render_trg_real`.
+    """
+    resultados = _resultados()
+    if not resultados:
+        st.info("Carga tu CSV para ver esta sección con datos reales.")
+        return
+
+    df = st.session_state.get("_wizard_df_clean")
+    tasa_pct, pais = estado.tasa_y_pais()
+    datos = metodo_real_data(resultados, df, tasa_pct, pais)
+    if datos is None:
+        st.warning("Ninguna posición de tu portafolio tiene datos suficientes para "
+                  "esta matriz todavía.")
+        return
+
+    render_metodo_real(datos, ruta.tema)
+
+
 def render_trg_real(ruta: Ruta) -> None:
     """Total Return Graph con datos reales — el mismo componente del artifact que
     Comparación · Simulación (`ui/componentes/comparacion_real.html`, derivado de
@@ -319,6 +347,9 @@ def render_vista(ruta: Ruta) -> None:
         if ruta.vista == "real":
             render_trg_real(ruta)
             return
+    if ruta.categoria == "metodo" and ruta.vista == "matriz2":
+        render_matriz2(ruta)
+        return
     if ruta.categoria == "metodo" and ruta.vista in nav.MET_ORDER:
         render_metodo_tradicional(ruta)
         return

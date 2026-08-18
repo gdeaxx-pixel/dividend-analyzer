@@ -13,6 +13,8 @@ from __future__ import annotations
 import datetime
 import math
 
+import pandas as pd
+
 import backtest
 import logic
 import price_cache
@@ -900,4 +902,213 @@ def metodo_data() -> dict | None:
         "nra": nra,
         "paybackContraejemplo": payback_contraejemplo,
         "ymMedido": ym_medido,
+    }
+
+
+def _xirr_cartera(resultados: dict, tickers: list) -> float | None:
+    """Retorno anual EXACTO de las posiciones incluidas, como una sola cartera.
+
+    Decisión de Daniel (2026-08-17): «prefiero que sea exacto». No hay un N que elegir —
+    `logic.xirr` resuelve la tasa que descuenta los flujos reales en sus fechas reales.
+    Sobre el caso de estudio, elegir N movía la respuesta 1.39 pp (N=3 daba +16.93%/año
+    contra el exacto +18.32%), y con un CSV real —compras repartidas en decenas de
+    fechas— la arbitrariedad solo crece.
+
+    Los flujos salen de `stats["cash_flows_dated"]`, que `analyze_portfolio` construye
+    fila por fila. **No se reclasifican aquí**: separar aporte propio de compra por DRIP
+    mirando `Action` es imposible sin decidir por bróker (IB rotula las dos `Buy`,
+    Schwab usa `Reinvest Shares`), y decidir por bróker es lo que ya duplicó una
+    retención antes. Se suma el valor de mercado de hoy como flujo final positivo, igual
+    que hace `analyze_portfolio` para `irr_anual`.
+
+    `None` si ninguna posición aporta flujos utilizables — la escalera se dibuja sin el
+    peldaño anualizado antes que con un número inventado.
+    """
+    flujos = []
+    hoy = pd.Timestamp(datetime.date.today())
+    for tk in tickers:
+        stats = (resultados or {}).get(tk) or {}
+        flujos.extend(stats.get("cash_flows_dated") or [])
+        valor = _f(stats.get("market_value"))
+        # `if valor:` no basta: NaN es truthy. Colar un NaN aquí sería peor que omitirlo
+        # —`logic.xirr` lo descarta al limpiar, y el resultado sería la TIR de los aportes
+        # SIN valor final, o sea un −99% que parece medido.
+        if math.isfinite(valor) and valor:
+            flujos.append((hoy, valor))
+    tasa = logic.xirr(flujos)
+    return None if tasa is None else tasa * 100.0
+
+
+def metodo_real_data(resultados: dict, df, tasa_pct, pais: str | None = None) -> dict | None:
+    """JSON para `ui/componentes/metodo_real.html` («Matriz 2» · las cuatro lecciones de
+    «La matriz» aplicadas al portafolio REAL del CSV cargado — traspaso 2026-08-17).
+
+    No calcula nada fiscal ni de mercado por su cuenta (Regla 3, `specs/
+    roc-nra-invariants.md`): cada fila reusa por IDENTIDAD `cashflow_data`/
+    `verificar_identidades`, exactamente lo que ya usan Cash flow y Hoja Excel para el
+    ticker de la ruta — aquí solo se itera sobre TODOS los tickers del portafolio.
+
+    **La trampa del traspaso.** En «La matriz» el DRIP fue TOTAL, así que
+    `Valor mer. − Inversión` ya es el retorno real. Aquí el DRIP es PARCIAL — parte de
+    las distribuciones se cobró en efectivo y nunca volvió a comprar acciones —, así que
+    la única fórmula válida es `Retorno total real = Valor de mercado + efectivo cobrado
+    − Capital aportado`. `cashflow_data` ya la implementa así en su campo `RESULTADO`
+    (`CAPITAL_ACTUAL − POCKET`, con `CAPITAL_ACTUAL = VALOR_HOY + CASH`, y `CASH` derivado
+    de `NETO − DRIP` — nunca de `dividends_collected_cash` crudo, que no está en la misma
+    base en los dos brokers, logic.py:1490-1500). Reusarlo aquí es lo que impide que el
+    atajo de «La matriz» se cuele.
+
+    `tasa_pct`/`pais` llegan de `ui.estado.tasa_y_pais()` — `tasa_pct ==
+    logic.RATE_UNDECLARED` cuando el cliente no declaró residencia (Decisión 4 del
+    traspaso: «sin declarar» no es 0%, no se estima devolución ni se muestra payback
+    neto). `tax_summaries` se re-deriva con esa tasa vía `logic.build_tax_summaries` —
+    mismo patrón que `ui.vistas._tax_summary`, sin recalcular el concepto.
+
+    Un ticker se EXCLUYE de la matriz (no se calla en silencio: va a `excluidos`) si
+    `verificar_identidades` no reconcilia — las mismas cifras que Cash flow/Hoja Excel ya
+    rechazan mostrar por ticker individual, aquí no pueden colarse solo porque la vista
+    agrega varios a la vez.
+
+    Devuelve `None` si ningún ticker del portafolio tiene datos analizables
+    (`_tiene_datos`) — sin al menos una fila la sección no tiene qué mostrar.
+    """
+    tax_summaries = logic.build_tax_summaries(resultados, base_rate_pct=tasa_pct, country=pais)
+    pais_declarado = tasa_pct != logic.RATE_UNDECLARED
+    instrumentos = logic.load_instruments()
+
+    filas, ratios, excluidos = [], [], []
+    con_ficha, sin_ficha = [], []
+    ym_medido: dict[str, dict] = {}
+    tot_inv = tot_div = tot_val = tot_retD = tot_impuesto = tot_neto_decl = 0.0
+
+    for tk, stats in sorted((resultados or {}).items()):
+        if not _tiene_datos(stats):
+            continue
+        tax = tax_summaries.get(tk) or {}
+        try:
+            cf = cashflow_data(stats, tk, tax_summary=tax)
+        except DatosIncompletos:
+            continue
+        fallos = verificar_identidades(cf, stats)
+        if fallos:
+            excluidos.append({"t": tk, "motivo": fallos[0]})
+            continue
+
+        pocket, bruto, valor_hoy = cf["POCKET"], cf["BRUTO"], cf["VALOR_HOY"]
+        ret_d = cf["RESULTADO"]
+
+        # Una cifra no finita NO puede llegar a un total. Si el precio de hoy no se pudo
+        # obtener (yfinance degradado devuelve filas con `Close` = NaN, visto el
+        # 2026-08-18), `market_value` sale NaN y contamina por aritmética TODOS los
+        # agregados: NaN + x = NaN, y como toda comparación con NaN es falsa, la posición
+        # tampoco aparecería como perdedora ni ganadora — se volvería invisible sin que
+        # nadie lo note. Se excluye declarándolo, que es la misma regla que aplica
+        # `verificar_identidades`: antes de mostrar algo que miente, no mostrarlo.
+        if not all(math.isfinite(_f(v)) for v in (pocket, bruto, valor_hoy, ret_d)):
+            excluidos.append({
+                "t": tk,
+                "motivo": "sin precio de mercado utilizable hoy — no se puede valorar la posición",
+            })
+            continue
+
+        primera = None
+        if df is not None and "Ticker" in df.columns:
+            serie = df.loc[df["Ticker"] == tk, "Date"]
+            primera = serie.min() if len(serie) else None
+        inicio = "" if primera is None or primera != primera else primera.strftime("%Y-%m-%d")
+
+        filas.append({
+            "t": tk, "ini": inicio,
+            "inv": pocket, "div": bruto, "tot": round(pocket + bruto, 2), "val": valor_hoy,
+            "convencion": stats.get("dividend_base_convention"),
+        })
+        tot_inv += pocket; tot_div += bruto; tot_val += valor_hoy; tot_retD += ret_d
+        tot_impuesto += cf["IMPUESTO"]
+
+        pb = (bruto / pocket) if pocket > 0 else 0.0
+        ret_pct = (ret_d / pocket * 100.0) if pocket > 0 else 0.0
+        fila_ratio = {"t": tk, "pb": round(pb, 4), "ret": round(ret_pct, 2), "retD": round(ret_d, 2)}
+        if pais_declarado and pocket > 0:
+            # `net_estimated` = lo que en definitiva se queda el fisco tras la
+            # reclasificación ROC, YA calculado a la tasa del perfil del usuario
+            # (`logic.build_tax_summary`, Regla 4: usa el ROC% como palanca fiscal, no
+            # como medida de daño al NAV) — nunca el 30% plano de «La matriz».
+            neto_decl = bruto - _f(tax.get("net_estimated"), cf["IMPUESTO"])
+            fila_ratio["pbn"] = round(neto_decl / pocket, 4)
+            tot_neto_decl += neto_decl
+        ratios.append(fila_ratio)
+
+        info = instrumentos.get(str(tk).upper())
+        (con_ficha if info else sin_ficha).append(tk)
+        # `price_cagr_recent` (ventana reciente) sobre `price_cagr` (histórico completo)
+        # cuando ambos existen — mismo criterio que `salud_nav_data`. `None` explícito
+        # (no 0) cuando `analyze_portfolio` no pudo calcular ninguno de los dos.
+        cagr_recent = stats.get("price_cagr_recent")
+        precio_cagr = cagr_recent if cagr_recent is not None else stats.get("price_cagr")
+        ym_medido[tk] = {
+            "yieldRealizadoPct": round(pb * 100.0, 2),
+            "precioCagrPct": round(precio_cagr, 2) if precio_cagr is not None else None,
+            "conFicha": bool(info),
+        }
+
+    if not filas:
+        return None
+
+    tot = {"inv": round(tot_inv, 2), "div": round(tot_div, 2),
+           "tot": round(tot_inv + tot_div, 2), "val": round(tot_val, 2)}
+    ret_tot_pct = (tot_retD / tot_inv * 100.0) if tot_inv > 0 else 0.0
+    ratios_tot = {"pb": round(tot_div / tot_inv, 4) if tot_inv > 0 else 0.0,
+                  "ret": round(ret_tot_pct, 2), "retD": round(tot_retD, 2)}
+    if pais_declarado and tot_inv > 0:
+        ratios_tot["pbn"] = round(tot_neto_decl / tot_inv, 4)
+
+    payback_contraejemplo = _payback_contraejemplo(ratios)
+
+    xirr_pct = _xirr_cartera(resultados, [f["t"] for f in filas])
+    escalera = None
+    if tot_inv > 0:
+        hoja_pct = tot_div / tot_inv * 100.0
+        escalera = {
+            "hojaPct": round(hoja_pct, 2),
+            "realPct": round(ret_tot_pct, 2), "realD": round(tot_retD, 2),
+            # El número correcto, sin plazo inventado. `None` cuando no se pudo
+            # resolver: la vista omite el peldaño anualizado en vez de rellenarlo.
+            "xirrPct": round(xirr_pct, 2) if xirr_pct is not None else None,
+            # Peldaño 3 de la lección («si los dividendos fueran efectivo» — el
+            # contrafáctico sin reinvertir) necesita el valor de mercado de SOLO las
+            # acciones compradas con capital propio, valoradas hoy. En «La matriz» sale
+            # de una segunda corrida de `backtest.run_backtest(drip=False)` porque el
+            # caso de estudio es una compra única en una fecha única; el CSV real tiene
+            # compras fraccionadas en N fechas por ticker y ni `analyze_portfolio` ni
+            # `cashflow_data` guardan «valor hoy de las acciones NO-DRIP» por separado —
+            # aislarlo exigiría un motor de simulación nuevo por posición, que el
+            # traspaso prohíbe explícitamente («Ni un cálculo nuevo»). Se deja declarado
+            # como no disponible en vez de inventarlo o aproximarlo — ver «Traspaso de
+            # vuelta».
+            "efectivoDisponible": False,
+        }
+
+    nra = {
+        "divBruto": round(tot_div, 2),
+        "retenidoReal": round(tot_impuesto, 2),
+        "paisDeclarado": pais_declarado,
+        "pais": pais,
+        "tasaPct": tasa_pct if pais_declarado else None,
+        "netoDeclarado": round(tot_neto_decl, 2) if pais_declarado else None,
+    }
+
+    return {
+        "matriz": filas,
+        "tot": tot,
+        "ratios": ratios,
+        "ratiosTot": ratios_tot,
+        "paybackContraejemplo": payback_contraejemplo,
+        "escalera": escalera,
+        "nra": nra,
+        "ymMedido": ym_medido,
+        "conFicha": con_ficha,
+        "sinFicha": sin_ficha,
+        "excluidos": excluidos,
+        "paisDeclarado": pais_declarado,
+        "asof": datetime.date.today().isoformat(),
     }
