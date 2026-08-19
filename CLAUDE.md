@@ -38,11 +38,15 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ## Cómo validar
 
 ```bash
-./.venv/bin/python -m pytest -q          # suite completa — línea base: 464 passed, 2 skipped
+./.venv/bin/python -m pytest -q          # suite completa — ver línea base abajo
 ./.venv/bin/python validate_real_cases.py
 ```
 
-**La suite completa, nunca un subconjunto.** Los 17 archivos cubren clases de regresión distintas.
+**La suite completa, nunca un subconjunto.** Los 21 archivos cubren clases de regresión distintas.
+Línea base: **538 passed, 2 skipped, 3 deselected** (medido 2026-08-19 sobre `main` = `a2dd335`).
+Este número envejece en cuanto alguien añade tests: si tu PR cambia la cuenta, **actualízalo aquí
+en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo notara.
+
 Los tests de visión están deseleccionados por `pytest.ini`; correrlos aparte sólo si se tocó la
 lectura por foto (`-m vision`, gasta cuota de Gemini).
 
