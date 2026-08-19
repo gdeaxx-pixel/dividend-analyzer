@@ -722,11 +722,13 @@
   .he-switch-lab { font-family: var(--font-sans); font-size: 13.5px; color: var(--ink-2); }
   .he-switch[aria-checked="true"] + .he-switch-lab { color: var(--ink); font-weight: 600; }
   .he-switch-cap { display: block; font-size: 11px; font-weight: 400; color: var(--ink-mut); margin-top: 2px; }
-  /* BASE FISCAL (Método tradicional) ahora son 3 chips .cmp-chip, no un
-     interruptor — cada uno trae su propia etiqueta fija, así que activar uno
-     no cambia ancho de nada, solo color. Lo único que sigue variando de largo
-     entre modos es la leyenda (#tmModoCap) y la nota de la matriz 3; ambas se
-     miden en vivo (ajustarBaseFiscal en initMetodo), no se estiman. */
+  /* BASE FISCAL (Método tradicional) son 3 chips .cmp-chip, no un interruptor —
+     cada uno trae su propia etiqueta fija, así que activar uno no cambia ancho
+     de nada, solo color. La leyenda por modo ya NO vive aquí: se mudó a
+     #mMetodoEscenario, dentro del modal ⓘ (#modal-tmmetodo), para que el bloque
+     de filtros quepa en un solo renglón. Lo único que sigue variando de largo
+     entre modos son las notas de las matrices; se miden en vivo
+     (ajustarBaseFiscal en initMetodo), no se estiman. */
 
   /* ============ MÉTODO TRADICIONAL: la hoja de la clase auditada ============ */
   /* Reutiliza el vocabulario de HOJA EXCEL (.he-grid/.he-c/.he-h/.he-lab/.he-eq/
@@ -2335,12 +2337,12 @@
     aplicarVistaDrip();     // aplica la visibilidad inicial (Con DRIP)
     renderEjemplosCony();   // modales invariantes al modo — una sola vez basta
 
-    // Alto de la leyenda (tmModoCap, compartida por las dos vistas) y de la
-    // nota de cada matriz (tmConDripNotes / tmSinDripNotes), medidos EN VIVO
-    // sobre los TRES modos reales (mismo patrón que igualarCintas en
-    // initHoja) — nada estimado. tmModoCap se mide contra las 2 vistas × 3
-    // modos (6 combinaciones, siempre visible); cada nota de matriz se mide
-    // solo contra sus propios 3 modos, forzando temporalmente su bloque
+    // Alto de la nota de cada matriz (tmConDripNotes / tmSinDripNotes), medido
+    // EN VIVO sobre los TRES modos reales (mismo patrón que igualarCintas en
+    // initHoja) — nada estimado. La leyenda por modo ya no se mide aquí: dejó
+    // de ser un <p> en el flujo (#tmModoCap) y ahora vive dentro del modal ⓘ
+    // (#mMetodoEscenario), donde su alto no empuja nada. Cada nota de matriz se
+    // mide solo contra sus propios 3 modos, forzando temporalmente su bloque
     // visible durante la medición para no depender de que el usuario ya
     // haya visitado esa vista. Solo puede medir con el panel visible, así
     // que se llama al abrir "Método tradicional › La matriz" (ver
