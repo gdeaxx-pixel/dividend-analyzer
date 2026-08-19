@@ -389,7 +389,7 @@ _ESTILOS = """
           padding: 13px 16px; flex-wrap: nowrap; overflow-x: auto; align-items: center;
         }
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
-          flex: 0 0 auto; width: auto; min-width: 0;
+          flex: 0 0 auto; width: auto; min-width: 0; margin-left: 0;
         }
         /* La columna del menú de 3 puntos colapsa a 15px en las rutas sin ETF (3
            columnas: Método tradicional · Comparación · Detalle) — el `width: auto` de
@@ -399,8 +399,21 @@ _ESTILOS = """
            este botón era texto («¿CÓMO FUNCIONA? →», 153.4px) y necesitaba 170px de
            min-width; ahora es un `st.popover("")` sin label — solo el chevron nativo de
            Streamlit — así que se deja un mínimo cómodo de click sin heredar ese número,
-           que ya no aplica a este contenido. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child {
+           que ya no aplica a este contenido.
+
+           Anclaje por clave, no por posición: antes esta regla era `> div:last-child`.
+           Medido en el DOM (2026-08-18, Comparación›Simulación de 3 columnas y
+           Dividendos›Cash flow›MSTY de 5): la columna de ayuda SÍ es hoy el último hijo
+           en las cuatro formas de la ruta, así que `:last-child` "funcionaba" — pero por
+           coincidencia posicional, no por identidad. Cualquier columna nueva que se
+           agregue al final (o un reordenamiento futuro) se robaría el `margin-left: auto`
+           en silencio, sin que nada lo señale hasta que alguien lo note en pantalla. Se
+           ancla por la clave estable del contenedor (`st.container(key=…)`,
+           líneas 268-269) con el mismo patrón `:has()` que ya usa este archivo. El
+           `margin-left: 0` explícito de la regla de arriba evita que alguna columna
+           intermedia también reciba espacio libre por herencia. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+          > div:has(:is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta)) {
           margin-left: auto; min-width: 48px; text-align: right;
         }
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
@@ -460,20 +473,29 @@ _ESTILOS = """
           border-radius: 0 !important;
         }
 
-        /* Menú de 3 puntos: enlace fantasma como `.crumb-help` en el demo — sin caja,
-           solo colorea en hover. Es la última columna de la fila de la ruta, así que se
-           distingue por posición: `div:last-child` en esa fila. Antes vestía el botón de
-           texto «¿Cómo funciona? →»; ahora el botón no lleva label (`st.popover("")`,
-           Daniel pidió solo el chevron nativo, sin el «⋮» que se probó primero) — el
-           chevron escala en `em`, por eso el tamaño de fuente más grande, y sin
-           subrayado en hover (no es un enlace de texto). */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button {
-          background: none !important; border: none !important; box-shadow: none !important;
-          color: var(--ink-mut) !important; padding: 6px 10px !important;
-          font-size: 18px; line-height: 1;
+        /* Menú de ayuda: mockup opción A (aprobado por Daniel 2026-08-18). Antes era un
+           enlace fantasma como `.crumb-help` del demo — sin caja, `color: var(--ink-mut)`
+           (bajo contraste) — y con `margin-left: auto` empujando la columna al borde
+           derecho, el chevron quedaba solo en medio del vacío: así es como Daniel lo
+           reportó como "desaparecido" (medido en el DOM: `color: rgb(106,123,138)`, sin
+           borde, sin fondo — invisible contra el `--ground`). Ahora es un chevron DENTRO
+           de una caja de borde fino, mismo trato que los otros segmentos de la ruta
+           (borde + `var(--accent)` en hover), para que se lea como parte del mismo menú
+           en vez de perderse en el hueco a la derecha. Antes vestía el botón de texto
+           «¿Cómo funciona? →»; ahora el botón no lleva label (`st.popover("")`, Daniel
+           pidió solo el chevron nativo, sin el «⋮» que se probó primero) — el chevron
+           escala en `em`, por eso el tamaño de fuente mayor al resto de la fila.
+           Selector por clave (Paso 1), no por posición. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+          :is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta) [data-testid="stPopoverButton"] {
+          background: none !important; border: 1px solid var(--hair) !important;
+          box-shadow: none !important; color: var(--ink) !important;
+          padding: 4px 8px !important; font-size: 16px; line-height: 1;
+          border-radius: 0 !important;
         }
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div:last-child button:hover {
-          color: var(--accent) !important;
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+          :is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta) [data-testid="stPopoverButton"]:hover {
+          border-color: var(--accent) !important; color: var(--accent) !important;
         }
         /* Punto de aviso del menú (`ui.validacion.hay_alertas`, vía `render_ruta`): solo
            se pinta cuando SÍ hay algo que revisar en Validación datos — decisión de
@@ -553,6 +575,18 @@ _ESTILOS = """
           }
           [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
             padding: 10px 12px;
+          }
+          /* La fila de la ruta usa `nowrap` + `overflow-x: auto` (línea 385) para no
+             reintroducir el bug de #47 (partirse en dos líneas). Pero con
+             `margin-left: auto` en la columna de ayuda, una ruta larga que desborda en
+             pantalla angosta (`Dividendos | Cash flow | MSTY`, 5 columnas) empuja el
+             chevron fuera del área visible: solo aparece deslizando la fila, y el menú
+             de ayuda debe estar siempre alcanzable sin scroll. Se anula el
+             `margin-left: auto` aquí para que la columna de ayuda quede pegada a los
+             segmentos en vez de proyectarse al ancho completo del contenedor. */
+          [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+            > div:has(:is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta)) {
+            margin-left: 0 !important;
           }
           /* Rail móvil: mockup aprobado por Daniel (diseñado 2026-08-09, sesión de
              correcciones de forma). Por debajo de 640px Streamlit apila `st.columns(8)`
