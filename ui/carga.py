@@ -164,7 +164,7 @@ def render_bloque_transacciones() -> bool:
                 st.rerun()
         return True
 
-    st.markdown(bloque_header(1, "Transacciones · CSV / Excel", "activo"),
+    st.markdown(bloque_header(1, "Transacciones", "activo"),
                 unsafe_allow_html=True)
     archivo = st.file_uploader("Archivo de transacciones", type=["csv", "xlsx"],
                                label_visibility="collapsed", help=_AYUDA_BROKER,
