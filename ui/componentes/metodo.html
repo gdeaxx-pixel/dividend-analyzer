@@ -898,6 +898,10 @@
   .modal-box .he-cash { color: var(--cash); }
   .modal-box .he-loss { color: var(--loss); }
   /* indicador de clic en el encabezado */
+  .he-lab[data-tip="tm-metodo"] { cursor: pointer; }
+  .he-lab[data-tip="tm-metodo"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
   .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-max"]::after {
     content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
@@ -978,12 +982,13 @@
   .he-lab[data-tip="tm-totalinv"]::after { color: var(--mark); }
   .he-lab[data-tip="tm-totalinv"]:hover { color: var(--mark); border-bottom-color: var(--mark); }
   #modal-tmrend, #modal-tminv, #modal-tmdiv,
-  #modal-tmtot, #modal-tmval, #modal-tmult, #modal-tmcmp {
+  #modal-tmtot, #modal-tmval, #modal-tmult, #modal-tmcmp, #modal-tmmetodo {
     display: none; position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
   }
   #modal-tmrend.open, #modal-tminv.open, #modal-tmdiv.open,
-  #modal-tmtot.open, #modal-tmval.open, #modal-tmult.open, #modal-tmcmp.open { display: flex; }
+  #modal-tmtot.open, #modal-tmval.open, #modal-tmult.open, #modal-tmcmp.open,
+  #modal-tmmetodo.open { display: flex; }
   /* modales DRIP y CASH */
   #modal-drip, #modal-cash {
     display: none; position: fixed; inset: 0; z-index: 100;
@@ -1026,7 +1031,9 @@
 
     <!-- 1 · LA MATRIZ -->
     <div class="panel" id="met-panel-matriz" role="tabpanel">
-      <p class="tm-context" id="tmContext"></p>
+      <p class="tm-context" id="tmContext">
+        <span class="he-lab" data-tip="tm-metodo">Método tradicional</span>
+      </p>
       <div class="he-scroll">
         <div class="he-grid tm-grid" id="tmGrid">
           <div class="he-bridge">
@@ -1592,6 +1599,35 @@
   </div>
 </div>
 
+<div id="modal-tmmetodo" role="dialog" aria-modal="true" aria-labelledby="modal-tmmetodo-title">
+  <div class="modal-box">
+    <button class="modal-close" id="modal-tmmetodo-close" aria-label="Cerrar">×</button>
+    <div class="modal-eyebrow">Cómo leer esta matriz</div>
+    <div class="modal-title" id="modal-tmmetodo-title">Método tradicional</div>
+    <p class="modal-lede">
+      Esta es la hoja tal como la usa la clase, columna por columna — pero recalculada con precios y dividendos <b>reales</b> en vez de las cifras congeladas del día que se armó. Antes de leerla, dos cosas que no cambia ningún dato: vienen de <b>cómo está construida</b> la hoja.
+    </p>
+    <p class="modal-lede">
+      <b>La ecuación que usa la matriz</b> para el retorno es <b>Valor mer. + Dividendos − Inversión</b>: trata los dividendos reinvertidos como dinero aparte del valor de la posición. Pero esos dividendos ya viven convertidos en las acciones extra que forman parte de <b>Valor mer.</b> — sumarlos otra vez cuenta el mismo dólar dos veces. La ecuación que sí mide la ganancia real es:
+    </p>
+    <div class="modal-formula">
+      <span class="mf-eq">Retorno total real = Valor mer. + efectivo − Inversión</span>
+      <table class="mf-table">
+        <tr><td class="mf-label">Valor mer. (hoy)</td><td class="mf-val" id="mMetodoValHoy">$72,509.21</td></tr>
+        <tr><td class="mf-label">+ Efectivo sin reinvertir</td><td class="mf-val" id="mMetodoEfectivo">$0</td></tr>
+        <tr><td class="mf-label">− Inversión</td><td class="mf-val" id="mMetodoInv">$48,286.22</td></tr>
+        <tr><td class="mf-label">= Retorno total real</td><td class="mf-val cash" id="mMetodoRetorno">+$24,222.99</td></tr>
+      </table>
+    </div>
+    <p class="modal-note">
+      El valor de hoy más lo que sí quedó en el bolsillo, contra lo que aportaste. Aquí el efectivo es <b>cero</b> porque se reinvirtió todo; si parte se hubiera guardado en vez de reinvertirse, el color de Valor mer. por sí solo ya no bastaría como veredicto — habría que sumarle ese efectivo aparte.
+    </p>
+    <p class="modal-lede" style="margin-top:16px;">
+      <b>Esta matriz no contempla retenciones por NRA.</b> Está armada para un residente de EE. UU., que no sufre retención sobre sus dividendos — es el escenario que ves por defecto («Sin NRA · residente EE. UU.» en los chips de abajo). Un no residente sí la sufre, hasta 30% antes de que el dinero llegue a la cuenta, así que su neto real sería menor al que muestra esta tabla. Cambia a «Con NRA» en los chips de abajo para ver esa retención aplicada.
+    </p>
+  </div>
+</div>
+
 <div id="modal-tmcmp" role="dialog" aria-modal="true" aria-labelledby="modal-tmcmp-title">
   <div class="modal-box">
     <button class="modal-close" id="modal-tmcmp-close" aria-label="Cerrar">×</button>
@@ -1900,7 +1936,6 @@
 
     // ============ VISTA 1 · LA MATRIZ ============
     (function renderMatriz() {
-      setHtml("tmContext", "Método tradicional");
       var rows = "";
       MATRIZ.forEach(function (r) {
         var divOk = r.div >= r.inv;    // regla real de la hoja: dividendos en verde si div ≥ inv
@@ -1931,12 +1966,7 @@
         (DATA.degradado && DATA.degradado.length
           ? ' ' + DATA.degradado.join(', ') + ': el caché de precio estaba vencido, se usó la última copia disponible en vez de una descarga en vivo.'
           : '');
-      setHtml("tmNotes",
-        '<ul>' +
-        '<li><span class="flag">Lo correcto:</span> <span class="num">Retorno total real = Valor mer. + efectivo − Inversión</span> — el valor de hoy más lo que sí quedó en el bolsillo, contra lo que aportaste. Aquí el efectivo es cero porque se reinvirtió todo; si parte se hubiera guardado, el color de Valor mer. por sí solo ya no bastaría.</li>' +
-        '<li>Sin NRA</li>' +
-        '<li>' + fuenteTxt + '</li>' +
-        '</ul>');
+      setHtml("tmNotes", fuenteTxt);
     })();
 
     // ---- Matriz 2 · SIN DRIP (el escenario que no ocurrió) ----
@@ -2188,6 +2218,14 @@
       setHtml("mCmpCorrectPct2", fmtPct1(correctPct));
       setHtml("mCmpDiv", fmtMoney(TOT.div));
       setHtml("mCmpRatio", ratio.toFixed(2) + "×");
+
+      // ---- modal-tmmetodo: ⓘ del título «Método tradicional». Efectivo sin
+      // reinvertir es siempre $0 en esta matriz (DRIP total, mismo supuesto que
+      // el resto de la vista) — se declara igual para que quede explícito por
+      // qué el color de Valor mer. por sí solo alcanza aquí. ----
+      setHtml("mMetodoValHoy", fmtMoney(TOT.val));
+      setHtml("mMetodoInv", fmtMoney(TOT.inv));
+      setHtml("mMetodoRetorno", (TOT.val - TOT.inv >= 0 ? "+" : "−") + fmtMoney(Math.abs(TOT.val - TOT.inv)));
     }
 
     // ---- chips: grupo de 3 botones .cmp-chip (mismo patrón que la vista
@@ -2751,6 +2789,20 @@
   }
   crearPuenteMark("tmGrid", "tmBridge");
   crearPuenteMark("tmConDripGrid", "tmConDripBridge");
+
+  // ---- Modal: Método tradicional (click sobre el ⓘ del título) ----
+  (function () {
+    var modal = document.getElementById("modal-tmmetodo");
+    var closeBtn = document.getElementById("modal-tmmetodo-close");
+    var trigger = document.querySelector('[data-tip="tm-metodo"]');
+    if (!modal || !closeBtn) return;
+    function openModal() { modal.classList.add("open"); closeBtn.focus(); }
+    function closeModal() { modal.classList.remove("open"); }
+    if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    closeBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
+  })();
 
   // ---- Modal: la comparación Inversión ↔ Valor mer. (click sobre el puente) ----
   (function () {
