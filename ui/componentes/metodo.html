@@ -401,6 +401,9 @@
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
   .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cmp-sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--hair); margin: 0 6px; flex: none; }
+  .cmp-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .cmp-inline .cmp-lab { flex: none; }
   /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
   .cmp-chip {
     font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em;
@@ -719,11 +722,13 @@
   .he-switch-lab { font-family: var(--font-sans); font-size: 13.5px; color: var(--ink-2); }
   .he-switch[aria-checked="true"] + .he-switch-lab { color: var(--ink); font-weight: 600; }
   .he-switch-cap { display: block; font-size: 11px; font-weight: 400; color: var(--ink-mut); margin-top: 2px; }
-  /* BASE FISCAL (Método tradicional) ahora son 3 chips .cmp-chip, no un
-     interruptor — cada uno trae su propia etiqueta fija, así que activar uno
-     no cambia ancho de nada, solo color. Lo único que sigue variando de largo
-     entre modos es la leyenda (#tmModoCap) y la nota de la matriz 3; ambas se
-     miden en vivo (ajustarBaseFiscal en initMetodo), no se estiman. */
+  /* BASE FISCAL (Método tradicional) son 3 chips .cmp-chip, no un interruptor —
+     cada uno trae su propia etiqueta fija, así que activar uno no cambia ancho
+     de nada, solo color. La leyenda por modo ya NO vive aquí: se mudó a
+     #mMetodoEscenario, dentro del modal ⓘ (#modal-tmmetodo), para que el bloque
+     de filtros quepa en un solo renglón. Lo único que sigue variando de largo
+     entre modos son las notas de las matrices; se miden en vivo
+     (ajustarBaseFiscal en initMetodo), no se estiman. */
 
   /* ============ MÉTODO TRADICIONAL: la hoja de la clase auditada ============ */
   /* Reutiliza el vocabulario de HOJA EXCEL (.he-grid/.he-c/.he-h/.he-lab/.he-eq/
@@ -902,6 +907,10 @@
   .he-lab[data-tip="tm-metodo"]::after {
     content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
   }
+  .cmp-lab[data-tip="tm-metodo"] { cursor: pointer; }
+  .cmp-lab[data-tip="tm-metodo"]::after {
+    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+  }
   .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-max"]::after {
     content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
@@ -1051,20 +1060,20 @@
       </div>
       <div class="cmp-notes" id="tmNotes"></div>
 
-      <div class="he-block">
-        <p class="cmp-lab" style="margin:0 0 10px 2px;">Cómo se reinvirtió</p>
-        <div class="cmp-row" role="group" aria-label="Con o sin DRIP" id="tmVistaGroup">
+      <div class="he-block cmp-inline">
+        <div class="cmp-row" role="group" aria-label="Cómo se reinvirtió" id="tmVistaGroup">
           <button type="button" class="cmp-chip" data-vista="con" aria-pressed="true">Con DRIP</button>
           <button type="button" class="cmp-chip" data-vista="sin" aria-pressed="false">Sin DRIP</button>
         </div>
 
-        <p class="cmp-lab" style="margin:14px 0 10px 2px;">Base fiscal</p>
+        <span class="cmp-sep"></span>
+
+        <span class="cmp-lab" data-tip="tm-metodo">Base fiscal</span>
         <div class="cmp-row" role="group" aria-label="Base fiscal" id="tmModoGroup">
-          <button type="button" class="cmp-chip" data-modo="bruto" aria-pressed="true">Sin NRA · residente EE. UU.</button>
+          <button type="button" class="cmp-chip" data-modo="bruto" aria-pressed="true">Sin NRA</button>
           <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC 19a</button>
-          <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · peor caso 30%</button>
+          <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · 30%</button>
         </div>
-        <p class="he-switch-cap" id="tmModoCap" style="margin:10px 0 0;">Como está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención. La fecha de apertura y el aporte inicial son literales de la hoja; el resto se recalcula con datos reales de mercado.</p>
       </div>
 
       <p class="cmp-notes" id="tmResumenFijo" style="margin-top:18px;"></p>
@@ -1604,6 +1613,8 @@
     <button class="modal-close" id="modal-tmmetodo-close" aria-label="Cerrar">×</button>
     <div class="modal-eyebrow">Cómo leer esta matriz</div>
     <div class="modal-title" id="modal-tmmetodo-title">Método tradicional</div>
+    <div class="modal-eyebrow" style="margin-top:0;">Escenario seleccionado</div>
+    <p class="modal-lede" id="mMetodoEscenario"></p>
     <p class="modal-lede">
       Esta es la hoja tal como la usa la clase, columna por columna — pero recalculada con precios y dividendos <b>reales</b> en vez de las cifras congeladas del día que se armó. Antes de leerla, dos cosas que no cambia ningún dato: vienen de <b>cómo está construida</b> la hoja.
     </p>
@@ -1623,7 +1634,7 @@
       El valor de hoy más lo que sí quedó en el bolsillo, contra lo que aportaste. Aquí el efectivo es <b>cero</b> porque se reinvirtió todo; si parte se hubiera guardado en vez de reinvertirse, el color de Valor mer. por sí solo ya no bastaría como veredicto — habría que sumarle ese efectivo aparte.
     </p>
     <p class="modal-lede" style="margin-top:16px;">
-      <b>Esta matriz no contempla retenciones por NRA.</b> Está armada para un residente de EE. UU., que no sufre retención sobre sus dividendos — es el escenario que ves por defecto («Sin NRA · residente EE. UU.» en los chips de abajo). Un no residente sí la sufre, hasta 30% antes de que el dinero llegue a la cuenta, así que su neto real sería menor al que muestra esta tabla. Cambia a «Con NRA» en los chips de abajo para ver esa retención aplicada.
+      <b>Esta matriz no contempla retenciones por NRA.</b> Está armada para un residente de EE. UU., que no sufre retención sobre sus dividendos — es el escenario que ves por defecto («Sin NRA» en los chips de abajo). Un no residente sí la sufre, hasta 30% antes de que el dinero llegue a la cuenta, así que su neto real sería menor al que muestra esta tabla. Cambia a «Con NRA» en los chips de abajo para ver esa retención aplicada.
     </p>
   </div>
 </div>
@@ -2316,7 +2327,7 @@
         b.classList.toggle("active", on);
         b.setAttribute("aria-pressed", String(on));
       });
-      setHtml("tmModoCap", MODO_CAP[modo]);
+      setHtml("mMetodoEscenario", MODO_CAP[modo]);
       renderResumenFijo(D);
     }
     modoBtns.forEach(function (b) {
@@ -2326,26 +2337,25 @@
     aplicarVistaDrip();     // aplica la visibilidad inicial (Con DRIP)
     renderEjemplosCony();   // modales invariantes al modo — una sola vez basta
 
-    // Alto de la leyenda (tmModoCap, compartida por las dos vistas) y de la
-    // nota de cada matriz (tmConDripNotes / tmSinDripNotes), medidos EN VIVO
-    // sobre los TRES modos reales (mismo patrón que igualarCintas en
-    // initHoja) — nada estimado. tmModoCap se mide contra las 2 vistas × 3
-    // modos (6 combinaciones, siempre visible); cada nota de matriz se mide
-    // solo contra sus propios 3 modos, forzando temporalmente su bloque
+    // Alto de la nota de cada matriz (tmConDripNotes / tmSinDripNotes), medido
+    // EN VIVO sobre los TRES modos reales (mismo patrón que igualarCintas en
+    // initHoja) — nada estimado. La leyenda por modo ya no se mide aquí: dejó
+    // de ser un <p> en el flujo (#tmModoCap) y ahora vive dentro del modal ⓘ
+    // (#mMetodoEscenario), donde su alto no empuja nada. Cada nota de matriz se
+    // mide solo contra sus propios 3 modos, forzando temporalmente su bloque
     // visible durante la medición para no depender de que el usuario ya
     // haya visitado esa vista. Solo puede medir con el panel visible, así
     // que se llama al abrir "Método tradicional › La matriz" (ver
     // showMetTab), al cambiar de vista DRIP, y en resize.
     function ajustarBaseFiscal() {
-      var capEl = document.getElementById("tmModoCap");
       var conBlock = document.getElementById("tmConDripBlock");
       var sinBlock = document.getElementById("tmSinDripBlock");
       var conNotEl = document.getElementById("tmConDripNotes");
       var sinNotEl = document.getElementById("tmSinDripNotes");
-      if (!capEl || !conNotEl || !sinNotEl || document.getElementById("met-panel-matriz").hidden) return;
+      if (!conNotEl || !sinNotEl || document.getElementById("met-panel-matriz").hidden) return;
 
-      capEl.style.minHeight = ""; conNotEl.style.minHeight = ""; sinNotEl.style.minHeight = "";
-      var wasModo = modo, wasVista = vistaDrip, ch = [];
+      conNotEl.style.minHeight = ""; sinNotEl.style.minHeight = "";
+      var wasModo = modo, wasVista = vistaDrip;
 
       [["con", conNotEl], ["sin", sinNotEl]].forEach(function (pair) {
         var vista = pair[0], notEl = pair[1], nh = [];
@@ -2354,14 +2364,12 @@
         ["bruto", "roc", "plano"].forEach(function (v) {
           modo = v; vistaDrip = vista;
           aplicarModo();
-          ch.push(capEl.getBoundingClientRect().height);
           nh.push(notEl.getBoundingClientRect().height);
         });
         notEl.style.minHeight = Math.max.apply(null, nh) + "px";
       });
 
       modo = wasModo; vistaDrip = wasVista;
-      capEl.style.minHeight = Math.max.apply(null, ch) + "px";
       aplicarModo();
       aplicarVistaDrip();   // restaura la visibilidad real tras medir ambas
     }
@@ -2794,11 +2802,13 @@
   (function () {
     var modal = document.getElementById("modal-tmmetodo");
     var closeBtn = document.getElementById("modal-tmmetodo-close");
-    var trigger = document.querySelector('[data-tip="tm-metodo"]');
+    var triggers = document.querySelectorAll('[data-tip="tm-metodo"]');
     if (!modal || !closeBtn) return;
     function openModal() { modal.classList.add("open"); closeBtn.focus(); }
     function closeModal() { modal.classList.remove("open"); }
-    if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    Array.prototype.forEach.call(triggers, function (t) {
+      t.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    });
     closeBtn.addEventListener("click", closeModal);
     modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });

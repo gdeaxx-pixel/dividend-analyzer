@@ -60,7 +60,7 @@ ALTO_COMPARACION_REAL = 1150
 # entrar a la sub-vista «matriz» como hace `showMetTab` en el demo; se cableó ese
 # llamado en el extractor. Con eso el alto es determinista, pero sigue habiendo margen
 # extra: los precios en vivo pueden variar el número de filas visibles entre cargas.
-ALTO_METODO = 2650
+ALTO_METODO = 2500
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # componente corrige su propio alto en cuanto carga. El alto depende del ANCHO (el texto
