@@ -554,3 +554,29 @@ def test_metodo_html_tmpaybacknra_ya_no_concatena_un_vivo_con_dos_congelados():
     assert "DATA.nra.divBruto" in html
     assert "DATA.nra.divNeto" in html
     assert "DATA.nra.retenido" in html
+
+
+def test_la_leyenda_por_modo_vive_en_el_modal_y_no_suelta_en_la_vista():
+    """`#tmModoCap` se mudó a `#mMetodoEscenario` dentro de `#modal-tmmetodo` para
+    liberar ~60px verticales. Si alguien reintroduce el <p> suelto vuelve el bloque de
+    4 renglones que Daniel pidió compactar; y si `aplicarModo` sigue escribiendo en el
+    id viejo, la leyenda queda muda: `setHtml` sobre un id inexistente no lanza."""
+    cuerpo = open(_COMPONENTE, encoding="utf-8").read()
+    assert 'id="tmModoCap"' not in cuerpo
+    assert 'setHtml("tmModoCap"' not in cuerpo
+    assert 'id="mMetodoEscenario"' in cuerpo
+    assert 'setHtml("mMetodoEscenario", MODO_CAP[modo])' in cuerpo
+
+
+def test_el_modal_del_metodo_engancha_todos_sus_disparadores():
+    """Hay dos elementos con data-tip="tm-metodo" (el título y la etiqueta «Base
+    fiscal»). Con `querySelector` en singular el segundo queda como adorno muerto:
+    muestra el ⓘ y no abre nada. No lanza, no ensucia la consola — solo no funciona.
+
+    Nota: se cuenta `data-tip="tm-metodo">` (el atributo cerrando la etiqueta HTML),
+    no la substring pelada — las reglas CSS `.he-lab[data-tip="tm-metodo"]` y
+    `.cmp-lab[data-tip="tm-metodo"]` (base + ::after) también contienen la substring
+    y elevarían el conteo a 7 sin medir lo que el test dice medir."""
+    cuerpo = open(_COMPONENTE, encoding="utf-8").read()
+    assert cuerpo.count('data-tip="tm-metodo">') == 2
+    assert "querySelectorAll('[data-tip=\"tm-metodo\"]')" in cuerpo
