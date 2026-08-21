@@ -799,6 +799,16 @@ def metodo_data() -> dict | None:
         valoradas al precio de hoy (`portfolio_value` final de una segunda corrida SIN
         DRIP). Alimenta las matrices "Con DRIP"/"Sin DRIP" del componente (columna
         «Inversión Hoy»).
+      - `divSin`: las distribuciones del contrafáctico — `gross_dividends_total` de la
+        corrida SIN DRIP. **Es la única que puede aparecer en la fila «Sin DRIP»**: ahí
+        las acciones extra nunca se compraron y por tanto nunca pagaron. Mezclar `div`
+        (mundo con DRIP) con `max` (mundo sin DRIP) en la misma fila infló el total
+        2.25x e invirtió el veredicto DRIP-vs-efectivo en NVDY y TSLY (auditoría
+        2026-08-21). Regla: **una fila contrafáctica saca TODAS sus columnas de la misma
+        corrida.**
+      - `sinTotReal`: `final_total_value` de esa misma corrida sin DRIP — el total del
+        contrafáctico según el motor. Existe para reconciliar contra la suma de columnas
+        que hace el JS, que es una fuente independiente.
 
     `ROC_19A` sale de `logic.load_roc_19a()` (yaml vivo, refrescado semanalmente) en vez
     de la copia congelada — ya no hay drift entre lo que muestra el componente y
@@ -862,6 +872,16 @@ def metodo_data() -> dict | None:
         pagos = r_con.daily[r_con.daily["gross_dividend"] > 0]
         ult = float(pagos["gross_dividend"].iloc[-1]) if len(pagos) else 0.0
         max_sin_drip = float(r_sin.daily["portfolio_value"].iloc[-1])
+        # `div` es del mundo CON DRIP y la fila «Sin DRIP» NO puede usarlo: ahí las
+        # acciones extra nunca se compraron, así que nunca pagaron esas distribuciones.
+        # Medido: $165,780 (con DRIP) contra $67,307 (sin) — 2.46x. El nombre lleva el
+        # mundo encima a propósito; el docstring ya declaraba el de `div` y aun así se
+        # consumió en la fila equivocada.
+        div_sin = r_sin.gross_dividends_total
+        # Ancla de reconciliación: el total del contrafáctico según el propio motor, no
+        # una suma de columnas rehecha en JS. Con `nra_rate=0` cierra la identidad
+        # `portfolio_value + cash_accum`, y `cash_accum == gross_dividends_total`.
+        sin_tot_real = r_sin.final_total_value
 
         # Flujos del contrafáctico «si los dividendos fueran efectivo», para su XIRR. Se
         # toman de `r_sin` (sin DRIP) porque ahí cada distribución SÍ salió del
@@ -878,6 +898,7 @@ def metodo_data() -> dict | None:
             "t": tk, "ini": caso["ini"], "dr": caso["dr"], "inv": caso["inv"],
             "div": round(div, 2), "tot": round(caso["inv"] + div, 2),
             "val": round(val, 2), "ult": round(ult, 2), "max": round(max_sin_drip, 2),
+            "divSin": round(div_sin, 2), "sinTotReal": round(sin_tot_real, 2),
         })
         fuente[tk] = hr.source
         if hr.cache_asof:
@@ -900,6 +921,8 @@ def metodo_data() -> dict | None:
         "div": round(sum(f["div"] for f in filas), 2),
         "val": round(sum(f["val"] for f in filas), 2),
         "ult": round(sum(f["ult"] for f in filas), 2),
+        "divSin": round(sum(f["divSin"] for f in filas), 2),
+        "sinTotReal": round(sum(f["sinTotReal"] for f in filas), 2),
     }
     tot["tot"] = round(tot["inv"] + tot["div"], 2)
     tot["totHoja"] = round(tot["tot"])
@@ -947,7 +970,11 @@ def metodo_data() -> dict | None:
 
     naive_pct = real_pct / ventana_pond
 
-    efectivo_d = max_tot + tot["div"] - tot["inv"]
+    # El contrafáctico del efectivo se mide con SUS propias distribuciones (`divSin`),
+    # no con las del mundo que reinvirtió. Usar `tot["div"]` aquí daba +267.2% donde el
+    # real es +63.2% — y dejaba este total ($177,290) peleado con el que suman los flujos
+    # del `efectivo_xirr` de tres líneas abajo ($78,817), que siempre salió de `r_sin`.
+    efectivo_d = max_tot + tot["divSin"] - tot["inv"]
     efectivo_pct = efectivo_d / tot["inv"] * 100.0
     # El contrafáctico sí tiene flujos intermedios: cada distribución entró al bolsillo el
     # día que se pagó (`flujos_efectivo`, recolectado arriba de `r_sin`), y el valor final

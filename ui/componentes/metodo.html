@@ -1362,9 +1362,11 @@
         </tr>
       </table>
     </div>
-    <p class="modal-note" id="mCashNote">
-      Los <b>5 fondos</b> favorecen al efectivo sobre el DRIP: el precio de los cinco cayó lo bastante para que las acciones compradas con cada distribución valieran hoy menos que haber guardado ese dinero en efectivo. El total de la cartera: <b class="he-cash" id="mCashTotalCash">$126,367</b> en efectivo frente a <b id="mCashTotalDrip">$72,509</b> con DRIP — <b id="mCashDelta">$53,858 a favor del efectivo</b>.
-    </p>
+    <!-- Sin texto de arranque a propósito: `cashNote(D)` lo escribe entero en cada
+         render, contando cuántos fondos caen de cada lado. Lo que había aquí era el
+         veredicto y las cifras de una época anterior ("los 5 fondos", $126,367/$72,509),
+         congelados y ya falsos — el molde exacto que el repo prohíbe. -->
+    <p class="modal-note" id="mCashNote"></p>
   </div>
 </div>
 
@@ -1950,8 +1952,14 @@
     // nada que devolver; "plano" ya es la cota superior sin reconocer el ROC,
     // así que tampoco devuelve — coincide con "bruto" en esto (Devuelto = 0).
     function devueltoRound(bruto, tk) { return modo === "roc" ? Math.round(TASA_NRA * ROC_19A[tk] * bruto) : 0; }
-    var INV = {}, DIV = {};
-    MATRIZ.forEach(function (m) { INV[m.t] = m.inv; DIV[m.t] = m.div; });
+    // DIV es del mundo CON DRIP; DIV_SIN del contrafáctico. Están separados porque cada
+    // matriz vive en un mundo distinto y una fila no puede tomar columnas de los dos:
+    // «Inversión Hoy» (r.max) sale de la corrida sin DRIP, así que los dividendos de esa
+    // misma fila también tienen que salir de ahí. Cuando ambas leían DIV, la fila Sin
+    // DRIP le cobraba a las acciones que nunca compró los dividendos que nunca pagaron
+    // ($165,780 contra $67,307 reales) — ver `ui.adapters.metodo_data`.
+    var INV = {}, DIV = {}, DIV_SIN = {};
+    MATRIZ.forEach(function (m) { INV[m.t] = m.inv; DIV[m.t] = m.div; DIV_SIN[m.t] = m.divSin; });
     // Único punto de cálculo: matrices y modales leen de aquí, nunca recalculan
     // por su cuenta. rows[] son las cifras por ticker, ya redondeadas a dólar;
     // los *TotAll son SIEMPRE la suma de esas mismas filas redondeadas —
@@ -1959,20 +1967,31 @@
     // de PRUEBA_TOTAL/TOT.div y no cuadraban por ±$1 contra la columna que el
     // lector sí puede sumar a mano). Cero delta, en los tres modos.
     function computeAll() {
-      var rows = {}, invHoyTotAll = 0, divTotAll = 0, dripHoyTotAll = 0, devueltoTotAll = 0, conDripTotAll = 0, sinDripTotAll = 0;
+      var rows = {}, invHoyTotAll = 0, divTotAll = 0, divSinTotAll = 0, dripHoyTotAll = 0,
+          devueltoTotAll = 0, devueltoSinTotAll = 0, conDripTotAll = 0, sinDripTotAll = 0;
       PRUEBA_DRIP.forEach(function (r) {
+        // Dos mundos, dos bases. `div`/`devuelto` (con DRIP) alimentan la matriz Con
+        // DRIP y sus modales; `divSin`/`devueltoSin` (contrafáctico) la matriz Sin DRIP.
+        // El Devuelto también se separa: es una fracción de los dividendos, así que
+        // hereda el mundo de quien los pagó — con la base inflada, el reembolso del modo
+        // "roc" llegaba a superar al escenario sin retención alguna.
         var div = baseRound(DIV[r.t]);
+        var divSin = baseRound(DIV_SIN[r.t]);
         var dripHoy = baseRound(r.real - r.max);
         var devuelto = devueltoRound(DIV[r.t], r.t);
+        var devueltoSin = devueltoRound(DIV_SIN[r.t], r.t);
         var conDripTot = r.max + dripHoy + devuelto;
-        var sinDripTot = r.max + div + devuelto;
-        rows[r.t] = { inv: INV[r.t], max: r.max, div: div, dripHoy: dripHoy, devuelto: devuelto, conDripTot: conDripTot, sinDripTot: sinDripTot };
-        invHoyTotAll += r.max; divTotAll += div; dripHoyTotAll += dripHoy; devueltoTotAll += devuelto;
+        var sinDripTot = r.max + divSin + devueltoSin;
+        rows[r.t] = { inv: INV[r.t], max: r.max, div: div, divSin: divSin, dripHoy: dripHoy, devuelto: devuelto, devueltoSin: devueltoSin, conDripTot: conDripTot, sinDripTot: sinDripTot };
+        invHoyTotAll += r.max; divTotAll += div; divSinTotAll += divSin;
+        dripHoyTotAll += dripHoy; devueltoTotAll += devuelto; devueltoSinTotAll += devueltoSin;
         conDripTotAll += conDripTot; sinDripTotAll += sinDripTot;
       });
       return {
-        rows: rows, invHoyTotAll: invHoyTotAll, divTotAll: divTotAll, dripHoyTotAll: dripHoyTotAll,
-        devueltoTotAll: devueltoTotAll, conDripTotAll: conDripTotAll, sinDripTotAll: sinDripTotAll
+        rows: rows, invHoyTotAll: invHoyTotAll, divTotAll: divTotAll, divSinTotAll: divSinTotAll,
+        dripHoyTotAll: dripHoyTotAll, devueltoTotAll: devueltoTotAll,
+        devueltoSinTotAll: devueltoSinTotAll, conDripTotAll: conDripTotAll,
+        sinDripTotAll: sinDripTotAll
       };
     }
 
@@ -2043,16 +2062,16 @@
           '<div class="he-c he-l he-row-lab he-tk he-muted">' + r.t + '</div>' +
           '<div class="he-c num he-muted">' + fmtMoney(d.inv) + '</div>' +
           '<div class="he-c num">' + fmtD(d.max) + '</div>' +
-          '<div class="he-c num he-cash">' + fmtD(d.div) + '</div>' +
-          '<div class="he-c num he-cash">' + (d.devuelto ? fmtD(d.devuelto) : "—") + '</div>' +
+          '<div class="he-c num he-cash">' + fmtD(d.divSin) + '</div>' +
+          '<div class="he-c num he-cash">' + (d.devueltoSin ? fmtD(d.devueltoSin) : "—") + '</div>' +
           '<div class="he-c num">' + fmtD(d.sinDripTot) + '</div>';
       });
       rows +=
         '<div class="he-c he-l he-row-lab he-muted">TOTAL</div>' +
         '<div class="he-c num he-muted">' + fmtMoney(TOT.inv) + '</div>' +
         '<div class="he-c num">' + fmtD(D.invHoyTotAll) + '</div>' +
-        '<div class="he-c num he-cash">' + fmtD(D.divTotAll) + '</div>' +
-        '<div class="he-c num he-cash">' + (D.devueltoTotAll ? fmtD(D.devueltoTotAll) : "—") + '</div>' +
+        '<div class="he-c num he-cash">' + fmtD(D.divSinTotAll) + '</div>' +
+        '<div class="he-c num he-cash">' + (D.devueltoSinTotAll ? fmtD(D.devueltoSinTotAll) : "—") + '</div>' +
         '<div class="he-c num">' + fmtD(D.sinDripTotAll) + '</div>';
       grid.insertAdjacentHTML("beforeend", rows);
 
@@ -2060,7 +2079,7 @@
         '<span class="flag">Inversión Hoy + Dividendos + Devuelto = Total</span> — aquí la suma sí cierra fila por fila, ' +
         'porque es el escenario que nunca pasó: cada distribución se queda en efectivo en vez de comprar más acciones. ' +
         '<b>Inversión Hoy</b> es tu capital original valorado al precio de hoy; <b class="he-cash">Dividendos</b> es todo lo ' +
-        'que se cobró en efectivo, sumado sin reinvertir' +
+        'que habría cobrado <i>esa</i> posición —la que nunca creció—, sumado sin reinvertir' +
         (modo === "roc" ? '; <b class="he-cash">Devuelto</b> es la porción de la retención NRA que el ROC 19a reclasifica y regresa' : '') +
         '. Como nada de eso volvió a comprar posición, sumar las tres columnas da exactamente <b>Total</b> — sin el hueco de valorización que sí aparece con DRIP.');
     }
@@ -2121,6 +2140,46 @@
     // DRIP" que lo abría fue reemplazada por estas dos matrices en una edición
     // previa de esta sesión), el HTML del modal sigue vivo y el traspaso pide
     // explícitamente que quede coherente y sin la excepción NVDY. ----
+    // Nota de modal-cash, derivada fila por fila. La lección NO es «cayó el precio, luego
+    // el efectivo gana»: los cinco cayeron y aun así el DRIP gana en algunos. Lo que
+    // decide es la TRAYECTORIA (si hubo tramos baratos donde reinvertir compró muchas
+    // acciones), no el destino. Cablear "los 5" borraba justo esa lección.
+    // "A", "A y B", "A, B y C" — el join(" y ") crudo daba "CONY y NVDY y TSLY".
+    function listaEs(xs) {
+      if (xs.length <= 1) return xs.join("");
+      return xs.slice(0, -1).join(", ") + " y " + xs[xs.length - 1];
+    }
+
+    function cashNote(D) {
+      var favEfectivo = [], favDrip = [];
+      PRUEBA_DRIP.forEach(function (r) {
+        var d = D.rows[r.t];
+        (d.sinDripTot >= d.conDripTot ? favEfectivo : favDrip).push(r.t);
+      });
+      var n = PRUEBA_DRIP.length;
+      var lead;
+      if (!favDrip.length) {
+        lead = 'Los <b>' + n + ' fondos</b> favorecen al efectivo sobre el DRIP.';
+      } else if (!favEfectivo.length) {
+        lead = 'Los <b>' + n + ' fondos</b> favorecen al DRIP sobre el efectivo.';
+      } else {
+        lead = '<b>' + favEfectivo.length + ' de ' + n + '</b> ' +
+          (favEfectivo.length > 1 ? 'favorecen' : 'favorece') + ' al efectivo (' +
+          listaEs(favEfectivo) + '), pero <b>' + listaEs(favDrip) + '</b> ' +
+          (favDrip.length > 1 ? 'favorecen' : 'favorece') + ' al DRIP. ' +
+          'El precio de los cinco cayó, así que la caída por sí sola no decide: lo que ' +
+          'manda es <b>la trayectoria</b> — si el fondo pasó por tramos baratos, cada ' +
+          'distribución reinvertida compró muchas acciones y esas acciones cargan la ' +
+          'recuperación.';
+      }
+      var favor = D.sinDripTotAll >= D.conDripTotAll ? "efectivo" : "DRIP";
+      var delta = Math.abs(D.sinDripTotAll - D.conDripTotAll);
+      return lead + ' El total de la cartera: <b class="he-cash" id="mCashTotalCash">' +
+        fmtD(D.sinDripTotAll) + '</b> en efectivo frente a <b id="mCashTotalDrip">' +
+        fmtD(D.conDripTotAll) + '</b> con DRIP — <b id="mCashDelta">' + fmtD(delta) +
+        ' a favor del ' + favor + '</b>.';
+    }
+
     function renderNraModales(D) {
       var c = D.rows.CONY;
       var simulado = modo !== "bruto";   // roc y plano comparten el mismo texto "es un escenario"
@@ -2129,10 +2188,13 @@
       var retCell = simulado ? "30% simulada, ya descontada" : "no aplica (Greco, EE. UU.)";
       var totalDeVerdad = simulado ? "valdría hoy en el escenario simulado para un no residente" : "vale hoy de verdad";
 
+      // modal-sindiv describe la columna Dividendos de la matriz SIN DRIP: `divSin`, no
+      // `div`. Su propio texto dice «sin comprar ni una acción de más con ellas» — con
+      // `div` el número contradecía la frase que lo acompaña.
       setHtml("mSindivBase", baseBrutoNeto);
-      setHtml("mSindivCony", fmtD(c.div));
+      setHtml("mSindivCony", fmtD(c.divSin));
       setHtml("mSindivRet", retCell);
-      setHtml("mSindivTot", "= " + fmtD(c.div));
+      setHtml("mSindivTot", "= " + fmtD(c.divSin));
 
       setHtml("mCondripBase", simulado ? "netas" : "brutas");
       setHtml("mCondripCony", fmtD(c.div));
@@ -2168,15 +2230,15 @@
         (esRoc ? ' + <span id="mContotEqDevuelto">' + fmtD(c.devuelto) + '</span> (Devuelto)' : '') +
         ' = <span id="mContotEqTotal">' + fmtD(c.conDripTot) + '</span>';
       setHtml("mContotNote",
-        '<span class="flag">Esta sí es una suma que cierra:</span> ' + sumaLine + '. Es distinto de sumar <b>Inversión</b> + <b>DRIP</b> ($9,004.87 + <span id="mContotEqDripFull">' + fmtD(c.div) + '</span> = <span id="mContotEqSum">' + fmtD(Math.round(c.inv + c.div)) + '</span>, que no da <span id="mContotEqTotal2">' + fmtD(c.conDripTot) + '</span>) — esas dos son cifras del momento en que entró el dinero; <b>Inversión Hoy</b> y <b>DRIP Hoy</b> son las mismas acciones valoradas <i>hoy</i>. Comparado con el <b>Total</b> de <span id="mContotSinDrip">' + fmtD(c.sinDripTot) + '</span> en la matriz «Sin DRIP» —donde los dividendos sí se quedaron en efectivo, sin exponerse a la caída—, reinvertir salió peor para CONY.' +
+        '<span class="flag">Esta sí es una suma que cierra:</span> ' + sumaLine + '. Es distinto de sumar <b>Inversión</b> + <b>DRIP</b> ($9,004.87 + <span id="mContotEqDripFull">' + fmtD(c.div) + '</span> = <span id="mContotEqSum">' + fmtD(Math.round(c.inv + c.div)) + '</span>, que no da <span id="mContotEqTotal2">' + fmtD(c.conDripTot) + '</span>) — esas dos son cifras del momento en que entró el dinero; <b>Inversión Hoy</b> y <b>DRIP Hoy</b> son las mismas acciones valoradas <i>hoy</i>. Comparado con el <b>Total</b> de <span id="mContotSinDrip">' + fmtD(c.sinDripTot) + '</span> en la matriz «Sin DRIP» —donde los dividendos sí se quedaron en efectivo, sin exponerse a la caída—, reinvertir salió ' + (c.sinDripTot >= c.conDripTot ? 'peor' : 'mejor') + ' para CONY.' +
         (esRoc ? ' <b>Devuelto</b> se suma aparte: es efectivo que el ROC 19a reclasifica y regresa al cierre fiscal — no compró acciones, así que Total ya no es solo Inversión Hoy + DRIP Hoy.' : ''));
 
       // ---- modal-sintot: "Máx. sin DRIP + Dividendos [+ Devuelto] = Total" ----
       setHtml("mSintotEqLabel", esRoc ? "Máx. sin DRIP + Dividendos + Devuelto" : "Máx. sin DRIP + Dividendos acumulados");
-      setHtml("mSintotDivCony", fmtD(c.div));
+      setHtml("mSintotDivCony", fmtD(c.divSin));
       var sintotDevRow = document.getElementById("mSintotDevueltoRow");
       if (sintotDevRow) sintotDevRow.hidden = !esRoc;
-      if (esRoc) setHtml("mSintotDevuelto", fmtD(c.devuelto));
+      if (esRoc) setHtml("mSintotDevuelto", fmtD(c.devueltoSin));
       setHtml("mSintotTotCony", "= " + fmtD(c.sinDripTot));
       setHtml("mSintotNote",
         'A diferencia de la matriz «Con DRIP», <b>esta suma sí cierra</b> — fila por fila, en las cinco' + (esRoc ? ', incluido el Devuelto' : '') + '. Los dividendos se quedaron en efectivo, así que se apilan sobre el valor de las acciones en vez de convertirse en más acciones que siguen cayendo. Sirve para responder si reinvertir valió la pena: <b class="he-cash" id="mSintotCash">' + fmtD(D.sinDripTotAll) + '</b> sin DRIP frente a <b id="mSintotDrip">' + fmtD(D.conDripTotAll) + '</b> con DRIP.');
@@ -2185,13 +2247,15 @@
       // arriba de renderNraModales) — mismo tratamiento que modal-sintot. ----
       setHtml("mCashBase", simulado ? "netos de una retención NRA simulada del 30%" : "brutos");
       setHtml("mCashEqLabel", esRoc ? "Máx. sin DRIP + Σ distribuciones + Devuelto" : "Máx. sin DRIP + Σ distribuciones");
-      setHtml("mCashDiv", "~" + fmtD(c.div));
+      setHtml("mCashDiv", "~" + fmtD(c.divSin));
       var cashDevRow = document.getElementById("mCashDevueltoRow");
       if (cashDevRow) cashDevRow.hidden = !esRoc;
-      if (esRoc) setHtml("mCashDevuelto", fmtD(c.devuelto));
+      if (esRoc) setHtml("mCashDevuelto", fmtD(c.devueltoSin));
       setHtml("mCashTot", "= " + fmtD(c.sinDripTot));
-      setHtml("mCashNote",
-        'Los <b>5 fondos</b> favorecen al efectivo sobre el DRIP: el precio de los cinco cayó lo bastante para que las acciones compradas con cada distribución valieran hoy menos que haber guardado ese dinero en efectivo. El total de la cartera: <b class="he-cash" id="mCashTotalCash">' + fmtD(D.sinDripTotAll) + '</b> en efectivo frente a <b id="mCashTotalDrip">' + fmtD(D.conDripTotAll) + '</b> con DRIP — <b id="mCashDelta">' + fmtD(D.sinDripTotAll - D.conDripTotAll) + ' a favor del efectivo</b>.');
+      // El recuento se DERIVA — antes decía "los 5 fondos" cableado, y con la base
+      // corregida son 3 de 5 (NVDY y TSLY favorecen al DRIP). Cablear un veredicto que
+      // depende de precios vivos garantiza que envejezca mal: cuenta, no afirmes.
+      setHtml("mCashNote", cashNote(D));
     }
 
     // ---- Ejemplos con CONY (y totales de cartera) que citan modales fuera del
@@ -2714,13 +2778,11 @@
         'dinero. En <b>ROC 19a</b> el escudo del ROC ya viene aplicado dentro de la tasa (' +
         rocMin.toFixed(1) + '%–' + rocMax.toFixed(1) + '% según el fondo, en vez de 30% liso), ' +
         'no llega después como reembolso — por eso aquí no hay columna «Devuelto».</li>' +
-        '<li><b>Por qué el final no cuadra con las tablas de arriba.</b> Coincide en <b>Sin NRA · ' +
-        'reinvierte</b>, que es el mismo cálculo. En los demás no, y por dos motivos distintos: ' +
-        'las tablas aplican la retención de una sola vez sobre el total de hoy (un atajo que no ' +
-        'cobra el interés compuesto que el impuesto se llevó por el camino), y su columna ' +
-        '<b>Dividendos</b> cuenta las distribuciones de la cartera <b>que sí reinvirtió</b> — ' +
-        'muchas más de las que habrían pagado las acciones originales. Estas curvas simulan cada ' +
-        'escenario completo, de principio a fin, sin mezclar los dos mundos.</li>' +
+        '<li><b>Por qué el final no cuadra con las tablas de arriba.</b> En <b>Sin NRA</b> sí ' +
+        'cuadra, con y sin reinversión: es el mismo cálculo sobre el mismo mundo. En los otros ' +
+        'dos escenarios no, y el motivo es uno solo: las tablas aplican la retención de una sola ' +
+        'vez sobre el total de hoy, un atajo que no cobra el interés compuesto que el impuesto se ' +
+        'llevó por el camino. Estas curvas retienen en cada distribución, como ocurre de verdad.</li>' +
         '<li><b>Fuente.</b> Precios y distribuciones reales de mercado, evento a evento, sobre las ' +
         'mismas cinco posiciones y fechas de apertura de la hoja de la clase' +
         (SER.asof ? ' (datos al ' + fmtFechaCorta(SER.asof) + ')' : '') + '.' +

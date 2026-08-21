@@ -42,12 +42,19 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ./.venv/bin/python validate_real_cases.py
 ```
 
-**La suite completa, nunca un subconjunto.** Los 22 archivos cubren clases de regresión distintas.
-Línea base: **562 passed, 2 skipped, 3 deselected** (medido 2026-08-21 sobre la rama de la 3ª
-matriz de «La matriz»). Este número envejece en cuanto alguien añade tests: si tu PR cambia la
-cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo
+**La suite completa, nunca un subconjunto.** Los 23 archivos cubren clases de regresión distintas.
+Línea base: **589 passed, 2 skipped, 3 deselected, 1 xfailed** (medido 2026-08-21 tras el arreglo
+del contrafáctico Sin DRIP). Este número envejece en cuanto alguien añade tests: si tu PR cambia
+la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo
 notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y `95c0932`
 (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este número.
+
+El `xfailed` es **uno solo y deliberado**, con `strict=True`
+(`test_contrafactico_sin_drip.py::test_con_drip_respeta_monotonicidad`): documenta que en la fila
+Con DRIP el modo «roc» supera a «bruto» —retener y devolver enriquece— porque el método post-hoc
+penaliza el *valor* y reembolsa sobre los *dividendos*. No es una tolerancia ampliada para pasar:
+cuando se unifique la metodología con la de la 3ª gráfica, pytest lo reportará como XPASS fallido
+y obligará a retirar el xfail. Si aparece un segundo xfail, sospecha.
 
 Los tests de visión están deseleccionados por `pytest.ini`; correrlos aparte sólo si se tocó la
 lectura por foto (`-m vision`, gasta cuota de Gemini).

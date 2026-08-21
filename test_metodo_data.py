@@ -293,19 +293,46 @@ def test_escalera_max_tot_es_la_suma_de_max_de_la_matriz(datos):
     assert datos["escalera"]["maxTot"] == pytest.approx(esperado, abs=0.02)
 
 
-def test_escalera_efectivo_es_max_tot_mas_div_menos_inv(datos):
+def test_escalera_efectivo_es_max_tot_mas_divsin_menos_inv(datos):
     """Fila «Si los dividendos fueran efectivo»: el contrafáctico sin reinversión —
-    `maxTot` (techo sin DRIP) + dividendos brutos cobrados − lo aportado."""
+    `maxTot` (techo sin DRIP) + dividendos que habría cobrado ESA posición − lo aportado.
+
+    Antes esta aserción usaba `tot["div"]` (los dividendos del mundo que SÍ reinvirtió) y
+    por tanto fijaba el bug en vez de cazarlo: pasaba porque comparaba la fórmula consigo
+    misma. El panel dice «retorno teórico si nada se hubiera reinvertido», y su celda
+    vecina (`efectivoXirrPct`) siempre salió de la corrida sin DRIP — las dos mitades de
+    la misma fila describían mundos distintos (+267.2% contra un XIRR cuyos flujos suman
+    +63.2%). Ver `test_contrafactico_sin_drip.py`."""
     esc, tot = datos["escalera"], datos["tot"]
-    esperado_d = esc["maxTot"] + tot["div"] - tot["inv"]
+    esperado_d = esc["maxTot"] + tot["divSin"] - tot["inv"]
     assert esc["efectivoD"] == pytest.approx(esperado_d, abs=0.02)
     assert esc["efectivoPct"] == pytest.approx(esperado_d / tot["inv"] * 100.0, abs=0.01)
 
 
+def test_escalera_efectivo_describe_el_mismo_mundo_que_su_xirr(datos):
+    """Guarda no-tautológica de la fila: el total y la anualización que se muestran juntos
+    tienen que salir de la misma simulación. `efectivoD + inv` es el valor final del
+    contrafáctico, y eso debe ser `sinTotReal` (el `final_total_value` de `r_sin`), que es
+    de donde también salen los flujos del XIRR. Es la aserción que faltaba: la de arriba
+    reconcilia la fórmula, esta reconcilia contra el motor."""
+    esc, tot = datos["escalera"], datos["tot"]
+    assert esc["efectivoD"] + tot["inv"] == pytest.approx(tot["sinTotReal"], abs=0.05)
+
+
 def test_escalera_efectivo_es_siempre_mayor_que_real_el_doble_conteo_que_denuncia(datos):
-    """`efectivoPct` (suma dividendos Y valor, doble conteo) tiene que quedar por
-    encima de `realPct` (DRIP probado) — si no, el panel ya no ilustra el error que
-    existe para denunciar."""
+    """`efectivoPct` por encima de `realPct` (DRIP probado).
+
+    Corrección de encuadre (2026-08-21): el docstring decía que `efectivoPct` «suma
+    dividendos Y valor, doble conteo». No lo es — desde el arreglo del contrafáctico es el
+    escenario legítimo sin reinversión (`maxTot + divSin`), y el panel lo rotula así
+    («retorno teórico si nada se hubiera reinvertido»). El doble conteo que la sección
+    denuncia vive en la columna `Total inv.` de la matriz, no aquí.
+
+    OJO: esta desigualdad es un HECHO DE MERCADO de hoy (+63.2% contra +59.9%, apenas
+    3.4 pp), no una invariante estructural. Si un día se invierte, es dato nuevo —el DRIP
+    pasó a ganar a nivel cartera— y no un bug: la lección del panel (÷N no es anualizar)
+    no depende del signo. Antes del arreglo el margen era artificialmente enorme (267%
+    contra 60%) y ocultaba lo apretado que está."""
     esc = datos["escalera"]
     assert esc["efectivoPct"] > esc["realPct"]
 
