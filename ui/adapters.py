@@ -513,25 +513,41 @@ _CMP_CAPITAL = 100.0
 _CMP_FLAT_RATE = 0.30
 
 
-def _cmp_nra_rate(ticker: str, modo: str, roc19a: dict) -> float:
-    """Retencion NRA efectiva por modo fiscal (mapa-datos § 3.3a del plan de remediacion):
+def _tasa_efectiva_neta(ticker: str, modo: str, roc19a: dict) -> float:
+    """Tasa NRA **efectiva neta de reembolso** por modo fiscal: lo que el inversor acaba
+    pagando una vez cerrado el ciclo fiscal. Es una cifra que la UI **reporta** — no la
+    tasa que se aplica en ninguna simulación.
 
-      - 'bruto': 0.0 — sin retencion (residente EE.UU.).
-      - 'plano': `_CMP_FLAT_RATE` sobre TODA la distribucion — peor caso, sin escudo ROC.
-      - 'roc':   `_CMP_FLAT_RATE * (1 - weighted_pct/100)` — el escudo fiscal del ROC
-        ponderado que publica YieldMax en sus avisos 19(a) (`knowledge/roc_19a.yaml`).
-        Fondos sin avisos 19(a) (ETFs de crecimiento, o un YieldMax que aun no publico
-        ninguno) no tienen escudo que aplicar: caen a la tasa plana, igual que hace
-        `logic.build_roc_aware_withholding`/`build_drip_comparison_series` para el mismo
-        caso.
+      - 'bruto': 0.0 — sin retención (residente EE. UU.).
+      - 'plano': `_CMP_FLAT_RATE` sobre TODA la distribución — peor caso, sin escudo ROC.
+      - 'roc':   `_CMP_FLAT_RATE * (1 - weighted_pct/100)` — el 30% retenido menos la
+        porción que el aviso 19(a) reclasifica como retorno de capital y devuelve
+        (`knowledge/roc_19a.yaml`). Fondos sin avisos 19(a) (ETFs de crecimiento, o un
+        YieldMax que aún no publicó ninguno) no tienen nada que reclasificar: caen a la
+        tasa plana.
 
-    `weighted_pct` es un PROMEDIO PONDERADO sobre una ventana rodante (~52 avisos mas
+    **Ya no gobierna ninguna corrida del motor** (migración 2026-08-21). Hasta esa fecha
+    `comparacion_data` se la pasaba como `nra_rate` y era el último punto del repo donde el
+    escudo ROC vivía DENTRO de la tasa. Meterlo ahí asume que el escudo aplica AL COBRO —que
+    el dinero nunca sale del fondo y compone todo el tiempo—, y no es lo que ocurre: se
+    retiene el 30% completo y el reembolso llega meses después, con el 1042-S. Quien simula
+    es `_politica_fiscal`, que separa las dos cosas (tasa al cobro + %ROC por año). Los dos
+    modelos no son equivalentes: medido sobre el universo de esta vista, la diferencia va de
+    −18.7 pp (TSLY) a +28.0 pp (MSTY) en el retorno total Con DRIP. Ver el docstring de
+    `backtest.run_backtest` y `specs/roc-nra-invariants.md` (Regla 2: base Y momento).
+
+    Como cifra **reportada** sigue siendo correcta —el total pagado al final del ciclo es el
+    mismo— y es la que la nota al pie de la 3ª gráfica de «La matriz» usa para decir
+    «8.7%–17.6% según el fondo». Lo que una tasa no puede expresar es el MOMENTO, que es
+    justo lo que mueve el resultado.
+
+    `weighted_pct` es un PROMEDIO PONDERADO sobre una ventana rodante (~52 avisos más
     recientes, ver `logic.load_roc_19a`) — no la historia completa del fondo desde su
-    incepcion. Aplicarlo aqui a TODO el horizonte del backtest (incluidos los tramos
-    anteriores a esa ventana) es, por construccion, una EXTRAPOLACION: la mejor tasa
-    disponible, pero no una medida directa de esos tramos viejos. `comparacion_data`
-    declara esto en `roc19a` (rango de fechas de la ventana) para que la UI lo diga en
-    vez de presentarlo como si fuera medido — ese es el punto entero de esta fase.
+    incepción. Como tasa única para todo el horizonte es, por construcción, una
+    EXTRAPOLACIÓN. `_roc_pct_by_year` no extrapola: usa el promedio de cada año y deja los
+    años anteriores a la ventana sin escudo. Por eso esta tasa y la simulación pueden
+    discrepar incluso ignorando el momento, y por eso `comparacion_data` publica la ventana
+    en `roc19a` para que la UI declare el alcance en vez de presentarlo como medido.
     """
     if modo == "bruto":
         return 0.0
@@ -594,6 +610,21 @@ def comparacion_data() -> dict | None:
          `price_cache.load_history` (cache ausente/vencido), y ese fallback se
          propaga aquí vía `fuente`/`degradado`, nunca en silencio.
 
+    **Política fiscal: la del objeto único** (`_politica_fiscal`, migración 2026-08-21).
+    Los 3 modos de `TRG_MODOS` no son tres tasas: son tres políticas. «bruto» no retiene;
+    «plano» retiene el 30% y no devuelve nada; «roc» retiene el 30% COMPLETO al cobro y la
+    porción que el aviso 19(a) reclasifica vuelve en efectivo meses después, con el 1042-S
+    (`roc_pct_by_year` + `refund_month` de `run_backtest`). Hasta esta migración el modo
+    «roc» se simulaba con la tasa efectiva `0.30 × (1 − ROC)` —el escudo dentro de la
+    tasa—, que asume que el dinero nunca sale del fondo: la misma app decía «Con NRA · ROC
+    19a» en dos secciones con dos modelos distintos. La diferencia no es cosmética: de
+    −18.7 pp (TSLY) a +28.0 pp (MSTY) en el retorno total Con DRIP.
+
+    Consecuencia en el JSON: en modo «roc», `idx`/`idxSin` incluyen la cuenta por cobrar al
+    fisco (`roc_receivable`, un activo real) además del valor de mercado y el efectivo.
+    `precioSin` no — es solo precio, y por eso el área que el componente pinta como
+    «efectivo» en modo «roc» contiene también el reembolso pendiente. El copy lo declara.
+
     Además del índice "Con DRIP" (`idx`, para los 12 tickers de `TRG_UNIVERSO`), calcula
     "Sin DRIP" (`idxSin`/`precioSin`, para TODO el universo — cualquier ticker puede ser
     fondo base, y el toggle "Cómo se reinvirtió" solo aplica al fondo base) separando
@@ -653,9 +684,10 @@ def comparacion_data() -> dict | None:
         grp[tk] = "ym" if tk in TRG_YM else ("sub" if tk in TRG_SUB else "growth")
 
         for modo in TRG_MODOS:
-            rate = _cmp_nra_rate(tk, modo, roc19a)
+            pol = _politica_fiscal(tk, modo, roc19a)
             r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
-                                          drip=True, nra_rate=rate, history=history)
+                                          drip=True, nra_rate=pol.rate, history=history,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
             valores_con = _mensualizar(r_con.daily["total_value"])
             idx[modo][tk] = valores_con
             _actualizar_last(valores_con)
@@ -663,14 +695,17 @@ def comparacion_data() -> dict | None:
             # Sin DRIP para TODO el universo: desde que cualquier ticker puede ser
             # fondo base, el toggle «Reinversión» tiene que tener datos para los 12.
             r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
-                                          drip=False, nra_rate=rate, history=history)
+                                          drip=False, nra_rate=pol.rate, history=history,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
             valores_sin = _mensualizar(r_sin.daily["total_value"])
             idx_sin[modo][tk] = valores_sin
             _actualizar_last(valores_sin)
             if tk not in precio_sin:
-                # El componente de precio NO depende de la retencion (nra_rate solo
-                # afecta cuanto efectivo se acumula, nunca el precio de mercado) —
-                # basta una corrida por ticker, no una por modo.
+                # El componente de precio NO depende de la politica fiscal: sin DRIP las
+                # acciones nunca cambian de numero, asi que `portfolio_value` es el mismo
+                # en los tres modos (la retencion y el reembolso del 1042-S solo mueven
+                # `cash_accum`/`roc_receivable`, nunca el precio de mercado ni las
+                # acciones). Basta una corrida por ticker, no una por modo.
                 precio_sin[tk] = _mensualizar(r_sin.daily["portfolio_value"])
 
     fuente = {tk: hr.source for tk, hr in historias.items()}
@@ -913,10 +948,10 @@ def metodo_data() -> dict | None:
             asof_candidatos.append(hr.cache_asof)
 
         # Los 3 escenarios, simulados evento a evento con la MISMA política que usa la 3ª
-        # gráfica (`_met_politica`). «bruto» reutiliza las corridas de arriba en vez de
+        # gráfica (`_politica_fiscal`). «bruto» reutiliza las corridas de arriba en vez de
         # repetirlas: es literalmente el mismo caso (`nra_rate=0`, sin reembolso).
         for modo in TRG_MODOS:
-            pol = _met_politica(tk, modo, roc19a_yaml)
+            pol = _politica_fiscal(tk, modo, roc19a_yaml)
             if modo == "bruto":
                 rc, rs = r_con, r_sin
             else:
@@ -1147,7 +1182,7 @@ def metodo_data() -> dict | None:
 MET_SERIE_DRIP = ("con", "sin")
 
 
-def _met_roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
+def _roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
     """%ROC (0-100) por año calendario para el reembolso 1042-S de `backtest.run_backtest`.
 
     La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
@@ -1155,6 +1190,20 @@ def _met_roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
     `logic.estimate_roc_refund_by_year`, que es quien ya la fijó. Los años sin avisos en la
     ventana caen al ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos
     devuelve `{}`: sin escudo que reclamar, la retención plana se queda como está.
+
+    **Los años ANTERIORES a la ventana no se extrapolan** (y eso mueve cifras). El relleno
+    con el ponderado cubre solo los huecos DENTRO del rango de avisos publicados; un año
+    previo al primer aviso no aparece en el dict, así que el motor le aplica 0% de ROC:
+    retiene el 30% completo y no devuelve nada. Es un piso conservador, no una medida — y
+    difiere de lo que hacía `_tasa_efectiva_neta`, que aplicaba el ponderado a TODO el
+    horizonte. Material hoy en dos fondos del universo, cuyos avisos empiezan mucho después
+    de su incepción: TSLY (incep. nov-2022, avisos desde may-2025) y CONY (incep. ago-2023,
+    avisos desde feb-2025). NVDY y MSTY tienen la ventana cubierta desde su primer año.
+
+    Que el alcance sea el mismo en todas las vistas es lo que exige la Regla 3; que ese
+    alcance se DECLARE en el copy es lo que exige la Regla 2. Ampliarlo (extrapolar hacia
+    atrás) es una decisión de producto abierta, no un arreglo: movería también las cifras
+    ya desplegadas de «La matriz».
     """
     info = roc19a.get(ticker) or {}
     por_anio: dict[int, list[float]] = {}
@@ -1188,22 +1237,34 @@ class _PoliticaFiscal(typing.NamedTuple):
     roc_pct_by_year: dict
 
 
-def _met_politica(ticker: str, modo: str, roc19a: dict) -> _PoliticaFiscal:
-    """Política fiscal de «La matriz» por modo. **Fuente única de los 3 escenarios**: la
-    usan tanto las tablas (`metodo_data`) como la 3ª gráfica (`metodo_serie_data`), así que
-    no pueden divergir — es la Regla 3 (objeto fiscal único) aplicada al escudo ROC.
+def _politica_fiscal(ticker: str, modo: str, roc19a: dict) -> _PoliticaFiscal:
+    """Política fiscal de un escenario simulado, por modo. **Fuente única de los 3
+    escenarios en las tres vistas que los dibujan**: las tablas de «La matriz»
+    (`metodo_data`), su 3ª gráfica (`metodo_serie_data`) y «Comparación · Simulación»
+    (`comparacion_data`). Una sola política, un solo modelo — Regla 3 del contrato
+    (objeto fiscal único) aplicada al escudo ROC.
 
-    A diferencia de `_cmp_nra_rate` —que sigue sirviendo a «Comparación · Simulación» y
-    mete el escudo DENTRO de la tasa—, aquí «roc» retiene el 30% completo al cobro y
-    devuelve el ROC más tarde, que es lo que de verdad ocurre. No son equivalentes: medido
-    sobre este caso, +6.3% en la cartera con DRIP, con el signo cambiando por fondo (MSTY
-    +28.9%, NFLY −1.8%). Ver el docstring de `backtest.run_backtest`.
+    Se llamaba `_met_politica` mientras solo servía a «La matriz»; el prefijo se cayó al
+    migrar «Comparación · Simulación» (2026-08-21), que era el último punto del repo donde
+    el escudo vivía DENTRO de la tasa (`_tasa_efectiva_neta`, hoy solo cifra reportada).
+    Meter el escudo en la tasa asume que aplica al cobro —el dinero nunca sale del fondo—;
+    aquí «roc» retiene el 30% completo al cobro y devuelve el ROC más tarde, que es lo que
+    de verdad ocurre. No son equivalentes: +6.3% en la cartera del caso de estudio con DRIP
+    y con el signo cambiando por fondo (MSTY +28.9%, NFLY −1.8%); en el universo de
+    «Comparación», de −18.7 pp (TSLY) a +28.0 pp (MSTY). Ver `backtest.run_backtest`.
+
+    **Alcance: falta un consumidor.** «Comparación · Real» (`trg_real_data`) no pasa por
+    aquí — corre `logic.build_drip_comparison_series`, que es otro motor y sigue usando el
+    escudo dentro de la tasa (`logic.build_roc_aware_withholding`). Mientras eso siga así,
+    «Con NRA · ROC 19a» significa cosas distintas en «Real» y en «Simulación». Está
+    declarado a propósito: un alcance a medias que se dice es una tarea pendiente; uno que
+    se calla vuelve a ser el bug de las dos metodologías.
     """
     if modo == "bruto":
         return _PoliticaFiscal(0.0, {})
     if modo == "plano":
         return _PoliticaFiscal(_CMP_FLAT_RATE, {})
-    return _PoliticaFiscal(_CMP_FLAT_RATE, _met_roc_pct_by_year(ticker, roc19a))
+    return _PoliticaFiscal(_CMP_FLAT_RATE, _roc_pct_by_year(ticker, roc19a))
 
 
 def metodo_serie_data() -> dict | None:
@@ -1217,33 +1278,28 @@ def metodo_serie_data() -> dict | None:
     de precio — ninguna llamada a yfinance en runtime, mismo motor reconciliado al 0.013%
     contra el extracto real de IB que ya alimentan `metodo_data` y `comparacion_data`.
 
-    **Decisión metodológica (y su costo, declarado a propósito).** Los 3 escenarios se
-    SIMULAN evento a evento: `_cmp_nra_rate` — la misma y única función que usa
-    `comparacion_data`, Regla 3 del contrato: objeto fiscal único, no una segunda
-    fórmula — da la retención efectiva de cada modo, y el motor la aplica al cobrar cada
-    distribución. Con DRIP eso significa que un escenario retenido reinvierte MENOS
-    dinero, compra MENOS acciones y por lo tanto COMPONE distinto: el efecto fiscal es
-    multiplicativo en el tiempo, no un descuento al final.
+    **Decisión metodológica.** Los 3 escenarios se SIMULAN evento a evento con
+    `_politica_fiscal` —el objeto fiscal único, compartido con las tablas y con
+    «Comparación · Simulación»— y el motor la aplica al cobrar cada distribución. Con DRIP
+    eso significa que un escenario retenido reinvierte MENOS dinero, compra MENOS acciones
+    y por lo tanto COMPONE distinto: el efecto fiscal es multiplicativo en el tiempo, no un
+    descuento al final.
 
-    Las tablas «Con DRIP»/«Sin DRIP» de la Matriz 2 hacen otra cosa: reescalan en JS el
-    total bruto ya calculado por `(1 - tasaNra)` una sola vez, al final (`baseVal` en
-    `metodo.html`). Es una aproximación de un solo paso, deliberadamente simple para una
-    tabla que se lee de un vistazo. Las dos metodologías coinciden EXACTAMENTE en el
-    escenario «Sin NRA» (ahí no hay nada que reescalar: `nra_rate = 0`) y divergen en los
-    otros dos — la gráfica queda por debajo de la tabla, porque la tabla no cobra el
-    interés compuesto que el impuesto se llevó por el camino.
-
-    Esa divergencia se declara en la nota al pie de la gráfica, no se esconde. Lo que NO
-    se hace es mezclarlas: cada una de las 6 series usa una sola metodología de punta a
-    punta (Regla 2 del contrato — una línea no puede cambiar de base a media curva).
+    Las tablas de la Matriz 2 leen esa MISMA simulación desde el PR #59. Hasta entonces
+    reescalaban en JS el total bruto por `(1 - tasaNra)` una sola vez, al final (`baseVal`),
+    y la misma pantalla llegó a mostrar $177,289 y $78,816 para la misma cifra. Hoy las seis
+    celdas cuadran con las seis curvas, y hay un test cruzado que lo exige
+    (`test_contrafactico_sin_drip.py::TestReconciliacionVistas`) — no una nota al pie que
+    declare la divergencia.
 
     **Base y momento de cada serie** (Regla 2, otra vez): «Sin NRA» es BRUTA (nadie
-    retiene); «Con NRA · ROC 19a» y «Con NRA · 30%» son NETAS con la retención tomada
-    AL COBRO de cada distribución. `run_backtest` no modela la reclasificación anual del
-    19(a) como un evento aparte: el escudo del ROC entra ya descontado en la tasa
-    efectiva de `_cmp_nra_rate`, no como una devolución que llega en otra fecha. Por eso
-    esta gráfica no tiene columna «Devuelto» — no es que se le haya olvidado, es que en
-    esta metodología el ROC nunca se retuvo para poder devolverse.
+    retiene); «Con NRA · ROC 19a» y «Con NRA · 30%» son NETAS con el 30% completo tomado
+    AL COBRO de cada distribución. En «ROC 19a» la porción que el aviso 19(a) reclasifica
+    vuelve DESPUÉS, en efectivo, cuando llega el 1042-S (`roc_pct_by_year` +
+    `refund_month` en `run_backtest`): se devenga como cuenta por cobrar en el momento del
+    cobro y se paga en marzo del año siguiente. Por eso las curvas «ROC 19a» no son las de
+    «30%» desplazadas por un factor — el dinero estuvo fuera del mercado meses, y en un
+    fondo que cae, estar fuera a veces protege.
 
     **Capital aportado** (Regla 1): `capital` es UNA sola serie, idéntica en los 6
     escenarios — la retención mueve el bucket impuesto, jamás lo que salió del bolsillo.
@@ -1295,11 +1351,11 @@ def metodo_serie_data() -> dict | None:
     for caso in MET_CASO:
         tk, history = caso["t"], historias[caso["t"]]
         for modo in TRG_MODOS:
-            pol = _met_politica(tk, modo, roc19a)
+            pol = _politica_fiscal(tk, modo, roc19a)
             # La tasa que se REPORTA es la neta de reembolso —lo que el inversor acaba
             # pagando— aunque el motor retenga el 30% y devuelva después. Es la cifra que
             # la nota al pie usa para decir «8.7%–17.6% según el fondo».
-            tasa_efectiva[modo][tk] = round(_cmp_nra_rate(tk, modo, roc19a) * 100.0, 2)
+            tasa_efectiva[modo][tk] = round(_tasa_efectiva_neta(tk, modo, roc19a) * 100.0, 2)
             for drip in MET_SERIE_DRIP:
                 r = backtest.run_backtest(tk, start_date=caso["start"],
                                           initial_capital=caso["inv"], drip=(drip == "con"),

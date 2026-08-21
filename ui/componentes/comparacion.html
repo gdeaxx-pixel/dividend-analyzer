@@ -1324,9 +1324,12 @@
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(_t0)+"</b> en 0% — la incepción más tardía entre las que están en pantalla, para que las cifras cubran el mismo horizonte. Línea sólida = fondo YieldMax · guiones = ETF de crecimiento · punteado fino = acción subyacente.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el ' + DATA.asof +
-        ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). El <b>neto ROC 19a</b> aplica ' +
-        '0.30 × (1 − ROC ponderado) usando el % de retorno de capital que publica cada fondo en sus avisos 19(a); ' +
-        'los fondos u ETFs sin avisos 19(a) retienen la tasa plana.'
+        ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). En <b>neto ROC 19a</b> ' +
+        'EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que los avisos 19(a) ' +
+        'reclasifican como retorno de tu propio capital <b>vuelve como efectivo meses después</b>, con el ' +
+        '1042-S. Ese retraso importa: mientras el dinero está fuera no compone — y en un fondo que cae, estar ' +
+        'fuera a veces protege. Los fondos u ETFs sin avisos 19(a) no tienen nada que reclasificar: retienen ' +
+        'la tasa plana.'
       ];
       // Hallazgo pedagógico (mismo fondo, mismo modo fiscal, Con DRIP vs Sin DRIP):
       // calculado en vivo, no una premisa fija — un NAV que cae fuerte NO implica que el
@@ -1345,10 +1348,13 @@
       if (state.mode === "roc") {
         var rocInfo = DATA.roc19a && DATA.roc19a[state.base];
         if (rocInfo) {
-          parts.push('<span class="flag">Ventana del ROC 19a:</span> el % ponderado de ' + state.base +
-            ' (' + rocInfo.weighted_pct + '%, al ' + rocInfo.asof + ') se calcula sobre sus avisos 19(a) más ' +
-            'recientes, desde ' + rocInfo.min + '. Los tramos anteriores a esa fecha (incluida la incepción del ' +
-            'fondo) usan la MISMA tasa ponderada, <b>extrapolada</b> — no es una medida directa de esos meses.');
+          parts.push('<span class="flag">Ventana del ROC 19a:</span> cada año reclama el promedio de los ' +
+            'avisos 19(a) que ' + state.base + ' publicó ESE año, porque la reclasificación del bróker opera ' +
+            'por año fiscal; un año sin avisos dentro de la ventana hereda el ponderado del fondo (' +
+            rocInfo.weighted_pct + '%, al ' + rocInfo.asof + '). Los avisos disponibles arrancan en ' +
+            rocInfo.min + ': los años <b>anteriores</b> a esa fecha (incluida la incepción del fondo) no ' +
+            'reclaman escudo — retienen el 30% completo y no devuelven nada. Es un <b>piso conservador</b>, ' +
+            'no una medida de esos meses.');
         } else {
           parts.push('<span class="flag">Sin avisos 19(a):</span> ' + state.base + ' no publica avisos 19(a) — en este modo retiene la tasa plana, así que «Neto ROC 19a» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
         }
@@ -1356,7 +1362,10 @@
       if (DATA.sin_dividendos && DATA.sin_dividendos.indexOf(state.base) !== -1) {
         parts.push('<span class="flag">Sin distribuciones:</span> ' + state.base + ' no paga dividendos, así que «Con DRIP» y «Sin DRIP» dan la misma línea y los tres modos fiscales también — no hay nada que reinvertir ni que retener.');
       }
-      if (sin) parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> y se acumuló sin componer — nunca se encoge con el precio.');
+      if (sin) parts.push('<span class="flag">Sin DRIP:</span> la línea punteada de '+state.base+' es solo precio; el área verde es el dividendo que salió como <b>efectivo</b> y se acumuló sin componer — nunca se encoge con el precio.' +
+        ((state.mode === "roc" && DATA.roc19a && DATA.roc19a[state.base])
+          ? ' En este modo el área incluye además lo que el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron y están ahí dentro, como efectivo.'
+          : ''));
       if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
       if (DATA.faltantes && DATA.faltantes.length) parts.push('<span class="flag">Sin datos:</span> ' + DATA.faltantes.join(", ") + ' no se pudo descargar (ni caché ni en vivo) — no aparece en el gráfico.');
       elNotes.innerHTML = parts.join("<br>");

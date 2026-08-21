@@ -23,7 +23,12 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from ui.adapters import TRG_SUB, TRG_UNIVERSO, TRG_UNIVERSO_REAL, comparacion_data  # noqa: E402
+import backtest  # noqa: E402
+import logic  # noqa: E402
+import price_cache  # noqa: E402
+from ui.adapters import (  # noqa: E402
+    _CMP_CAPITAL, _CMP_FLAT_RATE, _politica_fiscal, _tasa_efectiva_neta,
+    TRG_MODOS, TRG_SUB, TRG_UNIVERSO, TRG_UNIVERSO_REAL, TRG_YM, comparacion_data)
 
 _COMPONENTE = os.path.join(os.path.dirname(__file__), "ui", "componentes", "comparacion.html")
 
@@ -46,15 +51,58 @@ _VENTAJA_EFECTIVO_ESPERADA = {
 
 
 @pytest.fixture(scope="module")
-def datos():
-    """Una sola corrida de `comparacion_data()` para todo el módulo — cada llamada
-    dispara `backtest.run_backtest` sobre 8 tickers x 3 modos (Con DRIP) + 5 x 1
-    (Sin DRIP), no es gratis repetirla por test."""
-    d = comparacion_data()
+def corrida():
+    """Una sola corrida de `comparacion_data()` para todo el módulo — cada llamada dispara
+    `backtest.run_backtest` sobre 12 tickers x 3 modos x 2 (Con/Sin DRIP), no es gratis
+    repetirla por test.
+
+    De paso ESPÍA lo que el adaptador le pasa al motor. El espía no cuesta una corrida
+    extra —envuelve la que ya se hacía— y es lo que permite assertar sobre la POLÍTICA
+    FISCAL recibida y no solo sobre el número que sale: un modelo fiscal equivocado puede
+    producir cifras plausibles, y de hecho lo hizo durante meses (ver
+    `TestUnSoloModeloRoc`)."""
+    llamadas = []
+    original = backtest.run_backtest
+
+    def espia(ticker, **kw):
+        # `history` queda fuera del registro a propósito: es un DataFrame por ticker y lo
+        # que aquí se vigila es la política fiscal, no la fuente de precio (de eso ya se
+        # ocupa `test_fuente_es_cache_para_todo_el_universo`).
+        llamadas.append({"ticker": ticker, "drip": kw.get("drip"),
+                         "nra_rate": kw.get("nra_rate", 0.0),
+                         "roc_pct_by_year": dict(kw.get("roc_pct_by_year") or {})})
+        return original(ticker, **kw)
+
+    backtest.run_backtest = espia
+    try:
+        d = comparacion_data()
+    finally:
+        backtest.run_backtest = original
+
     assert d is not None, (
         "comparacion_data() devolvió None — ningún ticker del universo cargó historia "
         "(ni caché ni yfinance en vivo). Sin esto no hay nada que verificar.")
-    return d
+    assert llamadas, "el espía no registró ninguna corrida — `comparacion_data` dejó de usar el motor"
+    return d, llamadas
+
+
+@pytest.fixture(scope="module")
+def datos(corrida):
+    return corrida[0]
+
+
+@pytest.fixture(scope="module")
+def llamadas(corrida):
+    return corrida[1]
+
+
+@pytest.fixture(scope="module")
+def con_avisos_19a():
+    """Los tickers del universo que sí publican avisos 19(a) — los únicos que pueden tener
+    escudo ROC. Se lee del yaml vivo, no de una lista transcrita: si mañana CHPY empieza a
+    publicar, los guardas lo incorporan solos en vez de quedarse mudos sobre él."""
+    roc19a = logic.load_roc_19a()
+    return tuple(tk for tk in TRG_UNIVERSO if _politica_fiscal(tk, "roc", roc19a).roc_pct_by_year)
 
 
 def _retorno_total(d: dict, tk: str, modo: str, clave_idx: str) -> float:
@@ -254,3 +302,188 @@ def test_growth_sin_drip_pierde_por_poco(datos, tk, esperado_pp):
     assert ventaja_pp == pytest.approx(esperado_pp, abs=0.5), (
         f"{tk}: ventaja del efectivo esperada {esperado_pp} pp, obtenida {ventaja_pp:.1f} pp")
     assert ventaja_pp < 0, f"{tk}: en un ETF de crecimiento el DRIP debe ganar"
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# Un solo modelo del escudo ROC (migración 2026-08-21)
+# ════════════════════════════════════════════════════════════════════════════════════════
+# Hasta esta fecha `comparacion_data` simulaba el modo «roc» con la tasa EFECTIVA
+# (`_tasa_efectiva_neta`: 0.30 × (1 − ROC)), o sea metiendo el escudo dentro de la tasa —
+# lo que asume que aplica al cobro y que el dinero nunca sale del fondo. «La matriz» ya
+# había migrado al modelo exacto (retención del 30% completo + reembolso que llega con el
+# 1042-S, PR #59), así que la misma app decía «Con NRA · ROC 19a» en dos secciones con dos
+# modelos distintos.
+#
+# Ninguno de los guardas de abajo se puede satisfacer reimplementando la fórmula que
+# genera el dato: o miran lo que el motor RECIBE (el espía del fixture), o cruzan el
+# payload contra una corrida independiente, o son propiedades estructurales.
+
+
+@pytest.fixture(scope="module")
+def corridas_ym(con_avisos_19a):
+    """Corridas directas del motor para los fondos con avisos 19(a): el lado independiente
+    de las reconciliaciones. `viejo_con` reproduce a propósito el modelo retirado (tasa
+    efectiva, sin reembolso) para poder medir cuánto separaba a los dos."""
+    roc19a = logic.load_roc_19a()
+    out = {}
+    for tk in con_avisos_19a:
+        h = price_cache.load_history(tk).history.sort_index()
+        start = h.index.min()
+
+        def corre(modo, drip, exacto=True):
+            pol = _politica_fiscal(tk, modo, roc19a)
+            kw = {"roc_pct_by_year": pol.roc_pct_by_year} if exacto else {}
+            rate = pol.rate if exacto else _tasa_efectiva_neta(tk, modo, roc19a)
+            return backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+                                         drip=drip, nra_rate=rate, history=h, **kw)
+
+        out[tk] = {
+            "roc_con": corre("roc", True), "roc_sin": corre("roc", False),
+            "bruto_con": corre("bruto", True), "plano_con": corre("plano", True),
+            "viejo_con": corre("roc", True, exacto=False),
+        }
+    return out
+
+
+def _retorno_de(r) -> float:
+    """Retorno total de una corrida medido como lo mide el payload: contra el `total_value`
+    del PRIMER día, no contra `initial_capital` (`_mensualizar_desde` fija el primer bin en
+    el valor real de arranque — ver `_CMP_CAPITAL`)."""
+    return float(r.daily["total_value"].iloc[-1]) / float(r.daily["total_value"].iloc[0]) - 1.0
+
+
+class TestUnSoloModeloRoc:
+    """Lo que el motor RECIBE, que es donde vive el modelo. Un modelo fiscal equivocado
+    produce cifras plausibles —la app enseñó las del modelo viejo durante meses sin que
+    ningún test protestara—, así que estos guardas no miran el resultado."""
+
+    def test_ninguna_corrida_recibe_una_tasa_efectiva(self, llamadas):
+        """La firma del modelo viejo es una tasa ESTRICTAMENTE entre 0 y 30%: el escudo
+        disuelto dentro de la retención (8.7% en MSTY, 17.6% en NVDY). Con el modelo exacto
+        solo existen dos tasas al cobro —0% o el 30% completo— y el escudo viaja aparte."""
+        efectivas = sorted({(c["ticker"], round(c["nra_rate"], 4)) for c in llamadas
+                            if 0.0 < c["nra_rate"] < _CMP_FLAT_RATE})
+        assert not efectivas, (
+            f"volvió el escudo ROC dentro de la tasa: {efectivas}. La retención al cobro es "
+            f"0.0 o {_CMP_FLAT_RATE}; el ROC se reclama por año con `roc_pct_by_year`.")
+        assert {round(c["nra_rate"], 4) for c in llamadas} <= {0.0, round(_CMP_FLAT_RATE, 4)}
+
+    def test_el_escudo_solo_acompana_a_la_retencion_completa(self, llamadas):
+        """Reclamar ROC presupone haber retenido: un reembolso sobre una tasa ya rebajada
+        devolvería dos veces el mismo dinero."""
+        for c in llamadas:
+            if c["roc_pct_by_year"]:
+                assert c["nra_rate"] == pytest.approx(_CMP_FLAT_RATE), (
+                    f"{c['ticker']}: reclama ROC {sorted(c['roc_pct_by_year'])} sobre una "
+                    f"retención de {c['nra_rate']} — el reembolso quedaría duplicado")
+
+    def test_los_fondos_con_avisos_19a_reclaman_su_roc(self, llamadas, con_avisos_19a):
+        """Huella del reembolso, del lado de la entrada: si alguien revierte al modelo de
+        tasa efectiva, `roc_pct_by_year` se va vacío para todos y esto lo caza."""
+        assert con_avisos_19a, (
+            "ningún ticker del universo publica avisos 19(a) — revisar "
+            "`knowledge/roc_19a.yaml`, sin eso el modo «roc» no tiene nada que simular")
+        con_escudo = {c["ticker"] for c in llamadas if c["roc_pct_by_year"]}
+        assert set(con_avisos_19a) <= con_escudo, (
+            f"sin escudo ROC en {sorted(set(con_avisos_19a) - con_escudo)} pese a tener "
+            "avisos 19(a) en el yaml")
+        # Con DRIP y sin DRIP: las dos corridas del modo «roc», no solo la que se ve primero.
+        for tk in con_avisos_19a:
+            drips = {c["drip"] for c in llamadas if c["ticker"] == tk and c["roc_pct_by_year"]}
+            assert drips == {True, False}, f"{tk}: el escudo solo llegó a {drips}"
+
+    def test_sin_avisos_19a_no_se_inventa_escudo(self, llamadas, con_avisos_19a):
+        """El contraejemplo de la prueba anterior: un ETF de crecimiento no reclasifica
+        nada, así que su modo «roc» tiene que ser idéntico al plano."""
+        for c in llamadas:
+            if c["ticker"] not in con_avisos_19a:
+                assert not c["roc_pct_by_year"], (
+                    f"{c['ticker']} no publica avisos 19(a) y aun así recibió "
+                    f"{c['roc_pct_by_year']}")
+
+
+class TestReconciliacionConElMotor:
+    """El payload contra una corrida directa. La cadena que se verifica es la del contrato
+    (Regla 3): `_politica_fiscal` → motor → JSON, sin nada que reescale por el camino."""
+
+    def test_la_serie_roc_es_la_del_modelo_exacto(self, datos, corridas_ym):
+        for tk, r in corridas_ym.items():
+            for clave, corrida in (("idx", r["roc_con"]), ("idxSin", r["roc_sin"])):
+                assert _retorno_total(datos, tk, "roc", clave) == pytest.approx(
+                    _retorno_de(corrida), abs=1e-3), (
+                    f"{tk}/{clave}: el payload no cuadra con una corrida hecha con la misma "
+                    "política fiscal — alguien reescala fuera del motor")
+
+    def test_el_reembolso_del_1042s_esta_dentro_de_la_serie(self, datos, corridas_ym):
+        """Huella del reembolso, del lado de la salida. La cuenta por cobrar viva a la fecha
+        de corte solo existe si se retuvo el 30% completo y el escudo vuelve DESPUÉS; con el
+        modelo de tasa efectiva es cero por construcción. Como el test de arriba ancla el
+        payload a esta misma corrida, la huella está en lo que se dibuja."""
+        for tk, r in corridas_ym.items():
+            assert r["roc_con"].roc_receivable_final > 0, (
+                f"{tk}: sin cuenta por cobrar — el ROC volvió a aplicarse al cobro")
+            assert r["roc_con"].roc_refund_total > 0, (
+                f"{tk}: ningún reembolso llegó a cobrarse en todo el horizonte")
+
+    def test_los_dos_modelos_no_son_equivalentes(self, corridas_ym):
+        """Fija la lección, no la cifra (Regla 5 del contrato): que exista al menos un fondo
+        donde meter el escudo en la tasa cambie el resultado de forma material. Si un día
+        ninguno lo ilustra, esto avisa en vez de romper — puede ser el mercado, no un bug."""
+        brechas = {tk: abs(_retorno_de(r["roc_con"]) - _retorno_de(r["viejo_con"])) * 100.0
+                   for tk, r in corridas_ym.items()}
+        assert max(brechas.values()) > 2.0, (
+            f"los dos modelos del ROC dan casi lo mismo en todo el universo: {brechas}. No "
+            "es necesariamente un bug —la brecha depende de cuánto ROC y cuánta caída haya "
+            "habido—, pero el copy que enseña «el retraso importa» se queda sin ejemplo.")
+
+
+class TestMonotoniaFiscalEstructural:
+    """Qué es invariante al subir el impuesto, y qué NO.
+
+    **Invariante:** sin reinversión el impuesto solo resta efectivo —las acciones son las
+    mismas en los tres modos, así que también lo son las distribuciones brutas— y la TASA
+    efectivamente pagada crece con la severidad del régimen en los dos mundos.
+
+    **NO invariante, y a propósito no se asserta:** que el RESULTADO con DRIP caiga al subir
+    el impuesto. Con reinversión el impuesto cambia el CAMINO: se reinvierte menos y parte
+    del dinero vuelve más tarde, a otro precio. Ver `test_el_contraejemplo_sigue_vivo`.
+    """
+
+    @pytest.mark.parametrize("tk", TRG_UNIVERSO)
+    def test_sin_drip_el_regimen_mas_severo_nunca_rinde_mas(self, datos, tk):
+        r = {m: _retorno_total(datos, tk, m, "idxSin") for m in TRG_MODOS}
+        recado = (f"{tk} viola monotonicidad fiscal sin DRIP: {r}. Retener no puede "
+                  "enriquecer cuando no hay camino que alterar.")
+        assert r["bruto"] >= r["roc"] - 1e-9, recado
+        assert r["roc"] >= r["plano"] - 1e-9, recado
+
+    def test_la_tasa_pagada_crece_con_la_severidad(self, corridas_ym):
+        """La forma estructural de «más impuesto» con DRIP: no el importe —que depende del
+        camino, porque un escenario que compone más cobra más dividendos y paga más— sino la
+        TASA sobre lo cobrado. Esa es 0, 30 × (1 − ROC) y 30% por construcción."""
+        for tk, r in corridas_ym.items():
+            tasas = {}
+            for modo, corrida in (("bruto", r["bruto_con"]), ("roc", r["roc_con"]),
+                                  ("plano", r["plano_con"])):
+                neto = (corrida.nra_withheld_total - corrida.roc_refund_total
+                        - corrida.roc_receivable_final)
+                tasas[modo] = neto / corrida.gross_dividends_total
+            assert tasas["bruto"] == pytest.approx(0.0, abs=1e-9), f"{tk}: {tasas}"
+            assert tasas["plano"] == pytest.approx(_CMP_FLAT_RATE, abs=1e-6), f"{tk}: {tasas}"
+            assert 0.0 < tasas["roc"] < tasas["plano"], (
+                f"{tk}: el escudo ROC no está reduciendo la tasa pagada: {tasas}")
+
+    def test_el_contraejemplo_sigue_vivo(self, datos):
+        """«Más impuesto ⇒ peor resultado» es FALSO con reinversión, y el copy de la vista
+        enseña esa lección. Hoy la ilustra MSTY: retener funcionó como un retiro forzoso de
+        un fondo en colapso, y parte del dinero volvió meses después a comprar más barato.
+
+        Se afirma la propiedad, no el ticker (Regla 5): si un día ningún fondo la ilustra, el
+        mensaje distingue «cambió el mercado» de «hay un bug»."""
+        peores = {tk for tk in TRG_YM
+                  if _retorno_total(datos, tk, "roc", "idx")
+                  > _retorno_total(datos, tk, "bruto", "idx")}
+        assert peores, (
+            "ningún fondo ilustra ya que «más impuesto ⇒ peor resultado» es falso con DRIP. "
+            "Puede ser que los precios cambiaran; pero antes de darlo por bueno, verificar "
+            "que el reembolso del 1042-S sigue llegando en su fecha y no al cobro.")
