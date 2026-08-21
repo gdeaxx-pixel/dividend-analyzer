@@ -42,12 +42,18 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ./.venv/bin/python validate_real_cases.py
 ```
 
-**La suite completa, nunca un subconjunto.** Los 22 archivos cubren clases de regresión distintas.
-Línea base: **562 passed, 2 skipped, 3 deselected** (medido 2026-08-21 sobre la rama de la 3ª
-matriz de «La matriz»). Este número envejece en cuanto alguien añade tests: si tu PR cambia la
-cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo
-notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y `95c0932`
-(540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este número.
+**La suite completa, nunca un subconjunto.** Los 23 archivos cubren clases de regresión distintas.
+Línea base: **602 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras unificar la
+metodología fiscal de «La matriz»). Este número envejece en cuanto alguien añade tests: si tu PR
+cambia la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que
+nadie lo notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y
+`95c0932` (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este
+número.
+
+**Cero `xfailed`, y así debe quedarse.** Hubo uno deliberado con `strict=True` mientras el modo
+«roc» superaba a «bruto» en la fila Con DRIP; la unificación cerró el defecto y el xfail se
+retiró, que es exactamente para lo que servía `strict`. Un `xfailed` nuevo en la cuenta significa
+que alguien documentó un defecto en vez de arreglarlo: revísalo, no lo normalices.
 
 Los tests de visión están deseleccionados por `pytest.ini`; correrlos aparte sólo si se tocó la
 lectura por foto (`-m vision`, gasta cuota de Gemini).

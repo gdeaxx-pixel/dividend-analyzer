@@ -57,7 +57,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-from typing import Optional, Union
+from typing import Mapping, Optional, Union
 
 import pandas as pd
 import yfinance as yf
@@ -245,11 +245,26 @@ class BacktestResult:
     initial_shares: float
     initial_capital: float
     daily: pd.DataFrame  # columnas: price, dividend_per_share, shares, gross_dividend,
-                          # nra_withheld, net_dividend, cash_accum, portfolio_value, total_value
+                          # nra_withheld, net_dividend, cash_accum, portfolio_value,
+                          # roc_refund, roc_receivable, total_value
 
     @property
     def gross_dividends_total(self) -> float:
         return float(self.daily["gross_dividend"].sum())
+
+    @property
+    def roc_refund_total(self) -> float:
+        """Reembolso ROC efectivamente COBRADO (excluye lo devengado y aun por cobrar)."""
+        if "roc_refund" not in self.daily:
+            return 0.0
+        return float(self.daily["roc_refund"].sum())
+
+    @property
+    def roc_receivable_final(self) -> float:
+        """Reembolso ya devengado que el 1042-S aun no ha pagado a la fecha de corte."""
+        if "roc_receivable" not in self.daily or self.daily.empty:
+            return 0.0
+        return float(self.daily["roc_receivable"].iloc[-1])
 
     @property
     def nra_withheld_total(self) -> float:
@@ -295,6 +310,8 @@ def run_backtest(
     nra_rate: float = 0.0,
     end_date: Optional[DateLike] = None,
     history: Optional[pd.DataFrame] = None,
+    roc_pct_by_year: Optional[Mapping[int, float]] = None,
+    refund_month: int = 3,
 ) -> BacktestResult:
     """Motor event-driven: recorre el calendario real de `ticker` dia a dia desde
     `start_date` (precio + distribucion, ambos reales de yfinance) y simula una posicion que
@@ -309,6 +326,27 @@ def run_backtest(
     `nra_rate` es un PARAMETRO de politica fiscal (0.0-1.0), no un dato historico — la
     retencion real depende del pais/tratado del inversor y no viene en la serie de yfinance
     (ver plan: "retencion NRA (parametro, no dato historico)").
+
+    **Reembolso ROC (`roc_pct_by_year`)** — modela el escudo fiscal del ROC como lo que es
+    en la realidad: se retiene `nra_rate` sobre TODA la distribucion al cobrarla, y la
+    porcion que el aviso 19(a) reclasifica como retorno de capital vuelve MAS TARDE, en
+    efectivo, cuando llega el 1042-S (`refund_month`, marzo por defecto, del año siguiente
+    al fiscal). Formato: `{año: roc_pct}` con `roc_pct` en 0-100.
+
+    Es distinto —y no equivalente— a bajar `nra_rate` a la tasa efectiva
+    `nra_rate*(1-roc_pct)`, que es lo que hacia `ui.adapters._cmp_nra_rate`. Esa version
+    asume que el escudo aplica AL COBRO, o sea que el dinero nunca sale del fondo y compone
+    todo el tiempo. Medido sobre el caso de estudio: la diferencia es **+6.3%** en la
+    cartera con DRIP, y cambia de SIGNO segun el fondo (MSTY +28.9%, NFLY -1.8%), porque
+    tener ese dinero fuera del mercado durante un año protege en las caidas y cuesta en las
+    subidas. Mezclar los dos modelos viola la Regla 2 del contrato fiscal (declarar base Y
+    momento) — ver `specs/roc-nra-invariants.md`.
+
+    El reembolso se DEVENGA con cada distribucion (columna `roc_receivable`, que suma a
+    `total_value` porque es un activo real: una cuenta por cobrar al fisco) y se COBRA en
+    `refund_month` (columna `roc_refund`); al cobrarse compra acciones si `drip=True`, o
+    entra a `cash_accum` si no. Sin `roc_pct_by_year` ambas columnas son 0 y el motor se
+    comporta exactamente como antes.
 
     No hace ningun ajuste manual por split: `Close`/`Dividends` de yfinance ya vienen
     normalizados de forma mutuamente consistente (ver docstring del modulo) — sumar acciones
@@ -334,7 +372,8 @@ def run_backtest(
     if history is None or history.empty:
         empty = pd.DataFrame(columns=["price", "dividend_per_share", "shares",
                                        "gross_dividend", "nra_withheld", "net_dividend",
-                                       "cash_accum", "portfolio_value", "total_value"])
+                                       "cash_accum", "portfolio_value", "roc_refund",
+                                       "roc_receivable", "total_value"])
         cap = initial_capital if initial_capital is not None else 0.0
         return BacktestResult(ticker=ticker, drip=drip, nra_rate=nra_rate,
                                initial_shares=initial_shares or 0.0,
@@ -349,10 +388,27 @@ def run_backtest(
 
     shares = float(initial_shares)
     cash_accum = 0.0
+    # Reembolso ROC devengado por año fiscal y aun no cobrado. Se devenga con cada
+    # distribucion (no de golpe al cerrar el año) para que la serie no tenga un escalon
+    # artificial: el caracter de ROC existe desde que se paga el dividendo; lo que llega
+    # tarde es la CONFIRMACION —y el dinero— via 1042-S.
+    receivable_by_year: dict[int, float] = {}
     rows = []
     for date, row in history.iterrows():
         price = float(row["Close"]) if pd.notna(row["Close"]) else 0.0
         div_rate = float(row["Dividends"]) if pd.notna(row.get("Dividends", 0.0)) else 0.0
+
+        # 1) ¿llego hoy el 1042-S de algun año ya cerrado? Se cobra ANTES de procesar la
+        #    distribucion del dia: el reembolso es dinero disponible desde su fecha.
+        roc_refund_hoy = 0.0
+        for year in sorted(receivable_by_year):
+            if date >= pd.Timestamp(year=year + 1, month=refund_month, day=1):
+                roc_refund_hoy += receivable_by_year.pop(year)
+        if roc_refund_hoy > 0:
+            if drip and price > 0:
+                shares += roc_refund_hoy / price
+            else:
+                cash_accum += roc_refund_hoy
 
         gross_div = shares * div_rate if div_rate > 0 else 0.0
         nra_withheld = gross_div * nra_rate
@@ -364,13 +420,28 @@ def run_backtest(
             else:
                 cash_accum += net_div
 
+        # 2) devengar el reembolso de esta distribucion. `refund = retenido - retencion
+        #    justa = nra_rate*bruto - nra_rate*bruto*(1-roc) = nra_rate*bruto*roc`, la
+        #    misma identidad que `logic.estimate_roc_refund`.
+        if gross_div > 0 and roc_pct_by_year:
+            roc_pct = float(roc_pct_by_year.get(date.year) or 0.0)
+            if roc_pct > 0:
+                devengado = nra_withheld * max(0.0, min(100.0, roc_pct)) / 100.0
+                receivable_by_year[date.year] = (
+                    receivable_by_year.get(date.year, 0.0) + devengado)
+
+        roc_receivable = sum(receivable_by_year.values())
         portfolio_value = shares * price
-        total_value = portfolio_value + (0.0 if drip else cash_accum)
+        # La cuenta por cobrar suma: es un activo real del inversor, no una promesa. Si no
+        # sumara, la serie mostraria un hueco entre el cobro del dividendo y el 1042-S y
+        # luego un salto — dinero que aparece de la nada.
+        total_value = portfolio_value + (0.0 if drip else cash_accum) + roc_receivable
 
         rows.append({
             "date": date, "price": price, "dividend_per_share": div_rate, "shares": shares,
             "gross_dividend": gross_div, "nra_withheld": nra_withheld, "net_dividend": net_div,
             "cash_accum": cash_accum, "portfolio_value": portfolio_value,
+            "roc_refund": roc_refund_hoy, "roc_receivable": roc_receivable,
             "total_value": total_value,
         })
 
