@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import math
+import typing
 
 import pandas as pd
 
@@ -850,6 +851,13 @@ def metodo_data() -> dict | None:
     asof_candidatos = []
     ym_medido: dict[str, dict] = {}
     flujos_efectivo: list[tuple] = []
+    # Escenarios fiscales SIMULADOS por el motor, uno por modo (Frente B, 2026-08-21).
+    # Sustituyen a la reescala post-hoc que hacía el JS: `baseVal(bruto) = bruto*(1-tasa)`
+    # aplicado una sola vez sobre el total de hoy. Esa aproximación no cobraba el interés
+    # compuesto que el impuesto se lleva por el camino, y en el modo «roc» llegaba a dar
+    # un total MAYOR que el escenario sin retención alguna.
+    roc19a_yaml = logic.load_roc_19a()
+    escenarios: dict[str, dict] = {m: {} for m in TRG_MODOS}
 
     for caso in MET_CASO:
         tk = caso["t"]
@@ -903,6 +911,50 @@ def metodo_data() -> dict | None:
         fuente[tk] = hr.source
         if hr.cache_asof:
             asof_candidatos.append(hr.cache_asof)
+
+        # Los 3 escenarios, simulados evento a evento con la MISMA política que usa la 3ª
+        # gráfica (`_met_politica`). «bruto» reutiliza las corridas de arriba en vez de
+        # repetirlas: es literalmente el mismo caso (`nra_rate=0`, sin reembolso).
+        for modo in TRG_MODOS:
+            pol = _met_politica(tk, modo, roc19a_yaml)
+            if modo == "bruto":
+                rc, rs = r_con, r_sin
+            else:
+                rc = backtest.run_backtest(tk, start_date=caso["start"],
+                                           initial_capital=caso["inv"], drip=True,
+                                           nra_rate=pol.rate, history=hr.history,
+                                           roc_pct_by_year=pol.roc_pct_by_year)
+                rs = backtest.run_backtest(tk, start_date=caso["start"],
+                                           initial_capital=caso["inv"], drip=False,
+                                           nra_rate=pol.rate, history=hr.history,
+                                           roc_pct_by_year=pol.roc_pct_by_year)
+            pv_con = float(rc.daily["portfolio_value"].iloc[-1])
+            pv_sin = float(rs.daily["portfolio_value"].iloc[-1])
+            escenarios[modo][tk] = {
+                # «Inversión Hoy»: las acciones originales, ni una más, al precio de hoy.
+                # Idéntica en los 3 modos —sin reinversión las acciones no se mueven— y
+                # por eso es el ancla de la Regla 1: el impuesto no toca el capital.
+                "max": round(pv_sin, 2),
+                # Con DRIP: lo que volvió al fondo (distribuciones netas + reembolsos ya
+                # cobrados, que también compraron acciones) y lo que vale hoy.
+                "drip": round(rc.net_dividends_total + rc.roc_refund_total, 2),
+                "dripHoy": round(pv_con - pv_sin, 2),
+                # «Devuelto» con DRIP es SOLO lo aún por cobrar: lo ya reembolsado compró
+                # acciones y vive dentro de «DRIP Hoy». Sumar ambos sería doble conteo.
+                "devueltoCon": round(rc.roc_receivable_final, 2),
+                "conTot": round(rc.final_total_value, 2),
+                # Sin DRIP: el efectivo no compró nada, así que el reembolso cobrado sigue
+                # siendo efectivo y se suma junto a lo pendiente.
+                "divSin": round(rs.net_dividends_total, 2),
+                "devueltoSin": round(rs.roc_refund_total + rs.roc_receivable_final, 2),
+                "sinTot": round(rs.final_total_value, 2),
+                # Impuesto NETO que acaba pagando el escenario, en el mundo con DRIP:
+                # retenido menos lo que el ROC devuelve (cobrado o por cobrar). Única
+                # fuente del contraste «ROC paga X en vez de Y» del copy — antes el JS lo
+                # recalculaba con su propia aritmética post-hoc.
+                "impuestoCon": round(rc.nra_withheld_total - rc.roc_refund_total
+                                     - rc.roc_receivable_final, 2),
+            }
 
         # Panel 5 (Tasa) parte en dos: `dr`/`sec`/`x`/`trc`/`tra` (YM en el componente)
         # siguen citando lo que publicó el emisor, literal y fechado — no hay fuente viva
@@ -1057,9 +1109,23 @@ def metodo_data() -> dict | None:
 
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
 
+    # Totales de cartera por escenario: la suma de las 5 filas YA redondeadas, nunca un
+    # agregado aparte (hallazgo L1 del traspaso 2026-08-03 — si no, la columna no cuadra
+    # cuando el lector la suma a mano).
+    escenarios_tot = {
+        modo: {
+            k: round(sum(v[k] for v in filas_modo.values()), 2)
+            for k in ("max", "drip", "dripHoy", "devueltoCon", "conTot",
+                      "divSin", "devueltoSin", "sinTot", "impuestoCon")
+        }
+        for modo, filas_modo in escenarios.items()
+    }
+
     return {
         "matriz": filas,
         "tot": tot,
+        "escenarios": escenarios,
+        "escenariosTot": escenarios_tot,
         "roc19a": roc19a,
         "roc19aAsof": max(roc19a_asof) if roc19a_asof else None,
         "asof": asof,
@@ -1079,6 +1145,65 @@ def metodo_data() -> dict | None:
 # Combinaciones de la gráfica de escenarios: los 3 modos fiscales de `TRG_MODOS` cruzados
 # con reinvertir o no. Seis series, no seis fórmulas — ver `metodo_serie_data`.
 MET_SERIE_DRIP = ("con", "sin")
+
+
+def _met_roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
+    """%ROC (0-100) por año calendario para el reembolso 1042-S de `backtest.run_backtest`.
+
+    La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
+    de los avisos 19(a) publicados ESE año — misma convención que
+    `logic.estimate_roc_refund_by_year`, que es quien ya la fijó. Los años sin avisos en la
+    ventana caen al ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos
+    devuelve `{}`: sin escudo que reclamar, la retención plana se queda como está.
+    """
+    info = roc19a.get(ticker) or {}
+    por_anio: dict[int, list[float]] = {}
+    for p in (info.get("per_distribution") or []):
+        try:
+            por_anio.setdefault(pd.Timestamp(p["date"]).year, []).append(float(p["roc_pct"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    try:
+        ponderado = float(info.get("weighted_pct"))
+    except (TypeError, ValueError):
+        ponderado = 0.0
+    if not por_anio and ponderado <= 0:
+        return {}
+    anios = list(por_anio) or []
+    promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
+    # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
+    # un hueco en la publicación no se lea como «ese año no hubo ROC».
+    if anios and ponderado > 0:
+        for a in range(min(anios), max(anios) + 1):
+            promedios.setdefault(a, ponderado)
+    return promedios
+
+
+class _PoliticaFiscal(typing.NamedTuple):
+    """Cómo se grava un escenario. `rate` es la retención AL COBRO; `roc_pct_by_year` es
+    el escudo que vuelve DESPUÉS, vía 1042-S. Los dos juntos definen base Y momento
+    (Regla 2 del contrato) — por eso viajan como una sola cosa y no como dos parámetros
+    sueltos que alguien pueda combinar mal."""
+    rate: float
+    roc_pct_by_year: dict
+
+
+def _met_politica(ticker: str, modo: str, roc19a: dict) -> _PoliticaFiscal:
+    """Política fiscal de «La matriz» por modo. **Fuente única de los 3 escenarios**: la
+    usan tanto las tablas (`metodo_data`) como la 3ª gráfica (`metodo_serie_data`), así que
+    no pueden divergir — es la Regla 3 (objeto fiscal único) aplicada al escudo ROC.
+
+    A diferencia de `_cmp_nra_rate` —que sigue sirviendo a «Comparación · Simulación» y
+    mete el escudo DENTRO de la tasa—, aquí «roc» retiene el 30% completo al cobro y
+    devuelve el ROC más tarde, que es lo que de verdad ocurre. No son equivalentes: medido
+    sobre este caso, +6.3% en la cartera con DRIP, con el signo cambiando por fondo (MSTY
+    +28.9%, NFLY −1.8%). Ver el docstring de `backtest.run_backtest`.
+    """
+    if modo == "bruto":
+        return _PoliticaFiscal(0.0, {})
+    if modo == "plano":
+        return _PoliticaFiscal(_CMP_FLAT_RATE, {})
+    return _PoliticaFiscal(_CMP_FLAT_RATE, _met_roc_pct_by_year(ticker, roc19a))
 
 
 def metodo_serie_data() -> dict | None:
@@ -1170,12 +1295,16 @@ def metodo_serie_data() -> dict | None:
     for caso in MET_CASO:
         tk, history = caso["t"], historias[caso["t"]]
         for modo in TRG_MODOS:
-            rate = _cmp_nra_rate(tk, modo, roc19a)
-            tasa_efectiva[modo][tk] = round(rate * 100.0, 2)
+            pol = _met_politica(tk, modo, roc19a)
+            # La tasa que se REPORTA es la neta de reembolso —lo que el inversor acaba
+            # pagando— aunque el motor retenga el 30% y devuelva después. Es la cifra que
+            # la nota al pie usa para decir «8.7%–17.6% según el fondo».
+            tasa_efectiva[modo][tk] = round(_cmp_nra_rate(tk, modo, roc19a) * 100.0, 2)
             for drip in MET_SERIE_DRIP:
                 r = backtest.run_backtest(tk, start_date=caso["start"],
                                           initial_capital=caso["inv"], drip=(drip == "con"),
-                                          nra_rate=rate, history=history)
+                                          nra_rate=pol.rate, history=history,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
                 if r.daily.empty:
                     return None
                 # `total_value` = valor de mercado de las acciones + efectivo acumulado.

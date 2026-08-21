@@ -1946,12 +1946,21 @@
     // retiene un no residente.
     var ROC_19A = DATA.roc19a;
     var modo = "bruto";    // bruto | roc | plano — bruto (observado) por defecto
-    function baseVal(bruto) { return modo === "bruto" ? bruto : bruto * (1 - TASA_NRA); }
-    function baseRound(bruto) { return Math.round(baseVal(bruto)); }
-    // Devuelto: solo "roc" simula devolución en efectivo. "bruto" no retiene
-    // nada que devolver; "plano" ya es la cota superior sin reconocer el ROC,
-    // así que tampoco devuelve — coincide con "bruto" en esto (Devuelto = 0).
-    function devueltoRound(bruto, tk) { return modo === "roc" ? Math.round(TASA_NRA * ROC_19A[tk] * bruto) : 0; }
+
+    // ---- Los 3 escenarios ya vienen SIMULADOS (unificación 2026-08-21) ----
+    // Antes esto se calculaba aquí en JS: `baseVal(bruto) = bruto*(1-TASA_NRA)` sobre el
+    // total de hoy, más un `devueltoRound` proporcional a los dividendos. Esa reescala de
+    // un solo paso tenía dos defectos que sobrevivían a cualquier ajuste de cifras:
+    //   1. No cobraba el interés compuesto que el impuesto se lleva por el camino. Un
+    //      escenario retenido reinvierte menos, compra menos acciones y compone menos.
+    //   2. Penalizaba el VALOR y reembolsaba sobre los DIVIDENDOS — dos bases distintas—,
+    //      así que el modo "roc" llegaba a superar al escenario sin retención alguna:
+    //      retener y devolver enriquecía.
+    // Hoy `ui.adapters.metodo_data` corre el motor por escenario con la misma política que
+    // la 3ª gráfica (`_met_politica`), incluido el reembolso del 1042-S en su fecha real.
+    // Objeto fiscal único (Regla 3): las tablas RENDERIZAN, ya no recalculan.
+    var ESCENARIOS = DATA.escenarios;
+    var ESC_TOT = DATA.escenariosTot;
     // DIV es del mundo CON DRIP; DIV_SIN del contrafáctico. Están separados porque cada
     // matriz vive en un mundo distinto y una fila no puede tomar columnas de los dos:
     // «Inversión Hoy» (r.max) sale de la corrida sin DRIP, así que los dividendos de esa
@@ -1969,21 +1978,26 @@
     function computeAll() {
       var rows = {}, invHoyTotAll = 0, divTotAll = 0, divSinTotAll = 0, dripHoyTotAll = 0,
           devueltoTotAll = 0, devueltoSinTotAll = 0, conDripTotAll = 0, sinDripTotAll = 0;
+      var esc = ESCENARIOS[modo];
       PRUEBA_DRIP.forEach(function (r) {
-        // Dos mundos, dos bases. `div`/`devuelto` (con DRIP) alimentan la matriz Con
-        // DRIP y sus modales; `divSin`/`devueltoSin` (contrafáctico) la matriz Sin DRIP.
-        // El Devuelto también se separa: es una fracción de los dividendos, así que
-        // hereda el mundo de quien los pagó — con la base inflada, el reembolso del modo
-        // "roc" llegaba a superar al escenario sin retención alguna.
-        var div = baseRound(DIV[r.t]);
-        var divSin = baseRound(DIV_SIN[r.t]);
-        var dripHoy = baseRound(r.real - r.max);
-        var devuelto = devueltoRound(DIV[r.t], r.t);
-        var devueltoSin = devueltoRound(DIV_SIN[r.t], r.t);
-        var conDripTot = r.max + dripHoy + devuelto;
-        var sinDripTot = r.max + divSin + devueltoSin;
-        rows[r.t] = { inv: INV[r.t], max: r.max, div: div, divSin: divSin, dripHoy: dripHoy, devuelto: devuelto, devueltoSin: devueltoSin, conDripTot: conDripTot, sinDripTot: sinDripTot };
-        invHoyTotAll += r.max; divTotAll += div; divSinTotAll += divSin;
+        // Todo viene YA simulado desde Python (`ui.adapters.metodo_data` → `escenarios`),
+        // evento a evento y con la misma política que la 3ª gráfica. Aquí no se calcula
+        // fiscalidad: solo se redondea a dólar para mostrar.
+        var e = esc[r.t];
+        var max = Math.round(e.max);
+        var div = Math.round(e.drip);
+        var dripHoy = Math.round(e.dripHoy);
+        var devuelto = Math.round(e.devueltoCon);
+        var divSin = Math.round(e.divSin);
+        var devueltoSin = Math.round(e.devueltoSin);
+        // El Total se RECOMPONE de las celdas redondeadas, no se toma el total exacto de
+        // Python: así la columna cuadra cuando el lector la suma a mano (hallazgo L1 del
+        // traspaso 2026-08-03). El descuadre contra el exacto es de centavos y lo vigila
+        // `test_contrafactico_sin_drip.py`.
+        var conDripTot = max + dripHoy + devuelto;
+        var sinDripTot = max + divSin + devueltoSin;
+        rows[r.t] = { inv: INV[r.t], max: max, div: div, divSin: divSin, dripHoy: dripHoy, devuelto: devuelto, devueltoSin: devueltoSin, conDripTot: conDripTot, sinDripTot: sinDripTot };
+        invHoyTotAll += max; divTotAll += div; divSinTotAll += divSin;
         dripHoyTotAll += dripHoy; devueltoTotAll += devuelto; devueltoSinTotAll += devueltoSin;
         conDripTotAll += conDripTot; sinDripTotAll += sinDripTot;
       });
@@ -2128,8 +2142,8 @@
         (modo === "bruto" ? ' —sí, es el mismo número que la hoja pone como «Total inv.»: como dinero que entró al fondo es correcto; como «lo que invertiste» es la suma falaz—' : '') +
         '), y hoy la posición ' + (modo === "bruto" ? 'vale' : 'valdría, en el escenario simulado,') + ' <b style="color:var(--drip)">$' + D.conDripTotAll.toLocaleString("en-US") + '</b>. ' +
         'El <b>DRIP</b> <b>no se suma</b> directamente a <b>Total</b>: compró acciones que siguieron cayendo, y su valor hoy es <b>DRIP Hoy</b> — <b style="color:var(--drip)">$' + D.dripHoyTotAll.toLocaleString("en-US") + '</b>, bastante menos que los $' + D.divTotAll.toLocaleString("en-US") + ' que se reinvirtieron.' +
-        (esRoc ? ' <b>Devuelto</b> — <b class="he-cash">$' + D.devueltoTotAll.toLocaleString("en-US") + '</b> — es distinto de los dos: es la porción de la retención NRA que el ROC 19a reclasifica y regresa en efectivo, así que nunca compró acciones ni sufrió la caída del NAV.' : '') + '<br><br>' +
-        '<b>Inversión Hoy + DRIP Hoy' + (esRoc ? ' + Devuelto' : '') + ' = Total</b> sí cierra (' + totalEqLine + '): son las mismas acciones acumuladas, valoradas al mismo precio de hoy, solo repartidas según de dónde vinieron' + (esRoc ? ', más el efectivo devuelto que nunca las compró' : '') + '.<br><br>' +
+        (esRoc ? ' <b>Devuelto</b> — <b class="he-cash">$' + D.devueltoTotAll.toLocaleString("en-US") + '</b> — es lo que el ROC 19a reclasifica y el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron, y como aquí se reinvierte, compraron acciones — viven dentro de <b>DRIP Hoy</b>, no en esta columna.' : '') + '<br><br>' +
+        '<b>Inversión Hoy + DRIP Hoy' + (esRoc ? ' + Devuelto' : '') + ' = Total</b> sí cierra (' + totalEqLine + '): son las mismas acciones acumuladas, valoradas al mismo precio de hoy, solo repartidas según de dónde vinieron' + (esRoc ? ', más el reembolso que aún está por llegar' : '') + '.<br><br>' +
         'La columna «Inversión» va con centavos porque es la cifra literal de la hoja; <b>Inversión Hoy</b>, <b>DRIP</b>, <b>DRIP Hoy</b>' + (esRoc ? ', <b>Devuelto</b>' : '') + ' y <b>Total</b> son el modelo reconstruido.');
     }
 
@@ -2231,7 +2245,7 @@
         ' = <span id="mContotEqTotal">' + fmtD(c.conDripTot) + '</span>';
       setHtml("mContotNote",
         '<span class="flag">Esta sí es una suma que cierra:</span> ' + sumaLine + '. Es distinto de sumar <b>Inversión</b> + <b>DRIP</b> ($9,004.87 + <span id="mContotEqDripFull">' + fmtD(c.div) + '</span> = <span id="mContotEqSum">' + fmtD(Math.round(c.inv + c.div)) + '</span>, que no da <span id="mContotEqTotal2">' + fmtD(c.conDripTot) + '</span>) — esas dos son cifras del momento en que entró el dinero; <b>Inversión Hoy</b> y <b>DRIP Hoy</b> son las mismas acciones valoradas <i>hoy</i>. Comparado con el <b>Total</b> de <span id="mContotSinDrip">' + fmtD(c.sinDripTot) + '</span> en la matriz «Sin DRIP» —donde los dividendos sí se quedaron en efectivo, sin exponerse a la caída—, reinvertir salió ' + (c.sinDripTot >= c.conDripTot ? 'peor' : 'mejor') + ' para CONY.' +
-        (esRoc ? ' <b>Devuelto</b> se suma aparte: es efectivo que el ROC 19a reclasifica y regresa al cierre fiscal — no compró acciones, así que Total ya no es solo Inversión Hoy + DRIP Hoy.' : ''));
+        (esRoc ? ' <b>Devuelto</b> se suma aparte: es el reembolso del ROC que el 1042-S aún no ha pagado, así que todavía no pudo comprar acciones — por eso Total ya no es solo Inversión Hoy + DRIP Hoy.' : ''));
 
       // ---- modal-sintot: "Máx. sin DRIP + Dividendos [+ Devuelto] = Total" ----
       setHtml("mSintotEqLabel", esRoc ? "Máx. sin DRIP + Dividendos + Devuelto" : "Máx. sin DRIP + Dividendos acumulados");
@@ -2370,20 +2384,19 @@
       });
       return min.t + " " + min.v + "% … " + max.t + " " + max.v + "%";
     }
-    // Misma aritmética que `devueltoRound`/`computeAll`, pero fija en "roc" para
-    // poder comparar contra "plano" (30% liso) sin depender del modo activo.
-    function calcRocVsPlano() {
-      var plano = Math.round(TASA_NRA * TOT.div);
-      var devuelto = 0;
-      MATRIZ.forEach(function (r) { devuelto += Math.round(TASA_NRA * (ROC_19A[r.t] || 0) * r.div); });
-      return { plano: plano, roc: plano - devuelto };
-    }
-    var _rocVsPlano = calcRocVsPlano();
+    // Impuesto neto de cada escenario, tomado de la simulación — no recalculado aquí.
+    // Antes esto tenía su propia aritmética (`TASA_NRA * TOT.div` menos un devuelto
+    // proporcional), o sea una TERCERA versión del mismo concepto fiscal conviviendo con
+    // la de las tablas y la de la gráfica. Regla 3 del contrato: un solo objeto.
+    var _rocVsPlano = {
+      plano: Math.round(ESC_TOT.plano.impuestoCon),
+      roc: Math.round(ESC_TOT.roc.impuestoCon)
+    };
     var MODO_CAP = {
       bruto: "Escenario base — así está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención NRA. La fecha de apertura y el aporte inicial son los literales de la hoja; <b>Dividendos</b>, <b>Total inv.</b>, <b>Valor mer.</b> y <b>Último div.</b> se recalculan con precios y distribuciones reales de mercado (ver «Fuente» abajo).",
       roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (" + calcRocRango() +
         (DATA.roc19aAsof ? ", al " + fmtFechaCorta(DATA.roc19aAsof) : "") +
-        "). EE. UU. retiene 30% al pagar, pero la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo</b> al cierre fiscal — no compra acciones.",
+        "). EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo meses después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera, no compone — y en un fondo que cae, estar fuera a veces protege.",
       plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, " +
         fmtD(_rocVsPlano.roc) + " en vez de " + fmtD(_rocVsPlano.plano) + "."
     };
@@ -2775,14 +2788,17 @@
         'EE. UU. y nadie le retiene. Los otros dos son netos, con la retención descontada <b>en el ' +
         'momento de cobrar cada distribución</b>, no al final: por eso una curva retenida no solo ' +
         'queda más abajo, sino que además <b>compone menos</b>, porque cada mes reinvirtió menos ' +
-        'dinero. En <b>ROC 19a</b> el escudo del ROC ya viene aplicado dentro de la tasa (' +
-        rocMin.toFixed(1) + '%–' + rocMax.toFixed(1) + '% según el fondo, en vez de 30% liso), ' +
-        'no llega después como reembolso — por eso aquí no hay columna «Devuelto».</li>' +
-        '<li><b>Por qué el final no cuadra con las tablas de arriba.</b> En <b>Sin NRA</b> sí ' +
-        'cuadra, con y sin reinversión: es el mismo cálculo sobre el mismo mundo. En los otros ' +
-        'dos escenarios no, y el motivo es uno solo: las tablas aplican la retención de una sola ' +
-        'vez sobre el total de hoy, un atajo que no cobra el interés compuesto que el impuesto se ' +
-        'llevó por el camino. Estas curvas retienen en cada distribución, como ocurre de verdad.</li>' +
+        'dinero. En <b>ROC 19a</b> se retiene el 30% completo al cobrar y la porción de ROC ' +
+        '<b>vuelve más tarde</b>, cuando llega el 1042-S: la tasa que acabas pagando queda en ' +
+        rocMin.toFixed(1) + '%–' + rocMax.toFixed(1) + '% según el fondo, pero el camino importa ' +
+        'tanto como el destino — ese dinero estuvo fuera del mercado meses, y en un fondo que ' +
+        'cae, estar fuera a veces protege.</li>' +
+        '<li><b>Cuadra con las tablas de arriba, en los seis escenarios.</b> No es casualidad: ' +
+        'desde el arreglo del 21 de agosto las tablas ya no reescalan nada por su cuenta — leen ' +
+        'esta misma simulación. Antes aplicaban la retención de un solo golpe sobre el total de ' +
+        'hoy, un atajo que no cobraba el interés compuesto que el impuesto se lleva por el ' +
+        'camino y que llegaba a hacer que el escenario con ROC rindiera más que el de cero ' +
+        'impuestos.</li>' +
         '<li><b>Fuente.</b> Precios y distribuciones reales de mercado, evento a evento, sobre las ' +
         'mismas cinco posiciones y fechas de apertura de la hoja de la clase' +
         (SER.asof ? ' (datos al ' + fmtFechaCorta(SER.asof) + ')' : '') + '.' +

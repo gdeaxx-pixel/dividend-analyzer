@@ -54,52 +54,69 @@ def serie():
 
 
 # ── Réplica del único punto de cálculo del componente ────────────────────────────────────
-# Espejo de `computeAll()` en metodo.html. Es deliberadamente una RÉPLICA y no un import:
-# la lógica vive en JS y no hay runtime de JS en la suite. Para que no se vuelva
-# tautológica, `test_replica_fiel_al_componente` verifica contra el HTML real que las
-# expresiones clave siguen escritas como aquí — si alguien cambia el JS sin tocar esto, el
-# test avisa en vez de seguir validando una fórmula fantasma.
+# Desde la unificación (2026-08-21) el JS ya NO calcula fiscalidad: `metodo_data` entrega
+# `escenarios[modo][ticker]` simulado por el motor y `computeAll()` solo redondea a dólar y
+# suma. Esta réplica hace exactamente eso — es trivial a propósito, y esa trivialidad es la
+# señal de que la lógica dejó de estar duplicada en dos lenguajes.
 
 def _compute_all(datos, modo):
-    """Espejo de computeAll(): dos mundos, dos bases."""
-    tasa, roc = datos["tasaNra"], datos["roc19a"]
-
-    def base(x):
-        return x if modo == "bruto" else x * (1 - tasa)
-
-    def devuelto(bruto, tk):
-        return round(tasa * roc[tk] * bruto) if modo == "roc" else 0
-
+    """Espejo de computeAll(): redondear a dólar y sumar las filas redondeadas."""
     filas, con_tot, sin_tot = {}, 0, 0
-    for r in datos["matriz"]:
-        mx, real, tk = r["max"], round(r["val"]), r["t"]
-        con = mx + round(base(real - mx)) + devuelto(r["div"], tk)
-        sin = mx + round(base(r["divSin"])) + devuelto(r["divSin"], tk)
+    for tk, e in datos["escenarios"][modo].items():
+        con = round(e["max"]) + round(e["dripHoy"]) + round(e["devueltoCon"])
+        sin = round(e["max"]) + round(e["divSin"]) + round(e["devueltoSin"])
         filas[tk] = {"con": con, "sin": sin}
         con_tot += con
         sin_tot += sin
     return {"filas": filas, "conTot": con_tot, "sinTot": sin_tot}
 
 
-def test_replica_fiel_al_componente():
-    """La réplica de arriba solo vale si el componente sigue calculando así. Fija las dos
-    expresiones que el bug tocaba: que la fila Sin DRIP use `divSin` en AMBAS columnas
-    (dividendos y devuelto), y que la Con DRIP siga con `div`."""
+def test_el_componente_no_recalcula_fiscalidad():
+    """Regla 3 del contrato: las vistas RENDERIZAN el objeto fiscal, no lo recalculan. Si
+    alguien reintroduce la reescala post-hoc en JS, vuelven los dos defectos que tenía
+    (no cobrar el interés compuesto, y penalizar el valor mientras reembolsa sobre los
+    dividendos) y las tablas se despegan otra vez de la gráfica."""
     src = open(_COMPONENTE, encoding="utf-8").read()
-    assert "var sinDripTot = r.max + divSin + devueltoSin;" in src, (
-        "la fila Sin DRIP dejó de sumar divSin/devueltoSin — si volvió a `div`, el bug "
-        "del contrafáctico está de vuelta")
-    assert "var conDripTot = r.max + dripHoy + devuelto;" in src
-    assert "var divSin = baseRound(DIV_SIN[r.t]);" in src
-    assert "var devueltoSin = devueltoRound(DIV_SIN[r.t], r.t);" in src
+    assert "var ESCENARIOS = DATA.escenarios;" in src
+    assert "var sinDripTot = max + divSin + devueltoSin;" in src
+    assert "var conDripTot = max + dripHoy + devuelto;" in src
+    for muerto in ("function baseVal(", "function baseRound(", "function devueltoRound("):
+        assert muerto not in src, (
+            f"volvió {muerto!r} al componente — la fiscalidad debe venir simulada de "
+            "`ui.adapters.metodo_data`, no recalcularse en JS")
 
 
 # ── Guarda 1 · monotonicidad fiscal ──────────────────────────────────────────────────────
 
 class TestMonotonicidadFiscal:
-    """Ningún régimen con retención puede rendir MÁS que uno sin retención. Es propiedad
-    pura: no necesita ground truth, no envejece con los precios, y cazaba sola el síntoma
-    del `Devuelto` sobredimensionado."""
+    """Qué es y qué NO es invariante al subir el impuesto.
+
+    **Invariante (aquí se asserta):** el IMPUESTO crece con la severidad del régimen, y en
+    el mundo SIN reinversión el resultado cae. Sin DRIP el impuesto solo resta efectivo: no
+    hay camino que alterar, así que la monotonía es estructural.
+
+    **NO invariante (aquí NO se asserta, a propósito):** que el RESULTADO con DRIP caiga al
+    subir el impuesto. Medido: MSTY cayó −91.4% y el escenario «roc» termina en $10,235
+    contra $9,462 del escenario sin impuesto alguno. No es un bug — se verificó
+    mecánicamente: en «bruto» se reinvirtieron los $41,921 completos en un fondo que se
+    desplomaba; en «roc» solo $25,899, y $7,840 volvieron meses después a comprar más
+    barato, con $1,121 todavía fuera como cuenta por cobrar. La retención funcionó como un
+    retiro forzoso de un activo en colapso.
+
+    Es el mismo patrón que el repo ya protege en `test_comparacion_data.py` («NAV cayendo ⇒
+    el efectivo gana» es FALSO): manda la trayectoria, no el destino. Aquí la versión
+    fiscal — «más impuesto ⇒ peor resultado» también es falso cuando hay reinversión.
+    Añadir esa aserción convertiría una casualidad de mercado en invariante y rompería el
+    día que otro fondo se comporte así.
+    """
+
+    @pytest.mark.parametrize("tk", [c["t"] for c in MET_CASO])
+    def test_el_impuesto_si_es_monotono(self, datos, tk):
+        """Lo que sí no puede violarse: cuanto más severo el régimen, más impuesto neto.
+        `bruto` no retiene nada; `roc` retiene y devuelve parte; `plano` retiene todo."""
+        imp = {m: datos["escenarios"][m][tk]["impuestoCon"] for m in _MODOS}
+        assert imp["bruto"] == pytest.approx(0.0, abs=0.01)
+        assert imp["roc"] < imp["plano"], f"{tk}: el escudo ROC no está reduciendo nada: {imp}"
 
     def test_sin_drip_respeta_bruto_mayor_o_igual_que_roc_y_plano(self, datos):
         tot = {m: _compute_all(datos, m)["sinTot"] for m in _MODOS}
@@ -111,29 +128,28 @@ class TestMonotonicidadFiscal:
         f = {m: _compute_all(datos, m)["filas"][tk]["sin"] for m in _MODOS}
         assert f["bruto"] >= f["roc"] >= f["plano"], f"{tk}: {f}"
 
-    def test_la_grafica_respeta_monotonicidad_en_los_seis_escenarios(self, serie):
-        """La 3ª gráfica simula evento a evento; ahí la propiedad tiene que cumplirse en
-        los dos mundos, sin excepción."""
-        for vista in ("con", "sin"):
-            fin = {}
-            for m in _MODOS:
-                s = serie["serie"][m][vista]
-                fin[m] = s[max(s, key=lambda k: int(k))]
-            assert fin["bruto"] >= fin["roc"] >= fin["plano"], f"{vista}: {fin}"
+    def test_la_grafica_respeta_monotonicidad_sin_drip(self, serie):
+        """Misma propiedad estructural, verificada en la otra vista: sin reinversión, la
+        curva de un régimen más severo nunca termina por encima."""
+        fin = {}
+        for m in _MODOS:
+            s = serie["serie"][m]["sin"]
+            fin[m] = s[max(s, key=lambda k: int(k))]
+        assert fin["bruto"] >= fin["roc"] >= fin["plano"], fin
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "Defecto CONOCIDO y acotado (Frente B de la auditoría 2026-08-21), no una "
-        "tolerancia ampliada para pasar. En la fila Con DRIP el método post-hoc aplica la "
-        "penalización del 30% al INCREMENTO DE VALOR ($19,705) mientras el reembolso ROC "
-        "sale de los DIVIDENDOS BRUTOS ($27,825): bases distintas, y el reembolso gana por "
-        "$8,120, así que 'roc' supera a 'bruto'. No lo causa el bug del contrafáctico —"
-        "sobrevivió a su arreglo— sino la aproximación post-hoc. Se cierra unificando la "
-        "metodología con la de la gráfica. `strict=True` a propósito: cuando el Frente B "
-        "entre, este test pasará y pytest lo reportará como XPASS fallido, obligando a "
-        "borrar el xfail en vez de dejarlo enmascarando el arreglo."))
-    def test_con_drip_respeta_monotonicidad(self, datos):
+    def test_el_defecto_del_metodo_post_hoc_esta_cerrado(self, datos):
+        """Regresión del Frente B. El método viejo penalizaba el VALOR ($19,705) y
+        reembolsaba sobre los DIVIDENDOS ($27,825): bases distintas, así que a nivel
+        CARTERA «roc» superaba a «bruto» por $8,120 con DRIP. Eso sí era un artefacto
+        aritmético, no economía — y tiene que seguir cerrado.
+
+        Ojo con la diferencia respecto al caso MSTY del docstring de la clase: allí un
+        TICKER suelto supera por razones económicas reales (retiro forzoso de un fondo en
+        colapso); aquí es la CARTERA completa, donde esos efectos se compensan y el
+        artefacto no tiene dónde esconderse."""
         tot = {m: _compute_all(datos, m)["conTot"] for m in _MODOS}
-        assert tot["bruto"] >= tot["roc"] >= tot["plano"], tot
+        assert tot["bruto"] >= tot["roc"] >= tot["plano"], (
+            f"volvió el artefacto post-hoc: {tot}")
 
 
 # ── Guarda 2 · reconciliación entre vistas ───────────────────────────────────────────────
@@ -143,24 +159,32 @@ class TestReconciliacionVistas:
     ningún test la viera, porque cada vista era correcta *contra sí misma*."""
 
     @pytest.mark.parametrize("modo", _MODOS)
-    def test_sin_drip_cuadra_con_el_final_de_la_serie(self, datos, serie, modo):
-        """En el mundo sin reinversión la retención es lineal (no hay interés compuesto que
-        perder), así que el atajo post-hoc y la simulación evento a evento coinciden en los
-        TRES modos. La tolerancia es de redondeo: la tabla redondea a dólar por fila."""
-        tabla = _compute_all(datos, modo)["sinTot"]
-        s = serie["serie"][modo]["sin"]
+    @pytest.mark.parametrize("vista,clave", [("sin", "sinTot"), ("con", "conTot")])
+    def test_las_seis_celdas_cuadran_con_la_grafica(self, datos, serie, modo, vista, clave):
+        """**El test que da sentido al Frente B.** Antes solo cuadraba 1 de 6 (`bruto/con`):
+        las tablas reescalaban post-hoc y la gráfica simulaba evento a evento, así que la
+        misma pantalla mostraba $177,289 y $78,816 para la misma cifra. Hoy ambas leen la
+        misma simulación y las seis coinciden.
+
+        No es tautológico: la tabla suma cinco filas redondeadas a dólar en JS, la gráfica
+        mensualiza `total_value` día a día y toma el último mes. Coinciden porque describen
+        el mismo mundo, no porque compartan la línea de código que las imprime."""
+        tabla = _compute_all(datos, modo)[clave]
+        s = serie["serie"][modo][vista]
         grafica = s[max(s, key=lambda k: int(k))]
         assert tabla == pytest.approx(grafica, abs=len(MET_CASO)), (
-            f"{modo}: tabla ${tabla:,.0f} contra gráfica ${grafica:,.2f} — dos vistas del "
-            f"mismo número no pueden discrepar más allá del redondeo por fila")
+            f"{modo}/{vista}: tabla ${tabla:,.0f} contra gráfica ${grafica:,.2f} — dos "
+            f"vistas del mismo número no pueden discrepar más allá del redondeo por fila")
 
-    def test_con_drip_cuadra_en_bruto(self, datos, serie):
-        """Sin retención las dos metodologías son la misma; si esto se rompe, se rompió el
-        cableado, no el método."""
-        tabla = _compute_all(datos, "bruto")["conTot"]
-        s = serie["serie"]["bruto"]["con"]
-        grafica = s[max(s, key=lambda k: int(k))]
-        assert tabla == pytest.approx(grafica, abs=len(MET_CASO))
+    @pytest.mark.parametrize("modo", _MODOS)
+    def test_inversion_hoy_no_la_mueve_el_impuesto(self, datos, modo):
+        """Regla 1 en su forma más literal: «Inversión Hoy» son las acciones originales,
+        que sin reinversión nunca cambian de número. Ningún régimen fiscal puede moverlas —
+        si un modo las mueve, alguien metió el impuesto en el bucket equivocado."""
+        for tk, e in datos["escenarios"][modo].items():
+            base = datos["escenarios"]["bruto"][tk]["max"]
+            assert e["max"] == pytest.approx(base, abs=0.01), (
+                f"{tk} en {modo}: Inversión Hoy {e['max']} contra {base} en bruto")
 
     def test_capital_aportado_invariante_en_los_seis_escenarios(self, datos, serie):
         """Regla 1 del contrato fiscal: el capital aportado no lo mueve ningún régimen."""
@@ -216,6 +240,38 @@ class TestVeredictoDerivado:
         assert "setHtml(\"mCashNote\", cashNote(D));" in src
         assert not re.search(r"Los <b>5 fondos</b> favorecen al efectivo", src), (
             "volvió el recuento cableado en modal-cash")
+
+    def test_el_reembolso_llega_tarde_y_eso_se_nota(self, datos):
+        """El escudo ROC NO es equivalente a bajar la tasa: se retiene el 30% completo y el
+        reembolso llega con el 1042-S, meses después. La huella observable de ese retraso
+        es la cuenta por cobrar viva a la fecha de corte (`devueltoCon` > 0 en «roc», y
+        exactamente 0 en los otros dos modos, que no tienen nada que devolver).
+
+        Si alguien vuelve a modelar el ROC como tasa efectiva al cobro, esta columna se va a
+        cero y el test lo caza — que es justo la regresión que cerró el Frente B."""
+        for tk, e in datos["escenarios"]["roc"].items():
+            assert e["devueltoCon"] > 0, (
+                f"{tk}: sin cuenta por cobrar, el ROC volvió a aplicarse al cobro")
+        for modo in ("bruto", "plano"):
+            for tk, e in datos["escenarios"][modo].items():
+                assert e["devueltoCon"] == pytest.approx(0.0, abs=0.01), f"{tk}/{modo}"
+
+    def test_mas_impuesto_no_implica_peor_resultado_con_drip(self, datos):
+        """Fija el contraejemplo para que nadie lo 'arregle' creyendo que es un bug.
+
+        Con reinversión, subir el impuesto cambia el CAMINO: se reinvierte menos en el
+        fondo y parte del dinero vuelve más tarde, a otro precio. En un fondo que colapsa
+        eso puede terminar MEJOR que no pagar impuesto. Hoy lo ilustra MSTY (−91.4%).
+
+        Se afirma la propiedad, no el ticker: si mañana ningún fondo la ilustra, el test
+        avisa en vez de romper — no es una cifra pineada, es una lección que necesita al
+        menos un caso vivo para poder contarse."""
+        peores = {tk for tk, e in datos["escenarios"]["roc"].items()
+                  if e["conTot"] > datos["escenarios"]["bruto"][tk]["conTot"]}
+        assert peores, (
+            "ningún fondo ilustra ya que 'más impuesto ⇒ peor resultado' es falso con "
+            "DRIP. No es necesariamente un bug —puede ser que los precios cambiaran—, "
+            "pero el copy que enseña esa lección se queda sin ejemplo: revisarlo.")
 
     def test_el_veredicto_por_ticker_no_es_unanime(self, datos):
         """La lección correcta —y la que `test_comparacion_data.py` ya protege— es que la
