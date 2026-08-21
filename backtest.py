@@ -334,7 +334,8 @@ def run_backtest(
     al fiscal). Formato: `{año: roc_pct}` con `roc_pct` en 0-100.
 
     Es distinto —y no equivalente— a bajar `nra_rate` a la tasa efectiva
-    `nra_rate*(1-roc_pct)`, que es lo que hacia `ui.adapters._cmp_nra_rate`. Esa version
+    `nra_rate*(1-roc_pct)`, que es lo que hacia `ui.adapters._cmp_nra_rate` (hoy
+    `_tasa_efectiva_neta`, y ya no gobierna ninguna corrida: solo se REPORTA). Esa version
     asume que el escudo aplica AL COBRO, o sea que el dinero nunca sale del fondo y compone
     todo el tiempo. Medido sobre el caso de estudio: la diferencia es **+6.3%** en la
     cartera con DRIP, y cambia de SIGNO segun el fondo (MSTY +28.9%, NFLY -1.8%), porque

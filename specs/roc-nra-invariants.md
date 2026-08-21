@@ -78,9 +78,16 @@ Ejes vigentes y su objeto único:
 |---|---|---|
 | Impuesto/ROC de la cartera del CSV | `logic.build_tax_summary` | cuadritos, Hoja Excel, paso NRA |
 | Base bruto/neto por convención de bróker | `logic.build_dividend_tax_totals` | Hoja Excel, cashflow, tax_summary |
-| **Escenarios fiscales del caso de estudio** | **`ui.adapters._met_politica`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»** |
+| **Escenarios fiscales simulados** | **`ui.adapters._politica_fiscal`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»; «Comparación · Simulación»** |
+| Escenarios fiscales sobre el portafolio cargado | `logic.build_roc_aware_withholding` — **escudo dentro de la tasa, sin migrar** | «Comparación · Real» (`trg_real_data`) |
 
 > **Por qué se añadió.** Hasta el 2026-08-21 el tercer eje no existía en este contrato, y por eso pudo crecer con **dos metodologías simultáneas**: las tablas reescalaban en JS (`bruto × (1 − tasa)`, un solo paso al final) mientras la gráfica simulaba evento a evento. La misma pantalla mostraba $177,289 y $78,816 para la misma cifra, con **562 tests en verde**. La regla estaba escrita y era correcta; lo que faltaba era que este eje estuviera dentro de su alcance.
+
+> **Migración de «Comparación · Simulación» (2026-08-21).** Ese panel era el último punto del repo donde el escudo ROC vivía **dentro de la tasa** (`_cmp_nra_rate`, hoy `_tasa_efectiva_neta`): `0.30 × (1 − ROC)` aplicado al cobro, o sea asumiendo que el dinero nunca sale del fondo. La app decía «Con NRA · ROC 19a» en dos secciones con dos modelos distintos. Hoy corre `_politica_fiscal` como «La matriz» —30% completo al cobro y reembolso con el 1042-S en su fecha—, y la brecha entre los dos modelos, medida en su propio universo, va de **−18.7 pp (TSLY) a +28.0 pp (MSTY)** en el retorno total Con DRIP. Guardas: `test_comparacion_data.py::TestUnSoloModeloRoc` (espía lo que el motor RECIBE — ninguna corrida puede llegar con una tasa entre 0 y 30%) y `::TestReconciliacionConElMotor`.
+>
+> **`_tasa_efectiva_neta` no se borró y no es un modelo huérfano:** sigue siendo la tasa efectiva **reportada** («8.7%–17.6% según el fondo» en la nota al pie de la 3ª gráfica). Como cifra de cierre de ciclo es correcta; lo que una tasa no puede expresar es el momento. Que exista una función así es lícito — lo que el contrato prohíbe es que gobierne una simulación.
+
+> **Alcance pendiente, declarado.** «Comparación · Real» (`trg_real_data` → `logic.build_drip_comparison_series`) corre otro motor y **sigue con el escudo dentro de la tasa** (`logic.build_roc_aware_withholding`). Mientras siga así, «Con NRA · ROC 19a» significa cosas distintas en «Real» y en «Simulación», y ningún test cruza ambas — no puede: son universos y ventanas distintos. Está en la tabla de arriba para que se lea como lo que es, una tarea abierta, y no como un eje cubierto.
 
 **Requirement (gate):** Todo eje con más de una vista necesita un test que compare **dos vistas del mismo número entre sí**, no cada vista contra sí misma. La fuente de cada lado debe ser genuinamente independiente (p. ej. una suma columnas redondeadas en el componente, la otra mensualiza la serie diaria del motor).
 
