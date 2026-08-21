@@ -19,9 +19,10 @@ Las reglas duras, en una línea cada una:
    columnas de la misma corrida. Base y momento no cazan este error; el mundo sí.
 3. **Objeto fiscal único** por eje: `logic.build_tax_summary` (impuesto/ROC del CSV),
    `logic.build_dividend_tax_totals` (base bruto/neto por bróker), `ui.adapters._politica_fiscal`
-   (escenarios simulados: «La matriz» y «Comparación · Simulación»). Las vistas los
-   **renderizan**, nunca recalculan. Falta un consumidor: «Comparación · Real»
-   (`logic.build_drip_comparison_series`) sigue con el escudo dentro de la tasa.
+   (escenarios simulados: «La matriz» y las dos vistas de «Comparación»). Las vistas los
+   **renderizan**, nunca recalculan. `logic.build_drip_comparison_series` /
+   `build_roc_aware_withholding` están **jubiladas**: metían el escudo ROC dentro de la
+   tasa y ya no las llama ninguna vista.
    **3b**: todo eje con más de una vista necesita un test que compare **dos vistas del mismo
    número entre sí** — una suite de tests que verifican cada vista contra sí misma puede estar
    verde con dos pantallas contradiciéndose por $98K. Ya pasó.
@@ -54,9 +55,9 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los 23 archivos cubren clases de regresión distintas.
-Línea base: **624 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras la migración de
-«Comparación · Simulación» al modelo ROC exacto: 603 eran la base del #56, que cerró la tanda
-#57–#60 de «La matriz», más 21 guardas nuevas). Este número envejece en cuanto alguien añade tests: si tu PR
+Línea base: **636 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras migrar las DOS
+vistas de «Comparación» al modelo ROC exacto: 603 eran la base del #56, que cerró la tanda
+#57–#60 de «La matriz», más 21 guardas del #62 y 12 de la migración de «Real»). Este número envejece en cuanto alguien añade tests: si tu PR
 cambia la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que
 nadie lo notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y
 `95c0932` (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este
