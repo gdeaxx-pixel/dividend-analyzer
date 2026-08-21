@@ -36,6 +36,20 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 - **WHEN** una vista arma una fila de "Neto real" restando una cifra en base-fiscal de una cifra en base bruta
 - **THEN** la fila se rechaza en revisión — antes de publicar, cada operando debe rotularse con su base (bruto/neto/base-fiscal) y verificar que coincidan entre sí
 
+### Regla 2b — El mundo es la tercera dimensión (añadida 2026-08-21)
+
+**Requirement:** Cuando una cifra describe un escenario **contrafáctico** —«si no se hubiera reinvertido», «si hubiera retención», «si se hubiera vendido»— además de base y momento declara su **mundo**: la corrida de simulación de la que sale. **Una fila contrafáctica toma TODAS sus columnas de la misma corrida.** Nunca se combina una columna del mundo que ocurrió con otra del mundo que no ocurrió.
+
+Base y momento no bastan para detectar este error: en el bug del caso origen las dos cifras eran brutas y las dos estaban tomadas al cobro. Lo que difería era **qué simulación las produjo**.
+
+**Scenario:** La fila «Sin DRIP» con dividendos del mundo que sí reinvirtió (bug real, 2026-08-21)
+- **WHEN** la fila «Sin DRIP» muestra «Inversión Hoy» tomada de `run_backtest(drip=False)` y en la misma fila muestra «Dividendos» tomados de `run_backtest(drip=True)`
+- **THEN** la fila se rechaza: en el mundo sin reinversión las acciones extra nunca se compraron, así que nunca pagaron esas distribuciones. Medido: $165,780 contra $67,307 reales (2.46×), total inflado 2.25×, y el veredicto DRIP-vs-efectivo invertido en 2 de 5 fondos
+
+**Scenario:** El nombre lleva el mundo encima
+- **WHEN** un adaptador expone los dividendos de dos corridas distintas
+- **THEN** los campos se llaman de forma que el mundo sea evidente en el punto de USO (`div` / `divSin`), no solo en el docstring de origen — en el bug real el docstring declaraba correctamente que `div` venía de la corrida con DRIP, y aun así se consumió en la fila equivocada
+
 ---
 
 ## Regla 3 — Reconciliación entre vistas mediante un objeto fiscal único
@@ -53,6 +67,30 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 **Scenario:** Test de reconciliación como gate de deploy
 - **WHEN** se agrega o modifica cualquier cifra fiscal en una vista
 - **THEN** un test de harness suma el impuesto neto mostrado por cada vista para el mismo ticker y falla si difieren en más de $0.05 — la divergencia la debe cazar pytest antes del deploy, no una revisión manual
+
+### Regla 3b — El alcance se declara, y hay más de un eje (añadida 2026-08-21)
+
+**Requirement:** La Regla 3 no se cumple nombrando un objeto: se cumple nombrando **todos los ejes de cifras financieras del repo** y asignándole a cada uno su objeto único. Un eje sin objeto nombrado no está cubierto aunque la regla exista.
+
+Ejes vigentes y su objeto único:
+
+| Eje | Objeto único | Vistas que lo renderizan |
+|---|---|---|
+| Impuesto/ROC de la cartera del CSV | `logic.build_tax_summary` | cuadritos, Hoja Excel, paso NRA |
+| Base bruto/neto por convención de bróker | `logic.build_dividend_tax_totals` | Hoja Excel, cashflow, tax_summary |
+| **Escenarios fiscales del caso de estudio** | **`ui.adapters._met_politica`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»** |
+
+> **Por qué se añadió.** Hasta el 2026-08-21 el tercer eje no existía en este contrato, y por eso pudo crecer con **dos metodologías simultáneas**: las tablas reescalaban en JS (`bruto × (1 − tasa)`, un solo paso al final) mientras la gráfica simulaba evento a evento. La misma pantalla mostraba $177,289 y $78,816 para la misma cifra, con **562 tests en verde**. La regla estaba escrita y era correcta; lo que faltaba era que este eje estuviera dentro de su alcance.
+
+**Requirement (gate):** Todo eje con más de una vista necesita un test que compare **dos vistas del mismo número entre sí**, no cada vista contra sí misma. La fuente de cada lado debe ser genuinamente independiente (p. ej. una suma columnas redondeadas en el componente, la otra mensualiza la serie diaria del motor).
+
+**Scenario:** Dos vistas del mismo número
+- **WHEN** una cifra financiera aparece en dos vistas (una tabla y una gráfica, un modal y una fila)
+- **THEN** existe un test que las reconcilia dentro de la tolerancia de redondeo declarada, y falla si divergen. Referencia viva: `test_contrafactico_sin_drip.py::TestReconciliacionVistas`
+
+**Scenario:** Suite verde no es evidencia de coherencia
+- **WHEN** se propone que un cambio es seguro porque «la suite pasa»
+- **THEN** eso solo vale si existe al menos un test cruzado sobre las cifras tocadas; una suite compuesta únicamente de tests que verifican cada vista contra sí misma puede estar verde con dos pantallas contradiciéndose
 
 ---
 
@@ -76,4 +114,25 @@ Un número que usa el ROC% para medir daño al NAV está mal. Un número que ign
 
 ---
 
+## Regla 5 — Un invariante estructural no es un hecho de mercado (añadida 2026-08-21)
+
+**Requirement:** Antes de escribir una aserción sobre una propiedad financiera hay que responder: **¿esto se cumple por construcción, o se cumple porque los precios de hoy salieron así?** Solo lo primero se assertá como invariante. Lo segundo, si vale la pena fijarlo, se assertá como *existencia de un ejemplo* y con un mensaje que diga que fallar puede significar «cambió el mercado», no «hay un bug».
+
+Un test que codifica una coincidencia de mercado se rompe sin que nadie haya roto nada, y entrena al equipo a ignorar fallos rojos.
+
+**Scenario:** «Más impuesto ⇒ peor resultado» es FALSO con reinversión (caso real, 2026-08-21)
+- **WHEN** se propone assertar que el escenario con más retención siempre termina por debajo del escenario sin retención
+- **THEN** se rechaza para el mundo CON DRIP: el impuesto cambia el CAMINO (se reinvierte menos, y parte del dinero vuelve más tarde a otro precio). Medido: MSTY cayó −91.4% y el escenario «roc» termina en $10,235 contra $9,462 del escenario sin impuesto alguno — la retención actuó como retiro forzoso de un activo en colapso
+- **Y THEN** sí se assertá en el mundo SIN DRIP, donde es estructural: sin reinversión el impuesto solo resta efectivo y no hay camino que alterar
+
+**Scenario:** Qué sí es estructural en el eje fiscal
+- **WHEN** hace falta una guarda de propiedad sobre los escenarios
+- **THEN** se assertá que el **impuesto neto** crece con la severidad del régimen (`bruto = 0 ≤ roc < plano`) y que el **capital aportado** no se mueve entre escenarios — dos cosas que no dependen de ningún precio
+
+**Nota:** esta regla es la hermana fiscal de la lección que ya protege `test_comparacion_data.py` («NAV cayendo ⇒ el efectivo gana» es falso). El patrón se repite: en un fondo con trayectoria violenta, la intuición monótona falla. Manda la trayectoria, no el destino.
+
+---
+
 Fuente: memoria del agente `feedback_dividend-invariante-roc-nra.md` (2026-07-14). Este archivo es el contrato vigente en el repo; la memoria conserva el porqué se aprendió.
+
+Reglas 2b, 3b y 5 añadidas el 2026-08-21 tras el bug del contrafáctico «Sin DRIP» y la unificación de la metodología fiscal de «La matriz» (PR #59). Auditoría completa: `../Obsidian/APPs/Dividend-Analyzer/auditoria-2026-08-21-contrafactico-sin-drip.md`.
