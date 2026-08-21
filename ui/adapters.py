@@ -547,6 +547,33 @@ def _cmp_nra_rate(ticker: str, modo: str, roc19a: dict) -> float:
     return max(0.0, min(1.0, _CMP_FLAT_RATE * (1.0 - weighted / 100.0)))
 
 
+def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
+    """Remuestreo mensual (último cierre de cada mes) con la misma excepción de
+    primer-mes que `trg_real_data`: el primer bin suele ser parcial (la incepción real
+    casi nunca cae el día 1), y `.resample().last()` ahí devolvería el cierre de FIN de
+    ese mes en vez del valor real de arranque — que es justo el punto que cada serie usa
+    como su propio 100% (ver `_CMP_CAPITAL`) o, en `metodo_serie_data`, como el dólar
+    exacto que salió del bolsillo el día que se abrió la posición.
+
+    Las claves son índices de mes relativos a `origen` (`[año, mes0]`), en texto, porque
+    el destino es JSON y ahí toda clave es texto de todos modos.
+
+    Estaba definida dentro de `comparacion_data` como closure sobre su `origen`. Subió a
+    nivel de módulo cuando `metodo_serie_data` necesitó exactamente el mismo remuestreo:
+    dos copias de la excepción de primer-mes es justo el tipo de duplicado que después
+    diverge en una sola de las dos y nadie lo nota.
+    """
+    serie = serie.sort_index()
+    mensual = serie.resample("ME").last().dropna()
+    if len(mensual):
+        mensual.iloc[0] = serie.iloc[0]
+    out = {}
+    for fecha, valor in mensual.items():
+        m = (int(fecha.year) - origen[0]) * 12 + (int(fecha.month) - 1 - origen[1])
+        out[str(m)] = round(float(valor), decimales)
+    return out
+
+
 def comparacion_data() -> dict | None:
     """JSON para `ui/componentes/comparacion.html` (Total Return Graph · Simulación).
 
@@ -604,20 +631,7 @@ def comparacion_data() -> dict | None:
     roc19a = logic.load_roc_19a()
 
     def _mensualizar(serie) -> dict:
-        """Remuestreo mensual (último cierre de cada mes) con la misma excepción de
-        primer-mes que `trg_real_data`: el primer bin suele ser parcial (la incepción
-        real casi nunca cae el día 1), y `.resample().last()` ahí devolvería el cierre
-        de FIN de ese mes en vez del valor real de arranque — que es justo el punto que
-        cada serie usa como su propio 100% (ver `_CMP_CAPITAL`)."""
-        serie = serie.sort_index()
-        mensual = serie.resample("ME").last().dropna()
-        if len(mensual):
-            mensual.iloc[0] = serie.iloc[0]
-        out = {}
-        for fecha, valor in mensual.items():
-            m = (int(fecha.year) - origen[0]) * 12 + (int(fecha.month) - 1 - origen[1])
-            out[str(m)] = round(float(valor), 4)
-        return out
+        return _mensualizar_desde(serie, origen)
 
     idx: dict = {modo: {} for modo in TRG_MODOS}
     idx_sin: dict = {modo: {} for modo in TRG_MODOS}
@@ -1032,6 +1046,167 @@ def metodo_data() -> dict | None:
         "paybackContraejemplo": payback_contraejemplo,
         "tmtotEjemplo": tmtot_ejemplo,
         "ymMedido": ym_medido,
+    }
+
+
+# Combinaciones de la gráfica de escenarios: los 3 modos fiscales de `TRG_MODOS` cruzados
+# con reinvertir o no. Seis series, no seis fórmulas — ver `metodo_serie_data`.
+MET_SERIE_DRIP = ("con", "sin")
+
+
+def metodo_serie_data() -> dict | None:
+    """JSON para la tercera matriz de «Método tradicional · La matriz»: las 6 curvas de
+    la cartera del caso de estudio en el tiempo (eje X = mes, eje Y = dólares).
+
+    Seis = los 3 escenarios fiscales de `TRG_MODOS` («Sin NRA» / «Con NRA · ROC 19a» /
+    «Con NRA · 30%») cruzados con reinvertir las distribuciones o cobrarlas en efectivo.
+    Cada curva es la SUMA de las 5 posiciones de `MET_CASO` valoradas al cierre de cada
+    mes; cada posición sale de `backtest.run_backtest(..., history=...)` sobre el caché
+    de precio — ninguna llamada a yfinance en runtime, mismo motor reconciliado al 0.013%
+    contra el extracto real de IB que ya alimentan `metodo_data` y `comparacion_data`.
+
+    **Decisión metodológica (y su costo, declarado a propósito).** Los 3 escenarios se
+    SIMULAN evento a evento: `_cmp_nra_rate` — la misma y única función que usa
+    `comparacion_data`, Regla 3 del contrato: objeto fiscal único, no una segunda
+    fórmula — da la retención efectiva de cada modo, y el motor la aplica al cobrar cada
+    distribución. Con DRIP eso significa que un escenario retenido reinvierte MENOS
+    dinero, compra MENOS acciones y por lo tanto COMPONE distinto: el efecto fiscal es
+    multiplicativo en el tiempo, no un descuento al final.
+
+    Las tablas «Con DRIP»/«Sin DRIP» de la Matriz 2 hacen otra cosa: reescalan en JS el
+    total bruto ya calculado por `(1 - tasaNra)` una sola vez, al final (`baseVal` en
+    `metodo.html`). Es una aproximación de un solo paso, deliberadamente simple para una
+    tabla que se lee de un vistazo. Las dos metodologías coinciden EXACTAMENTE en el
+    escenario «Sin NRA» (ahí no hay nada que reescalar: `nra_rate = 0`) y divergen en los
+    otros dos — la gráfica queda por debajo de la tabla, porque la tabla no cobra el
+    interés compuesto que el impuesto se llevó por el camino.
+
+    Esa divergencia se declara en la nota al pie de la gráfica, no se esconde. Lo que NO
+    se hace es mezclarlas: cada una de las 6 series usa una sola metodología de punta a
+    punta (Regla 2 del contrato — una línea no puede cambiar de base a media curva).
+
+    **Base y momento de cada serie** (Regla 2, otra vez): «Sin NRA» es BRUTA (nadie
+    retiene); «Con NRA · ROC 19a» y «Con NRA · 30%» son NETAS con la retención tomada
+    AL COBRO de cada distribución. `run_backtest` no modela la reclasificación anual del
+    19(a) como un evento aparte: el escudo del ROC entra ya descontado en la tasa
+    efectiva de `_cmp_nra_rate`, no como una devolución que llega en otra fecha. Por eso
+    esta gráfica no tiene columna «Devuelto» — no es que se le haya olvidado, es que en
+    esta metodología el ROC nunca se retuvo para poder devolverse.
+
+    **Capital aportado** (Regla 1): `capital` es UNA sola serie, idéntica en los 6
+    escenarios — la retención mueve el bucket impuesto, jamás lo que salió del bolsillo.
+    Es escalonada, no plana, porque las 5 posiciones del caso de estudio se abrieron en
+    fechas distintas (14 meses entre la primera y la última): cada escalón es un aporte
+    nuevo entrando, no rendimiento. Sin esa referencia, el salto de $13,599 del día que
+    entra MSTY se leería como una ganancia.
+
+    Devuelve `None` con el mismo criterio que `metodo_data`: si alguno de los 5 tickers
+    no cargó historia, la lección queda coja y no hay «cartera parcial» que dibujar.
+    """
+    historias: dict[str, pd.DataFrame] = {}
+    fuente: dict[str, str] = {}
+    asof_candidatos: list[str] = []
+    for caso in MET_CASO:
+        tk = caso["t"]
+        try:
+            hr = price_cache.load_history(tk)
+        except Exception:
+            return None
+        if hr.history is None or hr.history.empty:
+            return None
+        historias[tk] = hr.history.sort_index()
+        fuente[tk] = hr.source
+        if hr.cache_asof:
+            asof_candidatos.append(hr.cache_asof)
+
+    # El origen del eje X es la apertura MÁS TEMPRANA del caso de estudio, no la más
+    # tardía: a diferencia de `comparacion_data` —que renormaliza cada serie contra su
+    # propia incepción y necesita una ventana común para que los porcentajes sean
+    # comparables— aquí el eje son dólares de UNA cartera, y recortar el arranque
+    # borraría 14 meses de historia que sí ocurrieron.
+    inicios = {c["t"]: pd.Timestamp(c["start"]) for c in MET_CASO}
+    primero = min(inicios.values())
+    origen = [int(primero.year), int(primero.month) - 1]
+
+    def _mes_de(ts) -> int:
+        return (int(ts.year) - origen[0]) * 12 + (int(ts.month) - 1 - origen[1])
+
+    incep = {tk: _mes_de(ts) for tk, ts in inicios.items()}
+    roc19a = logic.load_roc_19a()
+
+    # Una corrida por (ticker, modo, drip) = 5 x 3 x 2 = 30. Se guardan por ticker y
+    # después se suman: sumar carteras exige alinear en el MISMO mes, y cada ticker
+    # arranca en el suyo.
+    porticker: dict = {modo: {d: {} for d in MET_SERIE_DRIP} for modo in TRG_MODOS}
+    tasa_efectiva: dict = {modo: {} for modo in TRG_MODOS}
+    last = 0
+    for caso in MET_CASO:
+        tk, history = caso["t"], historias[caso["t"]]
+        for modo in TRG_MODOS:
+            rate = _cmp_nra_rate(tk, modo, roc19a)
+            tasa_efectiva[modo][tk] = round(rate * 100.0, 2)
+            for drip in MET_SERIE_DRIP:
+                r = backtest.run_backtest(tk, start_date=caso["start"],
+                                          initial_capital=caso["inv"], drip=(drip == "con"),
+                                          nra_rate=rate, history=history)
+                if r.daily.empty:
+                    return None
+                # `total_value` = valor de mercado de las acciones + efectivo acumulado.
+                # Es la única columna que se puede sumar entre escenarios sin doble
+                # conteo: con DRIP el dividendo reinvertido YA vive dentro de las
+                # acciones, y sin DRIP vive en el efectivo — nunca en las dos a la vez.
+                valores = _mensualizar_desde(r.daily["total_value"], origen, decimales=2)
+                porticker[modo][drip][tk] = valores
+                if valores:
+                    last = max(last, max(int(m) for m in valores))
+
+    def _cartera(por_tk: dict) -> dict:
+        """Suma las 5 posiciones mes a mes. Antes de su apertura una posición aporta 0
+        (todavía no existe); después, si a un mes le falta cierre, arrastra el último
+        conocido en vez de desaparecer y hundir el total de la cartera un mes."""
+        out, previo = {}, {tk: None for tk in por_tk}
+        for m in range(0, last + 1):
+            total, vivos = 0.0, 0
+            for tk, valores in por_tk.items():
+                if m < incep[tk]:
+                    continue
+                v = valores.get(str(m))
+                if v is None:
+                    v = previo[tk]
+                if v is None:
+                    continue
+                previo[tk] = v
+                total += v
+                vivos += 1
+            if vivos:
+                out[str(m)] = round(total, 2)
+        return out
+
+    serie = {modo: {d: _cartera(porticker[modo][d]) for d in MET_SERIE_DRIP}
+             for modo in TRG_MODOS}
+
+    # Regla 1 del contrato fiscal: el capital aportado es invariante. UNA serie para los
+    # 6 escenarios, sin `modo` ni `drip` de por medio — si algún día aparece un `capital`
+    # por escenario, es un bug por definición.
+    capital = {}
+    for m in range(0, last + 1):
+        acum = sum(c["inv"] for c in MET_CASO if incep[c["t"]] <= m)
+        if acum:
+            capital[str(m)] = round(acum, 2)
+
+    asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
+    return {
+        "origen": origen,
+        "last": last,
+        "incep": incep,
+        "serie": serie,
+        "capital": capital,
+        "invTotal": round(sum(c["inv"] for c in MET_CASO), 2),
+        "tasaPlanaPct": round(_CMP_FLAT_RATE * 100.0),
+        "tasaEfectivaPct": tasa_efectiva,
+        "asof": asof,
+        "fuente": fuente,
+        "degradado": sorted(tk for tk, s in fuente.items() if s != "cache"),
     }
 
 

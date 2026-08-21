@@ -11,8 +11,8 @@ import streamlit as st
 import logic
 from ui import estado, heredadas, nav
 from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
-                         metodo_data, metodo_real_data, salud_nav_data, trg_real_data,
-                         verificar_identidades)
+                         metodo_data, metodo_real_data, metodo_serie_data, salud_nav_data,
+                         trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodo_real,
@@ -236,7 +236,13 @@ def render_metodo_tradicional(ruta: Ruta) -> None:
         st.warning("No se pudo cargar la historia de precios del caso de estudio (ni "
                   "caché ni yfinance en vivo) — inténtalo de nuevo en unos minutos.")
         return
-    render_metodo(ruta.vista, ruta.tema, datos)
+    # La serie mensual de los 6 escenarios (3ª matriz) se cachea aparte y con la misma
+    # regla: mismo caso de estudio fijo, así que una vez por sesión basta. Clave propia y
+    # no dentro de `_vd_metodo_data` porque son dos metodologías distintas (ver
+    # `ui.adapters.metodo_serie_data`) y conviene que se vea que no comparten objeto.
+    if st.session_state.get("_vd_metodo_serie") is None:
+        st.session_state["_vd_metodo_serie"] = metodo_serie_data()
+    render_metodo(ruta.vista, ruta.tema, datos, st.session_state["_vd_metodo_serie"])
 
 
 def render_matriz2(ruta: Ruta) -> None:

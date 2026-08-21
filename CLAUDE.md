@@ -42,10 +42,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ./.venv/bin/python validate_real_cases.py
 ```
 
-**La suite completa, nunca un subconjunto.** Los 21 archivos cubren clases de regresión distintas.
-Línea base: **538 passed, 2 skipped, 3 deselected** (medido 2026-08-19 sobre `main` = `a2dd335`).
-Este número envejece en cuanto alguien añade tests: si tu PR cambia la cuenta, **actualízalo aquí
-en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo notara.
+**La suite completa, nunca un subconjunto.** Los 22 archivos cubren clases de regresión distintas.
+Línea base: **562 passed, 2 skipped, 3 deselected** (medido 2026-08-21 sobre la rama de la 3ª
+matriz de «La matriz»). Este número envejece en cuanto alguien añade tests: si tu PR cambia la
+cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que nadie lo
+notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y `95c0932`
+(540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este número.
 
 Los tests de visión están deseleccionados por `pytest.ini`; correrlos aparte sólo si se tocó la
 lectura por foto (`-m vision`, gasta cuota de Gemini).
