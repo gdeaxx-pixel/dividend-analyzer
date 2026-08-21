@@ -388,6 +388,11 @@
     font-size: 12px; line-height: 1.4; box-shadow: 0 6px 22px rgba(0,0,0,.28);
   }
   #tip.on { opacity: 1; transform: translateY(0); }
+  /* La gráfica de escenarios mete seis filas «nombre largo … cifra» en el tooltip, y el
+     max-width de 240px heredado del artifact las recortaba a media cifra (medido: los
+     valores salían como «$76,6»). Se ensancha solo para ese caso, con una clase propia,
+     en vez de tocar el ancho general. */
+  #tip.tm-serie-tip { max-width: 360px; }
   #tip .t-h { font-family: var(--font-mono); font-weight: 700; font-size: 12px; margin-bottom: 2px; }
   #tip .t-v { font-family: var(--font-mono); }
 
@@ -436,6 +441,25 @@
   .cmp-notes li { margin: 0 0 8px; }
   .cmp-notes li:last-child { margin-bottom: 0; }
   .cmp-notes li::marker { color: var(--hair); }
+
+  /* ---- leyenda de la gráfica de escenarios (3ª matriz) ----
+     Chips y no un bloque de texto: con 6 curvas encimadas la leyenda tiene que poder
+     apagar líneas, no solo nombrarlas. Hereda .cmp-chip para no inventar un segundo
+     estilo de botón en el mismo panel; lo único propio es el swatch, que dibuja el
+     MISMO trazo (color + patrón de guiones) que la curva a la que apaga. */
+  .tm-serie-leg { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  /* NO se usa `.cmp-chip.active` (fondo `--ink` sólido) para marcar la serie encendida:
+     el swatch de «Sin NRA» es `--anchor`, que en tema claro ES ese mismo azul tinta —
+     sobre fondo relleno desaparecía justo la línea que nombra. Encendida = chip normal;
+     apagada = atenuada y con el texto tachado, que se lee sin depender del color. */
+  .tm-serie-chip { font-size: 11.5px; padding: 6px 11px; gap: 8px; color: var(--ink-2); }
+  .tm-serie-chip[aria-pressed="true"] { border-color: var(--ink-mut); }
+  .tm-serie-chip[aria-pressed="false"] { opacity: 0.5; }
+  .tm-serie-chip[aria-pressed="false"] span { text-decoration: line-through; }
+  .tm-serie-chip svg { flex: none; display: block; }
+  .tm-serie-cap { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono);
+                  font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
+                  color: var(--ink-mut); padding: 6px 2px; }
 
   /* ============ METODOLOGÍA Y FUENTES ============ */
   #view-metodologia[hidden] { display: none; }
@@ -1116,6 +1140,19 @@
         </div>
         <p class="cmp-notes" id="tmSinDripNotes"></p>
       </div>
+
+      <!-- 3ª matriz · las dos tablas de arriba son la foto de hoy; esto es la película.
+           Vive FUERA del toggle Con/Sin DRIP a propósito: compara los dos mundos entre
+           sí, así que esconder uno la dejaría sin la mitad de su respuesta. -->
+      <div class="he-block" id="tmSerieBlock">
+        <p class="he-block-lab">Cómo llegó hasta aquí <span class="he-block-sub muted">— los seis escenarios, mes a mes</span></p>
+        <p class="cmp-notes" id="tmSerieLede" style="margin-top:10px"></p>
+        <div class="cmp-plot-wrap">
+          <svg class="cmp-svg" id="tmSerieSvg" viewBox="0 0 920 400" role="img" aria-label="Valor de la cartera del caso de estudio mes a mes, en dólares, bajo tres escenarios fiscales con y sin reinversión de dividendos"></svg>
+        </div>
+        <div class="tm-serie-leg" id="tmSerieLeg"></div>
+        <p class="cmp-notes" id="tmSerieNotas"></p>
+      </div>
     </div>
 
     <!-- 3 · EL RENDIMIENTO -->
@@ -1193,6 +1230,12 @@
 
   </div>
 </main>
+<!-- Tooltip flotante de la gráfica de escenarios. El CSS de `#tip` ya vivía en este
+     componente (heredado del artifact) pero el elemento nunca se había montado: hasta
+     ahora ninguna vista de «Método tradicional» tenía hover sobre datos, solo modales
+     de clic. Mismo contrato que en `comparacion.html`: uno solo, `position: fixed`,
+     `pointer-events: none`. -->
+<div id="tip" role="status"></div>
 <!-- ============ MODAL: Valor real hoy ============ -->
 <div id="modal-real" role="dialog" aria-modal="true" aria-labelledby="modal-real-title">
   <div class="modal-box">
@@ -2389,6 +2432,319 @@
       clearTimeout(_reflowNra);
       _reflowNra = setTimeout(function () { if (ajustarMetodoNra) ajustarMetodoNra(); }, 150);
     });
+
+    // ============ VISTA 1c · LA GRÁFICA DE ESCENARIOS (3ª matriz) ============
+    // Las dos tablas de arriba son la foto de hoy; esto es la película. Eje X = mes,
+    // eje Y = dólares, seis curvas = 3 escenarios fiscales x (reinvertir / cobrar).
+    //
+    // Los datos vienen YA agregados de `ui.adapters.metodo_serie_data` — aquí no se
+    // calcula ni una cifra fiscal. A propósito: la reescala de `baseVal()` que gobierna
+    // las dos tablas (bruto x (1 - TASA_NRA), un solo paso al final) NO puede tocar esta
+    // gráfica, porque sus escenarios se simulan evento a evento en Python. Mezclar las
+    // dos aritméticas dentro de una misma curva sería exactamente la Regla 2 del
+    // contrato fiscal. Ver el docstring de `metodo_serie_data` para la decisión completa.
+    (function renderSerie() {
+      var SER = {{SERIE_JSON}};
+      var block = document.getElementById("tmSerieBlock");
+      if (!block) return;
+      if (!SER) {
+        // Mismo criterio que el resto del componente: se declara el hueco, no se dibuja
+        // una gráfica a medias ni se inventa una serie.
+        block.hidden = true;
+        return;
+      }
+      var svg = document.getElementById("tmSerieSvg");
+      var LAST = SER.last;
+
+      // Color = escenario fiscal, en rampa de severidad (sin retención → retención
+      // máxima). Guiones = reinversión. Dos canales independientes para dos preguntas
+      // independientes: así el ojo puede leer "todas las sólidas" o "todas las ámbar"
+      // sin tener que descifrar seis entradas de leyenda una por una.
+      var MODOS = [
+        { k: "bruto", lab: "Sin NRA",           tok: "--anchor" },
+        { k: "roc",   lab: "Con NRA · ROC 19a", tok: "--warn" },
+        { k: "plano", lab: "Con NRA · 30%",     tok: "--loss" }
+      ];
+      var DRIPS = [
+        { k: "con", lab: "reinvierte", dash: "",    w: 2.4 },
+        { k: "sin", lab: "cobra",      dash: "5 4", w: 1.8 }
+      ];
+      var SERIES = [];
+      MODOS.forEach(function (md) {
+        DRIPS.forEach(function (dr) {
+          SERIES.push({ id: md.k + "|" + dr.k, modo: md, drip: dr,
+                        data: (SER.serie[md.k] || {})[dr.k] || {} });
+        });
+      });
+      var oculto = {};
+
+      // MR da cabida a la etiqueta más larga de fin de línea, que es la del capital
+      // («Capital $48,286»): las otras seis son solo la cifra.
+      var W = 920, H = 400, ML = 64, MR = 128, MT = 16, MB = 28;
+      var _x = null, _visibles = [];
+
+      function mFecha(m) { return new Date(SER.origen[0], SER.origen[1] + m, 1); }
+      function mLabel(m) { var d = mFecha(m); return MESES_ES[d.getMonth()] + " " + d.getFullYear(); }
+      function val(s, m) { var v = s.data[String(m)]; return v == null ? null : v; }
+      function fmtEje(v) {
+        return v >= 1000 ? "$" + Math.round(v / 1000) + "k" : "$" + Math.round(v);
+      }
+      function tok(nombre) {
+        return getComputedStyle(document.documentElement).getPropertyValue(nombre).trim();
+      }
+      function niceStep(rango) {
+        var raw = rango / 5, pot = Math.pow(10, Math.floor(Math.log10(raw)));
+        var muls = [1, 2, 2.5, 5, 10];
+        for (var i = 0; i < muls.length; i++) if (raw <= muls[i] * pot) return muls[i] * pot;
+        return 10 * pot;
+      }
+
+      function dibujar() {
+        // Los colores se releen en CADA pasada, nunca se cachean: el tema del iframe lo
+        // fija `_con_tema` al montar, pero el componente también se redibuja al apagar
+        // una serie, y cachear tokens es cómo se cuela un color del tema anterior.
+        var MUT = tok("--ink-mut"), HAIR = tok("--hair"), PANEL = tok("--panel");
+        _visibles = SERIES.filter(function (s) { return !oculto[s.id]; });
+
+        // El eje Y arranca en 0 SIEMPRE, aunque ninguna curva baje tanto: son dólares
+        // absolutos, y recortar la base exagera visualmente cualquier diferencia entre
+        // escenarios — que es justo la comparación que esta gráfica existe para hacer.
+        var hi = 0;
+        _visibles.forEach(function (s) {
+          for (var m in s.data) if (s.data[m] > hi) hi = s.data[m];
+        });
+        for (var mc in SER.capital) if (SER.capital[mc] > hi) hi = SER.capital[mc];
+        if (!hi) hi = 1;
+        hi *= 1.06;
+
+        var x = function (m) { return ML + (LAST ? m / LAST : 0) * (W - ML - MR); };
+        var y = function (v) { return MT + (hi - v) / hi * (H - MT - MB); };
+        _x = x;
+
+        var out = [];
+        var paso = niceStep(hi);
+        for (var g = 0; g <= hi + 1e-9; g += paso) {
+          var yy = y(g).toFixed(1), cero = g === 0;
+          out.push('<line x1="' + ML + '" y1="' + yy + '" x2="' + (W - MR) + '" y2="' + yy +
+            '" stroke="' + (cero ? MUT : HAIR) + '" stroke-width="' + (cero ? 1.2 : 1) + '"' +
+            (cero ? '' : ' stroke-dasharray="3 3"') + ' opacity="' + (cero ? 0.7 : 0.9) + '"/>');
+          out.push('<text x="' + (ML - 8) + '" y="' + (parseFloat(yy) + 3.5) +
+            '" text-anchor="end" font-size="10.5" fill="' + MUT + '">' + fmtEje(g) + '</text>');
+        }
+        for (var ty = 1; ty <= LAST; ty++) {
+          if (mFecha(ty).getMonth() !== 0) continue;
+          out.push('<text x="' + x(ty).toFixed(1) + '" y="' + (H - 7) +
+            '" text-anchor="middle" font-size="10.5" fill="' + MUT + '">' +
+            mFecha(ty).getFullYear() + '</text>');
+        }
+
+        // Capital aportado: UNA sola línea para los seis escenarios (Regla 1 del
+        // contrato fiscal — la retención mueve el bucket impuesto, nunca lo que salió
+        // del bolsillo). Escalonada, no recta, porque las 5 posiciones se abrieron con
+        // 14 meses de diferencia: sin ella, el salto del mes en que entra MSTY se leería
+        // como rendimiento en vez de como capital nuevo.
+        var dc = "", prevC = null;
+        for (var m = 0; m <= LAST; m++) {
+          var c = SER.capital[String(m)];
+          if (c == null) continue;
+          if (prevC === null) { dc = "M" + x(m).toFixed(1) + " " + y(c).toFixed(1); }
+          else if (c !== prevC) {
+            dc += " L" + x(m).toFixed(1) + " " + y(prevC).toFixed(1) +
+                  " L" + x(m).toFixed(1) + " " + y(c).toFixed(1);
+          }
+          prevC = c;
+        }
+        if (prevC !== null) dc += " L" + x(LAST).toFixed(1) + " " + y(prevC).toFixed(1);
+        out.push('<path d="' + dc + '" fill="none" stroke="' + MUT + '" stroke-width="1.4" ' +
+          'stroke-dasharray="2 4" stroke-linejoin="round"/>');
+
+        var etiquetas = [];
+        if (prevC !== null) {
+          etiquetas.push({ v: prevC, y: y(prevC), color: MUT,
+                           texto: "Capital " + fmtD(prevC) });
+        }
+
+        _visibles.forEach(function (s) {
+          var color = tok(s.modo.tok), d = "", ultimo = null;
+          for (var m = 0; m <= LAST; m++) {
+            var v = val(s, m);
+            if (v == null) continue;
+            d += (d ? "L" : "M") + x(m).toFixed(1) + " " + y(v).toFixed(1);
+            ultimo = { m: m, v: v };
+          }
+          if (!d) return;
+          out.push('<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="' +
+            s.drip.w + '"' + (s.drip.dash ? ' stroke-dasharray="' + s.drip.dash + '"' : '') +
+            ' stroke-linejoin="round" stroke-linecap="round"/>');
+          out.push('<circle cx="' + x(ultimo.m).toFixed(1) + '" cy="' + y(ultimo.v).toFixed(1) +
+            '" r="3.2" fill="' + color + '" stroke="' + PANEL + '" stroke-width="1.6"/>');
+          etiquetas.push({ v: ultimo.v, y: y(ultimo.v), color: color,
+                           texto: fmtD(ultimo.v) });
+        });
+
+        // De-colisión vertical de las etiquetas de fin de línea: con seis curvas que
+        // terminan el mismo mes, dos valores cercanos se imprimirían encima.
+        etiquetas.sort(function (a, b) { return a.y - b.y; });
+        for (var i = 1; i < etiquetas.length; i++) {
+          if (etiquetas[i].y - etiquetas[i - 1].y < 13) etiquetas[i].y = etiquetas[i - 1].y + 13;
+        }
+        etiquetas.forEach(function (L) {
+          out.push('<text x="' + (W - MR + 9) + '" y="' + (L.y + 3.5).toFixed(1) +
+            '" font-size="10.5" fill="' + L.color + '">' + L.texto + '</text>');
+        });
+
+        out.push('<line id="tmSerieXh" x1="0" y1="' + MT + '" x2="0" y2="' + (H - MB) +
+          '" stroke="' + MUT + '" stroke-width="1" opacity="0"/>');
+        out.push('<rect id="tmSerieHit" x="' + ML + '" y="' + MT + '" width="' + (W - ML - MR) +
+          '" height="' + (H - MT - MB) + '" fill="transparent"/>');
+        svg.innerHTML = out.join("");
+        enlazarHover();
+      }
+
+      // ---- tooltip flotante (el componente no tenía uno montado: ver `#tip` en el
+      // cuerpo). Mismo contrato que `comparacion.html`: se posiciona en coordenadas de
+      // viewport y se voltea si no cabe. ----
+      var tip = document.getElementById("tip");
+      function mostrarTip(html, cx, cy) {
+        tip.innerHTML = html; tip.classList.add("on", "tm-serie-tip");
+        var w = tip.offsetWidth, h = tip.offsetHeight;
+        var left = cx + 14, top = cy - h - 12;
+        if (left + w > window.innerWidth - 8) left = cx - w - 14;
+        if (top < 8) top = cy + 18;
+        tip.style.left = left + "px"; tip.style.top = top + "px";
+      }
+      function ocultarTip() { tip.classList.remove("on"); }
+
+      function enlazarHover() {
+        var hit = document.getElementById("tmSerieHit"), xh = document.getElementById("tmSerieXh");
+        if (!hit) return;
+        function en(e) {
+          var pt = e.touches ? e.touches[0] : e, r = svg.getBoundingClientRect();
+          var sx = (pt.clientX - r.left) * (W / r.width);
+          var m = Math.round((sx - ML) / (W - ML - MR) * LAST);
+          m = Math.max(0, Math.min(LAST, m));
+          var px = _x(m);
+          xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("opacity", "0.4");
+          var filas = _visibles
+            .map(function (s) { return { s: s, v: val(s, m) }; })
+            .filter(function (r2) { return r2.v != null; })
+            .sort(function (a, b) { return b.v - a.v; })
+            .map(function (r2) {
+              return '<div style="display:flex;gap:8px;white-space:nowrap;align-items:center">' +
+                '<span style="width:12px;height:0;flex:none;border-top:' +
+                (r2.s.drip.dash ? "2px dashed " : "2.5px solid ") + tok(r2.s.modo.tok) + '"></span>' +
+                r2.s.modo.lab + ' · ' + r2.s.drip.lab +
+                '<span class="t-v" style="margin-left:auto;padding-left:14px">' + fmtD(r2.v) + '</span></div>';
+            }).join("");
+          var cap = SER.capital[String(m)];
+          if (cap != null) {
+            filas += '<div style="display:flex;gap:8px;white-space:nowrap;align-items:center;' +
+              'margin-top:4px;padding-top:4px;border-top:1px solid rgba(128,128,128,.35);opacity:.85">' +
+              '<span style="width:12px;height:0;flex:none;border-top:1.5px dotted currentColor"></span>' +
+              'Capital aportado<span class="t-v" style="margin-left:auto;padding-left:14px">' +
+              fmtD(cap) + '</span></div>';
+          }
+          mostrarTip('<div class="t-h">' + mLabel(m) + '</div>' + filas, pt.clientX, pt.clientY);
+        }
+        hit.addEventListener("mousemove", en);
+        hit.addEventListener("mouseenter", en);
+        hit.addEventListener("mouseleave", function () {
+          ocultarTip(); xh.setAttribute("opacity", "0");
+        });
+      }
+
+      // ---- leyenda: chips que además apagan su curva. Con seis líneas encimadas,
+      // poder aislar dos es la diferencia entre comparar y adivinar. ----
+      (function leyenda() {
+        var cont = document.getElementById("tmSerieLeg");
+        SERIES.forEach(function (s) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "cmp-chip tm-serie-chip";
+          b.setAttribute("aria-pressed", "true");
+          var color = tok(s.modo.tok);
+          b.innerHTML = '<svg width="20" height="8" viewBox="0 0 20 8" aria-hidden="true">' +
+            '<line x1="0" y1="4" x2="20" y2="4" stroke="' + color + '" stroke-width="' +
+            (s.drip.dash ? 2 : 2.6) + '"' + (s.drip.dash ? ' stroke-dasharray="5 4"' : '') + '/></svg>' +
+            '<span>' + s.modo.lab + ' · ' + s.drip.lab + '</span>';
+          b.addEventListener("click", function () {
+            // No se permite apagar la última: una gráfica vacía no enseña nada y el
+            // eje se colapsaría contra el capital aportado.
+            if (!oculto[s.id] && _visibles.length <= 1) return;
+            oculto[s.id] = !oculto[s.id];
+            b.setAttribute("aria-pressed", String(!oculto[s.id]));
+            dibujar();
+          });
+          cont.appendChild(b);
+        });
+        var cap = document.createElement("span");
+        cap.className = "tm-serie-cap";
+        cap.innerHTML = '<svg width="20" height="8" viewBox="0 0 20 8" aria-hidden="true">' +
+          '<line x1="0" y1="4" x2="20" y2="4" stroke="currentColor" stroke-width="1.6" ' +
+          'stroke-dasharray="2 4"/></svg><span>Capital aportado</span>';
+        cont.appendChild(cap);
+      })();
+
+      // ---- copy ----
+      // Rango real del escudo ROC, leído de los datos: no se escribe a mano ninguna
+      // tasa (el ROC 19a se refresca semanalmente y una cifra copiada envejece sola).
+      var efectivas = MATRIZ.map(function (r) { return SER.tasaEfectivaPct.roc[r.t]; })
+        .filter(function (v) { return v != null; });
+      var rocMin = Math.min.apply(null, efectivas), rocMax = Math.max.apply(null, efectivas);
+
+      setHtml("tmSerieLede",
+        'Las dos tablas de arriba son la foto de hoy; esto es la película. Cada línea es lo que ' +
+        'valía <b>la cartera completa</b> al cierre de cada mes: las cinco posiciones sumadas, en ' +
+        'dólares. Hay seis porque los tres escenarios fiscales se cruzan con las dos maneras de ' +
+        'tratar un dividendo — <b>reinvertirlo</b> (línea sólida) o <b>cobrarlo en efectivo</b> ' +
+        '(línea de guiones). La línea gris punteada es el <b>capital aportado</b>: sube por ' +
+        'escalones porque las cinco posiciones no se abrieron el mismo día, y cada escalón es ' +
+        'dinero nuevo entrando, no rendimiento.');
+
+      setHtml("tmSerieNotas",
+        '<ul>' +
+        '<li><b>Qué mide la altura.</b> El valor de mercado de las acciones más el efectivo que ' +
+        'se haya quedado sin reinvertir. Nunca las dos cosas a la vez: un dividendo reinvertido ' +
+        'ya vive dentro de las acciones que compró, y volver a sumarlo aparte es el doble conteo ' +
+        'que esta sección entera existe para desmentir.</li>' +
+        '<li><b>De dónde salen los tres escenarios.</b> <b>Sin NRA</b> es bruto — Greco reside en ' +
+        'EE. UU. y nadie le retiene. Los otros dos son netos, con la retención descontada <b>en el ' +
+        'momento de cobrar cada distribución</b>, no al final: por eso una curva retenida no solo ' +
+        'queda más abajo, sino que además <b>compone menos</b>, porque cada mes reinvirtió menos ' +
+        'dinero. En <b>ROC 19a</b> el escudo del ROC ya viene aplicado dentro de la tasa (' +
+        rocMin.toFixed(1) + '%–' + rocMax.toFixed(1) + '% según el fondo, en vez de 30% liso), ' +
+        'no llega después como reembolso — por eso aquí no hay columna «Devuelto».</li>' +
+        '<li><b>Por qué el final no cuadra con las tablas de arriba.</b> Coincide en <b>Sin NRA · ' +
+        'reinvierte</b>, que es el mismo cálculo. En los demás no, y por dos motivos distintos: ' +
+        'las tablas aplican la retención de una sola vez sobre el total de hoy (un atajo que no ' +
+        'cobra el interés compuesto que el impuesto se llevó por el camino), y su columna ' +
+        '<b>Dividendos</b> cuenta las distribuciones de la cartera <b>que sí reinvirtió</b> — ' +
+        'muchas más de las que habrían pagado las acciones originales. Estas curvas simulan cada ' +
+        'escenario completo, de principio a fin, sin mezclar los dos mundos.</li>' +
+        '<li><b>Fuente.</b> Precios y distribuciones reales de mercado, evento a evento, sobre las ' +
+        'mismas cinco posiciones y fechas de apertura de la hoja de la clase' +
+        (SER.asof ? ' (datos al ' + fmtFechaCorta(SER.asof) + ')' : '') + '.' +
+        (SER.degradado && SER.degradado.length
+          ? ' ' + SER.degradado.join(', ') + ': el caché de precio estaba vencido, se usó la ' +
+            'última copia disponible en vez de una descarga en vivo.'
+          : '') + '</li>' +
+        '</ul>');
+
+      dibujar();
+      // El tema del iframe puede cambiar sin recargar (toggle Claro/Oscuro de la app):
+      // los colores del SVG son literales calculados en `dibujar()`, así que hay que
+      // volver a pintarlos cuando cambie el atributo que los define.
+      if (window.MutationObserver) {
+        var mo = new MutationObserver(function () { dibujar(); });
+        mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+        window.__vdSerieTemaMO = mo;   // referencia fuerte: sin ella puede recolectarse
+      }
+      var _reflowSerie;
+      window.addEventListener("resize", function () {
+        clearTimeout(_reflowSerie);
+        _reflowSerie = setTimeout(dibujar, 150);
+      });
+    })();
 
     // ============ VISTA 3 · EL RENDIMIENTO ============
     (function renderEscalera() {

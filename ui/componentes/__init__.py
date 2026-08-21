@@ -190,18 +190,29 @@ def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION
     components.html(html, height=alto, scrolling=False)
 
 
-def render_metodo(vista_activa: str, tema: str, datos: dict, alto: int = ALTO_METODO) -> None:
+def render_metodo(vista_activa: str, tema: str, datos: dict, serie: dict | None = None,
+                   alto: int = ALTO_METODO) -> None:
     """Dibuja «Método tradicional». `vista_activa` es una de matriz/rendimiento/payback/
     tasa/otras (`ui.nav.MET_ORDER`). El componente trae sus 5 sub-vistas ya calculadas
     (initMetodo las llena de una pasada, igual que en el demo); de las cinco, hoy solo
     «La matriz» recibe `{{DATA_JSON}}` (Fase 3.3b, `ui.adapters.metodo_data`) — el resto
     sigue con cifras propias sin datos de Python, ajenas al portafolio del usuario
     (mapa-datos.md § 6).
+
+    `serie` (`ui.adapters.metodo_serie_data`) alimenta la 3ª matriz de «La matriz»: la
+    gráfica de los 6 escenarios en el tiempo. Va en un hueco APARTE de `datos`
+    (`{{SERIE_JSON}}`) y no dentro de él, porque son dos metodologías distintas conviviendo
+    en el mismo panel —la reescala de un paso que gobierna las dos tablas y la simulación
+    evento a evento de la gráfica— y fundirlas en un solo objeto invitaría a que una vista
+    tomara cifras de la otra sin notarlo. `None` (o `metodo_serie_data()` devolviendo
+    `None`) esconde la gráfica; las dos tablas siguen funcionando igual.
     """
     html = _plantilla("metodo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{SERIE_JSON}}",
+                        json.dumps(serie, ensure_ascii=False) if serie else "null")
     components.html(html, height=alto, scrolling=False)
 
 
