@@ -8,7 +8,9 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 sys.path.insert(0, os.path.dirname(__file__))
+import backtest
 import logic
+import price_cache
 from ui.adapters import _tiene_datos, trg_real_data
 from ui.heredadas import _agregados, _cuadricula_roc_consolidada
 from ui.validacion import _separar_excluidos
@@ -2168,9 +2170,19 @@ def _trg_real_fake_frames():
 
 
 def _trg_real_patch(monkeypatch, frames):
-    logic.build_drip_comparison_series.clear()
-    monkeypatch.setattr(logic, "fetch_market_data",
-                        lambda tk, start: (frames.get(tk, pd.DataFrame()), None))
+    """Doble de `price_cache.load_history`. Antes doblaba `logic.fetch_market_data`, que
+    era la ruta que `build_drip_comparison_series` usaba para bajar de yfinance en
+    runtime; desde la migración del 2026-08-21 la vista lee del caché de precio y corre
+    `backtest.run_backtest`, así que el doble tiene que estar un nivel más abajo.
+
+    Un ticker sin frame devuelve un `HistoryResult` vacío, que es como el caché reporta
+    «este símbolo no está» — no una excepción."""
+    def _fake_load_history(tk, *args, **kwargs):
+        df = frames.get(tk)
+        return price_cache.HistoryResult(
+            history=df if df is not None else pd.DataFrame(),
+            source="cache", ticker=tk, cache_asof="2026-03-20")
+    monkeypatch.setattr(price_cache, "load_history", _fake_load_history)
 
 
 def test_trg_real_data_shape_has_3_modos_y_8_tickers(monkeypatch):
@@ -2195,16 +2207,22 @@ def test_trg_real_data_incepcion_tardia_no_arranca_en_0(monkeypatch):
     assert datos["incep"]["TSLY"] == 0
 
 
-def test_trg_real_data_incep_coincide_con_meta_start(monkeypatch):
+def test_trg_real_data_incep_coincide_con_el_arranque_real_de_cada_serie(monkeypatch):
+    """`incep` tiene que ser el mes en que la serie de verdad empieza: su propia incepción,
+    o la del ancla si el ticker ya existía antes (la ventana no puede abrirse antes de que
+    la lección empiece).
+
+    El lado esperado se deriva de las FRAMES, no de la fórmula del adaptador — si se
+    calculara con la misma expresión que produce el dato, el test no podría fallar. Antes
+    el lado independiente era el `meta` de `build_drip_comparison_series`, el motor que
+    esta vista dejó de usar el 2026-08-21."""
     frames = _trg_real_fake_frames()
     _trg_real_patch(monkeypatch, frames)
     datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
-    logic.build_drip_comparison_series.clear()
-    _, meta = logic.build_drip_comparison_series(
-        "TSLY", tuple(t for t in frames if t != "TSLY"), mode="bruto", base_rate=0.30)
-    for tk, m in meta.items():
-        start = m["start"]
-        esperado = (start.year - 2026) * 12 + (start.month - 1 - 0)
+    ancla_start = min(f.index.min() for f in frames.values())
+    for tk, frame in frames.items():
+        start = max(frame.index.min(), ancla_start)
+        esperado = (start.year - 2026) * 12 + (start.month - 1)
         assert datos["incep"][tk] == esperado, tk
 
 
@@ -2214,10 +2232,11 @@ def test_trg_real_data_remuestreo_mensual_ultimo_valor_y_ultimo_dato_real(monkey
     datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
     tsly_bruto = datos["idx"]["bruto"]["TSLY"]
 
-    logic.build_drip_comparison_series.clear()
-    df, _ = logic.build_drip_comparison_series(
-        "TSLY", tuple(t for t in frames if t != "TSLY"), mode="bruto", base_rate=0.30)
-    serie = df[df["Ticker"] == "TSLY"].set_index("Fecha")["Valor"].sort_index()
+    # Lado independiente: la corrida diaria del motor, sin mensualizar. El remuestreo es
+    # justo lo que este test verifica, así que no puede salir de la misma función.
+    serie = backtest.run_backtest(
+        "TSLY", start_date=frames["TSLY"].index.min(), initial_capital=100.0, drip=True,
+        nra_rate=0.0, history=frames["TSLY"]).daily["total_value"].sort_index()
 
     # Un mes intermedio COMPLETO (febrero, mes 1) sí usa el último cierre del mes.
     ultimo_feb = serie[serie.index.month == 2].iloc[-1]
@@ -2245,20 +2264,44 @@ def test_trg_real_data_primer_mes_usa_valor_real_de_arranque_no_cierre_de_mes(mo
     assert datos["idx"]["bruto"]["CHPY"][primer_mes_chpy] == pytest.approx(100.0)
 
 
-def test_trg_real_data_plano_menor_o_igual_roc_menor_o_igual_bruto(monkeypatch):
+def test_trg_real_data_plano_nunca_supera_a_roc(monkeypatch):
+    """**Estructural.** El escudo ROC solo puede sumar: en «plano» se retiene la tasa y no
+    vuelve nada; en «roc» se retiene lo mismo y una parte se devenga como cuenta por
+    cobrar. `plano <= roc` no depende de ningún precio.
+
+    Ojo con la mitad que NO está aquí: `roc <= bruto` era parte de esta aserción y se
+    separó al test de abajo, porque con reinversión ESO SÍ depende del mercado (Regla 5
+    del contrato fiscal)."""
     _trg_real_patch(monkeypatch, _trg_real_fake_frames())
     datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
     last = str(datos["last"])
     for tk in ("TSLY", "NVDY", "MSTY"):
-        plano = datos["idx"]["plano"][tk][last]
-        roc = datos["idx"]["roc"][tk][last]
-        bruto = datos["idx"]["bruto"][tk][last]
-        assert plano <= roc <= bruto + 1e-9, tk
+        assert datos["idx"]["plano"][tk][last] <= datos["idx"]["roc"][tk][last] + 1e-9, tk
+
+
+def test_trg_real_data_roc_bajo_precios_al_alza_queda_bajo_bruto(monkeypatch):
+    """**Hecho de la fixture, no invariante.** Aquí `roc <= bruto` se cumple porque los
+    precios sintéticos SUBEN de principio a fin: lo que «bruto» reinvirtió de más siguió
+    apreciándose, mientras el reembolso del ROC quedó congelado como cuenta por cobrar.
+
+    Con precios a la baja se invierte, y no es un bug: es la misma lección que el repo ya
+    protege en `test_comparacion_data.py` y `test_contrafactico_sin_drip.py`. Si este test
+    falla, revisa PRIMERO si alguien tocó la fixture para que baje — no «arregles» el
+    motor."""
+    frames = _trg_real_fake_frames()
+    _trg_real_patch(monkeypatch, frames)
+    for tk in ("TSLY", "NVDY", "MSTY"):
+        cierres = frames[tk]["Close"]
+        assert cierres.iloc[-1] > cierres.iloc[0], (
+            f"la fixture de {tk} dejó de subir: esta prueba ya no mide lo que dice medir")
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0)
+    last = str(datos["last"])
+    for tk in ("TSLY", "NVDY", "MSTY"):
+        assert datos["idx"]["roc"][tk][last] <= datos["idx"]["bruto"][tk][last] + 1e-9, tk
 
 
 def test_trg_real_data_ancla_caida_devuelve_none(monkeypatch):
-    logic.build_drip_comparison_series.clear()
-    monkeypatch.setattr(logic, "fetch_market_data", lambda tk, start: (pd.DataFrame(), None))
+    _trg_real_patch(monkeypatch, {})
     assert trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0) is None
 
 

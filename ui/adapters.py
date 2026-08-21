@@ -374,21 +374,22 @@ def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0
     return fallos
 
 
-def _trg_ancla():
-    """El YM de `TRG_YM` con la incepción más antigua — decisión 4 del traspaso
-    2026-08-10: el ancla NO se hardcodea (hoy es TSLY; mañana puede entrar otro
-    fondo). Ignora los que fallen. Devuelve (ticker, Timestamp) o (None, None) si
-    ninguno de los 5 respondió.
+def _trg_ancla(historias: dict):
+    """El YM de `TRG_YM` con la incepción más antigua entre las historias YA cargadas —
+    decisión 4 del traspaso 2026-08-10: el ancla NO se hardcodea (hoy es TSLY; mañana
+    puede entrar otro fondo). Devuelve (ticker, Timestamp) o (None, None) si ninguno de
+    los 5 cargó.
+
+    Recibe las historias en vez de descargarlas: antes hacía su propia ronda de
+    `logic.fetch_market_data` —a la red, en runtime— y después `trg_real_data` volvía a
+    bajar los mismos 8 tickers. Hoy ambos leen el mismo dict del caché de precio.
     """
     mejor_tk, mejor_start = None, None
     for tk in TRG_YM:
-        try:
-            data, _ = logic.fetch_market_data(tk, "2000-01-01")
-        except Exception:
+        history = historias.get(tk)
+        if history is None or history.empty:
             continue
-        if data is None or data.empty or "Close" not in data.columns:
-            continue
-        start = data.sort_index().index.min()
+        start = history.index.min()
         if mejor_start is None or start < mejor_start:
             mejor_tk, mejor_start = tk, start
     return mejor_tk, mejor_start
@@ -403,18 +404,37 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
     El componente no calcula nada — Python entrega el índice base 100 (normalizado en
     la incepción de cada ticker, o en la del ancla si es posterior) y JS renormaliza
     al fondo base que el usuario elija dentro del iframe, sin rerun (decisión 3 del
-    traspaso 2026-08-10: arquitectura Exhibit 2 del paper Morningstar TRI). Por eso
-    basta con UNA llamada a `build_drip_comparison_series` por modo, siempre anclada
-    al YM más antiguo — no una por cada posible selección de fondo base.
+    traspaso 2026-08-10: arquitectura Exhibit 2 del paper Morningstar TRI). Por eso las
+    series se calculan UNA vez por (ticker, modo), siempre ancladas al YM más antiguo —
+    no una por cada posible selección de fondo base.
 
-    Devuelve `None` si el ancla (el YM de incepción más antigua) no descarga; para
+    **Motor y política fiscal (migración 2026-08-21).** Corre `price_cache.load_history`
+    + `backtest.run_backtest` con `_politica_fiscal`, exactamente igual que
+    `comparacion_data`. Hasta esa fecha usaba `logic.build_drip_comparison_series`, que
+    (a) bajaba de yfinance EN RUNTIME por cada ticker y modo —`fetch_market_data`, la
+    última ruta de la UI que tocaba la red— y (b) modelaba el escudo ROC como tasa
+    efectiva `tasa × (1 − ROC)` aplicada al cobro, o sea asumiendo que el dinero nunca
+    sale del fondo. Hoy retiene la tasa COMPLETA al cobro y el reembolso llega con el
+    1042-S, meses después. El modo `bruto` no se movió ni un decimal (ahí no hay nada
+    que retener y los dos motores ya coincidían: NVDY 365.54 en ambos); `roc` y `plano`
+    sí, y bastante — ver el PR de la migración.
+
+    A diferencia de «Simulación», la tasa NO es el 30% fijo: sale del país declarado por
+    el cliente (`ui.estado.perfil_fiscal()` → `tasa_pct`), y por eso viaja como
+    `base_rate` hasta `_politica_fiscal`. Sin país declarado, quien llama sustituye por
+    `NRA_DEFAULT_RATE` (30%) — el peor caso, nunca 0%.
+
+    Devuelve `None` si el ancla (el YM de incepción más antigua) no está en el caché; para
     cualquier otro ticker, si falla simplemente no aparece en `idx`/`incep`/`col` — el
-    componente omite su chip, no inventa una serie.
+    componente omite su chip, no inventa una serie. `fuente`/`degradado`/`faltantes`
+    declaran de dónde salió cada serie, igual que en `comparacion_data`: un caché vencido
+    que se rellenó de la red se dice, no se calla.
 
     **Límite conocido del eje mensual (auditoría 2026-08-10).** Dentro del mes en que
     arranca el fondo base, el base y sus comparadores NO se anclan en el mismo
-    instante: el base entra por su primer dato real (la excepción de `mensual.iloc[0]`
-    de abajo) y los comparadores, que ya existían, por el cierre de fin de ese mes.
+    instante: el base entra por su primer dato real (la excepción de primer-mes de
+    `_mensualizar_desde`) y los comparadores, que ya existían, por el cierre de fin de
+    ese mes.
     Son hasta ~3 semanas de desfase en un solo punto, el de normalización. Medido con
     base MSTY (incepción 22-feb-2024): el componente da SMH +173% donde el cálculo
     diario da +176%; MSTY +23% contra +24%. Es la contrapartida declarada de portar el
@@ -423,61 +443,54 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
     cálculo diario, la vía es interpolar el valor de cada comparador en la fecha real
     de incepción del base, no volver a serie diaria (multiplicaría el JSON por ~20).
     """
-    ancla, ancla_start = _trg_ancla()
+    if tasa_pct is None:
+        raise ValueError("trg_real_data requiere una tasa: sin país declarado, quien "
+                         "llama debe sustituir por NRA_DEFAULT_RATE, nunca por 0")
+    historias: dict[str, pd.DataFrame] = {}
+    fuente: dict[str, str] = {}
+    asof_candidatos: list[str] = []
+    for tk in TRG_UNIVERSO_REAL:
+        try:
+            hr = price_cache.load_history(tk)
+        except Exception:
+            continue
+        if hr.history is None or hr.history.empty:
+            continue
+        historias[tk] = hr.history.sort_index()
+        fuente[tk] = hr.source
+        if hr.cache_asof:
+            asof_candidatos.append(hr.cache_asof)
+
+    ancla, ancla_start = _trg_ancla(historias)
     if ancla is None:
         return None
 
     origen = [int(ancla_start.year), int(ancla_start.month) - 1]
-    comparar = tuple(t for t in TRG_UNIVERSO_REAL if t != ancla)
+    roc19a = logic.load_roc_19a()
+    base_rate = tasa_pct / 100.0
 
-    idx: dict = {}
-    meta_por_ticker: dict = {}
+    idx: dict = {modo: {} for modo in TRG_MODOS}
+    incep: dict = {}
+    grp: dict = {}
     last = 0
 
-    for modo in TRG_MODOS:
-        df, meta = logic.build_drip_comparison_series(
-            ancla, comparar, mode=modo, base_rate=tasa_pct / 100.0)
-        if df.empty or ancla not in meta:
-            return None
-        idx[modo] = {}
-        for tk, grupo in df.groupby("Ticker"):
-            # Remuestreo mensual (decisión 5): el último cierre de cada mes; el punto
-            # final es el último dato real aunque el mes esté a medias — `.last()`
-            # sobre un bin parcial ya toma el último punto observado, sin rellenar.
-            serie = grupo.set_index("Fecha")["Valor"].sort_index()
-            mensual = serie.resample("ME").last().dropna()
-            # Excepción al "último del mes": el PRIMER mes de cada ticker también es
-            # casi siempre parcial (la incepción real rara vez cae el día 1), y
-            # `.resample().last()` ahí devolvería el cierre de FIN de ese mes — no el
-            # valor real de arranque. `build_total_return_series` normaliza cada
-            # serie a exactamente 100 en su primer dato (`serie.iloc[0]`); si ese
-            # ancla se corre unas semanas, la renormalización de JS a "0% en la
-            # incepción" queda sesgada por lo que el precio ya se movió mientras
-            # tanto — medido en vivo: MSTY (incep 22-feb, fondo volátil en sus
-            # primeras semanas) daba +5% de retorno final en vez de +24% con este
-            # bug. El resto de los meses SÍ debe ser el cierre de fin de mes. Si el
-            # ticker vive entero dentro de un solo mes (ventana muy corta desde su
-            # incepción), esto pisa también el "último dato real" de ese único bin —
-            # inocuo: `series()` en JS divide ese valor entre sí mismo cuando ese
-            # ticker es el fondo base (siempre 0%), y con la ventana real de 46 meses
-            # ningún ticker vive en un solo mes.
-            mensual.iloc[0] = serie.iloc[0]
-            valores = {}
-            for fecha, valor in mensual.items():
-                m = (int(fecha.year) - origen[0]) * 12 + (int(fecha.month) - 1 - origen[1])
-                valores[str(m)] = round(float(valor), 4)
-                if m > last:
-                    last = m
-            idx[modo][tk] = valores
-        meta_por_ticker.update(meta)
-
-    incep = {}
-    grp = {}
-    for tk, m in meta_por_ticker.items():
-        start = m["start"]
-        incep[tk] = ((int(start.year) - origen[0]) * 12
-                     + (int(start.month) - 1 - origen[1]))
+    for tk, history in historias.items():
+        # La ventana arranca en el ancla: un comparador que ya existía antes no puede
+        # aportar retorno de meses en que la lección todavía no había empezado.
+        start = max(history.index.min(), ancla_start)
+        incep[tk] = (int(start.year) - origen[0]) * 12 + (int(start.month) - 1 - origen[1])
         grp[tk] = "ym" if tk in TRG_YM else "growth"
+        for modo in TRG_MODOS:
+            pol = _politica_fiscal(tk, modo, roc19a, base_rate=base_rate)
+            r = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
+                                      drip=True, nra_rate=pol.rate, history=history,
+                                      roc_pct_by_year=pol.roc_pct_by_year)
+            if r.daily.empty:
+                continue
+            valores = _mensualizar_desde(r.daily["total_value"], origen)
+            idx[modo][tk] = valores
+            if valores:
+                last = max(last, max(int(m) for m in valores))
 
     classify_map = logic.classify_tickers(list(resultados.keys()))
     poseidos = [t for t, m in classify_map.items()
@@ -491,20 +504,28 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         "base_defecto": base_defecto,
         "tasa_pct": tasa_pct,
         "pais": pais,
-        "asof": datetime.date.today().isoformat(),
+        # La fecha que se muestra es la del CACHÉ que se usó, no la de hoy: el copy dice
+        # «precios y dividendos de mercado hasta el X», y con el motor viejo —que bajaba
+        # en vivo— hoy y el dato coincidían. Leyendo del caché ya no: anunciar la fecha de
+        # hoy sobre datos del viernes es exactamente la clase de cifra sin procedencia que
+        # el repo persigue. Mismo criterio que `comparacion_data`.
+        "asof": max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat(),
         "incep": incep,
         "grp": grp,
-        "col": {tk: TRG_COLORES[tk] for tk in meta_por_ticker if tk in TRG_COLORES},
+        "col": {tk: TRG_COLORES[tk] for tk in historias if tk in TRG_COLORES},
+        "fuente": fuente,
+        "degradado": sorted(tk for tk, s in fuente.items() if s != "cache"),
+        "faltantes": sorted(t for t in TRG_UNIVERSO_REAL if t not in historias),
         "idx": idx,
     }
 
 
-# Capital arbitrario para las corridas de `backtest.run_backtest`: como `comparacion_data`
-# solo entrega RATIOS (cada serie se renormaliza en JS contra su propio valor de arranque,
-# igual que `trg_real_data`), la escala no importa — 100 hace que el primer punto de cada
-# serie (su propia incepcion) caiga en el mismo numero que un indice base-100 clasico, util
-# para depurar el JSON a ojo.
-_CMP_CAPITAL = 100.0
+# Capital arbitrario para las corridas de `backtest.run_backtest` de las dos vistas de
+# «Comparacion»: como ambas entregan RATIOS (cada serie se renormaliza en JS contra su
+# propio valor de arranque), la escala no importa — 100 hace que el primer punto de cada
+# serie caiga en el mismo numero que un indice base-100 clasico, util para depurar el JSON
+# a ojo. Se llamaba `_CMP_CAPITAL` cuando solo lo usaba «Simulacion».
+_INDICE_CAPITAL = 100.0
 
 # Retencion NRA plana del modo "Peor caso" — literal del demo (`RATE = 0.30` que tenia
 # `comparacion.html` antes de esta fase). Fijo, no depende del pais del usuario: a
@@ -569,7 +590,7 @@ def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
     primer-mes que `trg_real_data`: el primer bin suele ser parcial (la incepción real
     casi nunca cae el día 1), y `.resample().last()` ahí devolvería el cierre de FIN de
     ese mes en vez del valor real de arranque — que es justo el punto que cada serie usa
-    como su propio 100% (ver `_CMP_CAPITAL`) o, en `metodo_serie_data`, como el dólar
+    como su propio 100% (ver `_INDICE_CAPITAL`) o, en `metodo_serie_data`, como el dólar
     exacto que salió del bolsillo el día que se abrió la posición.
 
     Las claves son índices de mes relativos a `origen` (`[año, mes0]`), en texto, porque
@@ -685,7 +706,7 @@ def comparacion_data() -> dict | None:
 
         for modo in TRG_MODOS:
             pol = _politica_fiscal(tk, modo, roc19a)
-            r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+            r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
                                           drip=True, nra_rate=pol.rate, history=history,
                                           roc_pct_by_year=pol.roc_pct_by_year)
             valores_con = _mensualizar(r_con.daily["total_value"])
@@ -694,7 +715,7 @@ def comparacion_data() -> dict | None:
 
             # Sin DRIP para TODO el universo: desde que cualquier ticker puede ser
             # fondo base, el toggle «Reinversión» tiene que tener datos para los 12.
-            r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+            r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
                                           drip=False, nra_rate=pol.rate, history=history,
                                           roc_pct_by_year=pol.roc_pct_by_year)
             valores_sin = _mensualizar(r_sin.daily["total_value"])
@@ -1237,34 +1258,42 @@ class _PoliticaFiscal(typing.NamedTuple):
     roc_pct_by_year: dict
 
 
-def _politica_fiscal(ticker: str, modo: str, roc19a: dict) -> _PoliticaFiscal:
+def _politica_fiscal(ticker: str, modo: str, roc19a: dict,
+                     base_rate: float = _CMP_FLAT_RATE) -> _PoliticaFiscal:
     """Política fiscal de un escenario simulado, por modo. **Fuente única de los 3
-    escenarios en las tres vistas que los dibujan**: las tablas de «La matriz»
-    (`metodo_data`), su 3ª gráfica (`metodo_serie_data`) y «Comparación · Simulación»
-    (`comparacion_data`). Una sola política, un solo modelo — Regla 3 del contrato
-    (objeto fiscal único) aplicada al escudo ROC.
+    escenarios en las CUATRO vistas que los dibujan**: las tablas de «La matriz»
+    (`metodo_data`), su 3ª gráfica (`metodo_serie_data`), «Comparación · Simulación»
+    (`comparacion_data`) y «Comparación · Real» (`trg_real_data`). Una sola política, un
+    solo modelo — Regla 3 del contrato (objeto fiscal único) aplicada al escudo ROC.
+
+    `base_rate` es la retención al cobro antes del escudo. Por defecto el 30% de los
+    paneles pedagógicos; «Comparación · Real» pasa la del país declarado por el cliente
+    (`ui.estado.perfil_fiscal()`), que con tratado puede ser 10%. El ROC no depende de la
+    tasa —es una propiedad de la distribución, no del inversor—, así que solo entra
+    `rate`: por eso el parámetro se agregó aquí y no en `_roc_pct_by_year`.
 
     Se llamaba `_met_politica` mientras solo servía a «La matriz»; el prefijo se cayó al
-    migrar «Comparación · Simulación» (2026-08-21), que era el último punto del repo donde
-    el escudo vivía DENTRO de la tasa (`_tasa_efectiva_neta`, hoy solo cifra reportada).
+    migrar «Comparación · Simulación», y «Comparación · Real» entró el mismo día
+    (2026-08-21). Con eso ya no queda en el repo ninguna vista que meta el escudo DENTRO
+    de la tasa (`_tasa_efectiva_neta`, hoy solo cifra reportada).
     Meter el escudo en la tasa asume que aplica al cobro —el dinero nunca sale del fondo—;
     aquí «roc» retiene el 30% completo al cobro y devuelve el ROC más tarde, que es lo que
     de verdad ocurre. No son equivalentes: +6.3% en la cartera del caso de estudio con DRIP
     y con el signo cambiando por fondo (MSTY +28.9%, NFLY −1.8%); en el universo de
     «Comparación», de −18.7 pp (TSLY) a +28.0 pp (MSTY). Ver `backtest.run_backtest`.
 
-    **Alcance: falta un consumidor.** «Comparación · Real» (`trg_real_data`) no pasa por
-    aquí — corre `logic.build_drip_comparison_series`, que es otro motor y sigue usando el
-    escudo dentro de la tasa (`logic.build_roc_aware_withholding`). Mientras eso siga así,
-    «Con NRA · ROC 19a» significa cosas distintas en «Real» y en «Simulación». Está
-    declarado a propósito: un alcance a medias que se dice es una tarea pendiente; uno que
-    se calla vuelve a ser el bug de las dos metodologías.
+    **Alcance: completo.** Las cuatro vistas que dibujan escenarios fiscales pasan por
+    aquí. `logic.build_drip_comparison_series` / `build_roc_aware_withholding` —el otro
+    motor, con el escudo dentro de la tasa— quedaron sin consumidor vivo el 2026-08-21;
+    siguen en `logic.py` porque `app_old.py` los nombra, pero volver a cablearlos a una
+    vista reabre el bug de las dos metodologías. Hay un guard que lo impide
+    (`test_un_solo_motor_fiscal.py`).
     """
     if modo == "bruto":
         return _PoliticaFiscal(0.0, {})
     if modo == "plano":
-        return _PoliticaFiscal(_CMP_FLAT_RATE, {})
-    return _PoliticaFiscal(_CMP_FLAT_RATE, _roc_pct_by_year(ticker, roc19a))
+        return _PoliticaFiscal(base_rate, {})
+    return _PoliticaFiscal(base_rate, _roc_pct_by_year(ticker, roc19a))
 
 
 def metodo_serie_data() -> dict | None:

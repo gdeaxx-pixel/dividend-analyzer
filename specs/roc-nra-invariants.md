@@ -78,8 +78,7 @@ Ejes vigentes y su objeto único:
 |---|---|---|
 | Impuesto/ROC de la cartera del CSV | `logic.build_tax_summary` | cuadritos, Hoja Excel, paso NRA |
 | Base bruto/neto por convención de bróker | `logic.build_dividend_tax_totals` | Hoja Excel, cashflow, tax_summary |
-| **Escenarios fiscales simulados** | **`ui.adapters._politica_fiscal`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»; «Comparación · Simulación»** |
-| Escenarios fiscales sobre el portafolio cargado | `logic.build_roc_aware_withholding` — **escudo dentro de la tasa, sin migrar** | «Comparación · Real» (`trg_real_data`) |
+| **Escenarios fiscales simulados** | **`ui.adapters._politica_fiscal`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»; «Comparación · Simulación»; «Comparación · Real»** |
 
 > **Por qué se añadió.** Hasta el 2026-08-21 el tercer eje no existía en este contrato, y por eso pudo crecer con **dos metodologías simultáneas**: las tablas reescalaban en JS (`bruto × (1 − tasa)`, un solo paso al final) mientras la gráfica simulaba evento a evento. La misma pantalla mostraba $177,289 y $78,816 para la misma cifra, con **562 tests en verde**. La regla estaba escrita y era correcta; lo que faltaba era que este eje estuviera dentro de su alcance.
 
@@ -87,7 +86,9 @@ Ejes vigentes y su objeto único:
 >
 > **`_tasa_efectiva_neta` no se borró y no es un modelo huérfano:** sigue siendo la tasa efectiva **reportada** («8.7%–17.6% según el fondo» en la nota al pie de la 3ª gráfica). Como cifra de cierre de ciclo es correcta; lo que una tasa no puede expresar es el momento. Que exista una función así es lícito — lo que el contrato prohíbe es que gobierne una simulación.
 
-> **Alcance pendiente, declarado.** «Comparación · Real» (`trg_real_data` → `logic.build_drip_comparison_series`) corre otro motor y **sigue con el escudo dentro de la tasa** (`logic.build_roc_aware_withholding`). Mientras siga así, «Con NRA · ROC 19a» significa cosas distintas en «Real» y en «Simulación», y ningún test cruza ambas — no puede: son universos y ventanas distintos. Está en la tabla de arriba para que se lea como lo que es, una tarea abierta, y no como un eje cubierto.
+> **Alcance cerrado el mismo día.** «Comparación · Real» (`trg_real_data`) también migró: corría `logic.build_drip_comparison_series` con el escudo dentro de la tasa, y la app llegó a mostrar **NVDY +250.85% en «Real» y +232.0% en «Simulación»** bajo la misma etiqueta «Con NRA · ROC 19a», a dos submenús de distancia. Hoy las cuatro vistas pasan por `_politica_fiscal`, y hay un test que **cruza las dos vistas de «Comparación» entre sí** (`test_un_solo_motor_fiscal.py::TestReconciliacionEntreLasDosVistas`), que es el guard que la Regla 3b exige y que no existía.
+>
+> Evidencia de que se cambió el modelo y no el motor de precios: al migrar, `bruto` y `plano` no se movieron **ni un decimal** en los 8 tickers —los dos motores ya coincidían donde no hay escudo que modelar— y `roc` se movió solo en los 4 fondos con avisos 19(a). `build_drip_comparison_series` / `build_roc_aware_withholding` / `build_total_return_series` quedaron sin consumidor vivo; siguen en `logic.py` porque `app_old.py` las nombra, con un guard que impide recablearlas a una vista.
 
 **Requirement (gate):** Todo eje con más de una vista necesita un test que compare **dos vistas del mismo número entre sí**, no cada vista contra sí misma. La fuente de cada lado debe ser genuinamente independiente (p. ej. una suma columnas redondeadas en el componente, la otra mensualiza la serie diaria del motor).
 

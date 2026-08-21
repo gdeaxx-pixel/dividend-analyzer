@@ -1247,12 +1247,19 @@
       var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
-        '<span class="flag">Cifras reales:</span> precios y dividendos de Yahoo '
-        + 'Finance hasta el ' + DATA.asof + '. El <b>neto ROC 19a</b> aplica la '
-        + 'retención solo sobre la porción no-ROC según los avisos 19(a); los ETFs '
-        + 'de crecimiento no tienen avisos 19(a) y retienen la tasa plana.'
+        '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el '
+        + DATA.asof + ' (caché histórico, reinversión por evento al cierre del día '
+        + 'ex-dividendo). En <b>neto ROC 19a</b> se retiene el <b>' + DATA.tasa_pct + '% '
+        + 'completo</b> al pagar cada distribución, y la porción que los avisos 19(a) '
+        + 'reclasifican como retorno de tu propio capital <b>vuelve como efectivo meses '
+        + 'después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera '
+        + 'no compone. Los ETFs de crecimiento no publican avisos 19(a): no tienen nada '
+        + 'que reclasificar y retienen la tasa plana.'
       ];
+      if (DATA.pais) parts.push('<span class="flag">Tu tasa:</span> ' + DATA.tasa_pct + '% por tu residencia declarada (' + DATA.pais + '). Es la tasa a la que tienes DERECHO; lo que tu bróker retuvo de verdad se mide aparte, contra tus números.');
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
+      if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
+      if (DATA.faltantes && DATA.faltantes.length) parts.push('<span class="flag">Sin datos:</span> ' + DATA.faltantes.join(", ") + ' no se pudo cargar — no aparece en el gráfico.');
       elNotes.innerHTML = parts.join("<br>");
     }
 

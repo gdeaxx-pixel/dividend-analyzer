@@ -27,7 +27,7 @@ import backtest  # noqa: E402
 import logic  # noqa: E402
 import price_cache  # noqa: E402
 from ui.adapters import (  # noqa: E402
-    _CMP_CAPITAL, _CMP_FLAT_RATE, _politica_fiscal, _tasa_efectiva_neta,
+    _INDICE_CAPITAL, _CMP_FLAT_RATE, _politica_fiscal, _tasa_efectiva_neta,
     TRG_MODOS, TRG_SUB, TRG_UNIVERSO, TRG_UNIVERSO_REAL, TRG_YM, comparacion_data)
 
 _COMPONENTE = os.path.join(os.path.dirname(__file__), "ui", "componentes", "comparacion.html")
@@ -334,7 +334,7 @@ def corridas_ym(con_avisos_19a):
             pol = _politica_fiscal(tk, modo, roc19a)
             kw = {"roc_pct_by_year": pol.roc_pct_by_year} if exacto else {}
             rate = pol.rate if exacto else _tasa_efectiva_neta(tk, modo, roc19a)
-            return backtest.run_backtest(tk, start_date=start, initial_capital=_CMP_CAPITAL,
+            return backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
                                          drip=drip, nra_rate=rate, history=h, **kw)
 
         out[tk] = {
@@ -348,7 +348,7 @@ def corridas_ym(con_avisos_19a):
 def _retorno_de(r) -> float:
     """Retorno total de una corrida medido como lo mide el payload: contra el `total_value`
     del PRIMER día, no contra `initial_capital` (`_mensualizar_desde` fija el primer bin en
-    el valor real de arranque — ver `_CMP_CAPITAL`)."""
+    el valor real de arranque — ver `_INDICE_CAPITAL`)."""
     return float(r.daily["total_value"].iloc[-1]) / float(r.daily["total_value"].iloc[0]) - 1.0
 
 

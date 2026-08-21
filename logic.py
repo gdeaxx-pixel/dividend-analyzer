@@ -3306,6 +3306,13 @@ def build_roc_aware_withholding(ticker, dividend_dates, base_rate=0.30):
     """Tasa de retención NRA efectiva por distribución, usando el escudo fiscal del ROC
     publicado en los avisos 19a del fondo (`knowledge/roc_19a.yaml`).
 
+    ⚠️ **Retirada de la UI el 2026-08-21.** Ya no la llama ninguna vista viva: modela el
+    escudo ROC como tasa efectiva aplicada AL COBRO, que asume que el dinero nunca sale del
+    fondo. Las vistas corren `backtest.run_backtest` con `ui.adapters._politica_fiscal`
+    —retención completa + reembolso del 1042-S en su fecha—. Sigue aquí porque `app_old.py`
+    la nombra, y ese archivo no se ejecuta. **No volver a cablearla a una vista**: hay un
+    guard que lo impide (`test_un_solo_motor_fiscal.py::TestElMotorViejoNoVuelve`).
+
     Cada distribución empata con el aviso 19a más cercano en fecha (tolerancia ±6 días);
     `tasa_efectiva = base_rate × (1 − roc_pct/100)`. Si una fecha no tiene aviso dentro de
     tolerancia, usa el promedio de roc_pct de los avisos dentro de la ventana de
@@ -6065,6 +6072,15 @@ def build_drip_comparison_series(base_ticker: str, compare_tickers: tuple, mode:
                                  base_rate: float = 0.30):
     """Series comparativas de rendimiento total con DRIP para el Total Return Graph:
     un fondo base (YieldMax) contra comparadores de crecimiento u otros YieldMax.
+
+    ⚠️ **Retirada de la UI el 2026-08-21.** Ya no la llama ninguna vista viva: modela el
+    escudo ROC como tasa efectiva aplicada AL COBRO, que asume que el dinero nunca sale del
+    fondo. Las vistas corren `backtest.run_backtest` con `ui.adapters._politica_fiscal`
+    —retención completa + reembolso del 1042-S en su fecha—. Sigue aquí porque `app_old.py`
+    la nombra, y ese archivo no se ejecuta. **No volver a cablearla a una vista**: hay un
+    guard que lo impide (`test_un_solo_motor_fiscal.py::TestElMotorViejoNoVuelve`).
+    Además bajaba de yfinance EN RUNTIME (`fetch_market_data`, un ticker por llamada), que
+    era la última ruta de la UI que tocaba la red al dibujar una vista.
 
     Metodología Morningstar TRI aplicada por evento (build_total_return_series): cada
     distribución se reinvierte NETA de la retención del modo, a su propio precio de cierre
