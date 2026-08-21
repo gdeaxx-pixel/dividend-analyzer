@@ -9,16 +9,25 @@ Impuesto, retención NRA, ROC, capital aportado o neto → **leer primero
 [`specs/roc-nra-invariants.md`](specs/roc-nra-invariants.md)**. Es el contrato fiscal vigente. Si
 algo lo contradice, manda el contrato.
 
-Las cuatro reglas duras, en una línea cada una:
+Las reglas duras, en una línea cada una:
 
 1. El capital aportado es **invariante** — el ROC nunca lo mueve; sólo mueve el bucket impuesto y la
    base fiscal.
 2. Toda cifra declara su **base** (bruto / neto / base-fiscal) y su **momento** (al cobro / tras
    reclasificación anual). Nunca sumar ni restar cifras que difieran en cualquiera de los dos.
-3. **Objeto fiscal único**: `logic.build_tax_summary` y `logic.build_dividend_tax_totals`. Las vistas
-   los **renderizan**, nunca recalculan. "Misma función" no basta; tiene que ser el mismo objeto.
+   **2b — y su MUNDO**: una fila contrafáctica («si no se hubiera reinvertido») toma TODAS sus
+   columnas de la misma corrida. Base y momento no cazan este error; el mundo sí.
+3. **Objeto fiscal único** por eje: `logic.build_tax_summary` (impuesto/ROC del CSV),
+   `logic.build_dividend_tax_totals` (base bruto/neto por bróker), `ui.adapters._met_politica`
+   (escenarios del caso de estudio). Las vistas los **renderizan**, nunca recalculan.
+   **3b**: todo eje con más de una vista necesita un test que compare **dos vistas del mismo
+   número entre sí** — una suite de tests que verifican cada vista contra sí misma puede estar
+   verde con dos pantallas contradiciéndose por $98K. Ya pasó.
 4. **Dos carriles del ROC que no se cruzan**: destructividad = tendencia del NAV
    (`classify_roc_health`); ROC% = palanca fiscal (`estimate_roc_refund*`).
+5. **Un invariante estructural no es un hecho de mercado.** Antes de assertar una propiedad:
+   ¿se cumple por construcción o porque los precios salieron así? «Más impuesto ⇒ peor resultado»
+   es FALSO con reinversión (MSTY: el escenario con ROC supera al de cero impuestos).
 
 ## La convención bruto/neto es por FILA, no por bróker
 
