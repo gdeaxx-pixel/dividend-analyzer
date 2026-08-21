@@ -754,8 +754,10 @@
   .tm-grid6 { min-width: 560px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
   .tm-grid7 { min-width: 650px; grid-template-columns: 72px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr); }
   /* .he-bridge por defecto asume 8 columnas (grid-column: 1 / 9), heredado de
-     tm-grid — Con DRIP tiene 7, así que su puente necesita el propio corte. */
+     tm-grid — Con DRIP tiene 7 y Sin DRIP 6, así que cada puente necesita el
+     propio corte. */
   .tm-grid7 > .he-bridge { grid-column: 1 / 8; }
+  .tm-grid6 > .he-bridge { grid-column: 1 / 7; }
   .tm-grid4 { min-width: 520px; grid-template-columns: 64px minmax(0,1fr) minmax(0,0.9fr) minmax(0,0.85fr) minmax(0,1.15fr); }
 
   /* Solo en pantallas angostas se aprieta la familia "Método tradicional":
@@ -1101,11 +1103,14 @@
         <p class="he-block-lab">Sin DRIP <span class="he-block-sub muted">— si cada distribución hubiera caído en efectivo</span></p>
         <div class="he-scroll">
           <div class="he-grid tm-grid6" id="tmSinDripGrid">
+            <div class="he-bridge">
+              <button type="button" class="he-bridge-hit" id="tmSinDripBridge" aria-label="Qué compone el Total de la matriz Sin DRIP"><span class="he-bridge-lab">suman el total</span></button>
+            </div>
             <div class="he-h he-l"><span class="he-lab" data-tip="tm-s-accion">Acción</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-s-tuinv">Inversión</span></div>
-            <div class="he-h"><span class="he-lab" data-tip="tm-s-max">Inversión Hoy</span></div>
-            <div class="he-h"><span class="he-lab" data-tip="tm-s-div">Dividendos</span></div>
-            <div class="he-h"><span class="he-lab">Devuelto</span></div>
+            <div class="he-h he-mark"><span class="he-lab" data-tip="tm-s-max">Inversión Hoy</span></div>
+            <div class="he-h he-mark"><span class="he-lab" data-tip="tm-s-div">Dividendos</span></div>
+            <div class="he-h" id="tmSinDripDevHead"><span class="he-lab">Devuelto</span></div>
             <div class="he-h"><span class="he-lab" data-tip="tm-s-tot">Total</span></div>
           </div>
         </div>
@@ -2316,12 +2321,17 @@
       renderSinDrip(D);
       renderConDrip(D);
       renderNraModales(D);
-      // Devuelto solo suma al Total en "roc" (ver renderConDrip/totalEqLine) —
-      // el recuadro morado que señala la suma debe seguir esa misma regla.
+      // Devuelto solo suma al Total en "roc" (ver renderConDrip/totalEqLine y
+      // renderSinDrip: en bruto/plano la columna muestra "—") — el recuadro
+      // morado que señala la suma debe seguir esa misma regla en las dos matrices.
       var devHead = document.getElementById("tmConDripDevHead");
       if (devHead) devHead.classList.toggle("he-mark", modo === "roc");
       var cdGrid = document.getElementById("tmConDripGrid");
       if (cdGrid && cdGrid._bridgeSchedule) cdGrid._bridgeSchedule();
+      var sdDevHead = document.getElementById("tmSinDripDevHead");
+      if (sdDevHead) sdDevHead.classList.toggle("he-mark", modo === "roc");
+      var sdGrid = document.getElementById("tmSinDripGrid");
+      if (sdGrid && sdGrid._bridgeSchedule) sdGrid._bridgeSchedule();
       modoBtns.forEach(function (b) {
         var on = b.getAttribute("data-modo") === modo;
         b.classList.toggle("active", on);
@@ -2688,14 +2698,18 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
   })();
 
-  // ---- Modal: Total · matriz Sin DRIP (click sobre encabezado ⓘ) ----
+  // ---- Modal: Total · matriz Sin DRIP (click sobre encabezado ⓘ o sobre el
+  // puente morado — mismo destino, es la misma suma explicada dos veces:
+  // encabezado la nombra, puente la señala sobre las columnas). ----
   (function () {
     var modal = document.getElementById("modal-sintot");
     var closeBtn = document.getElementById("modal-sintot-close");
-    var trigger = document.querySelector('[data-tip="tm-s-tot"]');
+    var triggers = [document.querySelector('[data-tip="tm-s-tot"]'), document.getElementById("tmSinDripBridge")];
     function openModal() { modal.classList.add("open"); closeBtn.focus(); }
     function closeModal() { modal.classList.remove("open"); }
-    if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    triggers.forEach(function (trigger) {
+      if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    });
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
@@ -2797,6 +2811,7 @@
   }
   crearPuenteMark("tmGrid", "tmBridge");
   crearPuenteMark("tmConDripGrid", "tmConDripBridge");
+  crearPuenteMark("tmSinDripGrid", "tmSinDripBridge");
 
   // ---- Modal: Método tradicional (click sobre el ⓘ del título) ----
   (function () {
