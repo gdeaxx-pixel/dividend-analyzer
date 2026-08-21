@@ -596,14 +596,30 @@ def test_la_leyenda_por_modo_vive_en_el_modal_y_no_suelta_en_la_vista():
 
 
 def test_el_modal_del_metodo_engancha_todos_sus_disparadores():
-    """Hay dos elementos con data-tip="tm-metodo" (el título y la etiqueta «Base
-    fiscal»). Con `querySelector` en singular el segundo queda como adorno muerto:
-    muestra el ⓘ y no abre nada. No lanza, no ensucia la consola — solo no funciona.
+    """Hay dos disparadores del modal: el ⓘ del título «Método tradicional» y el ⓘ
+    suelto al final de la fila de filtros. Con `querySelector` en singular el segundo
+    queda como adorno muerto: se ve y no abre nada. No lanza, no ensucia la consola —
+    solo no funciona. Y ese ⓘ es la ÚNICA afordancia de la fila desde que se quitaron
+    las etiquetas «Reinversión» y «Base fiscal», así que si muere, la explicación de
+    los tres escenarios fiscales queda sin puerta de entrada junto al control.
 
-    Nota: se cuenta `data-tip="tm-metodo">` (el atributo cerrando la etiqueta HTML),
-    no la substring pelada — las reglas CSS `.he-lab[data-tip="tm-metodo"]` y
-    `.cmp-lab[data-tip="tm-metodo"]` (base + ::after) también contienen la substring
-    y elevarían el conteo a 7 sin medir lo que el test dice medir."""
+    Se cuentan ETIQUETAS HTML con el atributo (regex sobre `<tag ... data-tip=...>`),
+    no la substring pelada: las reglas CSS `.he-lab[data-tip="tm-metodo"]` (base y
+    ::after) también la contienen. Contar la substring cerrando en `">` funcionaría
+    hoy pero se rompe en cuanto alguien reordene los atributos del botón."""
     cuerpo = open(_COMPONENTE, encoding="utf-8").read()
-    assert cuerpo.count('data-tip="tm-metodo">') == 2
+    etiquetas = re.findall(r'<[a-zA-Z]+[^<>]*\bdata-tip="tm-metodo"[^<>]*>', cuerpo)
+    assert len(etiquetas) == 2, f"esperaba 2 disparadores HTML, hay {len(etiquetas)}: {etiquetas}"
     assert "querySelectorAll('[data-tip=\"tm-metodo\"]')" in cuerpo
+
+
+def test_el_info_de_la_fila_de_filtros_es_alcanzable_por_teclado():
+    """El ⓘ de la fila reemplazó a la etiqueta «Base fiscal» como único acceso a la
+    explicación de los modos. Si vuelve a ser un <span> con `::after` (el patrón del
+    resto de la vista, donde el ⓘ acompaña a un texto que ya se lee), deja de recibir
+    foco y de anunciarse: un icono sin nombre accesible y sin tabulación."""
+    cuerpo = open(_COMPONENTE, encoding="utf-8").read()
+    boton = re.search(r'<button[^<>]*\bclass="cmp-info"[^<>]*>', cuerpo)
+    assert boton, "el ⓘ de la fila de filtros debe ser un <button class=\"cmp-info\">"
+    assert 'aria-label=' in boton.group(0), "sin aria-label el ⓘ no tiene nombre accesible"
+    assert 'data-tip="tm-metodo"' in boton.group(0)

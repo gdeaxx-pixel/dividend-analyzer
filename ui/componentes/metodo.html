@@ -408,7 +408,14 @@
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
   .cmp-sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--hair); margin: 0 6px; flex: none; }
   .cmp-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .cmp-inline .cmp-lab { flex: none; }
+  /* El ⓘ es la ÚNICA afordancia de la fila desde que se quitaron las etiquetas, así que
+     es un <button> real (foco por teclado + aria-label), no un ::after sobre un <span>. */
+  .cmp-info {
+    font-size: 13px; line-height: 1; padding: 4px 2px; border: none; background: none;
+    color: var(--accent); cursor: pointer; flex: none;
+  }
+  .cmp-info:hover { color: var(--ink); }
+  .cmp-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* chips de control — caja con borde (afordancia de toggle); se rellena de --ink al activarse */
   .cmp-chip {
     font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em;
@@ -933,10 +940,6 @@
   .he-lab[data-tip="tm-metodo"]::after {
     content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
   }
-  .cmp-lab[data-tip="tm-metodo"] { cursor: pointer; }
-  .cmp-lab[data-tip="tm-metodo"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
-  }
   .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-max"]::after {
     content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
@@ -1094,12 +1097,12 @@
 
         <span class="cmp-sep"></span>
 
-        <span class="cmp-lab" data-tip="tm-metodo">Base fiscal</span>
         <div class="cmp-row" role="group" aria-label="Base fiscal" id="tmModoGroup">
           <button type="button" class="cmp-chip" data-modo="bruto" aria-pressed="true">Sin NRA</button>
           <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC 19a</button>
-          <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · 30%</button>
+          <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · peor caso 30%</button>
         </div>
+        <button type="button" class="cmp-info" aria-label="Cómo leer esta matriz" data-tip="tm-metodo">ⓘ</button>
       </div>
 
       <p class="cmp-notes" id="tmResumenFijo" style="margin-top:18px;"></p>
