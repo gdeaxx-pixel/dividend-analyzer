@@ -1250,11 +1250,13 @@
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el '
         + DATA.asof + ' (caché histórico, reinversión por evento al cierre del día '
         + 'ex-dividendo). En <b>neto ROC 19a</b> se retiene el <b>' + DATA.tasa_pct + '% '
-        + 'completo</b> al pagar cada distribución, y la porción que los avisos 19(a) '
-        + 'reclasifican como retorno de tu propio capital <b>vuelve como efectivo meses '
+        + 'completo</b> al pagar cada distribución, y la porción que el fondo reclasifica '
+        + 'como retorno de tu propio capital <b>vuelve como efectivo meses '
         + 'después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera '
-        + 'no compone. Los ETFs de crecimiento no publican avisos 19(a): no tienen nada '
-        + 'que reclasificar y retienen la tasa plana.'
+        + 'no compone. El %ROC de cada año sale del <b>cierre fiscal</b> del fondo (la '
+        + 'casilla 3 de su 1099) cuando ya lo publicó, y de la estimación de sus avisos '
+        + '19(a) mientras el año sigue abierto. Los ETFs de crecimiento no reclasifican '
+        + 'nada: retienen la tasa plana.'
       ];
       if (DATA.pais) parts.push('<span class="flag">Tu tasa:</span> ' + DATA.tasa_pct + '% por tu residencia declarada (' + DATA.pais + '). Es la tasa a la que tienes DERECHO; lo que tu bróker retuvo de verdad se mide aparte, contra tus números.');
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");

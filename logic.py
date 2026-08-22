@@ -3122,6 +3122,48 @@ def load_roc_19a() -> dict:
     return data
 
 
+_ROCICI_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_ici.yaml')
+_ROCICI_CACHE = {}
+
+
+def load_roc_ici() -> dict:
+    """Carga el %ROC **definitivo del cierre fiscal** por ticker y año
+    (`knowledge/roc_ici.yaml`, generado por `tools/fetch_roc_ici.py` desde los reportes
+    "ICI Primary Layout" de YieldMax).
+
+    Estructura por ticker (MAYÚSCULAS): `{año(int): {roc_pct, source_url, source_doc, asof}}`.
+    Defensivo: archivo ausente/inválido → `{}` (y entonces todo cae a `load_roc_19a`).
+
+    **Qué lo distingue de `load_roc_19a`, que es el punto entero de que existan los dos:**
+    el aviso 19(a) es la ESTIMACIÓN que el gestor publica al pagar cada distribución —la ley
+    lo obliga a etiquetarla como tal, porque el carácter fiscal real no se sabe hasta cerrar
+    el año—. Esto es el cierre: la casilla 3 del 1099 (`Nondividend Distributions`), que es
+    lo que de verdad determina la reclasificación del 1042-S.
+
+    Verificado contra un 1042-S real (Schwab, año fiscal 2025, `real_examples`): el formulario
+    reporta $276 bajo el código de renta 37 (retorno de capital, tasa 0%, retención acreditada
+    de vuelta) y $28 bajo el 06 (dividendos, 30%). Las 21 distribuciones de MSTY de ese año
+    suman $275.97 y el resto de la cartera $28.20 — o sea que el fisco trató el **100%** de
+    MSTY 2025 como ROC. El ICI decía 100.00%; el 19(a) decía 78.40%. Por eso, para un año ya
+    cerrado, manda este archivo.
+    """
+    if _ROCICI_CACHE.get('_loaded'):
+        return _ROCICI_CACHE['data']
+    data = {}
+    if _yaml is not None:
+        try:
+            with open(_ROCICI_PATH, 'r', encoding='utf-8') as fh:
+                raw = _yaml.safe_load(fh) or {}
+            if isinstance(raw, dict):
+                data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
+        except Exception:
+            data = {}
+    _ROCICI_CACHE['_loaded'] = True
+    _ROCICI_CACHE['data'] = data
+    return data
+
+
 _DISTRATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'distribution_rate.yaml')
 _DISTRATE_CACHE = {}

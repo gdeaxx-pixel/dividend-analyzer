@@ -467,6 +467,7 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
 
     origen = [int(ancla_start.year), int(ancla_start.month) - 1]
     roc19a = logic.load_roc_19a()
+    roc_ici = logic.load_roc_ici()
     base_rate = tasa_pct / 100.0
 
     idx: dict = {modo: {} for modo in TRG_MODOS}
@@ -481,7 +482,7 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         incep[tk] = (int(start.year) - origen[0]) * 12 + (int(start.month) - 1 - origen[1])
         grp[tk] = "ym" if tk in TRG_YM else "growth"
         for modo in TRG_MODOS:
-            pol = _politica_fiscal(tk, modo, roc19a, base_rate=base_rate)
+            pol = _politica_fiscal(tk, modo, roc19a, roc_ici, base_rate=base_rate)
             r = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
                                       drip=True, nra_rate=pol.rate, history=history,
                                       roc_pct_by_year=pol.roc_pct_by_year)
@@ -683,6 +684,7 @@ def comparacion_data() -> dict | None:
 
     origen = [int(ancla_start.year), int(ancla_start.month) - 1]
     roc19a = logic.load_roc_19a()
+    roc_ici = logic.load_roc_ici()
 
     def _mensualizar(serie) -> dict:
         return _mensualizar_desde(serie, origen)
@@ -706,7 +708,7 @@ def comparacion_data() -> dict | None:
         grp[tk] = "ym" if tk in TRG_YM else ("sub" if tk in TRG_SUB else "growth")
 
         for modo in TRG_MODOS:
-            pol = _politica_fiscal(tk, modo, roc19a)
+            pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
             r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
                                           drip=True, nra_rate=pol.rate, history=history,
                                           roc_pct_by_year=pol.roc_pct_by_year)
@@ -733,6 +735,14 @@ def comparacion_data() -> dict | None:
     fuente = {tk: hr.source for tk, hr in historias.items()}
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
     faltantes = sorted(t for t in TRG_UNIVERSO if t not in historias)
+
+    # Procedencia por ticker y año: qué cifra salió del cierre fiscal y cuál de la
+    # estimación 19(a). La UI la necesita para no seguir diciendo «avisos 19(a)» sobre un
+    # número que hoy sale del 1099 del fondo.
+    roc_fuente = {tk: {str(a): f for a, f in
+                       _roc_pct_by_year(tk, roc19a, roc_ici, con_fuente=True)[1].items()}
+                  for tk in historias}
+    roc_fuente = {tk: v for tk, v in roc_fuente.items() if v}
 
     roc_ventana: dict = {}
     for tk in TRG_YM:
@@ -770,6 +780,7 @@ def comparacion_data() -> dict | None:
         "degradado": degradado,
         "faltantes": faltantes,
         "roc19a": roc_ventana,
+        "rocFuente": roc_fuente,
         "par": TRG_PARES,
         "sin_dividendos": sin_dividendos,
     }
@@ -914,6 +925,7 @@ def metodo_data() -> dict | None:
     # compuesto que el impuesto se lleva por el camino, y en el modo «roc» llegaba a dar
     # un total MAYOR que el escenario sin retención alguna.
     roc19a_yaml = logic.load_roc_19a()
+    roc_ici = logic.load_roc_ici()
     escenarios: dict[str, dict] = {m: {} for m in TRG_MODOS}
 
     for caso in MET_CASO:
@@ -973,7 +985,7 @@ def metodo_data() -> dict | None:
         # gráfica (`_politica_fiscal`). «bruto» reutiliza las corridas de arriba en vez de
         # repetirlas: es literalmente el mismo caso (`nra_rate=0`, sin reembolso).
         for modo in TRG_MODOS:
-            pol = _politica_fiscal(tk, modo, roc19a_yaml)
+            pol = _politica_fiscal(tk, modo, roc19a_yaml, roc_ici)
             if modo == "bruto":
                 rc, rs = r_con, r_sin
             else:
@@ -1204,8 +1216,21 @@ def metodo_data() -> dict | None:
 MET_SERIE_DRIP = ("con", "sin")
 
 
-def _roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
+def _roc_pct_by_year(ticker: str, roc19a: dict, roc_ici: dict, con_fuente: bool = False):
     """%ROC (0-100) por año calendario para el reembolso 1042-S de `backtest.run_backtest`.
+
+    **Dos fuentes, y una manda sobre la otra por año** (2026-08-21). Para cada año:
+    el **cierre fiscal** (`roc_ici`, casilla 3 del 1099) si existe; si no, la **estimación**
+    del gestor (`roc19a`, los avisos 19(a)); si no, nada — el piso conservador.
+
+    No hace falta preguntar qué año está "cerrado": el ICI solo existe para años cerrados,
+    así que «el ICI si está» ya es la regla, sin depender del reloj. Cuando YieldMax publique
+    el cierre de 2026, `roc_ici.yaml` lo traerá y ese año dejará de usar la estimación solo.
+
+    Las dos fuentes se piden **explícitas**, sin default que las cargue por dentro: un objeto
+    fiscal que lee estado global por su cuenta es justo como empiezan las divergencias que
+    la Regla 3 del contrato existe para evitar — y haría que un test con datos sintéticos
+    arrastrara en silencio el yaml de producción.
 
     La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
     de los avisos 19(a) publicados ESE año — misma convención que
@@ -1238,16 +1263,36 @@ def _roc_pct_by_year(ticker: str, roc19a: dict) -> dict[int, float]:
         ponderado = float(info.get("weighted_pct"))
     except (TypeError, ValueError):
         ponderado = 0.0
-    if not por_anio and ponderado <= 0:
-        return {}
-    anios = list(por_anio) or []
+    # Ojo con el orden: aquí había un `return {}` cuando el ticker no tenía avisos 19(a).
+    # Con dos fuentes eso se saltaba el cierre fiscal justo en los fondos que MÁS lo
+    # necesitan —los que nunca publicaron 19(a), como CHPY—, y la vista seguía dando el
+    # número viejo sin que nada fallara. Ninguna salida temprana puede quedar por delante
+    # del merge.
+    anios = list(por_anio)
     promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
     # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
     # un hueco en la publicación no se lea como «ese año no hubo ROC».
     if anios and ponderado > 0:
         for a in range(min(anios), max(anios) + 1):
             promedios.setdefault(a, ponderado)
-    return promedios
+
+    # El cierre fiscal PISA la estimación, año por año. Nunca al revés: el 19(a) es un
+    # pronóstico del número que el ICI ya midió, así que sobre un año cerrado no aporta nada.
+    # Un 0.00% del ICI (CONY 2023) es un CERO MEDIDO, no un hueco: entra igual que cualquier
+    # otro valor y pisa lo que dijera el 19(a).
+    fuentes = {a: "estimacion" for a in promedios}
+    for anio, entrada in (roc_ici.get(str(ticker).upper()) or {}).items():
+        try:
+            anio, pct = int(anio), float(entrada["roc_pct"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        promedios[anio] = pct
+        fuentes[anio] = "cierre"
+    # `con_fuente` devuelve la procedencia que decidió ESTE mismo bucle, no una segunda
+    # implementación de la regla: un mapa de procedencia calculado aparte se despega del
+    # dato en cuanto una de las dos ramas cambia (p. ej. una entrada corrupta que el merge
+    # descarta y el mapa seguiría marcando como «cierre»).
+    return (promedios, fuentes) if con_fuente else promedios
 
 
 class _PoliticaFiscal(typing.NamedTuple):
@@ -1259,7 +1304,7 @@ class _PoliticaFiscal(typing.NamedTuple):
     roc_pct_by_year: dict
 
 
-def _politica_fiscal(ticker: str, modo: str, roc19a: dict,
+def _politica_fiscal(ticker: str, modo: str, roc19a: dict, roc_ici: dict,
                      base_rate: float = _CMP_FLAT_RATE) -> _PoliticaFiscal:
     """Política fiscal de un escenario simulado, por modo. **Fuente única de los 3
     escenarios en las CUATRO vistas que los dibujan**: las tablas de «La matriz»
@@ -1293,7 +1338,7 @@ def _politica_fiscal(ticker: str, modo: str, roc19a: dict,
         return _PoliticaFiscal(0.0, {})
     if modo == "plano":
         return _PoliticaFiscal(base_rate, {})
-    return _PoliticaFiscal(base_rate, _roc_pct_by_year(ticker, roc19a))
+    return _PoliticaFiscal(base_rate, _roc_pct_by_year(ticker, roc19a, roc_ici))
 
 
 def metodo_serie_data() -> dict | None:
@@ -1370,6 +1415,7 @@ def metodo_serie_data() -> dict | None:
 
     incep = {tk: _mes_de(ts) for tk, ts in inicios.items()}
     roc19a = logic.load_roc_19a()
+    roc_ici = logic.load_roc_ici()
 
     # Una corrida por (ticker, modo, drip) = 5 x 3 x 2 = 30. Se guardan por ticker y
     # después se suman: sumar carteras exige alinear en el MISMO mes, y cada ticker
@@ -1380,7 +1426,7 @@ def metodo_serie_data() -> dict | None:
     for caso in MET_CASO:
         tk, history = caso["t"], historias[caso["t"]]
         for modo in TRG_MODOS:
-            pol = _politica_fiscal(tk, modo, roc19a)
+            pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
             # La tasa que se REPORTA es la neta de reembolso —lo que el inversor acaba
             # pagando— aunque el motor retenga el 30% y devuelva después. Es la cifra que
             # la nota al pie usa para decir «8.7%–17.6% según el fondo».

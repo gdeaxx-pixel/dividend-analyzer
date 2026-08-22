@@ -1325,11 +1325,10 @@
         "Todas las series arrancan el <b>"+mLabel(_t0)+"</b> en 0% — la incepción más tardía entre las que están en pantalla, para que las cifras cubran el mismo horizonte. Línea sólida = fondo YieldMax · guiones = ETF de crecimiento · punteado fino = acción subyacente.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el ' + DATA.asof +
         ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). En <b>neto ROC 19a</b> ' +
-        'EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que los avisos 19(a) ' +
-        'reclasifican como retorno de tu propio capital <b>vuelve como efectivo meses después</b>, con el ' +
+        'EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que el fondo ' +
+        'reclasifica como retorno de tu propio capital <b>vuelve como efectivo meses después</b>, con el ' +
         '1042-S. Ese retraso importa: mientras el dinero está fuera no compone — y en un fondo que cae, estar ' +
-        'fuera a veces protege. Los fondos u ETFs sin avisos 19(a) no tienen nada que reclasificar: retienen ' +
-        'la tasa plana.'
+        'fuera a veces protege. Un fondo sin ROC reclasificado no tiene nada que devolver: retiene la tasa plana.'
       ];
       // Hallazgo pedagógico (mismo fondo, mismo modo fiscal, Con DRIP vs Sin DRIP):
       // calculado en vivo, no una premisa fija — un NAV que cae fuerte NO implica que el
@@ -1346,17 +1345,30 @@
           'la trayectoria de las distribuciones, no solo del destino.');
       }
       if (state.mode === "roc") {
+        // De dónde sale el %ROC de CADA año: el cierre fiscal del fondo si ya lo publicó, y
+        // la estimación 19(a) solo mientras el año sigue abierto. Antes esta nota decía
+        // «avisos 19(a)» sobre todos los años, incluidos los que hoy salen del 1099.
+        var fuentes = (DATA.rocFuente && DATA.rocFuente[state.base]) || {};
+        var aCierre = Object.keys(fuentes).filter(function(a){ return fuentes[a] === "cierre"; }).sort();
+        var aEstim  = Object.keys(fuentes).filter(function(a){ return fuentes[a] === "estimacion"; }).sort();
+        if (aCierre.length) {
+          parts.push('<span class="flag">De dónde sale el ROC:</span> ' +
+            (aCierre.length === 1 ? 'el año <b>' + aCierre[0] + '</b> usa' : 'los años <b>' + aCierre.join(", ") + '</b> usan') +
+            ' el <b>cierre fiscal</b> de ' + state.base + ' — la casilla 3 del 1099, que es lo que de verdad ' +
+            'determina cuánto devuelve el 1042-S' +
+            (aEstim.length ? '; ' + (aEstim.length === 1 ? 'el <b>' + aEstim[0] + '</b>, todavía abierto, usa' : 'los <b>' + aEstim.join(", ") + '</b>, todavía abiertos, usan') +
+              ' la estimación que el gestor publica en sus avisos 19(a), porque el cierre aún no existe' : '') +
+            '. Los años anteriores al primer dato no reclaman escudo: retienen el 30% completo y no devuelven nada.');
+        }
         var rocInfo = DATA.roc19a && DATA.roc19a[state.base];
-        if (rocInfo) {
-          parts.push('<span class="flag">Ventana del ROC 19a:</span> cada año reclama el promedio de los ' +
-            'avisos 19(a) que ' + state.base + ' publicó ESE año, porque la reclasificación del bróker opera ' +
-            'por año fiscal; un año sin avisos dentro de la ventana hereda el ponderado del fondo (' +
-            rocInfo.weighted_pct + '%, al ' + rocInfo.asof + '). Los avisos disponibles arrancan en ' +
-            rocInfo.min + ': los años <b>anteriores</b> a esa fecha (incluida la incepción del fondo) no ' +
-            'reclaman escudo — retienen el 30% completo y no devuelven nada. Es un <b>piso conservador</b>, ' +
-            'no una medida de esos meses.');
-        } else {
-          parts.push('<span class="flag">Sin avisos 19(a):</span> ' + state.base + ' no publica avisos 19(a) — en este modo retiene la tasa plana, así que «Neto ROC 19a» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
+        if (rocInfo && aEstim.length) {
+          parts.push('<span class="flag">El año abierto es una estimación:</span> para ' + aEstim.join(", ") +
+            ' se usa el ponderado de los avisos 19(a) de ' + state.base + ' (' + rocInfo.weighted_pct +
+            '%, al ' + rocInfo.asof + '). Es lo que el gestor <i>calcula</i> al pagar, no lo que el cierre ' +
+            'dirá: medido sobre los años ya cerrados, las dos cifras casi nunca coinciden.');
+        }
+        if (!aCierre.length && !aEstim.length) {
+          parts.push('<span class="flag">Sin ROC reclasificado:</span> ' + state.base + ' no tiene ROC publicado ni estimado — en este modo retiene la tasa plana, así que «Neto ROC 19a» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
         }
       }
       if (DATA.sin_dividendos && DATA.sin_dividendos.indexOf(state.base) !== -1) {
