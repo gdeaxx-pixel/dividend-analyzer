@@ -1345,7 +1345,7 @@ def metodo_serie_data() -> dict | None:
     """JSON para la tercera matriz de «Método tradicional · La matriz»: las 6 curvas de
     la cartera del caso de estudio en el tiempo (eje X = mes, eje Y = dólares).
 
-    Seis = los 3 escenarios fiscales de `TRG_MODOS` («Sin NRA» / «Con NRA · ROC 19a» /
+    Seis = los 3 escenarios fiscales de `TRG_MODOS` («Sin NRA» / «Con NRA · ROC» /
     «Con NRA · 30%») cruzados con reinvertir las distribuciones o cobrarlas en efectivo.
     Cada curva es la SUMA de las 5 posiciones de `MET_CASO` valoradas al cierre de cada
     mes; cada posición sale de `backtest.run_backtest(..., history=...)` sobre el caché
@@ -1367,11 +1367,12 @@ def metodo_serie_data() -> dict | None:
     declare la divergencia.
 
     **Base y momento de cada serie** (Regla 2, otra vez): «Sin NRA» es BRUTA (nadie
-    retiene); «Con NRA · ROC 19a» y «Con NRA · 30%» son NETAS con el 30% completo tomado
-    AL COBRO de cada distribución. En «ROC 19a» la porción que el aviso 19(a) reclasifica
+    retiene); «Con NRA · ROC» y «Con NRA · 30%» son NETAS con el 30% completo tomado
+    AL COBRO de cada distribución. En «ROC» la porción que el cierre fiscal (o, mientras
+    el año sigue abierto, el aviso 19(a)) reclasifica
     vuelve DESPUÉS, en efectivo, cuando llega el 1042-S (`roc_pct_by_year` +
     `refund_month` en `run_backtest`): se devenga como cuenta por cobrar en el momento del
-    cobro y se paga en marzo del año siguiente. Por eso las curvas «ROC 19a» no son las de
+    cobro y se paga en marzo del año siguiente. Por eso las curvas «ROC» no son las de
     «30%» desplazadas por un factor — el dinero estuvo fuera del mercado meses, y en un
     fondo que cae, estar fuera a veces protege.
 

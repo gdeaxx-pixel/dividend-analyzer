@@ -1099,7 +1099,7 @@
 
         <div class="cmp-row" role="group" aria-label="Base fiscal" id="tmModoGroup">
           <button type="button" class="cmp-chip" data-modo="bruto" aria-pressed="true">Sin NRA</button>
-          <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC 19a</button>
+          <button type="button" class="cmp-chip" data-modo="roc" aria-pressed="false">Con NRA · ROC</button>
           <button type="button" class="cmp-chip" data-modo="plano" aria-pressed="false">Con NRA · peor caso 30%</button>
         </div>
         <button type="button" class="cmp-info" aria-label="Cómo leer esta matriz" data-tip="tm-metodo">ⓘ</button>
@@ -1931,7 +1931,7 @@
     // modales que dependen de sus cifras. "bruto" es el estado observado
     // (cartera de Greco, sin retención). "roc" y "plano" simulan a un no
     // residente con la MISMA retención al pagar (30%), pero difieren en si
-    // reconocen el ROC real: "roc" usa el ROC 19a por ticker para modelar
+    // reconocen el ROC real: "roc" usa el ROC por ticker para modelar
     // cuánto de esa retención se reclasifica y vuelve en efectivo (columna
     // Devuelto); "plano" es la cota superior de siempre, sin reconocerlo. Un
     // solo camino de derivación: todo sale de los BRUTOS de MATRIZ con
@@ -2098,7 +2098,7 @@
         'porque es el escenario que nunca pasó: cada distribución se queda en efectivo en vez de comprar más acciones. ' +
         '<b>Inversión Hoy</b> es tu capital original valorado al precio de hoy; <b class="he-cash">Dividendos</b> es todo lo ' +
         'que habría cobrado <i>esa</i> posición —la que nunca creció—, sumado sin reinvertir' +
-        (modo === "roc" ? '; <b class="he-cash">Devuelto</b> es la porción de la retención NRA que el ROC 19a reclasifica y regresa' : '') +
+        (modo === "roc" ? '; <b class="he-cash">Devuelto</b> es la porción de la retención NRA que el ROC reclasifica y regresa' : '') +
         '. Como nada de eso volvió a comprar posición, sumar las tres columnas da exactamente <b>Total</b> — sin el hueco de valorización que sí aparece con DRIP.');
     }
 
@@ -2146,7 +2146,7 @@
         (modo === "bruto" ? ' —sí, es el mismo número que la hoja pone como «Total inv.»: como dinero que entró al fondo es correcto; como «lo que invertiste» es la suma falaz—' : '') +
         '), y hoy la posición ' + (modo === "bruto" ? 'vale' : 'valdría, en el escenario simulado,') + ' <b style="color:var(--drip)">$' + D.conDripTotAll.toLocaleString("en-US") + '</b>. ' +
         'El <b>DRIP</b> <b>no se suma</b> directamente a <b>Total</b>: compró acciones que siguieron cayendo, y su valor hoy es <b>DRIP Hoy</b> — <b style="color:var(--drip)">$' + D.dripHoyTotAll.toLocaleString("en-US") + '</b>, bastante menos que los $' + D.divTotAll.toLocaleString("en-US") + ' que se reinvirtieron.' +
-        (esRoc ? ' <b>Devuelto</b> — <b class="he-cash">$' + D.devueltoTotAll.toLocaleString("en-US") + '</b> — es lo que el ROC 19a reclasifica y el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron, y como aquí se reinvierte, compraron acciones — viven dentro de <b>DRIP Hoy</b>, no en esta columna.' : '') + '<br><br>' +
+        (esRoc ? ' <b>Devuelto</b> — <b class="he-cash">$' + D.devueltoTotAll.toLocaleString("en-US") + '</b> — es lo que el ROC reclasifica y el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron, y como aquí se reinvierte, compraron acciones — viven dentro de <b>DRIP Hoy</b>, no en esta columna.' : '') + '<br><br>' +
         '<b>Inversión Hoy + DRIP Hoy' + (esRoc ? ' + Devuelto' : '') + ' = Total</b> sí cierra (' + totalEqLine + '): son las mismas acciones acumuladas, valoradas al mismo precio de hoy, solo repartidas según de dónde vinieron' + (esRoc ? ', más el reembolso que aún está por llegar' : '') + '.<br><br>' +
         'La columna «Inversión» va con centavos porque es la cifra literal de la hoja; <b>Inversión Hoy</b>, <b>DRIP</b>, <b>DRIP Hoy</b>' + (esRoc ? ', <b>Devuelto</b>' : '') + ' y <b>Total</b> son el modelo reconstruido.');
     }
@@ -2543,7 +2543,7 @@
       // sin tener que descifrar seis entradas de leyenda una por una.
       var MODOS = [
         { k: "bruto", lab: "Sin NRA",           tok: "--anchor" },
-        { k: "roc",   lab: "Con NRA · ROC 19a", tok: "--warn" },
+        { k: "roc",   lab: "Con NRA · ROC", tok: "--warn" },
         { k: "plano", lab: "Con NRA · 30%",     tok: "--loss" }
       ];
       var DRIPS = [
@@ -2792,7 +2792,7 @@
         'EE. UU. y nadie le retiene. Los otros dos son netos, con la retención descontada <b>en el ' +
         'momento de cobrar cada distribución</b>, no al final: por eso una curva retenida no solo ' +
         'queda más abajo, sino que además <b>compone menos</b>, porque cada mes reinvirtió menos ' +
-        'dinero. En <b>ROC 19a</b> se retiene el 30% completo al cobrar y la porción de ROC ' +
+        'dinero. En <b>ROC</b> se retiene el 30% completo al cobrar y la porción de ROC ' +
         '<b>vuelve más tarde</b>, cuando llega el 1042-S: la tasa que acabas pagando queda en ' +
         rocMin.toFixed(1) + '%–' + rocMax.toFixed(1) + '% según el fondo, pero el camino importa ' +
         'tanto como el destino — ese dinero estuvo fuera del mercado meses, y en un fondo que ' +
