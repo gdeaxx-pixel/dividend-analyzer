@@ -213,9 +213,9 @@ class TestPoliticaQueRecibeElMotor:
                     f"{c['ticker']}: reclama ROC sobre una retención de {c['nra_rate']}")
 
     def test_los_fondos_con_avisos_19a_reclaman_su_roc(self, llamadas):
-        roc19a = logic.load_roc_19a()
+        roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
         con_avisos = {tk for tk in TRG_UNIVERSO_REAL
-                      if _politica_fiscal(tk, "roc", roc19a).roc_pct_by_year}
+                      if _politica_fiscal(tk, "roc", roc19a, roc_ici).roc_pct_by_year}
         assert con_avisos, "ningún ticker del universo publica avisos 19(a) en el yaml"
         con_escudo = {c["ticker"] for c in llamadas if c["roc_pct_by_year"]}
         assert con_avisos <= con_escudo, (

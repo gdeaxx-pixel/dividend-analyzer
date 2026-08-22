@@ -102,7 +102,8 @@ def con_avisos_19a():
     escudo ROC. Se lee del yaml vivo, no de una lista transcrita: si mañana CHPY empieza a
     publicar, los guardas lo incorporan solos en vez de quedarse mudos sobre él."""
     roc19a = logic.load_roc_19a()
-    return tuple(tk for tk in TRG_UNIVERSO if _politica_fiscal(tk, "roc", roc19a).roc_pct_by_year)
+    roc_ici = logic.load_roc_ici()
+    return tuple(tk for tk in TRG_UNIVERSO if _politica_fiscal(tk, "roc", roc19a, roc_ici).roc_pct_by_year)
 
 
 def _retorno_total(d: dict, tk: str, modo: str, clave_idx: str) -> float:
@@ -325,13 +326,14 @@ def corridas_ym(con_avisos_19a):
     de las reconciliaciones. `viejo_con` reproduce a propósito el modelo retirado (tasa
     efectiva, sin reembolso) para poder medir cuánto separaba a los dos."""
     roc19a = logic.load_roc_19a()
+    roc_ici = logic.load_roc_ici()
     out = {}
     for tk in con_avisos_19a:
         h = price_cache.load_history(tk).history.sort_index()
         start = h.index.min()
 
         def corre(modo, drip, exacto=True):
-            pol = _politica_fiscal(tk, modo, roc19a)
+            pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
             kw = {"roc_pct_by_year": pol.roc_pct_by_year} if exacto else {}
             rate = pol.rate if exacto else _tasa_efectiva_neta(tk, modo, roc19a)
             return backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
@@ -415,15 +417,23 @@ class TestReconciliacionConElMotor:
                     "política fiscal — alguien reescala fuera del motor")
 
     def test_el_reembolso_del_1042s_esta_dentro_de_la_serie(self, datos, corridas_ym):
-        """Huella del reembolso, del lado de la salida. La cuenta por cobrar viva a la fecha
-        de corte solo existe si se retuvo el 30% completo y el escudo vuelve DESPUÉS; con el
-        modelo de tasa efectiva es cero por construcción. Como el test de arriba ancla el
-        payload a esta misma corrida, la huella está en lo que se dibuja."""
+        """Huella del reembolso, del lado de la salida: con el modelo exacto se retiene el 30%
+        completo y el escudo vuelve DESPUÉS, como un evento de caja aparte. Con el modelo de
+        tasa efectiva no existe ninguna de las dos columnas — son cero por construcción.
+
+        Se asserta la SUMA de las dos, no cada una: que el reembolso esté cobrado
+        (`roc_refund`) o todavía por cobrar (`roc_receivable`) depende del CALENDARIO, no del
+        modelo. CHPY lo enseñó: su único año con ROC es 2025, cuyo reembolso llegó en marzo de
+        2026, así que a la fecha de corte no le queda nada pendiente — y eso es correcto, no
+        una regresión. Assertar la cuenta viva por separado ataba el test al almanaque.
+
+        Como el test de arriba ancla el payload a esta misma corrida, la huella está en lo que
+        se dibuja."""
         for tk, r in corridas_ym.items():
-            assert r["roc_con"].roc_receivable_final > 0, (
-                f"{tk}: sin cuenta por cobrar — el ROC volvió a aplicarse al cobro")
-            assert r["roc_con"].roc_refund_total > 0, (
-                f"{tk}: ningún reembolso llegó a cobrarse en todo el horizonte")
+            devuelto = r["roc_con"].roc_refund_total + r["roc_con"].roc_receivable_final
+            assert devuelto > 0, (
+                f"{tk}: ni reembolso cobrado ni cuenta por cobrar — el escudo ROC volvió a "
+                "aplicarse al cobro, que es el modelo que esta migración retiró")
 
     def test_los_dos_modelos_no_son_equivalentes(self, corridas_ym):
         """Fija la lección, no la cifra (Regla 5 del contrato): que exista al menos un fondo
@@ -473,17 +483,14 @@ class TestMonotoniaFiscalEstructural:
             assert 0.0 < tasas["roc"] < tasas["plano"], (
                 f"{tk}: el escudo ROC no está reduciendo la tasa pagada: {tasas}")
 
-    def test_el_contraejemplo_sigue_vivo(self, datos):
-        """«Más impuesto ⇒ peor resultado» es FALSO con reinversión, y el copy de la vista
-        enseña esa lección. Hoy la ilustra MSTY: retener funcionó como un retiro forzoso de
-        un fondo en colapso, y parte del dinero volvió meses después a comprar más barato.
-
-        Se afirma la propiedad, no el ticker (Regla 5): si un día ningún fondo la ilustra, el
-        mensaje distingue «cambió el mercado» de «hay un bug»."""
-        peores = {tk for tk in TRG_YM
-                  if _retorno_total(datos, tk, "roc", "idx")
-                  > _retorno_total(datos, tk, "bruto", "idx")}
-        assert peores, (
-            "ningún fondo ilustra ya que «más impuesto ⇒ peor resultado» es falso con DRIP. "
-            "Puede ser que los precios cambiaran; pero antes de darlo por bueno, verificar "
-            "que el reembolso del 1042-S sigue llegando en su fecha y no al cobro.")
+    # `test_el_contraejemplo_sigue_vivo` vivía aquí y se retiró el 2026-08-21, al cambiar la
+    # fuente del ROC al cierre fiscal: con el escudo real de MSTY 2024 (0%, no 95.9%) ningún
+    # fondo de ESTA vista ilustra ya que «más impuesto ⇒ peor resultado» sea falso.
+    #
+    # No se retira porque falle: se retira porque **guardaba una lección que esta vista no
+    # enseña**. El copy que la enseña está en `metodo.html`, y su guard —vivo y verde— es
+    # `test_contrafactico_sin_drip.py::test_mas_impuesto_no_implica_peor_resultado_con_drip`,
+    # donde «La matriz» sí la ilustra. Fijar aquí un hecho de mercado del que ninguna pantalla
+    # depende es exactamente el antipatrón que la Regla 5 del contrato describe: un test que
+    # se rompe sin que nadie haya roto nada. Lo escribí yo en el PR #62; el error fue duplicar
+    # el guard, no la propiedad.

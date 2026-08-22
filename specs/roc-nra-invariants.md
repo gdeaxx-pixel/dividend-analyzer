@@ -79,6 +79,7 @@ Ejes vigentes y su objeto único:
 | Impuesto/ROC de la cartera del CSV | `logic.build_tax_summary` | cuadritos, Hoja Excel, paso NRA |
 | Base bruto/neto por convención de bróker | `logic.build_dividend_tax_totals` | Hoja Excel, cashflow, tax_summary |
 | **Escenarios fiscales simulados** | **`ui.adapters._politica_fiscal`** → `escenarios` | **tablas Con/Sin DRIP y 3ª gráfica de «La matriz»; «Comparación · Simulación»; «Comparación · Real»** |
+| **%ROC por año fiscal** | **`ui.adapters._roc_pct_by_year`** — cierre fiscal (`logic.load_roc_ici`) por delante de la estimación (`logic.load_roc_19a`), año por año | alimenta a `_politica_fiscal`, o sea las 4 vistas |
 
 > **Por qué se añadió.** Hasta el 2026-08-21 el tercer eje no existía en este contrato, y por eso pudo crecer con **dos metodologías simultáneas**: las tablas reescalaban en JS (`bruto × (1 − tasa)`, un solo paso al final) mientras la gráfica simulaba evento a evento. La misma pantalla mostraba $177,289 y $78,816 para la misma cifra, con **562 tests en verde**. La regla estaba escrita y era correcta; lo que faltaba era que este eje estuviera dentro de su alcance.
 

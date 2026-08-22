@@ -2398,9 +2398,9 @@
     };
     var MODO_CAP = {
       bruto: "Escenario base — así está en la hoja de la clase: Greco es residente en EE. UU. y no sufre retención NRA. La fecha de apertura y el aporte inicial son los literales de la hoja; <b>Dividendos</b>, <b>Total inv.</b>, <b>Valor mer.</b> y <b>Último div.</b> se recalculan con precios y distribuciones reales de mercado (ver «Fuente» abajo).",
-      roc: "Escenario simulado con el <b>ROC real de los avisos 19(a)</b> (" + calcRocRango() +
+      roc: "Escenario simulado con el <b>ROC real de cada año</b> (" + calcRocRango() +
         (DATA.roc19aAsof ? ", al " + fmtFechaCorta(DATA.roc19aAsof) : "") +
-        "). EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo meses después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera, no compone — y en un fondo que cae, estar fuera a veces protege.",
+        "). EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que es retorno de tu propio capital se reclasifica y <b>vuelve como efectivo meses después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera, no compone — y en un fondo que cae, estar fuera a veces protege. El %ROC de un año ya cerrado sale del <b>cierre fiscal</b> del fondo; el del año en curso, de la estimación de sus avisos 19(a).",
       plano: "<b>Cota superior.</b> 30% plano sobre todo, sin reconocer el ROC. Un no residente real paga menos: con los 19(a) de estos cinco fondos, " +
         fmtD(_rocVsPlano.roc) + " en vez de " + fmtD(_rocVsPlano.plano) + "."
     };

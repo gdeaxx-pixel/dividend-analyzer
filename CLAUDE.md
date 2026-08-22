@@ -29,6 +29,11 @@ Las reglas duras, en una línea cada una:
    verde con dos pantallas contradiciéndose por $98K. Ya pasó.
 4. **Dos carriles del ROC que no se cruzan**: destructividad = tendencia del NAV
    (`classify_roc_health`); ROC% = palanca fiscal (`estimate_roc_refund*`).
+   **4b — y dos FUENTES del ROC%, con precedencia**: el **cierre fiscal** (`load_roc_ici`,
+   casilla 3 del 1099) manda sobre la **estimación** del gestor (`load_roc_19a`, avisos 19(a)),
+   año por año. El 19(a) solo gobierna el año todavía abierto. Probado contra un 1042-S real:
+   MSTY 2025 fue 100% ROC ($275.97 bajo el código 37); el cierre decía 100.00%, la estimación
+   78.40%.
 5. **Un invariante estructural no es un hecho de mercado.** Antes de assertar una propiedad:
    ¿se cumple por construcción o porque los precios salieron así? «Más impuesto ⇒ peor resultado»
    es FALSO con reinversión (MSTY: el escenario con ROC supera al de cero impuestos).
@@ -56,8 +61,8 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **644 passed, 2 skipped, 3 deselected** (medido 2026-08-21: 636 tras jubilar el
-motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
+Línea base: **651 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras poner el cierre
+fiscal por delante de la estimación 19(a): 644 antes; 636 tras jubilar el motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
 `_politica_fiscal`, la cuenta no se movió pero la cobertura sí cambió de dueño—, más 8 de
 `test_roc_ici.py` — el parser del ICI histórico, ver
 `Obsidian/IA/traspaso-2026-08-21-roc-historico-ici.md`). Este número envejece en cuanto alguien añade tests: si tu PR
