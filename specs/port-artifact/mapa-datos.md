@@ -167,7 +167,7 @@ de la clase, de precios de Yahoo Finance y de las fichas de YieldMax, y están c
 minuto en la sección de Metodología. Sustituirlas por datos del portafolio destruye el
 argumento de la sección, que es precisamente auditar *esa* hoja.
 
-La única excepción declarada: los modos **«Con NRA · ROC 19a»** y **«Con NRA · peor caso
+La única excepción declarada: los modos **«Con NRA · ROC»** y **«Con NRA · peor caso
 30%»** de las matrices son escenarios simulados, y ya vienen rotulados como tales. Se
 portan con su rótulo intacto.
 

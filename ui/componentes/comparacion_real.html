@@ -1100,7 +1100,7 @@
     }
 
     var state = { base:DATA.base_defecto, mode:"bruto", growth:new Set(GROWTH), ym:new Set() };
-    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
+    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
         elGrowth = document.getElementById("cmpGrowth"), elYm = document.getElementById("cmpYm"),
@@ -1249,7 +1249,7 @@
         "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el '
         + DATA.asof + ' (caché histórico, reinversión por evento al cierre del día '
-        + 'ex-dividendo). En <b>neto ROC 19a</b> se retiene el <b>' + DATA.tasa_pct + '% '
+        + 'ex-dividendo). En <b>neto ROC</b> se retiene el <b>' + DATA.tasa_pct + '% '
         + 'completo</b> al pagar cada distribución, y la porción que el fondo reclasifica '
         + 'como retorno de tu propio capital <b>vuelve como efectivo meses '
         + 'después</b>, con el 1042-S. Ese retraso importa: mientras el dinero está fuera '

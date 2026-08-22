@@ -153,7 +153,7 @@ class TestPoliticaFiscal:
 
     def test_sin_avisos_roc_es_identico_a_plano(self):
         """Lo que la UI declara en el copy: un fondo sin avisos 19(a) no tiene nada que
-        reclasificar, así que «Neto ROC 19a» y «Peor caso» dan la misma línea."""
+        reclasificar, así que «Neto ROC» y «Peor caso» dan la misma línea."""
         assert _politica_fiscal("SCHB", "roc", self._ROC19A, {}, base_rate=0.30) == \
                _politica_fiscal("SCHB", "plano", self._ROC19A, {}, base_rate=0.30)
 

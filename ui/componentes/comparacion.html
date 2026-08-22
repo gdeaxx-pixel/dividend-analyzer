@@ -1134,7 +1134,7 @@
     var _par0 = DATA.par && DATA.par[DATA.base_defecto];
     if (_par0 && _presente(_par0)) _cmp0.add(_par0);
     var state = { base:DATA.base_defecto, mode:"bruto", vista:"con", cmp:_cmp0 };
-    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC 19a"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
+    var MODES = [ {k:"bruto", lab:"DRIP bruto"}, {k:"roc", lab:"Neto ROC"}, {k:"plano", lab:"Peor caso " + DATA.tasa_pct + "%"} ];
     var VISTAS = [ {k:"con", lab:"Con DRIP"}, {k:"sin", lab:"Sin DRIP"} ];
 
     var elBase = document.getElementById("cmpBase"), elMode = document.getElementById("cmpMode"),
@@ -1324,7 +1324,7 @@
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(_t0)+"</b> en 0% — la incepción más tardía entre las que están en pantalla, para que las cifras cubran el mismo horizonte. Línea sólida = fondo YieldMax · guiones = ETF de crecimiento · punteado fino = acción subyacente.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el ' + DATA.asof +
-        ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). En <b>neto ROC 19a</b> ' +
+        ' (caché histórico, reinversión por evento al cierre del día ex-dividendo). En <b>neto ROC</b> ' +
         'EE. UU. retiene el <b>30% completo</b> al pagar cada distribución, y la porción que el fondo ' +
         'reclasifica como retorno de tu propio capital <b>vuelve como efectivo meses después</b>, con el ' +
         '1042-S. Ese retraso importa: mientras el dinero está fuera no compone — y en un fondo que cae, estar ' +
@@ -1368,7 +1368,7 @@
             'dirá: medido sobre los años ya cerrados, las dos cifras casi nunca coinciden.');
         }
         if (!aCierre.length && !aEstim.length) {
-          parts.push('<span class="flag">Sin ROC reclasificado:</span> ' + state.base + ' no tiene ROC publicado ni estimado — en este modo retiene la tasa plana, así que «Neto ROC 19a» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
+          parts.push('<span class="flag">Sin ROC reclasificado:</span> ' + state.base + ' no tiene ROC publicado ni estimado — en este modo retiene la tasa plana, así que «Neto ROC» y «Peor caso ' + DATA.tasa_pct + '%» dan lo mismo para este fondo.');
         }
       }
       if (DATA.sin_dividendos && DATA.sin_dividendos.indexOf(state.base) !== -1) {
