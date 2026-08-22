@@ -56,9 +56,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **636 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras jubilar el motor
-fiscal viejo: la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
-`_politica_fiscal`, así que la cuenta no se movió — pero la cobertura sí cambió de dueño). Este número envejece en cuanto alguien añade tests: si tu PR
+Línea base: **644 passed, 2 skipped, 3 deselected** (medido 2026-08-21: 636 tras jubilar el
+motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
+`_politica_fiscal`, la cuenta no se movió pero la cobertura sí cambió de dueño—, más 8 de
+`test_roc_ici.py` — el parser del ICI histórico, ver
+`Obsidian/IA/traspaso-2026-08-21-roc-historico-ici.md`). Este número envejece en cuanto alguien añade tests: si tu PR
 cambia la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que
 nadie lo notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y
 `95c0932` (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este
