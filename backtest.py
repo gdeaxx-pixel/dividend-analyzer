@@ -318,8 +318,9 @@ def run_backtest(
     arranca en `initial_shares` (o `initial_capital / precio_inicial` si no se da) y que:
 
       - con `drip=True`: reinvierte cada distribucion NETA de `nra_rate` al `Close` del
-        propio dia ex-dividendo (misma convencion que `logic.build_total_return_series` /
-        Morningstar TRI-por-evento: reinvertir en la fecha ex-div, no en la de pago).
+        propio dia ex-dividendo (convencion Morningstar TRI-por-evento: reinvertir en la
+        fecha ex-div, no en la de pago; la misma que seguia `logic.build_total_return_series`
+        antes de retirarse).
       - con `drip=False`: mantiene las acciones fijas y acumula la distribucion neta como
         efectivo sin invertir (no gana ni pierde con el precio).
 

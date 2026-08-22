@@ -275,8 +275,9 @@ def render_trg_real(ruta: Ruta) -> None:
     """Total Return Graph con datos reales — el mismo componente del artifact que
     Comparación · Simulación (`ui/componentes/comparacion_real.html`, derivado de
     `comparacion.html` por `tools/extract_comparacion_real.py`), alimentado con el
-    índice TRI real que calcula `logic.build_drip_comparison_series` (mapa-datos.md
-    § 5). Sin badge/título/lede propios: el panel del componente ya trae los suyos
+    índice real que calcula `ui.adapters.trg_real_data` sobre `price_cache` +
+    `backtest.run_backtest` (mapa-datos.md § 5; hasta el 2026-08-21 era
+    `logic.build_drip_comparison_series`, retirada). Sin badge/título/lede propios: el panel del componente ya trae los suyos
     (mismo patrón que Comparación · Simulación) — duplicarlos aquí dejaría dos
     encabezados.
 

@@ -141,7 +141,8 @@ declara explícitamente como uno de los dos escenarios simulados de toda la pág
 
 ## 5 · Comparación · Real — placeholder, línea 1239
 
-Se construye sobre `logic.build_drip_comparison_series` (`logic.py:5210`), que ya existe y
+Se construía sobre `logic.build_drip_comparison_series` (retirada el 2026-08-21; hoy la vista
+corre `price_cache` + `backtest.run_backtest` vía `ui.adapters.trg_real_data`), que ya existía y
 tiene 6 tests. Reinversión **por evento** (no potencia), base 100, incepción tardía arranca
 en su propia base, y degrada a serie vacía si falla la descarga.
 

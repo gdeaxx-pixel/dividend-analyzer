@@ -9,7 +9,8 @@ submenús de distancia, porque cada vista corría un motor distinto:
   - «Simulación» → `backtest.run_backtest` (migrada al modelo exacto en el PR #62).
   - «Real» → `logic.build_drip_comparison_series`, que además de bajar de yfinance EN
     RUNTIME modelaba el escudo ROC como tasa efectiva `tasa × (1 − ROC)` aplicada al
-    cobro — o sea asumiendo que el dinero nunca sale del fondo.
+    cobro — o sea asumiendo que el dinero nunca sale del fondo. Esa función y las dos que
+    la sostenían se borraron el 2026-08-21, ya sin consumidor.
 
 Hoy las dos leen `price_cache` y corren `run_backtest` con `_politica_fiscal`. Medido al
 migrar: `bruto` y `plano` no se movieron **ni un decimal** en los 8 tickers (los dos
@@ -123,9 +124,11 @@ class TestReconciliacionEntreLasDosVistas:
 
 class TestElMotorViejoNoVuelve:
     """Tests sobre el CÓDIGO FUENTE, no sobre el resultado. `build_drip_comparison_series`,
-    `build_roc_aware_withholding` y `build_total_return_series` siguen en `logic.py` porque
-    `app_old.py` los nombra (y ese archivo no se ejecuta), pero ya no tienen consumidor
-    vivo. Volver a llamarlos desde una vista reabre el bug de las dos metodologías.
+    `build_roc_aware_withholding` y `build_total_return_series` se **borraron** de `logic.py`
+    el 2026-08-21, al quedarse sin consumidor vivo. Hoy llamarlas reventaría con
+    `AttributeError`, así que este guard ya no impide una llamada: impide que alguien las
+    **reintroduzca** —copiándolas de `app_old.py` o del historial— para volver a modelar el
+    escudo ROC dentro de la tasa. El nombre es la firma de esa regresión.
     """
 
     _PROHIBIDAS = ("build_drip_comparison_series", "build_roc_aware_withholding",
@@ -140,9 +143,10 @@ class TestElMotorViejoNoVuelve:
                         yield ruta, fh.read()
 
     def test_ninguna_vista_llama_al_motor_de_tasa_efectiva(self):
-        """Busca LLAMADAS (`logic.x(`), no menciones: los docstrings de `ui/adapters.py`
-        nombran estas funciones a propósito, para explicar por qué no se usan. Un guard
-        que prohibiera la palabra obligaría a borrar la explicación."""
+        """Busca LLAMADAS (`logic.x(`), no menciones: los docstrings de `ui/adapters.py` y
+        `ui/vistas.py` nombran estas funciones a propósito, para explicar de dónde viene la
+        vista y por qué se retiraron. Un guard que prohibiera la palabra obligaría a borrar
+        la explicación."""
         patron = re.compile(r"logic\.(" + "|".join(self._PROHIBIDAS) + r")\s*\(")
         for ruta, src in self._fuentes_ui():
             m = patron.search(src)
