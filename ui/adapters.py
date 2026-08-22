@@ -624,7 +624,8 @@ def comparacion_data() -> dict | None:
          pedagógico "y si hubiera invertido en..." — vive fuera del wizard, sin CSV
          cargado (a diferencia de "Comparación · Real", que sí necesita `resultados`).
       2. **La fuente es `price_cache.load_history` + `backtest.run_backtest`**, no
-         `logic.build_drip_comparison_series`. Ese motor ya reconcilió al 0.013% contra
+         `logic.build_drip_comparison_series` (retirada el 2026-08-21; en su momento era el
+         otro camino posible). Ese motor ya reconcilió al 0.013% contra
          el extracto real de IB (Fase 3.1, `test_backtest.py`) y lee del caché en disco
          (Fase 3.2, `test_price_cache.py`) — cero llamadas a yfinance en este código;
          el único punto que puede tocar red es el fallback YA declarado dentro de
@@ -1283,11 +1284,10 @@ def _politica_fiscal(ticker: str, modo: str, roc19a: dict,
     «Comparación», de −18.7 pp (TSLY) a +28.0 pp (MSTY). Ver `backtest.run_backtest`.
 
     **Alcance: completo.** Las cuatro vistas que dibujan escenarios fiscales pasan por
-    aquí. `logic.build_drip_comparison_series` / `build_roc_aware_withholding` —el otro
-    motor, con el escudo dentro de la tasa— quedaron sin consumidor vivo el 2026-08-21;
-    siguen en `logic.py` porque `app_old.py` los nombra, pero volver a cablearlos a una
-    vista reabre el bug de las dos metodologías. Hay un guard que lo impide
-    (`test_un_solo_motor_fiscal.py`).
+    aquí. El otro motor —`logic.build_drip_comparison_series` /
+    `build_roc_aware_withholding` / `build_total_return_series`, que metía el escudo dentro
+    de la tasa— se quedó sin consumidor vivo el 2026-08-21 y se borró el mismo día. El guard
+    que impide reintroducirlo sigue puesto (`test_un_solo_motor_fiscal.py`).
     """
     if modo == "bruto":
         return _PoliticaFiscal(0.0, {})
