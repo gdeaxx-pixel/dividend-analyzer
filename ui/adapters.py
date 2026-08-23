@@ -74,6 +74,9 @@ def _bruto_independiente_del_csv(history_df) -> float:
     las de impuesto (nra tax/tax adj/withholding/foreign tax/retención/retencion) y las de
     compra DRIP ('Reinvest Shares', monto neto post-impuesto, no un cobro). CON SIGNO — hay
     reversos/correcciones negativas en el CSV real, `abs()` los convertiría en más dividendo.
+    DELIBERADAMENTE no llama a `logic._is_tax_row_action`: es su única independencia real.
+    Si comparte el predicado con lo que audita, un bug en el predicado cuadra los dos lados
+    y el guard queda ciego justo cuando más falta hace.
     Verificado contra ground truth: Schwab MSTY $462.00, IB MSTY $7,224.59 (el bruto real en
     ambas convenciones, sin pasar por la detección que se está auditando).
     """

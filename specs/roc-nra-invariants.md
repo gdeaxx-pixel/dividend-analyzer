@@ -60,6 +60,20 @@ Base y momento no bastan para detectar este error: en el bug del caso origen las
 
 > **Ampliado (PR B, objeto fiscal bruto/retención/neto).** `build_tax_summary` cubre retenido/retención-justa/devolución (el eje de la *reclasificación* ROC). Faltaba un objeto para un eje distinto: cada broker declara `dividendos cobrados` en una BASE distinta (Schwab: bruto, retención en fila `NRA Tax Adj` aparte; IB: neto, la retención va plegada dentro de la propia fila `Dividend - Foreign Tax Withholding`) — asumir ciegamente `bruto = neto + retenido` (correcto solo para IB) duplicaba la retención en Schwab (bug real: MSTY reportaba $600.60 de bruto en vez de $462). `logic.build_dividend_tax_totals(history_df)` es el objeto único para ese eje: detecta la convención POR FILA (`_dividend_tax_netted`, no asume el broker) y devuelve `{gross, withheld, net, gross_source, net_source, netted, gross_by_year, net_by_year, withheld_by_year}`, cada cifra con su procedencia declarada (`'leido'` del CSV vs `'derivado'` aritméticamente desde la otra + la retención — nunca reconstruye el bruto sumando hacia atrás si el CSV ya lo entrega). `analyze_portfolio` lo cachea por ticker (`dividends_gross_total`, `dividends_net_total`, `dividend_base_convention`, `dividends_gross_by_year`/`dividends_net_by_year`); `build_hoja_excel`, `build_tax_summary` y `ui.adapters.cashflow_data` lo leen por identidad — ninguno debe volver a calcular `net + withheld` por su cuenta. Gate de reconciliación: `test_build_dividend_tax_totals_schwab_style_no_duplica_retencion` / `..._ib_style_neteada_en_la_fila` en `test_logic.py` (contra `fixtures/schwab_synth_2` y `real_examples/interactive_brokers_data/1`, ground truth verificado), más `ui.adapters.verificar_identidades(datos, stats)` — que además de las identidades definitorias de `cashflow_data`, reconcilia BRUTO/NETO contra una relectura independiente del CSV (`logic._csv_dividends_in_window`), no contra la fórmula que los generó.
 
+> **Actualizado (2026-08-23, familia `_dividend_*` al predicado único).** El ledger que alimenta
+> `build_dividend_tax_totals` (`_csv_dividends_in_window` / `_csv_dividends_by_year` /
+> `_dividend_events`) excluye AHORA las filas de impuesto en AMBAS convenciones vía el predicado
+> único `logic._is_tax_row_action` y suma CON SIGNO (las reversas de IB restan — nunca `abs()`:
+> medido, convertía cada reversa en suma e inflaba el bruto IB +55–78%). Consecuencias: el ledger
+> es BRUTO en los dos brokers (antes, en IB era el NETO sin declararlo — violación silenciosa de
+> esta Regla 2), `build_dividend_tax_totals` devuelve `{gross: 'leido', net: 'derivado'}` en ambas
+> convenciones (`netted` queda como procedencia declarada, ya no cambia la aritmética), y
+> `dividend_base_convention` pasó de `'neto_leido'/'bruto_leido'` a `'retencion_en_fila'/
+> 'retencion_aparte'`. Invariante cruzado probado en `test_logic.py`
+> (`test_familia_dividend_declara_bruto_ib_por_ticker` / `..._schwab`): las tres hermanas ==
+> `gross` para cada ticker. El guard independiente `ui.adapters._bruto_independiente_del_csv`
+> conserva su copia deliberada del criterio para no depender del predicado que audita.
+
 **Scenario:** Tres vistas, un solo cálculo
 - **WHEN** el usuario abre los cuadritos del viaje del dinero, la Hoja Excel y el paso "Impuesto NRA" para el mismo ticker en la misma sesión
 - **THEN** las tres vistas leen el mismo `tax_summary` del ticker y muestran valores de `retenido_real`, `retención_justa` y `devolución_estimada` idénticos entre sí (no solo "consistentes", sino la misma fuente)
