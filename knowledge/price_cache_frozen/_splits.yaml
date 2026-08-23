@@ -1,0 +1,54 @@
+# Generado por fetch_price_cache.py (fuente: yfinance, Ticker.splits).
+# Splits reales por ticker (ratio < 1.0 = split inverso). Refresco semanal via .github/workflows/refresh-price-cache.yml. No editar a mano.
+NVDY: []
+TSLY:
+- date: '2024-02-26'
+  ratio: 0.5
+- date: '2025-12-01'
+  ratio: 0.2
+CONY:
+- date: '2025-12-02'
+  ratio: 0.1
+MSTY:
+- date: '2025-12-08'
+  ratio: 0.2
+CHPY: []
+SCHB:
+- date: '2022-03-11'
+  ratio: 2.0
+- date: '2024-10-11'
+  ratio: 3.0
+XLK:
+- date: '2025-12-05'
+  ratio: 2.0
+SMH:
+- date: '2023-05-05'
+  ratio: 2.0
+NFLY: []
+YMAX: []
+NVDA:
+- date: '2000-06-27'
+  ratio: 2.0
+- date: '2001-09-10'
+  ratio: 2.0
+- date: '2006-04-07'
+  ratio: 2.0
+- date: '2007-09-11'
+  ratio: 1.5
+- date: '2021-07-20'
+  ratio: 4.0
+- date: '2024-06-10'
+  ratio: 10.0
+TSLA:
+- date: '2020-08-31'
+  ratio: 5.0
+- date: '2022-08-25'
+  ratio: 3.0
+COIN: []
+MSTR:
+- date: '2000-01-27'
+  ratio: 2.0
+- date: '2002-07-31'
+  ratio: 0.1
+- date: '2024-08-08'
+  ratio: 10.0

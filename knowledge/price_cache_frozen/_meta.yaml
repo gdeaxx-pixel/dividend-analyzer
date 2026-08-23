@@ -1,0 +1,72 @@
+# Generado por fetch_price_cache.py. Fecha de generacion y rango cubierto por ticker del cache en knowledge/price_cache/*.parquet.
+# Refresco semanal via .github/workflows/refresh-price-cache.yml. No editar a mano.
+NVDY:
+  generated_at: '2026-08-22'
+  start: '2023-05-11'
+  end: '2026-08-21'
+  rows: 823
+TSLY:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+CONY:
+  generated_at: '2026-08-22'
+  start: '2023-08-15'
+  end: '2026-08-21'
+  rows: 758
+MSTY:
+  generated_at: '2026-08-22'
+  start: '2024-02-22'
+  end: '2026-08-21'
+  rows: 627
+CHPY:
+  generated_at: '2026-08-22'
+  start: '2025-04-08'
+  end: '2026-08-21'
+  rows: 345
+SCHB:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+XLK:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+SMH:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+NFLY:
+  generated_at: '2026-08-22'
+  start: '2023-08-08'
+  end: '2026-08-21'
+  rows: 763
+YMAX:
+  generated_at: '2026-08-22'
+  start: '2024-01-17'
+  end: '2026-08-21'
+  rows: 652
+NVDA:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+TSLA:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+COIN:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938
+MSTR:
+  generated_at: '2026-08-22'
+  start: '2022-11-23'
+  end: '2026-08-21'
+  rows: 938

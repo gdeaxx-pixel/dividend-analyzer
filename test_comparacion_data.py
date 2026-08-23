@@ -32,21 +32,23 @@ from ui.adapters import (  # noqa: E402
 
 _COMPONENTE = os.path.join(os.path.dirname(__file__), "ui", "componentes", "comparacion.html")
 
-# Ground truth verificado en vivo por Opus (retorno total Con DRIP / Sin DRIP, en %,
-# desde la incepción de cada fondo hasta `last`). Ver traspaso de la tarea.
+# Ground truth MEDIDO contra el snapshot congelado `knowledge/price_cache_frozen/`
+# (retorno total Con DRIP / Sin DRIP, en %, desde la incepción de cada fondo hasta `last`).
+# La ENTRADA está versionada y el cron no la toca, así que estas cifras son deterministas —
+# antes se medían contra el caché vivo y el refresh semanal las rompía (Regla 6).
 _RETORNO_ESPERADO = {
     #        con DRIP   sin DRIP
-    "NVDY": (365.5, 169.4),
-    "TSLY": (32.1, 7.8),
-    "CONY": (19.8, 79.9),
-    "MSTY": (19.4, 133.5),
+    "NVDY": (347.7, 166.9),
+    "TSLY": (37.1, 8.2),
+    "CONY": (44.7, 81.8),
+    "MSTY": (45.8, 136.0),
 }
 
 # Ventaja del efectivo (Sin DRIP − Con DRIP, en puntos porcentuales): negativa = el DRIP
 # gana, positiva = el efectivo gana. Es el hallazgo pedagógico que justifica la vista.
 _VENTAJA_EFECTIVO_ESPERADA = {
-    "TSLY": -24.3,
-    "MSTY": 114.1,
+    "TSLY": -28.9,
+    "MSTY": 90.2,
 }
 
 
@@ -75,7 +77,12 @@ def corrida():
 
     backtest.run_backtest = espia
     try:
-        d = comparacion_data()
+        # ENTRADA CONGELADA: todo el ground truth de este módulo se mide contra el snapshot
+        # versionado, no contra el caché vivo que el cron refresca (Regla 6 — ver la nota
+        # sobre `_RETORNO_ESPERADO` arriba).
+        from conftest import frozen_price_cache
+        with frozen_price_cache():
+            d = comparacion_data()
     finally:
         backtest.run_backtest = original
 
@@ -289,10 +296,10 @@ def test_nvda_si_paga_dividendo_y_la_retencion_se_nota(datos):
 
 
 # Ventaja del efectivo (Sin DRIP − Con DRIP, pp) de los ETFs de crecimiento, medida el
-# 2026-08-18 contra el caché pineado. Es el contraste pedagógico con MSTY (+114.1): en un
-# fondo que aprecia, reinvertir gana por poco; en uno con el NAV colapsado, el efectivo gana
-# por mucho.
-_VENTAJA_EFECTIVO_GROWTH = {"SCHB": -3.2, "XLK": -3.5, "SMH": -9.2}
+# 2026-08-23 contra el snapshot congelado (`knowledge/price_cache_frozen/`). Es el contraste
+# pedagógico con MSTY (+90.2): en un fondo que aprecia, reinvertir gana por poco; en uno con
+# el NAV colapsado, el efectivo gana por mucho.
+_VENTAJA_EFECTIVO_GROWTH = {"SCHB": -3.1, "XLK": -3.2, "SMH": -8.6}
 
 
 @pytest.mark.parametrize("tk,esperado_pp", sorted(_VENTAJA_EFECTIVO_GROWTH.items()))
@@ -328,22 +335,25 @@ def corridas_ym(con_avisos_19a):
     roc19a = logic.load_roc_19a()
     roc_ici = logic.load_roc_ici()
     out = {}
-    for tk in con_avisos_19a:
-        h = price_cache.load_history(tk).history.sort_index()
-        start = h.index.min()
+    from conftest import frozen_price_cache
+    with frozen_price_cache():
+        for tk in con_avisos_19a:
+            h = price_cache.load_history(tk).history.sort_index()
+            start = h.index.min()
 
-        def corre(modo, drip, exacto=True):
-            pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
-            kw = {"roc_pct_by_year": pol.roc_pct_by_year} if exacto else {}
-            rate = pol.rate if exacto else _tasa_efectiva_neta(tk, modo, roc19a)
-            return backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
-                                         drip=drip, nra_rate=rate, history=h, **kw)
+            def corre(modo, drip, exacto=True):
+                pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
+                kw = {"roc_pct_by_year": pol.roc_pct_by_year} if exacto else {}
+                rate = pol.rate if exacto else _tasa_efectiva_neta(tk, modo, roc19a)
+                return backtest.run_backtest(tk, start_date=start,
+                                             initial_capital=_INDICE_CAPITAL,
+                                             drip=drip, nra_rate=rate, history=h, **kw)
 
-        out[tk] = {
-            "roc_con": corre("roc", True), "roc_sin": corre("roc", False),
-            "bruto_con": corre("bruto", True), "plano_con": corre("plano", True),
-            "viejo_con": corre("roc", True, exacto=False),
-        }
+            out[tk] = {
+                "roc_con": corre("roc", True), "roc_sin": corre("roc", False),
+                "bruto_con": corre("bruto", True), "plano_con": corre("plano", True),
+                "viejo_con": corre("roc", True, exacto=False),
+            }
     return out
 
 

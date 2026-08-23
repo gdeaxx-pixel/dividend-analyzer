@@ -256,22 +256,64 @@ class TestVeredictoDerivado:
             for tk, e in datos["escenarios"][modo].items():
                 assert e["devueltoCon"] == pytest.approx(0.0, abs=0.01), f"{tk}/{modo}"
 
-    def test_mas_impuesto_no_implica_peor_resultado_con_drip(self, datos):
-        """Fija el contraejemplo para que nadie lo 'arregle' creyendo que es un bug.
+    def test_mas_impuesto_no_implica_peor_resultado_con_drip(self):
+        """Propiedad ESTRUCTURAL del motor: «más impuesto ⇒ peor resultado» es FALSO con
+        DRIP, y la lección que enseña el copy necesita que eso sea cierto EN EL MOTOR — no
+        en un ticker concreto.
 
-        Con reinversión, subir el impuesto cambia el CAMINO: se reinvierte menos en el
-        fondo y parte del dinero vuelve más tarde, a otro precio. En un fondo que colapsa
-        eso puede terminar MEJOR que no pagar impuesto. Hoy lo ilustra MSTY (−91.4%).
+        Antes esto escaneaba `datos["escenarios"]` buscando un fondo real que ilustrara la
+        propiedad (MSTY lo hizo durante meses). Era un hecho de mercado codificado como
+        guarda: el refresh del caché se lo llevó y el test quedaba rojo sin bug (Regla 6).
+        Ahora la propiedad se demuestra por construcción: una historia SINTÉTICA determinista
+        (fondo que paga dividendos gordos y luego colapsa antes del 1042-S) pasa por el motor
+        REAL, y el escenario con retención+escudo ROC termina ARRIBA del bruto. Si alguien
+        rompe el manejo del escudo o del DRIP de forma que «más impuesto» vuelva a ser
+        monotónico, esta demostración deja de sostenerse y el test avisa.
 
-        Se afirma la propiedad, no el ticker: si mañana ningún fondo la ilustra, el test
-        avisa en vez de romper — no es una cifra pineada, es una lección que necesita al
-        menos un caso vivo para poder contarse."""
-        peores = {tk for tk, e in datos["escenarios"]["roc"].items()
-                  if e["conTot"] > datos["escenarios"]["bruto"][tk]["conTot"]}
-        assert peores, (
-            "ningún fondo ilustra ya que 'más impuesto ⇒ peor resultado' es falso con "
-            "DRIP. No es necesariamente un bug —puede ser que los precios cambiaran—, "
-            "pero el copy que enseña esa lección se queda sin ejemplo: revisarlo.")
+        Lo que ya NO caza: que hoy exista un fondo REAL que ilustre la lección (eso es dato
+        de mercado, no contrato). El copy de `metodo.html` deriva su veredicto del dato vivo;
+        si ningún fondo lo ilustra, la pantalla lo dice sola."""
+        import pandas as pd
+
+        # Historia sintética: 2023 plano con dividendos mensuales gordos (se retiene 30% en
+        # cada uno), enero-febrero 2024 colapsa ~x0.3, y desde marzo dividendos normales.
+        # El reembolso del año fiscal 2023 llega el 1-mar-2024 y compra acciones a precio
+        # hundido: eso es lo que hace que el escenario con impuesto gane con DRIP.
+        idx = pd.date_range("2023-01-01", periods=900, freq="D")
+        price, divs = [100.0], [0.0]
+        for i, dt_ in enumerate(idx[1:], 1):
+            d = 0.0
+            if dt_.year == 2023:
+                rate = 0.0
+                if dt_.day == 1:
+                    d = price[-1] * 0.04
+            elif dt_.year == 2024 and dt_.month in (1, 2):
+                rate = -0.02
+            else:
+                rate = 0.0
+                if dt_.day == 1:
+                    d = price[-1] * 0.02
+            price.append(price[-1] * (1 + rate))
+            divs.append(d)
+        h = pd.DataFrame({"Close": price, "Dividends": divs}, index=idx)
+
+        bruto = backtest.run_backtest("SINTETICO", idx[0], initial_capital=10000.0,
+                                      drip=True, nra_rate=0.0, history=h)
+        roc = backtest.run_backtest("SINTETICO", idx[0], initial_capital=10000.0,
+                                    drip=True, nra_rate=0.30,
+                                    roc_pct_by_year={2023: 100.0}, history=h)
+
+        assert roc.final_total_value > bruto.final_total_value, (
+            "el motor ya no puede producir 'más impuesto ⇒ mejor resultado' con DRIP ni "
+            "siquiera en el escenario diseñado para ello (colapso entre la retención y el "
+            "1042-S). Esto sí es un bug del escudo/del DRIP, no un cambio de mercado — la "
+            f"lección del copy perdió su prueba de existencia: bruto="
+            f"{bruto.final_total_value:.2f} vs roc={roc.final_total_value:.2f}")
+        # Y la huella de que el mecanismo es el reembolso (no un artefacto): sin escudo, la
+        # misma corrida con retención pierde contra bruto — el impuesto al cobro solo resta.
+        plano = backtest.run_backtest("SINTETICO", idx[0], initial_capital=10000.0,
+                                      drip=True, nra_rate=0.30, history=h)
+        assert plano.final_total_value < bruto.final_total_value
 
     def test_el_veredicto_por_ticker_no_es_unanime(self, datos):
         """La lección correcta —y la que `test_comparacion_data.py` ya protege— es que la
