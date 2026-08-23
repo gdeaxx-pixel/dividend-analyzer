@@ -203,6 +203,70 @@ def test_la_tasa_observada_no_alimenta_el_objeto_fiscal():
 # ── Contra el CSV real ──────────────────────────────────────────────────────────
 
 
+def test_convencion_ib_plegada_tambien_mide_la_tasa():
+    """Cobertura de la convención IB (check 12): la retención va PLEGADA en una fila
+    'Dividend - Foreign Tax Withholding' (con la palabra dividend), no en un 'NRA Tax Adj'
+    aparte como Schwab. `withheld_at_payment_by_year` —que alimenta `applied_withholding_rate`
+    vía la copia de logic.py:4941, hoy enrutada al predicado único `_is_tax_row_action`—
+    tiene que verla igual: al cobro, sin netear reembolsos."""
+    # mismo escenario numérico que test_la_tasa_aplicada_ignora_los_reembolsos,
+    # pero con la fila de impuesto en formato IB
+    filas = [("2025-02-28", "Dividend", 1000.0),
+             ("2025-02-28", "Dividend - Foreign Tax Withholding", -300.0),
+             ("2026-02-01", "Dividend - Foreign Tax Withholding", 225.0)]  # reverso IB
+    s = _stats(1000.0, filas)
+
+    assert logic.withheld_at_payment_by_year(s["history"])[2025] == pytest.approx(300.0), (
+        "la fila IB plegada cuenta como retención al cobro")
+    d = logic.applied_withholding_rate(s)
+    assert d["withheld_at_payment"] == pytest.approx(300.0)
+    assert d["applied_pct"] == pytest.approx(30.0), (
+        "si la convención plegada de IB no se viera, la tasa saldría 0% y el "
+        "diagnóstico de W-8BEN sería ciego para clientes IB")
+
+
+def test_convencion_ib_contra_el_fixture_sintetico(monkeypatch):
+    """Ground truth sintético de la convención IB (`fixtures/ib_synth_1`, retención plegada
+    30% plano): CONY bruto $60.00, retención $18.00 → tasa aplicada exactamente 30%,
+    medida con el objeto fiscal completo de `analyze_portfolio` (no a mano). NVDY se mide
+    aparte con su valor esperado real: su bruto incluye $1.20 de 'Payment in Lieu'
+    (mapeado a 'Dividend' por action_map) sobre el que NO hubo retención, así que su tasa
+    es 18.0/61.2 = 29.41%, no 30% — el test lo pinea para cazar deriva del denominador."""
+    import io
+
+    class _FF:
+        def __init__(self, b):
+            self._b = io.BytesIO(b)
+            self.name = "ib_synth_1.csv"
+
+        def read(self):
+            return self._b.read()
+
+        def seek(self, n):
+            self._b.seek(n)
+
+    raw = open(os.path.join(BASE, "fixtures", "ib_synth_1",
+                            "synthetic_transactions.csv"), "rb").read()
+    df, broker = logic.load_and_detect_csv(_FF(raw))
+    assert broker == "ibkr"
+    monkeypatch.setattr(logic, "fetch_market_data", lambda t, d: (
+        pd.DataFrame({"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0]},
+                     index=[pd.Timestamp("2024-10-15")]), None))
+    res = logic.analyze_portfolio(logic.normalize_csv(df), version="TEST_TASA_APLICADA_IB")
+
+    d_cony = logic.applied_withholding_rate(res["CONY"])
+    assert d_cony["withheld_at_payment"] == pytest.approx(18.0), (
+        "la retención plegada IB debe verse como retención al cobro")
+    assert d_cony["applied_pct"] == pytest.approx(30.0, abs=0.1), (
+        f"CONY: {d_cony['applied_pct']}% — el fixture IB declara 30% plano plegado en fila")
+
+    # NVDY: mismo numerador ($18), denominador inflado por Payment in Lieu sin retención
+    d_nvdy = logic.applied_withholding_rate(res["NVDY"])
+    assert res["NVDY"]["dividends_gross_total"] == pytest.approx(61.20, abs=0.01)
+    assert d_nvdy["applied_pct"] == pytest.approx(18.0 / 61.2 * 100, abs=0.01), (
+        "NVDY: la tasa debe salir del bruto REAL (incluido el in-lieu), no de un redondeo")
+
+
 def test_contra_el_csv_real_de_schwab():
     """Ground truth: el 1042-S del mismo cliente declara 30% en la casilla 3b para el
     código 06, y el CSV tiene que dar lo mismo medido sobre los movimientos."""
