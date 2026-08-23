@@ -10,8 +10,9 @@ necesita un test que compare DOS VISTAS DEL MISMO NÚMERO entre sí. Las vistas 
 El fixture es MIXTO Schwab+IB: un portafolio de un solo bróker NO vale — así nació el
 test mentiroso del A1 (verde meses con el defecto vivo porque su fixture era solo-Schwab).
 Se construye uniendo las transacciones normalizadas de `fixtures/schwab_synth_2`
-(Schwab: retención en fila aparte `NRA Tax Adj`) con las de `fixtures/ib_synth_1`
-(IB: retención plegada en la fila del dividendo), sin solapamiento de tickers.
+(Schwab: retención en fila aparte, Action 'NRA Tax Adj', sin la palabra dividend) con las
+de `fixtures/ib_synth_1` (IB: retención PLEGADA en la fila
+'Dividend - Foreign Tax Withholding'), sin solapamiento de tickers.
 
 Criterio de aceptación exacto (en los DOS brókers):
 
