@@ -1329,8 +1329,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # procesarla dos veces. Sin este branch, el retiro de caja por impuesto era
             # invisible para el cronograma de IRR (mismo bug de fondo que gross_value, pero
             # de timing): IRR salía sobreestimado igual que ROI/Retorno Total.
-            is_tax_only = (('nra tax' in action or 'tax adj' in action or 'withholding' in action
-                            or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
+            is_tax_only = (_is_tax_row_action(action)
                            and not is_div_payout)
 
             # Logic
@@ -4938,9 +4937,7 @@ def withheld_at_payment_by_year(history_df) -> dict:
         return out
     for _, row in history_df.iterrows():
         action = str(row.get('Action', '')).lower()
-        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
-                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
-        if not is_tax:
+        if not _is_tax_row_action(action):
             continue
         amt = _clean_money(row.get('Amount', 0))
         if pd.isna(amt) or float(amt) >= 0:       # solo retenciones (montos negativos)
@@ -4977,9 +4974,7 @@ def observed_tax_refund_by_year(history_df) -> dict:
         return out
     for _, row in history_df.iterrows():
         action = str(row.get('Action', '')).lower()
-        is_tax = ('nra tax' in action or 'tax adj' in action or 'withholding' in action
-                  or 'foreign tax' in action or 'retención' in action or 'retencion' in action)
-        is_tax = is_tax and 'dividend' not in action  # excluye IB (ver docstring)
+        is_tax = _is_tax_row_action(action) and 'dividend' not in action  # excluye IB (ver docstring)
         if not is_tax:
             continue
         amt = _clean_money(row.get('Amount', 0))
