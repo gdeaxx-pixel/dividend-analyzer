@@ -138,23 +138,43 @@ def test_verificar_identidades_sin_stats_omite_el_guard_independiente(monkeypatc
     assert verificar_identidades(datos, stats={}) == []
 
 
-def test_verificar_identidades_no_es_ciego_a_la_convencion_rota(monkeypatch):
-    """PR C, Parte 2 — auditoría de Opus al PR B: la versión anterior del guard decidía qué
-    lado comparar (NETO vs BRUTO) leyendo `stats['dividend_base_convention']`, que sale de
-    la MISMA detección (`logic._dividend_tax_netted`) que el guard debería estar auditando.
-    Si esa detección se rompe, la convención se rompe con ella y el guard cuadra por
-    casualidad — comprobado sabotajeando `_dividend_tax_netted` para que devuelva siempre
-    `True`: Schwab vuelve a mostrar BRUTO $600.60 (el bug que arregló el PR B) y el guard
-    viejo no lo veía. Este test fuerza exactamente ese sabotaje y exige que el guard falle."""
-    monkeypatch.setattr(logic, "_dividend_tax_netted", lambda history_df: True)
-    s = _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_SCHWAB_SABOTAGE_NETTED")
+def test_verificar_identidades_no_es_ciego_al_predicado_roto(monkeypatch):
+    """PR C, Parte 2 (adaptado al fix de la familia `_dividend_*`): el guard debe cazar un
+    objeto fiscal roto aunque la rotación venga del PREDICADO compartido. Hoy el sabotaje
+    que rompe el BRUTO es apagar `_is_tax_row_action` (las filas de retención de IB vuelven
+    a contarse como dividendo — el defecto A1 de la auditoría del 22-ago, +55–78% medido);
+    con la detección rota, `analyze_portfolio` produce un BRUTO inflado y el guard
+    (`_bruto_independiente_del_csv`, que NO pasa por el predicado compartido) debe fallar.
+    Nota: sabotear `_dividend_tax_netted` ya NO rompe nada — tras el fix esa detección solo
+    declara procedencia, no participa en la aritmética del bruto."""
+    monkeypatch.setattr(logic, "_is_tax_row_action", lambda action: False)
+    s = _ib_msty_stats_saboteada(monkeypatch)
     datos = cashflow_data(s, "MSTY")
-    # Con la detección sabotajeada, el objeto fiscal único queda roto (BRUTO=600.60 en vez
-    # de 462.00) — confirmamos el sabotaje antes de exigirle nada al guard.
-    assert datos["BRUTO"] == pytest.approx(600.60, abs=0.01)
+    # Con el predicado apagado, el objeto fiscal único queda roto: las filas 'Dividend -
+    # Foreign Tax Withholding' se suman dentro del ledger (el "bruto" colapsa al NETO,
+    # $6,679.07) y `withheld_tax_total` deja de ver la retención ($0). Confirmamos el
+    # sabotaje antes de exigirle nada al guard.
+    assert datos["BRUTO"] == pytest.approx(6679.07, abs=0.01)
+    assert datos["BRUTO"] != pytest.approx(7224.59, abs=0.01)   # el bruto real del CSV
     fallos = verificar_identidades(datos, s)
     assert any("CSV releído independiente" in f for f in fallos), (
-        "el guard debe reportar el BRUTO inflado por la convención rota, no pasar en silencio")
+        "el guard debe reportar el BRUTO inflado por el predicado roto, no pasar en silencio")
+
+
+def _ib_msty_stats_saboteada(monkeypatch):
+    """Como `_ib_msty_stats` pero corriendo `analyze_portfolio` CON el predicado ya
+    saboteado (necesita su propia cache key — ver la nota en `_schwab_msty_stats`)."""
+    base = os.path.dirname(__file__)
+    csv_path = os.path.join(base, "real_examples", "interactive_brokers_data", "1",
+                             "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    if not os.path.exists(csv_path):
+        pytest.skip("real_examples/interactive_brokers_data/1 no disponible")
+    with open(csv_path, "rb") as f:
+        df, broker = logic.load_and_detect_csv(FakeFile(f.read(), "ib_1.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="TEST_ADAPTERS_IB_SABOTAGE_PREDICADO")
+    return res["MSTY"]
 
 
 def test_verificar_identidades_detecta_objeto_fiscal_roto(monkeypatch):
@@ -214,10 +234,11 @@ def test_verificar_identidades_caza_infinito_y_none(monkeypatch):
 
 def test_el_guard_de_nan_no_le_gana_al_guard_de_convencion(monkeypatch):
     """La comprobación de finitud va ANTES y devuelve de inmediato — pero solo debe
-    dispararse cuando hay una cifra no numérica. Con datos sanos y una convención rota, el
-    fallo que se reporta tiene que seguir siendo el del CSV releído, no un falso NaN."""
-    monkeypatch.setattr(logic, "_dividend_tax_netted", lambda history_df: True)
-    s = _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_NAN_NO_TAPA_CONVENCION")
+    dispararse cuando hay una cifra no numérica. Con datos sanos y el predicado de fila-de-
+    impuesto roto (BRUTO inflado), el fallo que se reporta tiene que seguir siendo el del
+    CSV releído, no un falso NaN."""
+    monkeypatch.setattr(logic, "_is_tax_row_action", lambda action: False)
+    s = _ib_msty_stats_saboteada(monkeypatch)
     datos = cashflow_data(s, "MSTY")
     fallos = verificar_identidades(datos, s)
     assert any("CSV releído independiente" in f for f in fallos)
