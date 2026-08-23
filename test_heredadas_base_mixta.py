@@ -66,13 +66,20 @@ def _resultados_mixtos(monkeypatch):
     mixto = pd.concat([df_s[cols], df_i[cols]], ignore_index=True)
 
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
-    return logic.analyze_portfolio(mixto, version="TEST_BASE_MIXTA")
+    results = logic.analyze_portfolio(mixto, version="TEST_BASE_MIXTA")
+    return results, mixto
+
+
+def _filas_ticker(mixto: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Sub-DataFrame del CSV mixto con SOLO las filas de este ticker (para correr
+    `build_dividend_tax_totals` de verdad sobre la vista 3, no leer stats)."""
+    return mixto[mixto["Ticker"] == ticker]
 
 
 def test_base_mixta_resumen_cuadricula_y_objeto_fiscal_coinciden(monkeypatch):
     """Regla 3b: resumen consolidado == cuadrícula ROC == build_dividend_tax_totals,
     ticker a ticker y en TOTAL, sobre fixture MIXTO Schwab+IB."""
-    results = _resultados_mixtos(monkeypatch)
+    results, mixto = _resultados_mixtos(monkeypatch)
 
     schwab_tickers = ["MSTY", "SCHB"]
     ib_tickers = ["NVDY", "CONY", "SMH"]
@@ -100,14 +107,19 @@ def test_base_mixta_resumen_cuadricula_y_objeto_fiscal_coinciden(monkeypatch):
     total_div_resumen = float(fila_total["Dividendos cobrados"]
                               .replace("$", "").replace(",", ""))
 
-    # contra el objeto fiscal único (vista 3), mismo alcance (solo los de rows)
-    esperado = sum(logic.build_dividend_tax_totals(results[t]["ticker_df"])["net"]
-                   if "ticker_df" in results[t] else results[t]["dividends_net_total"]
+    # contra el objeto fiscal único (vista 3), mismo alcance (solo los de rows):
+    # build_dividend_tax_totals corre DE VERDAD sobre las filas del ticker re-filtradas
+    # desde el CSV mixto — no se lee `dividends_net_total` de stats (eso sería comparar
+    # la vista consigo misma)
+    esperado = sum(logic.build_dividend_tax_totals(_filas_ticker(mixto, t))["net"]
                    for t in schwab_tickers)
-    assert total_div_resumen == pytest.approx(
-        sum(results[t]["dividends_net_total"] for t in schwab_tickers), abs=0.01)
     assert total_div_resumen == pytest.approx(esperado, abs=0.01), (
-        "el TOTAL del resumen consolidado diverge del objeto fiscal único")
+        "el TOTAL del resumen consolidado diverge del objeto fiscal único "
+        "(build_dividend_tax_totals corrido directo sobre el CSV)")
+    for t in schwab_tickers:
+        assert results[t]["dividends_net_total"] == pytest.approx(
+            logic.build_dividend_tax_totals(_filas_ticker(mixto, t))["net"], abs=0.01), (
+            f"{t}: stats y el objeto re-derivado del CSV divergen")
 
     # ── vista 2: _cuadricula_roc_consolidada — identidad exacta por ticker y en TOTAL ──
     capturado.clear()
@@ -143,25 +155,49 @@ def test_base_mixta_resumen_cuadricula_y_objeto_fiscal_coinciden(monkeypatch):
 
 
 def test_base_mixta_roi_consolidado_resta_retencion_schwab(monkeypatch):
-    """El ROI del TOTAL consolidado ya no infla con la retención NRA de Schwab:
-    con el fix, el retorno mostrado es exactamente `retención_total` más negativo que el
-    que daba la suma bruta — ni más ni menos (patrón de
-    test_agregados_schwab_resta_retencion_nra_en_retorno_total)."""
-    results = _resultados_mixtos(monkeypatch)
+    """El ROI del TOTAL consolidado ya no infla con la retención NRA de Schwab.
+    Pasa POR LA VISTA REAL (`_resumen_consolidado`, spy del dataframe): revertir el fix
+    de A2 tiene que dejar este test ROJO, no solo al de identidad. El retorno mostrado
+    es exactamente `retención_total` más negativo que el de la suma bruta — ni más ni
+    menos (patrón de test_agregados_schwab_resta_retencion_nra_en_retorno_total)."""
+    results, _mixto = _resultados_mixtos(monkeypatch)
 
     schwab_tickers = ["MSTY", "SCHB"]
     rows = [(t, results[t]) for t in schwab_tickers]
 
-    inv = sum(s["pocket_investment"] for _, s in rows)
-    mv = sum(s["market_value"] for _, s in rows)
+    import ui.heredadas as heredadas_mod
+    capturado = {}
+
+    def _spy_dataframe(df_arg, *args, **kwargs):
+        capturado["df"] = df_arg
+
+    monkeypatch.setattr(heredadas_mod.st, "dataframe", _spy_dataframe)
+    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(heredadas_mod.st, "caption", lambda *a, **k: None)
+
+    _resumen_consolidado(rows)
+    fila_total = capturado["df"][capturado["df"]["Ticker"] == "TOTAL"].iloc[0]
+
+    def _num(celda):
+        return float(str(celda).replace("$", "").replace(",", ""))
+
+    inv_vista = _num(fila_total["Tu inversión"])
+    mv_vista = _num(fila_total["Valor mercado"])
+    div_vista = _num(fila_total["Dividendos cobrados"])
+    tr_vista = mv_vista + div_vista - inv_vista
+
+    # lo que mostraba la vista con el bug (suma bruta), reconstruido de stats
     div_bruto_buggy = sum(s.get("dividends_collected_cash", 0) for _, s in rows)
-    tr_buggy = mv + div_bruto_buggy - inv
+    tr_buggy = mv_vista + div_bruto_buggy - inv_vista
+
     retencion = sum(results[t]["dividends_gross_total"] - results[t]["dividends_net_total"]
                     for t in schwab_tickers)
     assert retencion > 0, "el fixture Schwab debe traer retención para que el test muerda"
 
-    tr_correcto = mv + sum(results[t]["dividends_net_total"] for t in schwab_tickers) - inv
-    assert round(tr_buggy - tr_correcto, 2) == pytest.approx(retencion, abs=0.01)
+    assert div_vista == pytest.approx(div_bruto_buggy - retencion, abs=0.01), (
+        "«Dividendos cobrados» del TOTAL no restó exactamente la retención Schwab")
+    assert round(tr_buggy - tr_vista, 2) == pytest.approx(retencion, abs=0.01), (
+        "el ROI del TOTAL mostrado por la vista no baja exactamente la retención")
 
 
 def test_resumen_sin_objeto_fiscal_degrada_al_campo_crudo():
