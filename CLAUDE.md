@@ -61,9 +61,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **655 passed, 2 skipped, 3 deselected** (medido 2026-08-23 sobre `main` tras el
-#68 —enrutar la familia `_dividend_*` al predicado único de fila-de-impuesto— y el #69
-—congelar la entrada del caché en los tests de cifras—. Antes: 651 passed, 2 skipped, 3
+Línea base: **660 passed, 2 skipped, 3 deselected** (medido 2026-08-23 sobre `main` =
+`b72f4ae`, con el #71 —vistas heredadas con base mixta, A2/A3— y el #72 —las 3 copias inline
+del predicado de fila-de-impuesto al predicado único, más cobertura IB de la tasa aplicada—
+dentro. **Ninguno de los dos PRs actualizó este número, y menos mal**: cada uno medía sobre su
+propia rama (658 y 657), habrían chocado al mergear y los dos habrían quedado mal — el real
+post-merge sólo se sabe midiendo el árbol fusionado. Antes: 655 tras el #68 —enrutar la familia
+`_dividend_*` al predicado único— y el #69 —congelar la entrada del caché en los tests de
+cifras—. Antes: 651 passed, 2 skipped, 3
 deselected, medido 2026-08-21 tras poner el cierre
 fiscal por delante de la estimación 19(a): 644 antes; 636 tras jubilar el motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
 `_politica_fiscal`, la cuenta no se movió pero la cobertura sí cambió de dueño—, más 8 de
