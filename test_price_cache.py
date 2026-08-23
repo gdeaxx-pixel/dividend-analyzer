@@ -66,9 +66,26 @@ def _require_msty_csv():
 
 
 def _require_cache(ticker):
-    if ticker not in pc.cache_coverage():
-        pytest.skip(f"knowledge/price_cache no tiene entrada para {ticker} — correr "
-                     f"fetch_price_cache.py {ticker} primero")
+    """Exige cobertura para `ticker` en el CACHE_DIR activo.
+
+    Distingue las dos entradas, porque su ausencia significa cosas distintas:
+
+    - **Caché vivo** (`knowledge/price_cache/`): es un artefacto GENERADO por el cron y no
+      está versionado, así que puede legítimamente no existir en una máquina limpia -> skip.
+    - **Snapshot congelado** (`knowledge/price_cache_frozen/`): está VERSIONADO en el repo
+      desde el PR #69. Si falta, no es "no hay datos", es un defecto —alguien lo borró o un
+      merge se lo llevó— y con él se va el guard entero de las cifras congeladas. Un skip ahí
+      apaga la prueba sin hacer ruido, y un skip no es un pass -> fail.
+    """
+    if ticker in pc.cache_coverage():
+        return
+    if pc._is_frozen():
+        pytest.fail(
+            f"{ticker} no está en el snapshot congelado ({pc.CACHE_DIR}). El snapshot está "
+            f"versionado: su ausencia es un defecto, no falta de datos. Restaurarlo desde "
+            f"git, no regenerarlo (regenerarlo cambia la entrada y mueve las cifras).")
+    pytest.skip(f"knowledge/price_cache no tiene entrada para {ticker} — correr "
+                 f"fetch_price_cache.py {ticker} primero")
 
 
 def _msty_position_and_ground_truth_from_cache():
@@ -143,9 +160,13 @@ def test_frozen_figures_reproduce_from_cache(ticker, inception, price_pct, condr
     with frozen_price_cache():
         _require_cache(ticker)
         hist_result = pc.load_history(ticker, start=inception)
-        if hist_result.source not in ("cache", "cache_stale_fallback"):
-            pytest.skip(f"price_cache.load_history({ticker!r}) no uso el cache (source="
-                         f"{hist_result.source!r})")
+        # Bajo el snapshot congelado NO se admite otra fuente: si el motor salió a la red,
+        # la entrada dejó de estar congelada y estas cifras vuelven a moverse con el mercado
+        # — que es exactamente el defecto que el PR #69 cerró. Fallar, no saltar.
+        assert hist_result.source in ("cache", "cache_stale_fallback"), (
+            f"price_cache.load_history({ticker!r}) no usó el snapshot congelado "
+            f"(source={hist_result.source!r}): la entrada dejó de ser determinista y las "
+            f"cifras de FROZEN_FIGURES ya no significan nada.")
 
         r_drip = bt.run_backtest(ticker, inception, initial_capital=10000.0, drip=True,
                                   history=hist_result.history)

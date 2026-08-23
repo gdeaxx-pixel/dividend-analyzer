@@ -61,7 +61,10 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **651 passed, 2 skipped, 3 deselected** (medido 2026-08-21 tras poner el cierre
+Línea base: **655 passed, 2 skipped, 3 deselected** (medido 2026-08-23 sobre `main` tras el
+#68 —enrutar la familia `_dividend_*` al predicado único de fila-de-impuesto— y el #69
+—congelar la entrada del caché en los tests de cifras—. Antes: 651 passed, 2 skipped, 3
+deselected, medido 2026-08-21 tras poner el cierre
 fiscal por delante de la estimación 19(a): 644 antes; 636 tras jubilar el motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
 `_politica_fiscal`, la cuenta no se movió pero la cobertura sí cambió de dueño—, más 8 de
 `test_roc_ici.py` — el parser del ICI histórico, ver
