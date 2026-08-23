@@ -329,11 +329,20 @@ def _tarjeta_roc(stats: dict) -> None:
 
 
 def _tarjeta_retorno_total(stats: dict) -> None:
-    """Literal de `app_old.py:5160-5219` (retorno total + erosión de NAV si aplica)."""
-    total_ret = stats["market_value"] + stats["dividends_collected_cash"] - stats["pocket_investment"]
+    """Literal de `app_old.py:5160-5219` (retorno total + erosión de NAV si aplica).
+
+    Alineada (2026-08-23) con `_agregados` de este archivo y `cashflow_data`: el «Income»
+    era `dividends_collected_cash`, que es BRUTO al cobro en Schwab (retención en fila
+    aparte) mientras el ROI que calcula `analyze_portfolio` (`logic.py:1574`,
+    `_cash_collected_net`) deriva del NETO — hasta ~$105 de diferencia por posición bajo la
+    misma etiqueta «Retorno Total». Mismo fallback que `_agregados`.
+    """
+    inc = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
+           else stats.get("dividends_collected_cash", 0))
+    total_ret = stats["market_value"] + inc - stats["pocket_investment"]
     total_ret_pct = (total_ret / stats["pocket_investment"] * 100) if stats["pocket_investment"] > 0 else 0
     cap_comp = stats["market_value"] - stats["pocket_investment"]
-    inc_comp = stats["dividends_collected_cash"]
+    inc_comp = inc
     color_tr = _color_signo(total_ret)
     color_cap = _color_signo(cap_comp)
     st.markdown(
@@ -500,7 +509,14 @@ def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
 
     total_inv = sum(s["pocket_investment"] for _, s in rows)
     total_mv = sum(s["market_value"] for _, s in rows)
-    total_div = sum(s.get("dividends_collected_cash", 0) for _, s in rows)
+    # Mismo defecto de base mixta que ya resolvió `_agregados` (:105) en este archivo:
+    # `dividends_collected_cash` viene BRUTO en Schwab (retención en fila aparte) y NETO en
+    # IB, así que el TOTAL y el ROI consolidados sumaban bases distintas en un portafolio
+    # mixto. `dividends_net_total` es el objeto fiscal único (`build_dividend_tax_totals`,
+    # corrido dentro de `analyze_portfolio`) — mismo fallback que `_agregados`.
+    total_div = sum((s.get("dividends_net_total") if s.get("dividends_net_total") is not None
+                     else s.get("dividends_collected_cash", 0))
+                    for _, s in rows)
     total_tr = total_mv + total_div - total_inv
     total_tr_pct = (total_tr / total_inv * 100) if total_inv > 0 else 0
     has_roc = any(s.get("ib_cost_basis") is not None for _, s in rows)
@@ -514,7 +530,9 @@ def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
         "Ticker": t,
         "Acciones": f"{s['shares_owned']:.4f}",
         "Tu inversión": _money(s["pocket_investment"]),
-        "Dividendos cobrados": _money(s.get("dividends_collected_cash", 0)),
+        "Dividendos cobrados": _money(s.get("dividends_net_total")
+                                      if s.get("dividends_net_total") is not None
+                                      else s.get("dividends_collected_cash", 0)),
         "Valor mercado": _money(s["market_value"]),
         "Base de coste (ROC)": _money(s.get("ib_cost_basis"), defecto="—"),
         "ROC acumulado": (f"{_money(s.get('roc_accumulated'))} "
@@ -764,14 +782,20 @@ def _cuadricula_roc_consolidada(items, resultados: dict, roc19a_asof: dict) -> N
             "ROC": (f"{_money(roc_a, 0)} ({roc_p:.0f}%)" if roc_a is not None else "n/d")
                    + (" est.19a" if roc_src == "19a" else ""),
             "Reinvertidos": _money(rs.get("dividends_collected_drip"), 0),
-            "En efectivo": _money(rs.get("dividends_collected_cash"), 0),
+            # «En efectivo» derivado como residuo del neto (neto − drip), igual que
+            # `cashflow_data` en `ui/adapters.py`: `dividends_collected_cash` es BRUTO en
+            # Schwab y mostrarlo junto a la columna «neto» rompía la identidad visible
+            # (el «neto» salía MENOR que el «efectivo» en exactamente la retención NRA).
+            "En efectivo": _money(round(pagado_neto - (rs.get("dividends_collected_drip") or 0), 2), 0),
             "Invertido": _money(rs.get("pocket_investment"), 0),
             "Costo bróker": _money(basis, 0),
             "Valor actual": _money(rs.get("market_value"), 0),
         })
         total["pagado"] += pagado_neto
         total["drip"] += rs.get("dividends_collected_drip") or 0
-        total["cash"] += rs.get("dividends_collected_cash") or 0
+        # mismo residuo neto − drip que la fila (A3): la columna TOTAL no puede volver a
+        # sumar el campo bruto
+        total["cash"] += round(pagado_neto - (rs.get("dividends_collected_drip") or 0), 2)
         total["pkt"] += rs.get("pocket_investment") or 0
         total["mv"] += rs.get("market_value") or 0
         if basis is not None:
