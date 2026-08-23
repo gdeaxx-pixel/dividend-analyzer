@@ -44,17 +44,18 @@ META_PATH = pc.META_PATH
 # publicada. 0.5% deja ~38x de margen sin esconder una regresion real.
 GATE_TOLERANCE_PCT = 0.5
 
-# Cifras "que no pueden moverse" citadas en el plan (verificadas por Opus contra el motor ya
-# mergeado, capital inicial $10,000): (ticker, inception, price_return_pct, ConDRIP, SinDRIP).
-# Tolerancia 0.2pp: el cache se genero el mismo dia que se corrio este test, asi que la unica
-# fuente de deriva posible es que el precio de HOY se mueva entre que Opus verifico los
-# numeros y que corre este test — no una discrepancia cache-vs-vivo (misma llamada a
-# `bt.fetch_history` en ambos casos, ver `fetch_price_cache.py`).
+# Cifras "que no pueden moverse", MEDIDAS contra el snapshot congelado
+# `knowledge/price_cache_frozen/` (2026-08-23, capital inicial $10,000):
+# (ticker, inception, price_return_pct, ConDRIP, SinDRIP). La ENTRADA esta congelada y
+# versionada — el cron no la toca — asi que estas salidas son deterministas para siempre.
+# Tolerancia 0.2pp: con la entrada fija cualquier desviacion es una regresion del motor o del
+# snapshot, no deriva de mercado. Antes se comparaban contra el caché vivo y el refresh
+# semanal las rompia sin que nadie rompiera nada (Regla 6).
 FROZEN_FIGURES = [
-    ("NVDY", "2023-05-11", -34.3, 365.5, 169.4),
-    ("TSLY", "2022-11-23", -89.0, 32.1, 7.8),
-    ("CONY", "2023-08-15", -90.9, 19.8, 79.9),
-    ("MSTY", "2024-02-22", -88.7, 19.4, 133.5),
+    ("NVDY", "2023-05-11", -37.4, 347.7, 166.9),
+    ("TSLY", "2022-11-23", -88.7, 37.1, 8.2),
+    ("CONY", "2023-08-15", -89.2, 44.7, 81.8),
+    ("MSTY", "2024-02-22", -86.4, 45.8, 136.0),
 ]
 FROZEN_TOLERANCE_PCT = 0.2
 
@@ -138,16 +139,18 @@ def test_gate_msty_reconciles_against_real_ib_statement_using_cache():
 @pytest.mark.parametrize("ticker,inception,price_pct,condrip_pct,sindrip_pct", FROZEN_FIGURES)
 def test_frozen_figures_reproduce_from_cache(ticker, inception, price_pct, condrip_pct,
                                               sindrip_pct):
-    _require_cache(ticker)
-    hist_result = pc.load_history(ticker, start=inception)
-    if hist_result.source not in ("cache", "cache_stale_fallback"):
-        pytest.skip(f"price_cache.load_history({ticker!r}) no uso el cache (source="
-                     f"{hist_result.source!r})")
+    from conftest import frozen_price_cache
+    with frozen_price_cache():
+        _require_cache(ticker)
+        hist_result = pc.load_history(ticker, start=inception)
+        if hist_result.source not in ("cache", "cache_stale_fallback"):
+            pytest.skip(f"price_cache.load_history({ticker!r}) no uso el cache (source="
+                         f"{hist_result.source!r})")
 
-    r_drip = bt.run_backtest(ticker, inception, initial_capital=10000.0, drip=True,
-                              history=hist_result.history)
-    r_cash = bt.run_backtest(ticker, inception, initial_capital=10000.0, drip=False,
-                              history=hist_result.history)
+        r_drip = bt.run_backtest(ticker, inception, initial_capital=10000.0, drip=True,
+                                  history=hist_result.history)
+        r_cash = bt.run_backtest(ticker, inception, initial_capital=10000.0, drip=False,
+                                  history=hist_result.history)
 
     assert r_drip.price_return_pct == pytest.approx(price_pct, abs=FROZEN_TOLERANCE_PCT), (
         f"{ticker}: retorno de precio desde cache {r_drip.price_return_pct:.1f}% se alejo de "

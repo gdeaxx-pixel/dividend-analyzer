@@ -319,22 +319,15 @@ def test_escalera_efectivo_describe_el_mismo_mundo_que_su_xirr(datos):
     assert esc["efectivoD"] + tot["inv"] == pytest.approx(tot["sinTotReal"], abs=0.05)
 
 
-def test_escalera_efectivo_es_siempre_mayor_que_real_el_doble_conteo_que_denuncia(datos):
-    """`efectivoPct` por encima de `realPct` (DRIP probado).
-
-    Corrección de encuadre (2026-08-21): el docstring decía que `efectivoPct` «suma
-    dividendos Y valor, doble conteo». No lo es — desde el arreglo del contrafáctico es el
-    escenario legítimo sin reinversión (`maxTot + divSin`), y el panel lo rotula así
-    («retorno teórico si nada se hubiera reinvertido»). El doble conteo que la sección
-    denuncia vive en la columna `Total inv.` de la matriz, no aquí.
-
-    OJO: esta desigualdad es un HECHO DE MERCADO de hoy (+63.2% contra +59.9%, apenas
-    3.4 pp), no una invariante estructural. Si un día se invierte, es dato nuevo —el DRIP
-    pasó a ganar a nivel cartera— y no un bug: la lección del panel (÷N no es anualizar)
-    no depende del signo. Antes del arreglo el margen era artificialmente enorme (267%
-    contra 60%) y ocultaba lo apretado que está."""
-    esc = datos["escalera"]
-    assert esc["efectivoPct"] > esc["realPct"]
+# `test_escalera_efectivo_es_siempre_mayor_que_real_el_doble_conteo_que_denuncia` se
+# JUBILÓ el 2026-08-23 (traspaso de los 16 tests del caché móvil). No se jubila por el
+# doble conteo —esa lección la cazan los dos guards de arriba, vivos— sino porque su
+# aserción final (`efectivoPct > realPct`) era un HECHO DE MERCADO: +63.2% contra +59.9%
+# cuando se escribió, y hoy midió 64.02 contra 68.08 — se invirtió sin que nadie rompiera
+# nada. Su propio docstring lo anticipaba: «si un día se invierte, es dato nuevo —el DRIP
+# pasó a ganar a nivel cartera— y no un bug: la lección del panel (÷N no es anualizar) no
+# depende del signo». La lección real sigue guardada; solo se retiró la apuesta al signo
+# del mercado (Regla 6 del contrato).
 
 
 def test_escalera_mult_son_none_o_positivos_y_reconcilian(datos):

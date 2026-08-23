@@ -28,9 +28,22 @@ import yaml
 import backtest as bt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE_DIR = os.path.join(HERE, "knowledge", "price_cache")
+
+# Override de pruebas: los tests que fijan cifras contra una entrada que NO se mueve apuntan
+# aqui al snapshot congelado (`knowledge/price_cache_frozen/`) en vez del caché vivo, que el
+# cron refresca y commitea semanalmente.
+CACHE_DIR = os.environ.get("DIVIDEND_PRICE_CACHE_DIR") or os.path.join(
+    HERE, "knowledge", "price_cache")
 META_PATH = os.path.join(CACHE_DIR, "_meta.yaml")
 SPLITS_PATH = os.path.join(CACHE_DIR, "_splits.yaml")
+
+
+def _is_frozen() -> bool:
+    """True cuando CACHE_DIR apunta al snapshot congelado. El snapshot es una ENTRADA de
+    prueba inmutable: su fecha de generacion no envejece como la del caché vivo, asi que
+    nunca cuenta como vencido — si contara, los tests que clavan cifras contra el volverian
+    a depender de la red (fallback a vivo) y a moverse con el mercado."""
+    return os.path.basename(os.path.normpath(CACHE_DIR)) == "price_cache_frozen"
 
 # Daniel confirmo que un desfase de hasta un mes es aceptable (no hace falta tiempo real, ver
 # plan). 35 dias da margen sobre el refresco semanal (deberia refrescar cada 7 dias) sin ser
@@ -152,7 +165,8 @@ def load_history(ticker: str, start=None, end=None,
     age_days = _cache_age_days(meta.get("generated_at")) if meta else None
     asof = meta.get("generated_at") if meta else None
 
-    if cached is not None and age_days is not None and age_days <= max_staleness_days:
+    if cached is not None and (_is_frozen() or (
+            age_days is not None and age_days <= max_staleness_days)):
         return HistoryResult(history=_slice_by_date(cached, start, end), source="cache",
                               ticker=ticker, cache_asof=asof, stale=False)
 
@@ -179,7 +193,8 @@ def load_splits(ticker: str,
     age_days = _cache_age_days(meta.get("generated_at")) if meta else None
     asof = meta.get("generated_at") if meta else None
 
-    if cached is not None and age_days is not None and age_days <= max_staleness_days:
+    if cached is not None and (_is_frozen() or (
+            age_days is not None and age_days <= max_staleness_days)):
         return SplitsResult(splits=cached, source="cache", ticker=ticker,
                              cache_asof=asof, stale=False)
 
