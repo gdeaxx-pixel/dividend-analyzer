@@ -411,6 +411,15 @@ _ESTILOS = """
           > div:has(:is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta)) {
           margin-left: auto; min-width: 48px; text-align: right;
         }
+        /* El separador "|" vive en una columna Streamlit completa (mínimo ~130px por el
+           min-width interno de los popovers vecinos) y centrado ahí se ve como un hueco
+           enorme entre segmentos — notorio desde que «Método tradicional» quedó con solo
+           dos vistas (2026-08-24). Su celda abrazará el carácter: min-content. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+          > div:has(.vd-sep) {
+          flex: 0 0 auto; width: min-content;
+          display: flex; align-items: center; justify-content: center;
+        }
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
           white-space: nowrap;
         }
