@@ -2709,6 +2709,9 @@
     // el 2026-08-24. Sus IIFEs de render vivían aquí; los datos que consumían
     // (ESC, YM, YM_MEDIDO) salieron con ellos porque ningún otro bloque los lee.
     // La variable `ratios` se queda: el modal de la paradoja (mTmtotParadoja) la usa.
+  })();   // ← cierra initMetodo. El corte de las vistas 3-5 se comió este cierre
+          //   (en el original venían dos })(); seguidos) y el SyntaxError tumbaba
+          //   el script entero: tablas y gráfica de Greco en blanco (#84).
   // ---- Modal: Inversión · matriz Sin DRIP (click sobre encabezado ⓘ) ----
   (function () {
     var modal = document.getElementById("modal-sintuinv");
