@@ -1119,6 +1119,16 @@
       </section>
     </div>
 
+      <section class="meth-item" id="mt-evolucion">
+        <h3 class="meth-h">11 · Evolución de la calculadora: complejidad y rigor</h3>
+        <p class="meth-p"><b>Qué mide:</b> cómo creció esta herramienta desde su primer commit (4 feb 2026) hasta hoy, en dos ejes que cuentan la misma historia desde ángulos distintos. La <b>complejidad</b> es el tamaño del motor de cálculo (<code>logic.py</code>, líneas de código) — todo lo que la app sabe hacer con tus cifras. El <b>rigor</b> es el número de tests automatizados que protegen esas cifras — cada uno una afirmación verificada contra casos reales del bróker.</p>
+        <p class="meth-p"><b>Cómo se lee:</b> el motor no creció solo: cada salto de complejidad (el ROC/NRA de junio, la unificación fiscal de agosto) llegó acompañado de una red de seguridad proporcional. A mediados de febrero la calculadora era una hoja con una fórmula; en mayo entraron los primeros tests; desde entonces ambos crecieron juntos. Los puntos marcan hitos: los tests empezaron (may), el contrato fiscal ROC/NRA (jun) y la auditoría y unificación del predicado fiscal (ago).</p>
+        <svg id="evoChart" viewBox="0 0 720 340" role="img" aria-label="Gráfica: líneas del motor y número de tests por mes, febrero a agosto 2026" style="width:100%;height:auto;display:block"></svg>
+        <p class="meth-src">Fuente: medido del historial git del propio repositorio — último commit de cada mes; LOC de <code>logic.py</code> vía <code>git show &lt;sha&gt;:logic.py | wc -l</code> y tests contando <code>def test_*</code> sobre los archivos de test del árbol de ese commit. Nada estimado: cada punto es reproducible con esos dos comandos.</p>
+      </section>
+
+    </div>
+
     <div class="meth-formulario" id="mt-formulario">
       <h3 class="meth-h">Formulario</h3>
       <p class="meth-p">Todas las ecuaciones de esta página, juntas:</p>
@@ -1167,6 +1177,7 @@
       { id: "mt-ratios", lab: "8 · Ratios que sí sirven" },
       { id: "mt-anualizar", lab: "9 · Anualizar bien" },
       { id: "mt-metodo", lab: "10 · Método tradicional" },
+      { id: "mt-evolucion", lab: "11 · Evolución" },
       { id: "mt-formulario", lab: "Formulario" }
     ];
     function highlight(id) {
@@ -1188,6 +1199,102 @@
     // ya iluminada la entrada relacionada con la sección que se estaba consultando —
     // sigue autocontenido: sin ese global, este bloque es un no-op.
     if (window.__vdAnchor) { highlight(window.__vdAnchor); }
+  })();
+
+  // § 11 «Evolución» — gráfica SVG autocontenida: LOC de logic.py (complejidad) y nº de
+  // tests (rigor) por mes, del historial git. Doble eje Y porque las escalas no comparten
+  // unidad; los dos ejes se anclan a la misma trama para que la comparación visual sea
+  // honesta (0 compartido). Los datos están pineados con su comando reproductor en meth-src.
+  (function drawEvolucion() {
+    var svg = document.getElementById("evoChart");
+    if (!svg) return;
+    var MESES = ["feb", "mar", "abr", "may", "jun", "jul", "ago"];
+    var LOC = [661, 677, 1457, 1724, 4439, 5281, 6145];
+    var TESTS = [1, 1, 1, 29, 163, 221, 486];
+    var HITOS = { 3: "primeros tests", 4: "contrato ROC/NRA", 6: "auditoría + predicado único" };
+    var NS = "http://www.w3.org/2000/svg";
+    var W = 720, H = 340, M = { t: 28, r: 56, b: 42, l: 62 };
+    var pw = W - M.l - M.r, ph = H - M.t - M.b;
+    function el(tag, attrs) {
+      var n = document.createElementNS(NS, tag);
+      for (var k in attrs) n.setAttribute(k, attrs[k]);
+      return n;
+    }
+    var maxLoc = Math.ceil(Math.max.apply(null, LOC) / 2000) * 2000;   // 8000
+    var maxTes = Math.ceil(Math.max.apply(null, TESTS) / 100) * 100;   // 500
+    var x = function (i) { return M.l + (pw * i) / (MESES.length - 1); };
+    var yL = function (v) { return M.t + ph * (1 - v / maxLoc); };
+    var yT = function (v) { return M.t + ph * (1 - v / maxTes); };
+    var css = getComputedStyle(document.documentElement);
+    var c = function (name, fb) { return (css.getPropertyValue(name) || "").trim() || fb; };
+    var inkMut = c("--ink-mut", "#8598a9"), ink2 = c("--ink-2", "#33475a");
+    var acc = c("--accent", "#006497");
+    // grid + ticks izquierdos (LOC)
+    for (var g = 0; g <= 4; g++) {
+      var v = maxLoc * g / 4;
+      svg.appendChild(el("line", { x1: M.l, x2: W - M.r, y1: yL(v), y2: yL(v),
+        stroke: inkMut, "stroke-opacity": ".22", "stroke-width": "1" }));
+      var t = el("text", { x: M.l - 8, y: yL(v) + 4, "text-anchor": "end",
+        fill: acc, "font-size": "11" });
+      t.textContent = Math.round(v).toLocaleString("es");
+      svg.appendChild(t);
+      var vt = maxTes * g / 4;
+      var t2 = el("text", { x: W - M.r + 8, y: yT(vt) + 4, "text-anchor": "start",
+        fill: c("--roc-ok", "#2e9e6b") === c("--roc-ok", "") ? "#2e9e6b" : c("--roc-ok", "#2e9e6b"),
+        "font-size": "11" });
+      t2.textContent = Math.round(vt);
+      t2.setAttribute("fill", "#2e9e6b");
+      svg.appendChild(t2);
+    }
+    // eje X (meses)
+    MESES.forEach(function (m, i) {
+      var t = el("text", { x: x(i), y: H - M.b + 20, "text-anchor": "middle",
+        fill: ink2, "font-size": "12" });
+      t.textContent = m;
+      svg.appendChild(t);
+    });
+    // línea LOC (área tenue + trazo accent)
+    var d = LOC.map(function (v, i) { return (i ? "L" : "M") + x(i) + "," + yL(v); }).join(" ");
+    var area = d + " L" + x(LOC.length - 1) + "," + (M.t + ph) + " L" + M.l + "," + (M.t + ph) + " Z";
+    svg.appendChild(el("path", { d: area, fill: acc, "fill-opacity": ".08" }));
+    svg.appendChild(el("path", { d: d, fill: "none", stroke: acc,
+      "stroke-width": "2.5", "stroke-linejoin": "round" }));
+    // línea TESTS (punteada verde)
+    var dt = TESTS.map(function (v, i) { return (i ? "L" : "M") + x(i) + "," + yT(v); }).join(" ");
+    svg.appendChild(el("path", { d: dt, fill: "none", stroke: "#2e9e6b",
+      "stroke-width": "2.5", "stroke-dasharray": "7 5", "stroke-linejoin": "round" }));
+    // puntos + hitos + valores finales
+    LOC.forEach(function (v, i) {
+      svg.appendChild(el("circle", { cx: x(i), cy: yL(v), r: "3.5", fill: acc }));
+      svg.appendChild(el("circle", { cx: x(i), cy: yT(TESTS[i]), r: "3.5", fill: "#2e9e6b" }));
+      if (HITOS[i] !== undefined) {
+        var ty = Math.min(yT(TESTS[i]), yL(LOC[i])) - 12;
+        var h = el("text", { x: x(i), y: ty, "text-anchor": "middle",
+          fill: inkMut, "font-size": "10.5", "font-style": "italic" });
+        h.textContent = "▲ " + HITOS[i];
+        svg.appendChild(h);
+      }
+    });
+    var fin = el("text", { x: x(6) - 6, y: yL(LOC[6]) - 10, "text-anchor": "end",
+      fill: acc, "font-size": "12", "font-weight": "600" });
+    fin.textContent = "6 145 líneas";
+    svg.appendChild(fin);
+    var fint = el("text", { x: x(6) - 6, y: yT(TESTS[6]) - 10, "text-anchor": "end",
+      fill: "#2e9e6b", "font-size": "12", "font-weight": "600" });
+    fint.textContent = "486 tests";
+    svg.appendChild(fint);
+    // leyenda
+    var lg = el("g", {});
+    [[acc, "Complejidad — líneas del motor (logic.py)", false],
+     ["#2e9e6b", "Rigor — tests automatizados", true]].forEach(function (item, i) {
+      var yy = M.t - 10;
+      lg.appendChild(el("line", { x1: M.l + i * 300, x2: M.l + i * 300 + 26, y1: yy, y2: yy,
+        stroke: item[0], "stroke-width": "2.5", "stroke-dasharray": item[2] ? "7 5" : "none" }));
+      var lt = el("text", { x: M.l + i * 300 + 34, y: yy + 4, fill: ink2, "font-size": "11.5" });
+      lt.textContent = item[1];
+      lg.appendChild(lt);
+    });
+    svg.appendChild(lg);
   })();
 
   // § 9 «Anualizar bien» — este bloque ya NO calcula: lee `D.escalera`
