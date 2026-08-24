@@ -467,6 +467,15 @@
   .meth-refs a { color: var(--accent); word-break: break-word; }
   .meth-note { font-size: 11.5px; color: var(--ink-mut); margin: 18px 0 0; line-height: 1.55; }
   .meth-note .flag { color: var(--loss); font-weight: 700; }
+  /* § 11 Evolución: la gráfica vive fuera de .meth-grid (tras el cierre del grid),
+     así que este margen propio separa su título del párrafo anterior («1499%/499%»)
+     sin tocar el espaciado interno del grid. */
+  .meth-evolucion { margin-top: 34px; }
+  /* Puntos-hito interactivos: sin rótulo visible; el clic revela título + descripción. */
+  .evoHito { cursor: pointer; }
+  .evoHito circle { transition: r .15s ease; }
+  .evoHito:hover circle, .evoHito:focus circle { r: 7; }
+  .evoHito:focus { outline: none; }
 
   /* ---- tabla del ítem 8 (los ratios que sí sirven) — scroll horizontal, mismo
      patrón que las tablas de he-grid: en una columna de ~450px no cabe entera ---- */
@@ -1119,7 +1128,7 @@
       </section>
     </div>
 
-      <section class="meth-item" id="mt-evolucion">
+      <section class="meth-item meth-evolucion" id="mt-evolucion">
         <h3 class="meth-h">11 · Evolución de la calculadora: complejidad y rigor</h3>
         <p class="meth-p"><b>Qué mide:</b> cómo creció esta herramienta desde su primer commit (4 feb 2026) hasta hoy, en dos ejes que cuentan la misma historia desde ángulos distintos. La <b>complejidad</b> es el tamaño del motor de cálculo (<code>logic.py</code>, líneas de código) — todo lo que la app sabe hacer con tus cifras. El <b>rigor</b> es el número de tests automatizados que protegen esas cifras — cada uno una afirmación verificada contra casos reales del bróker.</p>
         <p class="meth-p"><b>Cómo se lee:</b> el motor no creció solo: cada salto de complejidad (el ROC/NRA de junio, la unificación fiscal de agosto) llegó acompañado de una red de seguridad proporcional. A mediados de febrero la calculadora era una hoja con una fórmula; en mayo entraron los primeros tests; desde entonces ambos crecieron juntos. Los puntos marcan hitos: los tests empezaron (may), el contrato fiscal ROC/NRA (jun) y la auditoría y unificación del predicado fiscal (ago).</p>
@@ -1211,7 +1220,23 @@
     var MESES = ["feb", "mar", "abr", "may", "jun", "jul", "ago"];
     var LOC = [661, 677, 1457, 1724, 4439, 5281, 6145];
     var TESTS = [1, 1, 1, 29, 163, 221, 486];
-    var HITOS = { 3: "primeros tests", 4: "contrato ROC/NRA", 6: "auditoría + predicado único" };
+    /* Hitos de progreso: cada punto es clicable y revela título + descripción breve.
+       Sin rótulos permanentes sobre la gráfica — la gráfica queda limpia y el detalle
+       se descubre al pasar/clicar. `mes` = índice en MESES, `linea` = "loc" | "tests". */
+    var HITOS = [
+      { mes: 0, linea: "loc", titulo: "Primer commit",
+        desc: "feb 2026 — La calculadora nace como una hoja con una fórmula: 661 líneas, un solo test." },
+      { mes: 3, linea: "tests", titulo: "Entraron los primeros tests",
+        desc: "may 2026 — Se pasa de teorizar cálculos a respaldarlos: 29 tests automatizados contra casos reales del bróker." },
+      { mes: 4, linea: "tests", titulo: "Contrato fiscal ROC/NRA",
+        desc: "jun 2026 — El impuesto y el retorno de capital obtienen reglas propias e invariables; la suite salta a 163 tests." },
+      { mes: 4, linea: "loc", titulo: "El motor se triplica",
+        desc: "jun 2026 — De 1 457 a 4 439 líneas: entra el cálculo ROC-aware con retención por país." },
+      { mes: 5, linea: "loc", titulo: "Del papel al backtesting",
+        desc: "jul 2026 — Se cambia la teorización de cálculos por backtesting event-driven sobre ex-date y pay-date reales. El motor llega a 5 281 líneas." },
+      { mes: 6, linea: "tests", titulo: "Auditoría + predicado único",
+        desc: "ago 2026 — Auditoría completa del motor fiscal y unificación del predicado de fila: una sola convención bruto/neto para toda la app. 486 tests." }
+    ];
     var NS = "http://www.w3.org/2000/svg";
     var W = 720, H = 340, M = { t: 28, r: 56, b: 42, l: 62 };
     var pw = W - M.l - M.r, ph = H - M.t - M.b;
@@ -1263,22 +1288,81 @@
     var dt = TESTS.map(function (v, i) { return (i ? "L" : "M") + x(i) + "," + yT(v); }).join(" ");
     svg.appendChild(el("path", { d: dt, fill: "none", stroke: "#2e9e6b",
       "stroke-width": "2.5", "stroke-dasharray": "7 5", "stroke-linejoin": "round" }));
-    // puntos + hitos + valores finales
+    // puntos de datos + hitos interactivos (sin rótulo visible; clic = tooltip)
+    var tooltip = el("g", { opacity: "0", "pointer-events": "none" });
+    var ttFondo = el("rect", { rx: "6", fill: c("--ink", "#12202c"), "fill-opacity": ".96" });
+    var ttTitulo = el("text", { fill: "#fff", "font-size": "11.5", "font-weight": "700" });
+    var ttDesc = el("text", { fill: "#d7e2ec", "font-size": "10.5" });
+    tooltip.appendChild(ttFondo); tooltip.appendChild(ttTitulo); tooltip.appendChild(ttDesc);
+    svg.appendChild(tooltip);
+    var hitoAbierto = null;
+    function muestraHito(h, px, py) {
+      ttTitulo.textContent = h.titulo;
+      // partir la descripción en líneas de ~52 caracteres
+      while (ttDesc.firstChild) ttDesc.removeChild(ttDesc.firstChild);
+      var palabras = h.desc.split(" "), linea = "", lineas = [];
+      palabras.forEach(function (p) {
+        if ((linea + " " + p).trim().length > 52) { lineas.push(linea.trim()); linea = p; }
+        else linea += " " + p;
+      });
+      if (linea.trim()) lineas.push(linea.trim());
+      lineas.forEach(function (ln, li) {
+        var tspan = document.createElementNS(NS, "tspan");
+        tspan.setAttribute("x", "0");
+        tspan.setAttribute("dy", li ? "13" : "0");
+        tspan.textContent = ln;
+        ttDesc.appendChild(tspan);
+      });
+      var ancho = Math.max(150, h.titulo.length * 6.6 + 24);
+      var alto = 26 + lineas.length * 13;
+      var tx = Math.min(Math.max(px - ancho / 2, M.l), W - M.r - ancho);
+      var ty = py - alto - 14;
+      if (ty < M.t) ty = py + 16;
+      ttFondo.setAttribute("x", tx); ttFondo.setAttribute("y", ty);
+      ttFondo.setAttribute("width", ancho); ttFondo.setAttribute("height", alto);
+      ttTitulo.setAttribute("x", tx + 12); ttTitulo.setAttribute("y", ty + 17);
+      ttDesc.setAttribute("x", tx + 12); ttDesc.setAttribute("y", ty + 32);
+      tooltip.setAttribute("opacity", "1");
+    }
     LOC.forEach(function (v, i) {
       svg.appendChild(el("circle", { cx: x(i), cy: yL(v), r: "3.5", fill: acc }));
       svg.appendChild(el("circle", { cx: x(i), cy: yT(TESTS[i]), r: "3.5", fill: "#2e9e6b" }));
-      if (HITOS[i] !== undefined) {
-        /* En el último mes el punto verde está pegado al techo y choca con el rótulo
-           "486 tests": ese hito va DEBAJO del punto; los demás, arriba. */
-        var ty = (i === MESES.length - 1)
-          ? yT(TESTS[i]) + 20
-          : Math.min(yT(TESTS[i]), yL(LOC[i])) - 12;
-        var h = el("text", { x: x(i), y: ty, "text-anchor": "end",
-          fill: inkMut, "font-size": "10.5", "font-style": "italic" });
-        h.textContent = "▲ " + HITOS[i];
-        svg.appendChild(h);
-      }
     });
+    HITOS.forEach(function (h) {
+      var px = x(h.mes);
+      var py = (h.linea === "loc") ? yL(LOC[h.mes]) : yT(TESTS[h.mes]);
+      var g = el("g", { "class": "evoHito", tabindex: "0", role: "button",
+        "aria-label": h.titulo + ": " + h.desc });
+      /* aro blanco bajo el punto: lo separa visualmente de los puntos-mes normales
+         y del mismo color para que se lea como "aquí hay algo que abrir". */
+      g.appendChild(el("circle", { cx: px, cy: py, r: "8", fill: "#ffffff", "fill-opacity": ".9" }));
+      g.appendChild(el("circle", { cx: px, cy: py, r: "5.5",
+        fill: (h.linea === "loc") ? acc : "#2e9e6b", stroke: "#ffffff", "stroke-width": "1.5" }));
+      function abre() {
+        if (hitoAbierto === h && tooltip.getAttribute("opacity") === "1") {
+          tooltip.setAttribute("opacity", "0"); hitoAbierto = null; return;
+        }
+        hitoAbierto = h;
+        muestraHito(h, px, py);
+      }
+      g.addEventListener("click", abre);
+      g.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abre(); }
+      });
+      g.addEventListener("mouseenter", function () {
+        if (!hitoAbierto) muestraHito(h, px, py);
+      });
+      g.addEventListener("mouseleave", function () {
+        if (!hitoAbierto) tooltip.setAttribute("opacity", "0");
+      });
+      svg.appendChild(g);
+    });
+    svg.appendChild(tooltip);   // re-append: el tooltip pinta encima de todos los puntos
+    // pista sutil: hay puntos abribles (una sola vez, discreta)
+    var pista = el("text", { x: W - M.r, y: H - 4, "text-anchor": "end",
+      fill: inkMut, "font-size": "10", "font-style": "italic" });
+    pista.textContent = "● los puntos con aro revelan su historia al pasar o hacer clic";
+    svg.appendChild(pista);
     var fin = el("text", { x: x(6) - 6, y: yL(LOC[6]) - 10, "text-anchor": "end",
       fill: acc, "font-size": "12", "font-weight": "600" });
     fin.textContent = "6 145 líneas";
