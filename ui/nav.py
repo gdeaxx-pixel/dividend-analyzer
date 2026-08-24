@@ -37,13 +37,9 @@ CMP_ORDER = ('simulacion', 'real')
 MET_VIEWS = {
     'matriz': 'La matriz',
     'matriz2': 'Matriz 2',
-    'rendimiento': 'El rendimiento',
-    'payback': 'Payback ≠ ganancia',
-    'tasa': 'Rendimiento vs tasa',
-    'otras': 'Otras calculadoras',
 }
 
-MET_ORDER = ('matriz', 'matriz2', 'rendimiento', 'payback', 'tasa', 'otras')
+MET_ORDER = ('matriz', 'matriz2')
 
 
 # «Metodología» NO es una categoría: el demo la oculta al volver a la jerarquía

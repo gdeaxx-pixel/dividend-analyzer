@@ -261,7 +261,7 @@ def test_la_grafica_vive_dentro_del_panel_de_la_matriz():
     como una sexta sub-vista del menú."""
     html = _leer("ui", "componentes", "metodo.html")
     inicio = html.index('id="met-panel-matriz"')
-    fin = html.index('id="met-panel-rendimiento"')
+    fin = html.index("</main>", inicio)
     panel = html[inicio:fin]
     assert 'id="tmSerieBlock"' in panel
     assert panel.index('id="tmSinDripBlock"') < panel.index('id="tmSerieBlock"'), (
@@ -307,7 +307,7 @@ def test_el_componente_no_recalcula_ninguna_tasa_fiscal_en_js():
     dos fuentes para el mismo dólar."""
     html = _leer("ui", "componentes", "metodo.html")
     ini = html.index("function renderSerie()")
-    fin = html.index("VISTA 3 · EL RENDIMIENTO", ini)
+    fin = html.index("</script>", ini)
     bloque = html[ini:fin]
     assert "TASA_NRA" not in bloque and "ROC_19A" not in bloque, (
         "el bloque de la serie usó las tasas que gobiernan las tablas")

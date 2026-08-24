@@ -835,40 +835,8 @@
 
   .tm-context { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); margin: 2px 0 12px 2px; }
 
-  /* ---- vista 3: escalera del rendimiento — un escalón por fila, no se mueve nada,
-     solo se lee de arriba a abajo ---- */
-  .tm-escalera { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
-  .tm-step {
-    display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 10px 18px;
-    padding: 13px 16px; background: var(--panel); border: 1px solid var(--hair); border-left: 3px solid var(--hair-soft);
-  }
-  .tm-step-lab { font-size: 13.5px; color: var(--ink-2); font-weight: 600; }
-  .tm-step-val { text-align: right; font-size: 17px; font-weight: 700; }
-  .tm-step-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-mut); margin-top: -2px; }
-  .tm-step-anual { font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
-  .tm-step.mal { border-left-color: var(--loss); } .tm-step.mal .tm-step-val { color: var(--loss); }
-  .tm-step.ok { border-left-color: var(--ink-mut); } .tm-step.ok .tm-step-val { color: var(--ink); }
-  .tm-step.na { border-left-color: var(--hair); } .tm-step.na .tm-step-val { color: var(--ink-mut); }
-  .tm-step.real { border-left-color: var(--accent); background: var(--accent-tint); } .tm-step.real .tm-step-val { color: var(--accent); }
-
-  /* ---- vista 5: las seis fallas — misma tarjeta visual que .meth-item, con otro
-     nombre de clase porque vive fuera de la vista Metodología ---- */
-  .tm-fallas { display: flex; flex-direction: column; gap: 22px; margin-top: 26px; }
-  .tm-falla { border-left: 2px solid var(--hair); padding-left: 16px; }
-  .tm-falla-h { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); margin: 0 0 8px; line-height: 1.3; }
-  .tm-falla-p { font-size: 13px; line-height: 1.55; color: var(--ink-2); margin: 0 0 8px; }
-  .tm-falla-p b { color: var(--ink); font-weight: 600; }
-  .tm-falla-p i.num { color: var(--ink); }
-
-  /* ---- calculadoras vivas (fallas 1 y 6) — mismo lenguaje visual que los
-     controles de Comparación: .cmp-field/.cmp-lab agrupan el control con su
-     etiqueta mono en mayúsculas ---- */
-  .tm-calc { margin-top: 12px; padding: 14px 16px; background: var(--panel-tint); border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 12px; }
-  .tm-calc-row { display: flex; align-items: center; gap: 12px; }
-  .tm-calc-row input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 0; }
-  .tm-calc-row .num { width: 76px; text-align: right; font-weight: 700; color: var(--ink); flex-shrink: 0; }
-  .tm-calc-out { font-size: 13.5px; color: var(--ink-2); }
-  .tm-calc-out .num.big { font-size: 19px; font-weight: 700; color: var(--ink); }
+  /* El CSS de las vistas retiradas (escalera, fallas, calculadoras vivas)
+     salió con ellas el 2026-08-24. */
 
   @keyframes grow { to { transform: scaleY(1); } }
   @keyframes pop { to { opacity: 1; } }
@@ -1158,78 +1126,12 @@
       </div>
     </div>
 
-    <!-- 3 · EL RENDIMIENTO -->
-    <div class="panel" id="met-panel-rendimiento" role="tabpanel" hidden>
-      <header class="cmp-head">
-        <h2 class="cmp-title">El rendimiento</h2>
-        <p class="cmp-lede">La misma fórmula, aplicada cuatro veces distintas — y solo una de ellas es correcta.</p>
-      </header>
-      <div class="tm-escalera" id="tmEscalera"></div>
-      <p class="cmp-summary" id="tmEscaleraCierre"></p>
-      <p class="cmp-notes" id="tmEscaleraNotas"></p>
-    </div>
-
-    <!-- 4 · PAYBACK ≠ GANANCIA -->
-    <div class="panel" id="met-panel-payback" role="tabpanel" hidden>
-      <header class="cmp-head">
-        <h2 class="cmp-title">Payback ≠ ganancia</h2>
-        <p class="cmp-lede">El test verde de la hoja es real — pero cobrar de vuelta tu dinero y ganar dinero no son la misma cosa.</p>
-      </header>
-      <div class="he-scroll">
-        <div class="he-grid tm-grid3" id="tmPaybackGrid">
-          <div class="he-h he-l"><span class="he-lab" data-tip="tm-pb-accion">Acción</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-pb-bruto">Payback bruto</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-pb-neto">Payback neto<span class="he-sub">cota superior</span></span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-pb-ret">Retorno real</span></div>
-        </div>
-      </div>
-      <p class="cmp-summary" id="tmPaybackMsg"></p>
-      <p class="cmp-notes" id="tmPaybackNra"></p>
-    </div>
-
-    <!-- 5 · RENDIMIENTO VS TASA DE DISTRIBUCIÓN -->
-    <div class="panel" id="met-panel-tasa" role="tabpanel" hidden>
-      <header class="cmp-head">
-        <h2 class="cmp-title">Rendimiento vs. tasa de distribución</h2>
-        <p class="cmp-lede">MSTY publica <b>90.51%</b> de tasa de distribución y <b>3.26%</b> de 30-Day SEC Yield el mismo día — <b>27.8×</b> de diferencia entre la métrica de marketing y la métrica regulada.</p>
-      </header>
-
-      <div class="he-scroll">
-        <div class="he-grid tm-grid4" id="tmYmGrid">
-          <div class="he-h he-l"><span class="he-lab" data-tip="tm-ym-accion">Acción</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-ym-titular">Titular</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-ym-sec">SEC 30d</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-ym-x">Brecha</span></div>
-          <div class="he-h"><span class="he-lab" data-tip="tm-ym-real">Retorno real</span></div>
-        </div>
-      </div>
-      <p class="cmp-notes" id="tmYmNotes"></p>
-
-      <div class="tm-fallas" id="tmFallas"></div>
-    </div>
-
-    <!-- 6 · OTRAS CALCULADORAS (en diseño) -->
-    <div class="panel" id="met-panel-otras" role="tabpanel" hidden>
-      <div class="soon">
-        <span class="soon-badge">En diseño</span>
-        <h2 class="soon-title">La rúbrica de 5 preguntas</h2>
-        <p class="soon-lede">Antes de confiar en cualquier calculadora de dividendos — la propia, esta u otra —, pásale estas cinco preguntas. Aquí vive la rúbrica; las respuestas para cada calculadora, cuando las diseñemos.</p>
-        <div class="ghost-rail" aria-hidden="true">
-          <div class="ghost-step"><div class="ghost-bar"></div><div class="ghost-lab">¿DRIP o efvo.?</div></div>
-          <div class="ghost-step"><div class="ghost-bar"></div><div class="ghost-lab">¿Bruto o neto?</div></div>
-          <div class="ghost-step"><div class="ghost-bar"></div><div class="ghost-lab">¿Un solo pago?</div></div>
-          <div class="ghost-step"><div class="ghost-bar"></div><div class="ghost-lab">¿Compone o ÷N?</div></div>
-          <div class="ghost-step"><div class="ghost-bar"></div><div class="ghost-lab">¿Total o yield?</div></div>
-        </div>
-        <ol class="meth-refs">
-          <li>¿Distingue DRIP de efectivo?</li>
-          <li>¿Es bruto o neto de impuesto?</li>
-          <li>¿Anualiza un solo pago?</li>
-          <li>¿Compone o divide entre N?</li>
-          <li>¿Muestra retorno total o solo yield?</li>
-        </ol>
-      </div>
-    </div>
+    <!-- Las sub-vistas «El rendimiento», «Payback ≠ ganancia», «Rendimiento vs tasa»
+         y «Otras calculadoras» se retiraron el 2026-08-24 (rama quitar-subvistas-metodo):
+         añadían complejidad que Daniel prefiere concentrada en «La matriz» y «Matriz 2».
+         Sus lecciones pedagógicas siguen vivas en Metodología (§ 9 lee DATA.escalera).
+         Los datos que las alimentaban (ratios, escalera) NO se quitaron de
+         ui.adapters.metodo_data: otros consumidores activos los leen. -->
 
   </div>
 </main>
@@ -1892,39 +1794,14 @@
     // el propio emisor (Bloque 5: tasa de distribución, SEC yield, retorno total desde
     // incepción): esas se quedan literales y fechadas, y el contraste "métrica de
     // marketing vs métrica regulada" ES la lección, no un defecto a corregir.
-    // ---- Bloque 3 · la escalera del rendimiento ----
-    // `escalera` viene de `DATA` (`ui.adapters.metodo_data`), ya anualizada por TIR
-    // exacta (XIRR) sobre los aportes de `MET_CASO` y el `TOT.val` de arriba. Ni este
-    // bloque ni `metodologia.html` § 9 calculan nada: los dos LEEN las mismas claves,
-    // así que no pueden mostrar dos anualizados distintos. `ventanaPondAnos` está ahí
-    // solo para que el ÷N que el panel denuncia use una ventana medida y no un 3
-    // redondeado a mano.
-    var ESC = DATA.escalera;
-
-    // ---- Bloque 4 · payback ≠ ganancia ----
-    // `pb`/`pbn`/`ret`/`retD` por fila y el agregado ya vienen derivados de `MATRIZ` en
-    // Python (Regla 2 del contrato: nunca mezclar bases entre filas). Minúscula a
-    // propósito (a diferencia de MATRIZ/TOT/ESC): el barrido mecánico de
-    // `/auditoria-financiera` sigue rastreando `var RATIOS`/`var RATIOS_TOT` en
-    // MAYÚSCULA como "literal pedagógico pendiente de portar" — ya se portó, así que
-    // el nombre deja de calzar con ese patrón en vez de generar un WARN fantasma.
+    // ---- Bloque 3-5 · retirados el 2026-08-24 ----
+    // Las vistas «El rendimiento» (escalera), «Payback ≠ ganancia» y «Rendimiento vs
+    // tasa» ya no existen: Daniel prefirió concentrar la complejidad en «La matriz» y
+    // «Matriz 2». Sus lecciones siguen en Metodología (§ 9 lee `DATA.escalera`). De
+    // estos datos solo sobrevive `ratios`: el modal de la paradoja (mTmtotParadoja)
+    // sigue leyéndolo. `ratiosTot`/`YM`/`YM_MEDIDO`/la var local `ESC` murieron con
+    // sus paneles — ningún otro bloque las nombra.
     var ratios = DATA.ratios;
-    var ratiosTot = DATA.ratiosTot;
-
-    // ---- Bloque 5 · rendimiento vs tasa de distribución (yieldmaxetfs.com,
-    // distribution rate y SEC yield as of 07/29/2026; retornos as of 6/30/2026 — fichas
-    // del propio emisor, no hay fuente viva de 30-Day SEC Yield en el repo). Lo que SÍ
-    // mide el motor (yield realizado y caída de precio por ticker) vive en
-    // `DATA.ymMedido`, no aquí — así que el "real" viejo (per-fila, congelado) se quita
-    // de este array para que no queden dos números con el mismo nombre y dos fuentes. ----
-    var YM = [
-      { t:"CONY", dr:75.03, sec:3.27, x:22.9, ini:"8/14/2023",  trc: 13.93, tra: 4.63 },
-      { t:"NVDY", dr:51.42, sec:2.64, x:19.5, ini:"5/10/2023",  trc:317.41, tra:57.63 },
-      { t:"MSTY", dr:90.51, sec:3.26, x:27.8, ini:"2/21/2024",  trc: 16.41, tra: 6.66 },
-      { t:"TSLY", dr:53.04, sec:2.52, x:21.0, ini:"11/22/2022", trc: 60.39, tra:14.01 },
-      { t:"NFLY", dr:30.71, sec:3.39, x: 9.1, ini:"8/7/2023",   trc: 42.85, tra:13.09 }
-    ];
-    var YM_MEDIDO = DATA.ymMedido;
 
     // ---- BASE FISCAL: tres modos (traspaso 2026-08-03), no un interruptor
     // binario. Gobierna las matrices 2 y 3 (Con DRIP / Sin DRIP) y los 6
@@ -2828,206 +2705,10 @@
       });
     })();
 
-    // ============ VISTA 3 · EL RENDIMIENTO ============
-    (function renderEscalera() {
-      // Sin signo y sin decimales — así se citó siempre el anuncio de la llamada, y
-      // ESC.anuncioTotal/anuncioAnual son literales fijos (1499/499), no algo que se
-      // mida. Las otras tres filas SÍ se mueven con el mercado: usan fmtPct1 (con
-      // signo y un decimal), ya definida arriba.
-      function pctAnuncio(x) { return Math.round(x) + "%"; }
-      function signedMoney(x) { return (x >= 0 ? "+" : "") + fmtMoney(x); }
-      // Sin signo, para frases tipo "59.9% ÷ 2.77 = 21.6%" donde el + ya lo pone el
-      // contexto de la oración y añadirlo dos veces se lee raro.
-      function pctPlano(x) { return (x < 0 ? "−" : "") + Math.abs(x).toFixed(1) + "%"; }
-      // `xirrPct`/`efectivoXirrPct` son `null` —no 0— cuando la TIR no tiene solución
-      // (sin cambio de signo en los flujos). Un 0% es una respuesta; «—» es «no se puede
-      // responder», y la escalera tiene que poder distinguirlas en vez de dibujar un
-      // cero que parece medido.
-      function pctOna(x) { return x == null ? "—" : fmtPct1(x); }
-      function pctPlanoOna(x) { return x == null ? "—" : pctPlano(x); }
-      function anosStr(x) { return x.toFixed(2) + " años"; }
-      var multTotStr = ESC.multTot != null ? ESC.multTot.toFixed(1) + "×" : "—";
-      var multAnualStr = ESC.multAnual != null ? ESC.multAnual.toFixed(1) + "×" : "—";
-      // El anualizado correcto es la TIR (XIRR), no un CAGR: no hay un plazo único que
-      // elegir cuando los cinco aportes entraron en fechas distintas.
-      var anualReal = pctOna(ESC.xirrPct) + "/año";
-
-      var ESCALERA = [
-        { lab:"Lo que se anunció en la llamada",   total: pctAnuncio(ESC.anuncioTotal),   anual: pctAnuncio(ESC.anuncioAnual) + "/año",   estado:"mal" },
-        { lab:"Su misma fórmula, bien aplicada",    total: fmtPct1(ESC.realPct),  anual: anualReal, estado:"ok"  },
-        { lab:"Si los dividendos fueran efectivo",  total: fmtPct1(ESC.efectivoPct), anual: pctOna(ESC.efectivoXirrPct) + "/año", estado:"na"  },
-        { lab:"Con DRIP probado — el número real",  total: fmtPct1(ESC.realPct),  anual: anualReal, estado:"real"}
-      ];
-      var SUB = {
-        0: "Error del anuncio: <b>" + multTotStr + "</b> sobre el total real, <b>" + multAnualStr + "</b> sobre el anualizado real.",
-        1: "Mismo resultado que la fila de abajo — porque el valor de mercado de la hoja ya incluye lo reinvertido.",
-        2: "Retorno teórico si nada se hubiera reinvertido: <b class='num'>" + signedMoney(ESC.efectivoD) + "</b>. No es lo que pasó.",
-        3: "Retorno real, probado con el Bloque 2: <b class='num'>" + signedMoney(ESC.realD) + "</b>."
-      };
-      var html = "";
-      ESCALERA.forEach(function (e, i) {
-        html += '<div class="tm-step ' + e.estado + '">' +
-          '<div class="tm-step-lab">' + e.lab + '</div>' +
-          '<div class="tm-step-val num">' + e.total + '<span class="tm-step-anual num">' + e.anual + '</span></div>' +
-          '<div class="tm-step-sub">' + SUB[i] + '</div>' +
-          '</div>';
-      });
-      document.getElementById("tmEscalera").innerHTML = html;
-
-      // El cierre ya no dice «parecido a un índice». Lo decía cuando el anualizado que
-      // se mostraba era +14.5%; con la TIR exacta el número subió, y una comparación que
-      // el dato ya no sostiene es exactamente el defecto que este panel denuncia. Lo que
-      // sí sostiene el dato es el contraste con el anuncio, que además ya está medido.
-      setHtml("tmEscaleraCierre",
-        'El portafolio no rindió ' + pctAnuncio(ESC.anuncioAnual) + ' al año. Rindió <b>' + pctOna(ESC.xirrPct) + ' anual</b> — un buen resultado, y aun así <b>' + multAnualStr + '</b> por debajo de lo que se anunció, con mucho más riesgo, más impuesto y mucho más trabajo.');
-      setHtml("tmEscaleraNotas",
-        'Este es el error más común al medir un portafolio de dividendos: primero se anualiza mal (÷N en vez de componer — ' + pctPlano(ESC.realPct) + ' ÷ ' + anosStr(ESC.ventanaPondAnos) + ' = ' + pctPlano(ESC.naivePct) + ', no el ' + pctPlanoOna(ESC.xirrPct) + ' real), y sobre todo se suma un dinero que ya estaba contado. El número correcto es la <b>TIR</b>: pondera cada aporte por el tiempo que estuvo invertido de verdad, en vez de repartir el retorno sobre un plazo promedio — y por eso no necesita elegir ningún N. Los ' + anosStr(ESC.ventanaPondAnos) + ' de arriba son la ventana media ponderada por capital aportado, y están ahí solo para mostrar de dónde sale el ÷N que falla. La fila <b>«Si los dividendos fueran efectivo»</b> usa siempre base bruta, igual que el resto de este panel; las matrices de <b>«La matriz»</b> tienen su propio selector de base fiscal.');
-    })();
-
-    // ============ VISTA 4 · PAYBACK ≠ GANANCIA ============
-    (function renderPayback() {
-      // El contraejemplo ya no está cableado a mano a CONY (dejó de perder con datos
-      // vivos — es justo el bug que este traspaso cierra): `DATA.paybackContraejemplo`
-      // lo elige por dato en Python (`_payback_contraejemplo`, mayor payback bruto
-      // entre los que tienen retorno negativo), o viene `null` si nadie perdió esta
-      // semana. Aquí solo se lee, nunca se recalcula.
-      var contraTk = DATA.paybackContraejemplo;
-      var rows = "";
-      ratios.forEach(function (r) {
-        var esContra = contraTk && r.t === contraTk;
-        var flag = esContra ? " tm-flag" : "";
-        rows +=
-          '<div class="he-c he-l he-row-lab he-tk' + flag + '">' + r.t + (esContra ? '<span class="he-sub" style="color:var(--loss)">cobró y perdió</span>' : '') + '</div>' +
-          '<div class="he-c num' + flag + '">' + r.pb.toFixed(2) + '×</div>' +
-          '<div class="he-c num he-muted' + flag + '">' + r.pbn.toFixed(2) + '×</div>' +
-          '<div class="he-c num ' + (r.ret >= 0 ? "he-cash" : "he-loss") + flag + '">' + fmtPct1(r.ret) + '<span class="he-sub">(' + fmtWhole(r.retD) + ')</span></div>';
-      });
-      rows +=
-        '<div class="he-c he-l he-row-lab">TOTAL</div>' +
-        '<div class="he-c num">' + ratiosTot.pb.toFixed(2) + '×</div>' +
-        '<div class="he-c num he-muted">' + ratiosTot.pbn.toFixed(2) + '×</div>' +
-        '<div class="he-c num he-cash">' + fmtPct1(ratiosTot.ret) + '<span class="he-sub">(' + fmtWhole(ratiosTot.retD) + ')</span></div>';
-      document.getElementById("tmPaybackGrid").insertAdjacentHTML("beforeend", rows);
-
-      if (contraTk) {
-        var contra = ratios.filter(function (r) { return r.t === contraTk; })[0];
-        // Otros tickers que también perdieron capital, del más al menos negativo —
-        // la hoja original citaba dos ejemplos (CONY y MSTY) cuando había dos; si hoy
-        // solo hay uno, el mensaje cita uno solo en vez de inventar un segundo.
-        var otrosNeg = ratios.filter(function (r) { return r.t !== contraTk && r.ret < 0; })
-          .sort(function (a, b) { return a.ret - b.ret; });
-        var msg = 'El test verde de la hoja (dividendos ≥ inversión) <b>es legítimo</b> — se llama <b>payback ratio</b> y mide cuánto de tu capital ya volvió. Pero es <b>necesario, no suficiente</b>: ' +
-          contra.t + ' tiene payback <b>' + contra.pb.toFixed(2) + '×</b> y aun así perdió <b class="dn">' + fmtPct1(contra.ret) + '</b> de capital.';
-        if (otrosNeg.length) {
-          msg += ' ' + otrosNeg[0].t + ': payback ' + otrosNeg[0].pb.toFixed(2) + '× y <b class="dn">' + fmtPct1(otrosNeg[0].ret) + '</b>.';
-        }
-        msg += ' Cobrar de vuelta tu dinero y ganar dinero no son la misma cosa.';
-        setHtml("tmPaybackMsg", msg);
-      } else {
-        // Duda 2 del traspaso: si con datos vivos ningún ticker pierde, el panel no
-        // inventa un contraejemplo — dice, sin mentir, que esta corrida no tiene uno.
-        setHtml("tmPaybackMsg",
-          'El test verde de la hoja (dividendos ≥ inversión) <b>es legítimo</b> — se llama <b>payback ratio</b> y mide cuánto de tu capital ya volvió. Pero es <b>necesario, no suficiente</b>: cobrar de vuelta tu dinero y ganar dinero no son la misma cosa, aunque en esta corrida los cinco fondos tienen retorno real positivo y ninguno lo ilustra.');
-      }
-      setHtml("tmPaybackNra",
-        'Los dividendos de la hoja son <b>brutos</b>. Para un miembro no residente de EE. UU. la retención se lleva hasta 30% antes de que el dinero llegue: ' + fmtMoney(DATA.nra.divBruto) + ' → ~' + fmtMoney(DATA.nra.divNeto) + ' (retención ~' + fmtMoney(DATA.nra.retenido) + '). Es una <b>cota superior</b>: el ROC declarado en el aviso 19(a) reclasifica parte y la devuelve. Por eso «Payback neto» va etiquetado como cota superior de la retención, nunca como cifra final.');
-    })();
-
-    // ============ VISTA 5 · RENDIMIENTO VS TASA DE DISTRIBUCIÓN ============
-    (function renderTasa() {
-      var rows = "";
-      YM.forEach(function (r) {
-        rows +=
-          '<div class="he-c he-l he-row-lab he-tk">' + r.t + '</div>' +
-          '<div class="he-c num he-warn">' + r.dr.toFixed(2) + '%</div>' +
-          '<div class="he-c num">' + r.sec.toFixed(2) + '%</div>' +
-          '<div class="he-c num he-loss">' + r.x.toFixed(1) + '×</div>' +
-          '<div class="he-c num he-cash" title="' + (r.trc >= 0 ? "+" : "−") + Math.abs(r.trc).toFixed(2) + '% acumulado desde la incepción del fondo (' + r.ini + ')">+' + r.tra.toFixed(2) + '%<span class="he-sub">anual desde ' + r.ini.slice(-4) + '</span></div>';
-      });
-      document.getElementById("tmYmGrid").insertAdjacentHTML("beforeend", rows);
-
-      setHtml("tmYmNotes",
-        'Distribution rate y 30-Day SEC Yield de yieldmaxetfs.com, <i>as of</i> 07/29/2026; retorno total <i>as of</i> 6/30/2026. «Retorno real» es el retorno total NAV desde incepción, anualizado, con distribuciones reinvertidas — no confundir con el <i>yield realizado</i> (distribuciones de 12 meses ÷ precio de hoy), la métrica que explota cuando el precio cae: ver falla 3.');
-
-      var FALLAS = [
-        { id:"f1", h:"1 · El denominador está contaminado",
-          p1:'En la fecha ex-dividendo el precio (NAV) cae por el monto de la distribución, y la tasa se cotiza sobre ese precio <b>ya caído</b>: <span class="num">Tasa = f·D / (P − D)</span>. Sube por los dos lados a la vez.',
-          calc:true,
-          p2:'Devolver más capital propio (subir D) <b>duplica</b> el rendimiento anunciado, sin que el fondo haya generado nada nuevo.' },
-        { id:"f2", h:"2 · Anualiza una sola muestra",
-          p1:'<span class="num">f·D</span> solo estima el año si los pagos son constantes. No lo son: son semanales y oscilan. En la hoja, MSTY figura con <b>77.28%</b>; en la web de YieldMax marcaba <b>66.67%</b> durante la misma llamada; hoy marca <b>90.51%</b>.' },
-        { id:"f3", h:"3 · Si el precio cae, la tasa sube",
-          // Yield realizado y caída de precio salen de `DATA.ymMedido` (medido por el
-          // motor, reusando r_con/r_sin — Decisión 5 del traspaso 2026-08-17), a
-          // diferencia de dr/sec/x/trc/tra de arriba, que son fichas del emisor.
-          p1:'Con D fijo y P decreciente, la tasa crece sin techo; cuando P → 0, la tasa → ∞. <b>Una tasa que sube es síntoma de erosión, no de generosidad.</b> CONY: yield realizado <b>' + YM_MEDIDO.CONY.realYieldPct.toFixed(1) + '%</b>, con su precio cayendo <b>' + Math.abs(YM_MEDIDO.CONY.priceRetPct).toFixed(1) + '%</b>.' },
-        { id:"f4", h:"4 · El «dividend yield» es la fórmula equivocada por definición",
-          p1:'El yield clásico supone que la distribución sale de utilidades. Aquí D = ingreso + ganancias realizadas + ROC, y el ROC es tu propio capital. Cuando el ROC domina, la métrica mide la velocidad a la que te devuelven tu dinero: un calendario de liquidación, no un rendimiento.' },
-        { id:"f5", h:"5 · Por eso la regulación no deja llamarlo «yield»",
-          p1:'Un fondo que anuncia <i>yield</i> debe publicar el <b>30-Day SEC Yield</b> estandarizado, que solo cuenta ingreso neto de inversión — y la prima de opciones no lo es. De ahí que publiquen «Distribution Rate», que no es una medida estandarizada. La propia YieldMax la define como «la tasa anual que recibiría un inversionista si la distribución más reciente se mantuviera igual hacia adelante».' },
-        { id:"f6", h:"6 · La identidad que cierra el argumento",
-          p1:'<span class="num">(1 + Retorno total) = (1 + Retorno de precio) × (1 + Retorno por distribución)</span>. Despejando, la <b>tasa de equilibrio</b> — cuánto necesita distribuir un fondo solo para no perder capital — es <span class="num">DR* = 1/(1 + PR) − 1</span>.',
-          calc6:true,
-          p2:'Con precio −35%/año hacen falta <b>+53.8%</b> de distribuciones solo para quedar en cero. El 77.28% titular de MSTY sobre un precio −35% da <b>+15.2%</b> real — no 77%.' }
-      ];
-      var html = "";
-      FALLAS.forEach(function (f) {
-        html += '<div class="tm-falla" id="tm-' + f.id + '">' +
-          '<h3 class="tm-falla-h">' + f.h + '</h3>' +
-          '<p class="tm-falla-p">' + f.p1 + '</p>' +
-          (f.calc ? '<div class="tm-calc">' +
-            '<div class="cmp-field"><span class="cmp-lab">Precio (P)</span><div class="tm-calc-row"><input type="range" id="tmF1P" min="5" max="30" step="0.5" value="20"><span class="num" id="tmF1Pv">$20.00</span></div></div>' +
-            '<div class="cmp-field"><span class="cmp-lab">Distribución semanal (D)</span><div class="tm-calc-row"><input type="range" id="tmF1D" min="0.05" max="1.00" step="0.01" value="0.25"><span class="num" id="tmF1Dv">$0.25</span></div></div>' +
-            '<div class="tm-calc-out">Tasa anualizada (52 pagos/año) = <span class="num big" id="tmF1Out">65.8%</span></div>' +
-            '</div>' : "") +
-          (f.calc6 ? '<div class="tm-calc">' +
-            '<div class="cmp-field"><span class="cmp-lab">Retorno de precio anual (PR)</span><div class="tm-calc-row"><input type="range" id="tmF6PR" min="-70" max="20" step="1" value="-35"><span class="num" id="tmF6PRv">−35%</span></div></div>' +
-            '<div class="tm-calc-out">Tasa de equilibrio (DR*) = <span class="num big" id="tmF6Out">+53.8%</span></div>' +
-            '<div class="tm-calc-out">Con la tasa titular de MSTY (77.28%) sobre ese precio, retorno real = <span class="num big" id="tmF6Real">+15.2%</span></div>' +
-            '</div>' : "") +
-          (f.p2 ? '<p class="tm-falla-p">' + f.p2 + '</p>' : "") +
-          '</div>';
-      });
-      document.getElementById("tmFallas").innerHTML = html;
-
-      // calculadora viva · falla 1 (denominador contaminado). Checkpoints del
-      // traspaso: P=20,D=0.25,f=52 → 65.8%; D=0.50 → 133.3%.
-      (function () {
-        var P = document.getElementById("tmF1P"), D = document.getElementById("tmF1D"),
-            Pv = document.getElementById("tmF1Pv"), Dv = document.getElementById("tmF1Dv"),
-            Out = document.getElementById("tmF1Out");
-        function upd() {
-          var p = parseFloat(P.value), d = parseFloat(D.value);
-          var tasa = 52 * d / (p - d) * 100;
-          Pv.textContent = "$" + p.toFixed(2);
-          Dv.textContent = "$" + d.toFixed(2);
-          Out.textContent = (tasa >= 0 ? "+" : "−") + Math.abs(tasa).toFixed(1) + "%";
-        }
-        P.addEventListener("input", upd);
-        D.addEventListener("input", upd);
-        upd();
-      })();
-
-      // calculadora viva · falla 6 (identidad total return / tasa de equilibrio).
-      // Checkpoint del traspaso: PR=-35% → DR*=+53.8%; con DR titular 77.28% → real=+15.2%.
-      (function () {
-        var DR_TITULAR = 77.28;
-        var PR = document.getElementById("tmF6PR"), PRv = document.getElementById("tmF6PRv"),
-            Out = document.getElementById("tmF6Out"), Real = document.getElementById("tmF6Real");
-        function upd() {
-          var pr = parseFloat(PR.value) / 100;
-          var drStar = (1 / (1 + pr) - 1) * 100;
-          var real = ((1 + pr) * (1 + DR_TITULAR / 100) - 1) * 100;
-          PRv.textContent = (pr >= 0 ? "+" : "−") + Math.abs(pr * 100).toFixed(0) + "%";
-          Out.textContent = (drStar >= 0 ? "+" : "−") + Math.abs(drStar).toFixed(1) + "%";
-          Real.textContent = (real >= 0 ? "+" : "−") + Math.abs(real).toFixed(1) + "%";
-        }
-        PR.addEventListener("input", upd);
-        upd();
-      })();
-    })();
-  })();
-
+    // VISTAS 3-5 (El rendimiento / Payback / Rendimiento vs tasa): retiradas
+    // el 2026-08-24. Sus IIFEs de render vivían aquí; los datos que consumían
+    // (ESC, YM, YM_MEDIDO) salieron con ellos porque ningún otro bloque los lee.
+    // La variable `ratios` se queda: el modal de la paradoja (mTmtotParadoja) la usa.
   // ---- Modal: Inversión · matriz Sin DRIP (click sobre encabezado ⓘ) ----
   (function () {
     var modal = document.getElementById("modal-sintuinv");
@@ -3333,7 +3014,7 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
   })();
   var VISTA_ACTIVA = "{{VISTA_ACTIVA}}";
-  ["matriz", "rendimiento", "payback", "tasa", "otras"].forEach(function (n) {
+  ["matriz"].forEach(function (n) {
     var el = document.getElementById("met-panel-" + n);
     if (el) el.hidden = (n !== VISTA_ACTIVA);
   });
