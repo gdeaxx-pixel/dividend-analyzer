@@ -1296,40 +1296,84 @@
     tooltip.appendChild(ttFondo); tooltip.appendChild(ttTitulo); tooltip.appendChild(ttDesc);
     svg.appendChild(tooltip);
     var hitoAbierto = null;
-    function muestraHito(h, px, py) {
-      ttTitulo.textContent = h.titulo;
-      // partir la descripción en líneas de ~52 caracteres
-      while (ttDesc.firstChild) ttDesc.removeChild(ttDesc.firstChild);
-      var palabras = h.desc.split(" "), linea = "", lineas = [];
-      palabras.forEach(function (p) {
+    /* Anatomía de la caja: PAD*2 + MAXW = 340, el tope que cabe holgado en la trama. */
+    var PAD = 12, MAXW = 316, LH = 13, ANCHO_MIN = 150;
+    /* Posición del punto de un hito. Vive aparte porque hace falta en dos sitios:
+       al dibujarlo y al restaurar el tooltip fijado desde OTRO punto. */
+    function posDe(h) {
+      return [x(h.mes), (h.linea === "loc") ? yL(LOC[h.mes]) : yT(TESTS[h.mes])];
+    }
+    /* Ancho pintado de un nodo de texto SVG. 0 si no está renderizado (iframe oculto
+       de Streamlit): quien llama necesita un plan B, no puede confiar en el número. */
+    function mide(nodo) {
+      try { return nodo.getComputedTextLength() || 0; } catch (e) { return 0; }
+    }
+    /* Corta la descripción MIDIENDO cada tentativa, no contando caracteres: con fuente
+       proporcional las dos cosas no se parecen, y esa diferencia era la que dejaba el
+       texto flotando a la izquierda de una caja más ancha que él. null = no medible. */
+    function cortaMedido(texto, maxW) {
+      var medidor = document.createElementNS(NS, "tspan");
+      medidor.textContent = texto;
+      ttDesc.appendChild(medidor);
+      if (!mide(medidor)) { ttDesc.removeChild(medidor); return null; }
+      var lineas = [], actual = "";
+      texto.split(" ").forEach(function (p) {
+        var prueba = actual ? actual + " " + p : p;
+        medidor.textContent = prueba;
+        if (actual && mide(medidor) > maxW) { lineas.push(actual); actual = p; }
+        else actual = prueba;
+      });
+      if (actual) lineas.push(actual);
+      ttDesc.removeChild(medidor);
+      return lineas;
+    }
+    /* Plan B sin medición: el corte por ~52 caracteres de siempre. */
+    function cortaPorCaracteres(texto) {
+      var lineas = [], linea = "";
+      texto.split(" ").forEach(function (p) {
         if ((linea + " " + p).trim().length > 52) { lineas.push(linea.trim()); linea = p; }
         else linea += " " + p;
       });
       if (linea.trim()) lineas.push(linea.trim());
+      return lineas;
+    }
+    function muestraHito(h, px, py) {
+      ttTitulo.textContent = h.titulo;
+      while (ttDesc.firstChild) ttDesc.removeChild(ttDesc.firstChild);
+      var lineas = cortaMedido(h.desc, MAXW), medible = !!lineas;
+      if (!medible) lineas = cortaPorCaracteres(h.desc);
       lineas.forEach(function (ln, li) {
         var tspan = document.createElementNS(NS, "tspan");
         tspan.setAttribute("x", "0");
-        tspan.setAttribute("dy", li ? "13" : "0");
+        tspan.setAttribute("dy", li ? String(LH) : "0");
         tspan.textContent = ln;
         ttDesc.appendChild(tspan);
       });
-      var ancho = Math.max(150,
-        Math.min(340,
-          Math.max(h.titulo.length * 6.6 + 24,
-            ttDesc.getComputedTextLength() + 24)));
-      var alto = 26 + lineas.length * 13;
+      /* El ancho sale de la línea MÁS ANCHA, medida una por una. Ojo con el atajo:
+         getComputedTextLength() sobre el <text> padre suma el avance de TODOS sus
+         tspans, así que con seis líneas daba ~2 300px, el tope lo recortaba a 340 y la
+         caja quedaba clavada en 340 para cualquier hito. Un tspan sí devuelve lo suyo. */
+      var contenido = medible ? mide(ttTitulo) : h.titulo.length * 6.6;
+      for (var li2 = 0; li2 < ttDesc.childNodes.length; li2++) {
+        var anchoLinea = medible ? mide(ttDesc.childNodes[li2]) : lineas[li2].length * 5.3;
+        if (anchoLinea > contenido) contenido = anchoLinea;
+      }
+      var ancho = Math.max(ANCHO_MIN, Math.min(MAXW, contenido) + PAD * 2);
+      /* 30 = 8.7 de aire sobre el título + su altura + el hueco hasta la descripción
+         + 8 bajo la última línea. Deja el mismo margen arriba que abajo. */
+      var alto = 30 + lineas.length * LH;
       var tx = Math.min(Math.max(px - ancho / 2, M.l), W - M.r - ancho);
       var ty = py - alto - 14;
       if (ty < M.t) ty = py + 16;
       ttFondo.setAttribute("x", tx); ttFondo.setAttribute("y", ty);
       ttFondo.setAttribute("width", ancho); ttFondo.setAttribute("height", alto);
-      ttTitulo.setAttribute("x", tx + 12); ttTitulo.setAttribute("y", ty + 17);
-      ttDesc.setAttribute("x", tx + 12); ttDesc.setAttribute("y", ty + 32);
+      ttTitulo.setAttribute("x", tx + PAD); ttTitulo.setAttribute("y", ty + 17);
+      ttDesc.setAttribute("x", tx + PAD); ttDesc.setAttribute("y", ty + 32);
       /* OJO: en SVG, el `x` de un tspan es ABSOLUTO (no relativo al <text> padre).
          Si se dejara en 0, la descripción saldría pegada al borde izquierdo del
          lienzo como texto fantasma sin fondo — fue exactamente ese bug. */
       for (var ti = 0; ti < ttDesc.childNodes.length; ti++) {
-        ttDesc.childNodes[ti].setAttribute("x", tx + 12);
+        ttDesc.childNodes[ti].setAttribute("x", tx + PAD);
       }
       tooltip.setAttribute("opacity", "1");
     }
@@ -1338,8 +1382,7 @@
       svg.appendChild(el("circle", { cx: x(i), cy: yT(TESTS[i]), r: "3.5", fill: "#2e9e6b" }));
     });
     HITOS.forEach(function (h) {
-      var px = x(h.mes);
-      var py = (h.linea === "loc") ? yL(LOC[h.mes]) : yT(TESTS[h.mes]);
+      var p0 = posDe(h), px = p0[0], py = p0[1];
       var g = el("g", { "class": "evoHito", tabindex: "0", role: "button",
         "aria-label": h.titulo + ": " + h.desc });
       /* aro blanco bajo el punto: lo separa visualmente de los puntos-mes normales
@@ -1364,8 +1407,12 @@
         muestraHito(h, px, py);
       });
       g.addEventListener("mouseleave", function () {
-        if (hitoAbierto && hitoAbierto !== h) muestraHito(hitoAbierto, px, py);
-        else if (!hitoAbierto) tooltip.setAttribute("opacity", "0");
+        /* El fijado se restaura EN SU PROPIO punto: `px, py` son los del hito que se
+           está abandonando, no los del fijado — usarlos lo teletransportaba. */
+        if (hitoAbierto && hitoAbierto !== h) {
+          var pf = posDe(hitoAbierto);
+          muestraHito(hitoAbierto, pf[0], pf[1]);
+        } else if (!hitoAbierto) tooltip.setAttribute("opacity", "0");
       });
       svg.appendChild(g);
     });
@@ -1373,6 +1420,13 @@
     /* Clic en cualquier parte vacía de la gráfica cierra el tooltip fijado. */
     svg.addEventListener("click", function (ev) {
       if (!ev.target.closest(".evoHito")) { tooltip.setAttribute("opacity", "0"); hitoAbierto = null; }
+    });
+    /* Escape cierra aunque el foco no esté en ningún hito — el caso normal cuando se
+       fijó con el ratón, donde el keydown del propio hito nunca llega a dispararse. */
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && tooltip.getAttribute("opacity") !== "0") {
+        tooltip.setAttribute("opacity", "0"); hitoAbierto = null;
+      }
     });
     // pista sutil: hay puntos abribles (una sola vez, discreta)
     var pista = el("text", { x: W - M.r, y: H - 4, "text-anchor": "end",
