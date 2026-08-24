@@ -1225,17 +1225,17 @@
        se descubre al pasar/clicar. `mes` = índice en MESES, `linea` = "loc" | "tests". */
     var HITOS = [
       { mes: 0, linea: "loc", titulo: "Primer commit",
-        desc: "feb 2026 — La calculadora nace como una hoja con una fórmula: 661 líneas, un solo test." },
+        desc: "feb 2026 — La calculadora nace como una hoja con una fórmula: 661 líneas en un solo archivo y un único test. Suficiente para responder «¿cuánto me pagó este fondo?», pero cualquier pregunta nueva exigía reescribir la respuesta a mano." },
       { mes: 3, linea: "tests", titulo: "Entraron los primeros tests",
-        desc: "may 2026 — Se pasa de teorizar cálculos a respaldarlos: 29 tests automatizados contra casos reales del bróker." },
+        desc: "may 2026 — Se pasa de teorizar cálculos a respaldarlos: 29 tests automatizados que comparan cada cifra contra casos reales del bróker. A partir de aquí, un cambio que rompa un número existente ya no puede pasar desapercibido." },
       { mes: 4, linea: "tests", titulo: "Contrato fiscal ROC/NRA",
-        desc: "jun 2026 — El impuesto y el retorno de capital obtienen reglas propias e invariables; la suite salta a 163 tests." },
+        desc: "jun 2026 — El impuesto NRA y el retorno de capital obtienen reglas propias escritas como contrato (specs/roc-nra-invariants.md): capital aportado invariante, base y momento declarados en cada cifra, dos carriles del ROC que no se cruzan. La suite salta a 163 tests." },
       { mes: 4, linea: "loc", titulo: "El motor se triplica",
-        desc: "jun 2026 — De 1 457 a 4 439 líneas: entra el cálculo ROC-aware con retención por país." },
+        desc: "jun 2026 — De 1 457 a 4 439 líneas en un mes: entra el cálculo ROC-aware con retención por país y reinversión por evento. La complejidad no es adornito: es toda la lógica fiscal que antes se hacía fuera de la app." },
       { mes: 5, linea: "loc", titulo: "Del papel al backtesting",
-        desc: "jul 2026 — Se cambia la teorización de cálculos por backtesting event-driven sobre ex-date y pay-date reales. El motor llega a 5 281 líneas." },
+        desc: "jul 2026 — Se cambia la teorización de cálculos por un motor event-driven que corre sobre ex-date y pay-date reales, con precios históricos cacheados: las estrategias ya no se simulan con fórmulas ideales sino contra el calendario real de distribuciones. El motor llega a 5 281 líneas." },
       { mes: 6, linea: "tests", titulo: "Auditoría + predicado único",
-        desc: "ago 2026 — Auditoría completa del motor fiscal y unificación del predicado de fila: una sola convención bruto/neto para toda la app. 486 tests." }
+        desc: "ago 2026 — Auditoría completa del motor fiscal: se jubila el cálculo viejo, se unifica el predicado de fila (una sola convención bruto/neto para toda la app) y se añaden guards que impiden reintroducir los caminos retirados. 486 tests protegen el resultado." }
     ];
     var NS = "http://www.w3.org/2000/svg";
     var W = 720, H = 340, M = { t: 28, r: 56, b: 42, l: 62 };
