@@ -1225,17 +1225,17 @@
        se descubre al pasar/clicar. `mes` = índice en MESES, `linea` = "loc" | "tests". */
     var HITOS = [
       { mes: 0, linea: "loc", titulo: "Primer commit",
-        desc: "feb 2026 — La calculadora nace como una hoja con una fórmula: 661 líneas en un solo archivo y un único test. Suficiente para responder «¿cuánto me pagó este fondo?», pero cualquier pregunta nueva exigía reescribir la respuesta a mano." },
+        desc: "feb 2026 — La calculadora nace como una hoja con una fórmula: 661 líneas en un solo archivo y un único test. Solo sabía responder «¿cuánto me pagó este fondo este mes?». Cualquier pregunta nueva —impuestos, reinversión, retorno anualizado— exigía sacar la cuenta a mano fuera de la app." },
       { mes: 3, linea: "tests", titulo: "Entraron los primeros tests",
-        desc: "may 2026 — Se pasa de teorizar cálculos a respaldarlos: 29 tests automatizados que comparan cada cifra contra casos reales del bróker. A partir de aquí, un cambio que rompa un número existente ya no puede pasar desapercibido." },
+        desc: "may 2026 — Se pasa de teorizar cálculos a respaldarlos: 29 tests automatizados que comparan cada cifra contra casos reales del bróker, no contra tablas en frío. Desde aquí, cualquier cambio que altere un número que ya funcionaba hace fallar la suite: los errores de cálculo dejan de poder colarse en silencio." },
       { mes: 4, linea: "tests", titulo: "Contrato fiscal ROC/NRA",
-        desc: "jun 2026 — El impuesto NRA y el retorno de capital obtienen reglas propias escritas como contrato (specs/roc-nra-invariants.md): capital aportado invariante, base y momento declarados en cada cifra, dos carriles del ROC que no se cruzan. La suite salta a 163 tests." },
+        desc: "jun 2026 — El impuesto NRA y el retorno de capital obtienen reglas escritas como contrato (specs/roc-nra-invariants.md): el capital aportado nunca lo mueve el ROC, toda cifra declara su base (bruto/neto) y su momento, y los dos carriles del ROC —salud del NAV y palanca fiscal— no se cruzan. La suite salta a 163 tests. Nació de un bug real: dos vistas mostrando el mismo número con $98K de diferencia." },
       { mes: 4, linea: "loc", titulo: "El motor se triplica",
-        desc: "jun 2026 — De 1 457 a 4 439 líneas en un mes: entra el cálculo ROC-aware con retención por país y reinversión por evento. La complejidad no es adornito: es toda la lógica fiscal que antes se hacía fuera de la app." },
+        desc: "jun 2026 — De 1 457 a 4 439 líneas en un solo mes: entra el cálculo ROC-aware con retención por país y reinversión por evento. La complejidad no es adornito: es toda la lógica fiscal que antes hacías a mano con la calculadora — retenciones por fondo, escudos de ROC, bases fiscales año por año — ahora corriendo dentro de la app." },
       { mes: 5, linea: "loc", titulo: "Del papel al backtesting",
-        desc: "jul 2026 — Se cambia la teorización de cálculos por un motor event-driven que corre sobre ex-date y pay-date reales, con precios históricos cacheados: las estrategias ya no se simulan con fórmulas ideales sino contra el calendario real de distribuciones. El motor llega a 5 281 líneas." },
+        desc: "jul 2026 — El giro metodológico: se cambia la teorización de cálculos por un motor event-driven que corre sobre ex-date y pay-date reales, con precios históricos cacheados. Las estrategias dejan de simularse con fórmulas ideales y se prueban contra el calendario real de distribuciones — el mismo estándar que después se usó para auditar el método tradicional de la clase. El motor llega a 5 281 líneas." },
       { mes: 6, linea: "tests", titulo: "Auditoría + predicado único",
-        desc: "ago 2026 — Auditoría completa del motor fiscal: se jubila el cálculo viejo, se unifica el predicado de fila (una sola convención bruto/neto para toda la app) y se añaden guards que impiden reintroducir los caminos retirados. 486 tests protegen el resultado." }
+        desc: "ago 2026 — Auditoría completa del motor fiscal: se jubila el cálculo viejo (15 tests retirados, 15 nuevos sobre el objeto vivo), se unifica el predicado de fila —una sola convención bruto/neto para toda la app; antes asumir «IB = neto» duplicaba retenciones de Schwab— y se añaden guards que impiden reintroducir los caminos eliminados. 486 tests protegen el resultado." }
     ];
     var NS = "http://www.w3.org/2000/svg";
     var W = 720, H = 340, M = { t: 28, r: 56, b: 42, l: 62 };
