@@ -321,3 +321,25 @@ def test_el_componente_no_recalcula_ninguna_tasa_fiscal_en_js():
     assert "(1 -" not in bloque, "apareció una reescala fiscal en el JS de la gráfica"
     assert not re.search(r"\b0\.(30|70)\b", bloque), (
         "apareció la tasa NRA como literal en el JS de la gráfica")
+
+
+def test_el_script_principal_del_componente_es_javascript_valido():
+    """Guard nacido del bug del #84: al cortar las vistas 3-5 se comió TAMBIÉN el cierre
+    de `initMetodo()` (en el original venían dos `})();` seguidos) y el SyntaxError
+    'Unexpected end of input' tumbaba el script ENTERO al parsear — tablas y gráfica de
+    Greco en blanco, sin ningún error visible. Los tests de arriba comparan texto y no
+    pueden ver esto; este parsea. Balance de llaves/paréntesis/llaves-cuadradas fuera de
+    strings y comentarios tiene que salir en cero (aproximación suficiente: un desbalance
+    real como el del #84 lo detecta; un falso positivo exigiría llaves dentro de regex,
+    que este componente no usa)."""
+    html = _leer("ui", "componentes", "metodo.html")
+    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+    grande = [s for s in scripts if "initMetodo" in s]
+    assert len(grande) == 1, "el script principal de initMetodo desapareció o se duplicó"
+    js = re.sub(
+        r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\n]*|/\*.*?\*/",
+        "", grande[0], flags=re.S)
+    for abre, cierra in (("{", "}"), ("(", ")"), ("[", "]")):
+        assert js.count(abre) == js.count(cierra), (
+            f"desbalance de {abre}{cierra} en el script principal ({js.count(abre)} vs "
+            f"{js.count(cierra)}): el JS no parsea y TODO el panel muere en blanco")
