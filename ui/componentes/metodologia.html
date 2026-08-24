@@ -1268,8 +1268,12 @@
       svg.appendChild(el("circle", { cx: x(i), cy: yL(v), r: "3.5", fill: acc }));
       svg.appendChild(el("circle", { cx: x(i), cy: yT(TESTS[i]), r: "3.5", fill: "#2e9e6b" }));
       if (HITOS[i] !== undefined) {
-        var ty = Math.min(yT(TESTS[i]), yL(LOC[i])) - 12;
-        var h = el("text", { x: x(i), y: ty, "text-anchor": "middle",
+        /* En el último mes el punto verde está pegado al techo y choca con el rótulo
+           "486 tests": ese hito va DEBAJO del punto; los demás, arriba. */
+        var ty = (i === MESES.length - 1)
+          ? yT(TESTS[i]) + 20
+          : Math.min(yT(TESTS[i]), yL(LOC[i])) - 12;
+        var h = el("text", { x: x(i), y: ty, "text-anchor": "end",
           fill: inkMut, "font-size": "10.5", "font-style": "italic" });
         h.textContent = "▲ " + HITOS[i];
         svg.appendChild(h);
