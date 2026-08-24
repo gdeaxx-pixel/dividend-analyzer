@@ -1313,7 +1313,10 @@
         tspan.textContent = ln;
         ttDesc.appendChild(tspan);
       });
-      var ancho = Math.max(150, h.titulo.length * 6.6 + 24);
+      var ancho = Math.max(150,
+        Math.min(340,
+          Math.max(h.titulo.length * 6.6 + 24,
+            ttDesc.getComputedTextLength() + 24)));
       var alto = 26 + lineas.length * 13;
       var tx = Math.min(Math.max(px - ancho / 2, M.l), W - M.r - ancho);
       var ty = py - alto - 14;
@@ -1322,6 +1325,12 @@
       ttFondo.setAttribute("width", ancho); ttFondo.setAttribute("height", alto);
       ttTitulo.setAttribute("x", tx + 12); ttTitulo.setAttribute("y", ty + 17);
       ttDesc.setAttribute("x", tx + 12); ttDesc.setAttribute("y", ty + 32);
+      /* OJO: en SVG, el `x` de un tspan es ABSOLUTO (no relativo al <text> padre).
+         Si se dejara en 0, la descripción saldría pegada al borde izquierdo del
+         lienzo como texto fantasma sin fondo — fue exactamente ese bug. */
+      for (var ti = 0; ti < ttDesc.childNodes.length; ti++) {
+        ttDesc.childNodes[ti].setAttribute("x", tx + 12);
+      }
       tooltip.setAttribute("opacity", "1");
     }
     LOC.forEach(function (v, i) {
