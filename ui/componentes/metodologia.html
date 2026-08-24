@@ -1338,26 +1338,33 @@
       g.appendChild(el("circle", { cx: px, cy: py, r: "8", fill: "#ffffff", "fill-opacity": ".9" }));
       g.appendChild(el("circle", { cx: px, cy: py, r: "5.5",
         fill: (h.linea === "loc") ? acc : "#2e9e6b", stroke: "#ffffff", "stroke-width": "1.5" }));
+      function cierra() { tooltip.setAttribute("opacity", "0"); hitoAbierto = null; }
       function abre() {
-        if (hitoAbierto === h && tooltip.getAttribute("opacity") === "1") {
-          tooltip.setAttribute("opacity", "0"); hitoAbierto = null; return;
-        }
+        if (hitoAbierto === h) { cierra(); return; }   // segundo clic en el mismo punto = cerrar
         hitoAbierto = h;
         muestraHito(h, px, py);
       }
       g.addEventListener("click", abre);
       g.addEventListener("keydown", function (ev) {
         if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); abre(); }
+        if (ev.key === "Escape") cierra();
       });
+      /* El hover SIEMPRE responde: si hay uno fijado por clic, el hover lo reemplaza
+         temporalmente y al salir restaura el fijado. Así ningún punto queda mudo. */
       g.addEventListener("mouseenter", function () {
-        if (!hitoAbierto) muestraHito(h, px, py);
+        muestraHito(h, px, py);
       });
       g.addEventListener("mouseleave", function () {
-        if (!hitoAbierto) tooltip.setAttribute("opacity", "0");
+        if (hitoAbierto && hitoAbierto !== h) muestraHito(hitoAbierto, px, py);
+        else if (!hitoAbierto) tooltip.setAttribute("opacity", "0");
       });
       svg.appendChild(g);
     });
     svg.appendChild(tooltip);   // re-append: el tooltip pinta encima de todos los puntos
+    /* Clic en cualquier parte vacía de la gráfica cierra el tooltip fijado. */
+    svg.addEventListener("click", function (ev) {
+      if (!ev.target.closest(".evoHito")) { tooltip.setAttribute("opacity", "0"); hitoAbierto = null; }
+    });
     // pista sutil: hay puntos abribles (una sola vez, discreta)
     var pista = el("text", { x: W - M.r, y: H - 4, "text-anchor": "end",
       fill: inkMut, "font-size": "10", "font-style": "italic" });
