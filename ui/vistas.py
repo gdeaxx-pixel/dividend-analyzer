@@ -17,7 +17,6 @@ from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodo_real,
                             render_metodologia, render_rail)
-from ui.pie import render_calculadoras
 from ui.validacion import render_validacion_datos
 
 
@@ -310,15 +309,17 @@ def render_trg_real(ruta: Ruta) -> None:
 def render_vista(ruta: Ruta) -> None:
     """Punto único de entrada: decide qué vista toca según la ruta.
 
-    Metodología, Validación datos y Otras calculadoras se activan desde el menú de 3
+    Metodología y Validación datos se activan desde el menú de 3
     puntos de la ruta (`vd_panel` en `st.session_state`, valores
-    `"metodologia"`/`"validacion"`/`"calculadoras"`/`None`) y se sale de cualquiera de
-    las tres con el botón nativo «← Volver al análisis» o con cualquier otra selección
+    `"metodologia"`/`"validacion"`/`None`). «Otras calculadoras» vive ahora como §12 de
+    Metodología (2026-08-24) — su panel propio y su botón en el menú se retiraron. Se sale
+    de cualquiera de los dos paneles con el botón nativo «← Volver al análisis» o con
+    cualquier otra selección
     de la ruta (`ui/chrome.py` limpia `vd_panel` al elegir) — solo un panel a la vez,
     mismo patrón que Metodología antes de que existiera el menú.
     """
     panel = st.session_state.get("vd_panel")
-    if panel in ("metodologia", "validacion", "calculadoras"):
+    if panel in ("metodologia", "validacion"):
         if st.button("← Volver al análisis", key="vd_panel_volver"):
             st.session_state["vd_panel"] = None
             st.rerun()
@@ -334,8 +335,6 @@ def render_vista(ruta: Ruta) -> None:
                                 datos=st.session_state["_vd_metodo_data"])
         elif panel == "validacion":
             render_validacion_datos(_resultados())
-        else:
-            render_calculadoras()
         return
     if ruta.categoria in nav.CATS and ruta.etf:
         if ruta.vista == nav.VISTA_CON_ETF:
