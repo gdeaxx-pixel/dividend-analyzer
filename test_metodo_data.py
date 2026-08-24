@@ -510,16 +510,15 @@ def test_metodo_html_escalera_ratios_ya_no_son_arrays_literales():
     with open(_COMPONENTE, encoding="utf-8") as f:
         html = f.read()
 
-    assert "var ESC = DATA.escalera" in html
+    # Las vistas 3-5 se retiraron el 2026-08-24: solo sobrevive `ratios`, que el
+    # modal de la paradoja sigue leyendo. `ratiosTot`/`var ESC` murieron con ellas.
     assert "var ratios = DATA.ratios" in html
-    assert "var ratiosTot = DATA.ratiosTot" in html
+    assert "var ratiosTot" not in html and "var ESC " not in html
 
     # El patrón viejo: `var RATIOS = [{ t:"CONY", pb:2.54, ... }, ...]` — la copia
     # congelada de la hoja, en MAYÚSCULA. No puede reaparecer, en ningún nombre.
     assert not re.search(r"var (RATIOS|ratios)\s*=\s*\[", html), (
         "`RATIOS`/`ratios` volvió a declararse como array-literal")
-    assert not re.search(r"var (RATIOS_TOT|ratiosTot)\s*=\s*\{\s*pb\s*:", html), (
-        "`RATIOS_TOT`/`ratiosTot` volvió a declararse como objeto-literal")
     assert not re.search(r't\s*:\s*"CONY"\s*,\s*pb\s*:\s*[\d.]+', html), (
         "encontré un literal tipo `{ t:\"CONY\", pb:N.NN, ... }` — parece RATIOS viejo")
 
@@ -533,47 +532,35 @@ def test_metodo_html_tasa_nra_lee_de_data_no_esta_hardcodeada():
 
 
 def test_metodo_html_ym_ya_no_tiene_el_campo_real_congelado():
-    """El `real:NNN.N` por fila de `YM` (yield realizado congelado, per-ticker) se
-    quita del literal: ahora vive en `DATA.ymMedido`, medido por el motor. Que quede
-    un `real:` suelto dentro del array `YM` indicaría que volvió la copia vieja."""
+    """El literal `YM` (fichas del emisor para la vista «Rendimiento vs tasa») se
+    retiró con su vista el 2026-08-24. Que vuelva a declararse indicaría que la
+    vista regresó sin pasar por la decisión de Daniel."""
     with open(_COMPONENTE, encoding="utf-8") as f:
         html = f.read()
-    m = re.search(r"var YM\s*=\s*\[(.*?)\];", html, re.S)
-    assert m is not None, "no se encontró la declaración de `var YM`"
-    assert not re.search(r"\breal\s*:\s*[\d.]+", m.group(1)), (
-        "`YM` volvió a tener un campo `real:` congelado por fila")
-    assert "var YM_MEDIDO = DATA.ymMedido" in html
+    cuerpo = re.sub(r"//[^\n]*", "", html)   # sin comentarios: solo código vivo
+    assert not re.search(r"var YM\s*=\s*\[", cuerpo), (
+        "`var YM` (literal del emisor) volvió al componente — ¿regresó la vista?")
+    assert "YM_MEDIDO" not in cuerpo and "ymMedido" not in cuerpo
 
 
 def test_metodo_html_contraejemplo_ya_no_esta_cableado_a_mano_a_cony():
-    """El bug del traspaso: dentro de `renderPayback`, `var flag = r.t === "CONY" ?`
-    decidía el flag «cobró y perdió» sin mirar el dato — con datos vivos, CONY dejó de
-    perder y el flag quedó mintiendo. Ahora tiene que decidirlo
-    `DATA.paybackContraejemplo` (Python, por dato). No se busca `r.t === "CONY"` en
-    todo el archivo: `renderEjemplosCony` usa CONY a propósito como ticker de ejemplo
-    fijo en «La matriz» (Bloque 1/2, fuera de este alcance) y es legítimo."""
+    """La vista «Payback ≠ ganancia» (donde vivía `renderPayback` y su flag
+    «cobró y perdió») se retiró el 2026-08-24. Que vuelva a existir la función
+    indicaría que la vista regresó sin pasar por la decisión de Daniel."""
     with open(_COMPONENTE, encoding="utf-8") as f:
         html = f.read()
-    inicio = html.index("function renderPayback")
-    fin = html.index("VISTA 5", inicio)
-    cuerpo_payback = html[inicio:fin]
-    assert 'r.t === "CONY"' not in cuerpo_payback, (
-        "renderPayback sigue decidiendo el flag a mano por ticker")
-    assert "DATA.paybackContraejemplo" in cuerpo_payback
+    assert "renderPayback" not in re.sub(r"//[^\n]*", "", html)
 
 
 def test_metodo_html_tmpaybacknra_ya_no_concatena_un_vivo_con_dos_congelados():
     """El bug aritméticamente roto del traspaso: `fmtMoney(TOT.div)` (vivo, se
     refresca semanal) concatenado con `~$78,182.80`/`~$33,506.91` (mitades de la hoja
-    fechada 5/1/2026) en la misma oración — nunca cuadraba. Los tres números tienen
-    que salir de `DATA.nra`."""
+    fechada 5/1/2026) en la misma oración — nunca cuadraba. El párrafo vivía en la
+    vista «Payback», retirada el 2026-08-24: los literales no pueden volver."""
     with open(_COMPONENTE, encoding="utf-8") as f:
         html = f.read()
     assert "~$78,182.80" not in html
     assert "~$33,506.91" not in html
-    assert "DATA.nra.divBruto" in html
-    assert "DATA.nra.divNeto" in html
-    assert "DATA.nra.retenido" in html
 
 
 def test_la_leyenda_por_modo_vive_en_el_modal_y_no_suelta_en_la_vista():
