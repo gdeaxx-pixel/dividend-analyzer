@@ -26,9 +26,11 @@ import streamlit as st
 
 
 def render_calculadoras() -> None:
-    """Panel «Otras calculadoras» (antes fila 25, expander fijo del pie). Texto literal
-    de `app_old.py:6396-6412`; el título del menú lo puso Daniel («Otras calculadoras»,
-    2026-08-11) — el badge de arriba lo repite, sin la coletilla larga original."""
+    """RETIRADO (2026-08-24): el panel «Otras calculadoras» vivió como pantalla completa
+    detrás del menú de 3 puntos hasta hoy; su contenido ahora es la §12 de Metodología
+    (`ui/componentes/metodologia.html`, id `mt-calculadoras`) y el botón del menú se quitó.
+    Sin consumidores. Se conserva el texto fuente aquí como referencia histórica — el
+    contenido de la §12 lo reescribe en clave «qué tomamos / qué les falta»."""
     st.markdown('<span class="vd-badge">Otras calculadoras</span>', unsafe_allow_html=True)
     st.markdown(
         "Esta herramienta se construyó estudiando las mejores calculadoras públicas de "

@@ -463,6 +463,9 @@
   .meth-src a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   .meth-biblio { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--hair); }
   .meth-refs { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); margin: 10px 0 0; padding-left: 22px; }
+  .meth-list { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); margin: 8px 0 0; padding-left: 22px; }
+  .meth-list li { margin: 0 0 6px; }
+  .meth-list a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   .meth-refs li { margin-bottom: 8px; }
   .meth-refs a { color: var(--accent); word-break: break-word; }
   .meth-note { font-size: 11.5px; color: var(--ink-mut); margin: 18px 0 0; line-height: 1.55; }
@@ -1136,6 +1139,19 @@
         <p class="meth-src">Fuente: medido del historial git del propio repositorio — último commit de cada mes; LOC de <code>logic.py</code> vía <code>git show &lt;sha&gt;:logic.py | wc -l</code> y tests contando <code>def test_*</code> sobre los archivos de test del árbol de ese commit. Nada estimado: cada punto es reproducible con esos dos comandos.</p>
       </section>
 
+      <section class="meth-item" id="mt-calculadoras">
+        <h3 class="meth-h">12 · Otras calculadoras: qué tomamos y qué les falta</h3>
+        <p class="meth-p"><b>De dónde viene esta herramienta:</b> se construyó estudiando las mejores calculadoras públicas de dividendos y tomando lo útil de cada una, pero con un principio propio: <b>realismo</b>, sobre todo en los ETF de alto rendimiento (YieldMax), donde el <i>yield</i> de portada engaña.</p>
+        <p class="meth-p"><b>Lo que tomamos de cada una — y lo que a cada una le falta:</b></p>
+        <ul class="meth-list">
+          <li><b><a href="https://www.tipranks.com/tools/dividend-calculator" target="_blank" rel="noopener">TipRanks ↗</a> y <a href="https://dividendcalculator.io/" target="_blank" rel="noopener">DividendCalculator.io ↗</a></b> — proyección con DRIP, <i>yield on cost</i> y <i>forward yield</i>. → De aquí tomamos el <b>motor de proyección a futuro</b> y el <i>forward yield</i> vs realizado. Les falta: no distinguen bruto/neto por fila ni manejan retención NRA.</li>
+          <li><b><a href="https://miniwebtool.com/dividend-reinvestment-calculator/" target="_blank" rel="noopener">MiniWebtool ↗</a> y <a href="https://www.marketbeat.com/dividends/calculator/" target="_blank" rel="noopener">MarketBeat ↗</a></b> — tabla año por año y efecto <i>bola de nieve</i> de la reinversión. → Tomamos la <b>visualización del interés compuesto</b>. Les falta: asumen yield constante para siempre, sin erosión de NAV.</li>
+          <li><b><a href="https://www.dripcalc.com/yieldmax-etfs/" target="_blank" rel="noopener">DRIPCalc ↗</a></b> — retorno con y sin DRIP para fondos YieldMax. → Tomamos la <b>comparación reinvertir vs cobrar en efectivo</b>. Le falta: no desglosa cuánto de cada distribución es Retorno de Capital.</li>
+          <li><b><a href="https://dividend-wealth.com/tools/nav-erosion-calculator" target="_blank" rel="noopener">NAV Erosion Calculator ↗</a></b> — la carrera <i>ingreso acumulado</i> vs <i>pérdida de capital</i> con punto de <i>breakeven</i>. → Tomamos nuestro <b>modo realista YieldMax</b>. Le falta: no conecta la erosión con el tratamiento fiscal del ROC.</li>
+        </ul>
+        <p class="meth-p"><b>Lo que ninguna hace y aquí sí:</b> descomponer cuánto de cada distribución es <b>Retorno de Capital</b> (datos oficiales 19a) y proyectar con la <b>erosión real observada</b> del fondo, en vez de asumir que el precio sube. Por eso un YieldMax nunca se proyecta como si fuera un ETF de crecimiento.</p>
+      </section>
+
     </div>
 
     <div class="meth-formulario" id="mt-formulario">
@@ -1187,6 +1203,7 @@
       { id: "mt-anualizar", lab: "9 · Anualizar bien" },
       { id: "mt-metodo", lab: "10 · Método tradicional" },
       { id: "mt-evolucion", lab: "11 · Evolución" },
+      { id: "mt-calculadoras", lab: "12 · Otras calculadoras" },
       { id: "mt-formulario", lab: "Formulario" }
     ];
     function highlight(id) {

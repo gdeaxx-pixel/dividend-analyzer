@@ -281,11 +281,6 @@ def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
                             st.session_state["vd_panel"] = "validacion"
                             _pedir_cierre_popover()
                             st.rerun()
-                        if st.button("Otras calculadoras", key="vd_menu_calculadoras",
-                                     use_container_width=True):
-                            st.session_state["vd_panel"] = "calculadoras"
-                            _pedir_cierre_popover()
-                            st.rerun()
                         if pdf_bytes is not None:
                             st.download_button(
                                 "Descargar reporte PDF", data=pdf_bytes,
