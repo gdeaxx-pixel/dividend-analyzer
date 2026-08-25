@@ -198,3 +198,72 @@ def test_todos_los_componentes_parsean_como_javascript():
     assert not rotos, (
         "hay JavaScript que no parsea — el script entero muere al cargar y el panel queda "
         "en blanco sin error visible:\n\n" + "\n\n".join(rotos))
+
+
+# ── `metodo.html`: superficie retirada (4 sub-vistas, #83) que no puede reaparecer ──────
+#
+# Reubicados aquí el 2026-08-25 (antes vivían en `test_metodo_data.py`, mezclados con los
+# tests del adaptador). Dos de los cinco usaban `re.sub(r"//[^\n]*", "", html)` para
+# quitar comentarios antes de buscar texto prohibido — ese stripper se come todo lo que
+# siga a un `//` dentro de una cadena. Hoy es seguro porque `metodo.html` no tiene ningún
+# `esquema://`, pero es seguro por suerte, no por construcción. Los cinco usan ahora
+# `_sin_cadenas_ni_comentarios`, que ya vive en este archivo (guard de sintaxis, arriba) y
+# quita cadenas ANTES que comentarios.
+
+_METODO_HTML = os.path.join(COMPONENTES, "metodo.html")
+
+
+def test_metodo_html_escalera_ratios_ya_no_son_arrays_literales():
+    """`ratios`/`ratiosTot` en minúscula a propósito (a diferencia de `MATRIZ`/`TOT`):
+    el barrido de `/auditoria-financiera` (bloque 5) sigue rastreando `var
+    RATIOS`/`var RATIOS_TOT` en MAYÚSCULA como pendiente-de-portar; ya se portó, así
+    que el nombre en minúscula deja de generar ese WARN fantasma sin tener que tocar
+    el script del skill (fuera de este repo)."""
+    html = _leer(_METODO_HTML)
+
+    # Las vistas 3-5 se retiraron el 2026-08-24: solo sobrevive `ratios`, que el
+    # modal de la paradoja sigue leyendo. `ratiosTot`/`var ESC` murieron con ellas.
+    assert "var ratios = DATA.ratios" in html
+    assert "var ratiosTot" not in html and "var ESC " not in html
+
+    # El patrón viejo: `var RATIOS = [{ t:"CONY", pb:2.54, ... }, ...]` — la copia
+    # congelada de la hoja, en MAYÚSCULA. No puede reaparecer, en ningún nombre.
+    assert not re.search(r"var (RATIOS|ratios)\s*=\s*\[", html), (
+        "`RATIOS`/`ratios` volvió a declararse como array-literal")
+    assert not re.search(r't\s*:\s*"CONY"\s*,\s*pb\s*:\s*[\d.]+', html), (
+        "encontré un literal tipo `{ t:\"CONY\", pb:N.NN, ... }` — parece RATIOS viejo")
+
+
+def test_metodo_html_tasa_nra_lee_de_data_no_esta_hardcodeada():
+    html = _leer(_METODO_HTML)
+    assert "var TASA_NRA = DATA.tasaNra" in html
+    assert not re.search(r"var TASA_NRA\s*=\s*0\.3\d*\s*;", html), (
+        "`var TASA_NRA` volvió a ser un literal (0.30) en vez de leer DATA.tasaNra")
+
+
+def test_metodo_html_ym_ya_no_tiene_el_campo_real_congelado():
+    """El literal `YM` (fichas del emisor para la vista «Rendimiento vs tasa») se
+    retiró con su vista el 2026-08-24. Que vuelva a declararse indicaría que la
+    vista regresó sin pasar por la decisión de Daniel."""
+    cuerpo = _sin_cadenas_ni_comentarios(_leer(_METODO_HTML))
+    assert not re.search(r"var YM\s*=\s*\[", cuerpo), (
+        "`var YM` (literal del emisor) volvió al componente — ¿regresó la vista?")
+    assert "YM_MEDIDO" not in cuerpo and "ymMedido" not in cuerpo
+
+
+def test_metodo_html_contraejemplo_ya_no_esta_cableado_a_mano_a_cony():
+    """La vista «Payback ≠ ganancia» (donde vivía `renderPayback` y su flag
+    «cobró y perdió») se retiró el 2026-08-24. Que vuelva a existir la función
+    indicaría que la vista regresó sin pasar por la decisión de Daniel."""
+    cuerpo = _sin_cadenas_ni_comentarios(_leer(_METODO_HTML))
+    assert "renderPayback" not in cuerpo
+
+
+def test_metodo_html_tmpaybacknra_ya_no_concatena_un_vivo_con_dos_congelados():
+    """El bug aritméticamente roto del traspaso: `fmtMoney(TOT.div)` (vivo, se
+    refresca semanal) concatenado con `~$78,182.80`/`~$33,506.91` (mitades de la hoja
+    fechada 5/1/2026) en la misma oración — nunca cuadraba. El párrafo vivía en la
+    vista «Payback», retirada el 2026-08-24: los literales no pueden volver."""
+    html = _leer(_METODO_HTML)
+    assert "~$78,182.80" not in html
+    assert "~$33,506.91" not in html

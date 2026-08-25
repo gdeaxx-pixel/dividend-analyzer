@@ -61,9 +61,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **663 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre esta rama,
-que parte de `main` = `05236b8`: 661 en `main` más los 2 del guard de sintaxis de este PR).
-Antes: **660**, medido 2026-08-23 sobre `main` =
+Línea base: **654 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+`e17a639`, tras podar 4 claves de `metodo_data()` sin consumidor —`ratiosTot`, `nra`,
+`paybackContraejemplo`, `ymMedido`— y `pbn` de `ratios[]`: se van 9 tests, no 4 —
+`test_ymmedido_real_yield_reconcilia_contra_matriz` estaba parametrizado ×5 tickers, la
+cuenta a ojo lo pasó por alto la primera vez—. 663 en `main` antes de esta poda (661 más
+los 2 del guard de sintaxis, PR #86). Antes: **660**, medido 2026-08-23 sobre `main` =
 `b72f4ae` — y quedó desfasado enseguida, porque el #84 añadió su guard de balance sin tocar
 esta línea; `main` corría 661 de verdad. Con el #71 —vistas heredadas con base mixta, A2/A3— y el #72 —las 3 copias inline
 del predicado de fila-de-impuesto al predicado único, más cobertura IB de la tasa aplicada—
