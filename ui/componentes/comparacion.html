@@ -1023,11 +1023,6 @@
 </style>
 <main class="wrap" style="padding-top:0">
 <div class="panel" id="cmp-panel-simulacion" role="tabpanel">
-      <header class="cmp-head">
-        <h2 class="cmp-title">Total Return Graph · simulación</h2>
-        <p class="cmp-lede" id="cmpLede">Comparación en <b>igualdad de condiciones</b>: para el fondo base se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Todas las series arrancan en <b>0% el mismo mes</b>.</p>
-      </header>
-
       <div class="cmp-controls">
         <div class="cmp-field">
           <span class="cmp-lab">Fondo base</span>
@@ -1141,7 +1136,7 @@
         elVista = document.getElementById("cmpVista"),
         elCmp = document.getElementById("cmpCmp"),
         svg = document.getElementById("cmpSvg"), elSum = document.getElementById("cmpSummary"),
-        elNotes = document.getElementById("cmpNotes"), elLede = document.getElementById("cmpLede");
+        elNotes = document.getElementById("cmpNotes");
 
     function chip(label, active, extra){
       var b = document.createElement("button");
@@ -1318,9 +1313,6 @@
       } else {
         elSum.innerHTML = '<b>'+state.base+" "+fmtPct(bv)+'</b> · activa un comparador para medir la diferencia.';
       }
-      elLede.innerHTML = sin
-        ? 'Comparación en <b>igualdad de condiciones</b>: para '+state.base+' se separa el rendimiento del <b>solo precio</b> del <b>efectivo acumulado</b> (sin reinvertir); los comparadores siguen con DRIP. Todas las series arrancan en <b>0% el mismo mes</b>.'
-        : 'Comparación en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP). Todas las series arrancan en <b>0% el mismo mes</b>.';
       var parts = [
         "Todas las series arrancan el <b>"+mLabel(_t0)+"</b> en 0% — la incepción más tardía entre las que están en pantalla, para que las cifras cubran el mismo horizonte. Línea sólida = fondo YieldMax · guiones = ETF de crecimiento · punteado fino = acción subyacente.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el ' + DATA.asof +
