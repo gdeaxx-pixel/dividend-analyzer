@@ -61,7 +61,17 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **647 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+Línea base: **668 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre la rama de la
+tercera línea de «Sin DRIP» — cosechar el efectivo hacia `CMP_COSECHA_DESTINO`/SCHB en vez
+de dejarlo quieto, base `main` = `0fbaa73` —, tras sumar 21 tests en
+`test_comparacion_data.py`: 12 en `TestCosechaHaciaDestino` —ground truth congelado,
+ausencia para el propio destino y para tickers sin dividendo, arranque común con
+`idxSin`/`precioSin`—, 7 en `TestIdentidadCosechaAlPropioTicker` —gate de identidad: cosechar
+al propio ticker reproduce «Con DRIP» exacto en `bruto`/`plano`, y por qué NO en `roc`
+(más acciones ⇒ más `roc_receivable`, divergencia esperada, no un bug)—, y 2 en
+`TestDobleConteoDeEfectivo` —TRI constante debe reproducir `idxSin` sin sumar `cash_accum`
+de más, y un destino que no cubre la ventana devuelve `None` en vez de interpolar). Antes:
+**647 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
 `9d95dbf`, tras podar el menú Detalle a solo Portafolios: `ui/heredadas.py` pierde las
 vistas Ingresos, Proyección y Estrategias —1136 líneas—, y `test_estrategias_datos.py`
 se jubila completo porque su sujeto ya no existe; se van 7 tests netos). Antes: **654

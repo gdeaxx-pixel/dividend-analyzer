@@ -44,6 +44,12 @@ TRG_COLORES = {"NVDY": "#1f86c4", "TSLY": "#d1662f", "CONY": "#b95cae", "MSTY": 
                "NVDA": "#006497", "TSLA": "#C05621", "COIN": "#A84C9E", "MSTR": "#98A000"}
 TRG_MODOS = ("bruto", "roc", "plano")
 
+# Destino de la tercera línea de «Sin DRIP» (Fase 3.3a-cosecha): cada distribución del
+# fondo base, en vez de quedarse quieta como efectivo, compra este ticker el día que se
+# cobra. Fijo por ahora -- el mecanismo (_serie_cosecha) no depende del destino, pero el
+# selector en UI es una decision de producto aparte.
+CMP_COSECHA_DESTINO = "SCHB"
+
 
 # Etiquetas del rail — literales del demo (`viaje-dinero-waterfall.html:2131`).
 STEP_LABELS = (
@@ -616,6 +622,39 @@ def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
     return out
 
 
+def _serie_cosecha(r_sin, tri_destino: pd.Series) -> pd.Series | None:
+    """Tercera línea de «Sin DRIP»: en vez de dejar el efectivo cobrado quieto, lo pone a
+    comprar `CMP_COSECHA_DESTINO` (DRIP dentro del destino) el mismo día ex-dividendo en que
+    se cobra. Algebraicamente idéntico a simular la compra acción por acción, pero se arma
+    reutilizando el TRI del destino que `comparacion_data` ya calculó una vez por modo — cero
+    corridas nuevas de `run_backtest`.
+
+    `r_sin` es la corrida `drip=False` del fondo base (misma corrida que ya alimenta
+    `idxSin`/`precioSin` — Regla 2b: TODAS las columnas salen del mismo mundo). `tri_destino`
+    es `run_backtest(CMP_COSECHA_DESTINO, drip=True, ...).daily["total_value"]`, el índice
+    total-return del destino en dólares.
+
+    La suma tiene tres piezas:
+      - `portfolio_value` de `r_sin` — las acciones del fondo base nunca cambian de número
+        sin DRIP. NO se suma `cash_accum`: ese efectivo ya se convirtió en destino, sumarlo
+        sería contarlo dos veces.
+      - `unidades * tri` — el destino comprado con cada distribución (incluye el reembolso
+        ROC cuando se cobra: `cash_ev` suma `roc_refund`), valorado hoy.
+      - `roc_receivable` — lo que el 1042-S todavía no ha pagado, igual que en `idxSin`: es
+        un activo real, no una promesa.
+
+    Devuelve `None` si `tri_destino` no cubre la ventana completa de `r_sin` (destino sin
+    precio en algún día de la vida del fondo base) — nunca se interpola ni se dibuja a
+    medias.
+    """
+    tri = tri_destino.reindex(r_sin.daily.index).ffill()
+    if tri.isna().any() or (tri <= 0).any():
+        return None
+    cash_ev = r_sin.daily["net_dividend"] + r_sin.daily["roc_refund"]
+    unidades = (cash_ev / tri).cumsum()
+    return r_sin.daily["portfolio_value"] + unidades * tri + r_sin.daily["roc_receivable"]
+
+
 def comparacion_data() -> dict | None:
     """JSON para `ui/componentes/comparacion.html` (Total Return Graph · Simulación).
 
@@ -661,6 +700,16 @@ def comparacion_data() -> dict | None:
     Devuelve `None` solo si NINGÚN ticker del universo pudo cargar historia (ni caché ni
     yfinance en vivo) — la vista entera se degrada con un aviso explícito en vez de
     dibujar un gráfico vacío o a medias.
+
+    **Tercera línea de "Sin DRIP": cosecha hacia `CMP_COSECHA_DESTINO`** (SCHB). En vez de
+    dejar el efectivo cobrado quieto (lo que ya dibuja `idxSin`), esta serie lo pone a
+    comprar el destino el mismo día que se cobra, con DRIP dentro del destino (`idxCosecha`,
+    `_serie_cosecha`). Reutiliza el TRI del destino —una corrida `run_backtest` por modo,
+    no una por ticker— y NO es un motor nuevo: es la misma corrida `drip=False` que ya
+    alimenta `idxSin` (Regla 2b: todas las columnas del mismo mundo), con el efectivo
+    convertido en unidades de destino en vez de acumulado sin invertir. Se omite (la clave
+    ni aparece) para el propio `CMP_COSECHA_DESTINO`, para tickers sin dividendo
+    (`sin_dividendos`), y si el destino no cubre la ventana completa del ticker.
     """
     historias: dict[str, price_cache.HistoryResult] = {}
     for tk in TRG_UNIVERSO:
@@ -692,8 +741,18 @@ def comparacion_data() -> dict | None:
     def _mensualizar(serie) -> dict:
         return _mensualizar_desde(serie, origen)
 
+    # Movido antes del loop principal (antes vivía después): la tercera línea de "Sin DRIP"
+    # (cosecha hacia CMP_COSECHA_DESTINO) necesita saber qué tickers no tienen dividendo
+    # ANTES de decidir si les calcula la serie, no después.
+    sin_dividendos = sorted(
+        tk for tk, hr in historias.items()
+        if float(hr.history.get("Dividends", pd.Series(dtype=float)).fillna(0).sum()) == 0.0)
+    sin_dividendos_set = set(sin_dividendos)
+
     idx: dict = {modo: {} for modo in TRG_MODOS}
     idx_sin: dict = {modo: {} for modo in TRG_MODOS}
+    idx_cosecha: dict = {modo: {} for modo in TRG_MODOS}
+    cosecha_usd: dict = {modo: {} for modo in TRG_MODOS}
     precio_sin: dict = {}
     incep: dict = {}
     grp: dict = {}
@@ -703,6 +762,24 @@ def comparacion_data() -> dict | None:
         nonlocal last
         if valores:
             last = max(last, max(int(k) for k in valores))
+
+    # TRI del destino de cosecha, una corrida por modo (no una por ticker x modo): el
+    # divisor de "cuántas unidades de destino compró cada distribución" es el mismo para
+    # todos los fondos base en el mismo modo fiscal. Si el destino no cargó historia (caché
+    # ausente), `tri_por_modo` queda vacío y la tercera línea simplemente no se calcula para
+    # nadie — se degrada, no se dibuja a medias.
+    tri_por_modo: dict[str, pd.Series] = {}
+    _destino_hr = historias.get(CMP_COSECHA_DESTINO)
+    if _destino_hr is not None:
+        _destino_history = _destino_hr.history.sort_index()
+        _destino_start = _destino_history.index.min()
+        for modo in TRG_MODOS:
+            _pol_destino = _politica_fiscal(CMP_COSECHA_DESTINO, modo, roc19a, roc_ici)
+            _r_destino = backtest.run_backtest(
+                CMP_COSECHA_DESTINO, start_date=_destino_start, initial_capital=_INDICE_CAPITAL,
+                drip=True, nra_rate=_pol_destino.rate, history=_destino_history,
+                roc_pct_by_year=_pol_destino.roc_pct_by_year)
+            tri_por_modo[modo] = _r_destino.daily["total_value"]
 
     for tk, hr in historias.items():
         history = hr.history.sort_index()
@@ -735,6 +812,23 @@ def comparacion_data() -> dict | None:
                 # acciones). Basta una corrida por ticker, no una por modo.
                 precio_sin[tk] = _mensualizar(r_sin.daily["portfolio_value"])
 
+            # Tercera línea de "Sin DRIP": cosechar el efectivo hacia CMP_COSECHA_DESTINO.
+            # No aplica al propio destino (sería la misma línea) ni a un ticker sin
+            # dividendo (nada que rotar) ni cuando el destino no tiene TRI para este modo.
+            if (tk != CMP_COSECHA_DESTINO and tk not in sin_dividendos_set
+                    and modo in tri_por_modo):
+                serie_cosecha = _serie_cosecha(r_sin, tri_por_modo[modo])
+                if serie_cosecha is not None:
+                    valores_cosecha = _mensualizar(serie_cosecha)
+                    idx_cosecha[modo][tk] = valores_cosecha
+                    _actualizar_last(valores_cosecha)
+                    _cash_final = float(r_sin.daily["cash_accum"].iloc[-1])
+                    _destino_final = float(
+                        serie_cosecha.iloc[-1] - r_sin.daily["portfolio_value"].iloc[-1]
+                        - r_sin.daily["roc_receivable"].iloc[-1])
+                    cosecha_usd[modo][tk] = {
+                        "cash": round(_cash_final, 2), "destino": round(_destino_final, 2)}
+
     fuente = {tk: hr.source for tk, hr in historias.items()}
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
     faltantes = sorted(t for t in TRG_UNIVERSO if t not in historias)
@@ -763,10 +857,6 @@ def comparacion_data() -> dict | None:
     asof_candidatos = [hr.cache_asof for hr in historias.values() if hr.cache_asof]
     asof = max(asof_candidatos) if asof_candidatos else datetime.date.today().isoformat()
 
-    sin_dividendos = sorted(
-        tk for tk, hr in historias.items()
-        if float(hr.history.get("Dividends", pd.Series(dtype=float)).fillna(0).sum()) == 0.0)
-
     return {
         "origen": origen,
         "last": last,
@@ -786,6 +876,9 @@ def comparacion_data() -> dict | None:
         "rocFuente": roc_fuente,
         "par": TRG_PARES,
         "sin_dividendos": sin_dividendos,
+        "idxCosecha": idx_cosecha,
+        "cosechaUSD": cosecha_usd,
+        "cosechaDestino": CMP_COSECHA_DESTINO,
     }
 
 

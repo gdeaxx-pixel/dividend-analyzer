@@ -1118,11 +1118,21 @@
     // acciones del fondo. `DATA.idxSin`/`DATA.precioSin` ya separan esas dos series desde
     // Python (`backtest.run_backtest(drip=False)`); aquí solo se normalizan al 0% en la
     // ventana común, igual que `series()`.
+    //
+    // Tercera línea opcional: `DATA.idxCosecha` (si existe para este tk/mode) es el mismo
+    // efectivo, pero puesto a comprar `DATA.cosechaDestino` el día que se cobra en vez de
+    // quedarse quieto. Normalizada con el MISMO base0 que las otras dos — las tres líneas
+    // nacen del mismo punto. Ausente para el propio destino y para tickers sin dividendo
+    // (ver `ui.adapters.comparacion_data`), así que `cosechaData` puede quedar `undefined`.
     function seriesSin(tk, mode, baseIncep){
       var startM = baseIncep, tot = DATA.idxSin[mode][tk], precio = DATA.precioSin[tk];
-      var base0 = tot[startM], out = {}, priceData = {};
-      for (var m = startM; m <= LAST; m++){ out[m] = tot[m]/base0 - 1; priceData[m] = precio[m]/base0 - 1; }
-      return { tk:tk, startM:startM, late:false, data:out, priceData:priceData };
+      var cosecha = DATA.idxCosecha && DATA.idxCosecha[mode] && DATA.idxCosecha[mode][tk];
+      var base0 = tot[startM], out = {}, priceData = {}, cosechaData = cosecha ? {} : undefined;
+      for (var m = startM; m <= LAST; m++){
+        out[m] = tot[m]/base0 - 1; priceData[m] = precio[m]/base0 - 1;
+        if (cosecha) cosechaData[m] = cosecha[m]/base0 - 1;
+      }
+      return { tk:tk, startM:startM, late:false, data:out, priceData:priceData, cosechaData:cosechaData };
     }
 
     var _cmp0 = new Set(GROWTH);
@@ -1202,6 +1212,9 @@
       return 10*pow;
     }
     function fmtPct(v){ return (v>0?"+":"") + Math.round(v*100) + "%"; }
+    // Los USD de cosecha están sobre el capital-índice de $100 que ya usa todo
+    // `comparacion_data` (no una posición real) — se declara así en el copy.
+    function usd(v){ return "$" + Math.round(v).toLocaleString("en-US"); }
 
     var W = 920, H = 380, ML = 48, MR = 96, MT = 14, MB = 26;
     var _lastList = [], _x = null, _t0 = 0;
@@ -1223,6 +1236,7 @@
       list.forEach(function(s){
         for (var m in s.data){ var v=s.data[m]; if (v<lo) lo=v; if (v>hi) hi=v; }
         if (s.priceData) for (var m2 in s.priceData){ var v2=s.priceData[m2]; if (v2<lo) lo=v2; if (v2>hi) hi=v2; }
+        if (s.cosechaData) for (var m3 in s.cosechaData){ var v3=s.cosechaData[m3]; if (v3<lo) lo=v3; if (v3>hi) hi=v3; }
       });
       var pad = (hi - lo) * 0.08 || 0.1; hi += pad; lo -= pad;
       var x = function(m){ return ML + (m - t0)/(LAST - t0) * (W - ML - MR); };
@@ -1252,6 +1266,18 @@
           for (var m = s.startM; m <= LAST; m++) top += (m===s.startM?"M":"L") + x(m).toFixed(1) + " " + y(s.data[m]).toFixed(1);
           for (var m2 = LAST; m2 >= s.startM; m2--) bottom += " L" + x(m2).toFixed(1) + " " + y(s.priceData[m2]).toFixed(1);
           out.push('<path d="'+top+bottom+' Z" fill="'+CASH+'" opacity="0.16"/>');
+          if (s.cosechaData){
+            // Banda del costo de oportunidad: efectivo quieto (línea "+ efectivo") vs
+            // el mismo flujo puesto a comprar `DATA.cosechaDestino`. El path se arma
+            // igual sin importar cuál línea queda arriba — el mercado puede invertir
+            // el signo en cualquier ventana (Regla 5: no es un invariante estructural,
+            // es un hecho de mercado que puede salir en cualquier dirección).
+            var SCHBCOL = COL[DATA.cosechaDestino];
+            var topC = "", bottomC = "";
+            for (var mc = s.startM; mc <= LAST; mc++) topC += (mc===s.startM?"M":"L") + x(mc).toFixed(1) + " " + y(s.cosechaData[mc]).toFixed(1);
+            for (var mc2 = LAST; mc2 >= s.startM; mc2--) bottomC += " L" + x(mc2).toFixed(1) + " " + y(s.data[mc2]).toFixed(1);
+            out.push('<path d="'+topC+bottomC+' Z" fill="'+SCHBCOL+'" opacity="0.22"/>');
+          }
           var dp = "";
           for (var m3 = s.startM; m3 <= LAST; m3++) dp += (m3===s.startM?"M":"L") + x(m3).toFixed(1) + " " + y(s.priceData[m3]).toFixed(1);
           out.push('<path d="'+dp+'" fill="none" stroke="'+MUT+'" stroke-width="1.6" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>');
@@ -1263,6 +1289,16 @@
         out.push('<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="'+(isBase?3.2:2)+'"'+dash+' stroke-linejoin="round" stroke-linecap="round"/>');
         var ex = x(LAST), ey = y(s.data[LAST]);
         out.push('<circle cx="'+ex.toFixed(1)+'" cy="'+ey.toFixed(1)+'" r="3.4" fill="'+color+'" stroke="'+PANEL+'" stroke-width="1.6"/>');
+        if (s.cosechaData){
+          // Tercera línea: el mismo efectivo, puesto a trabajar en `DATA.cosechaDestino`
+          // en vez de quedarse quieto.
+          var SCHBCOL2 = COL[DATA.cosechaDestino];
+          var dc = "";
+          for (var mc3 = s.startM; mc3 <= LAST; mc3++) dc += (mc3===s.startM?"M":"L") + x(mc3).toFixed(1) + " " + y(s.cosechaData[mc3]).toFixed(1);
+          out.push('<path d="'+dc+'" fill="none" stroke="'+SCHBCOL2+'" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>');
+          var exc = x(LAST), eyc = y(s.cosechaData[LAST]);
+          out.push('<circle cx="'+exc.toFixed(1)+'" cy="'+eyc.toFixed(1)+'" r="3.4" fill="'+SCHBCOL2+'" stroke="'+PANEL+'" stroke-width="1.6"/>');
+        }
       });
 
       var labels = list.map(function(s){ return { tk:s.tk, v:s.data[LAST], y:y(s.data[LAST]),
@@ -1276,12 +1312,22 @@
         labels.push({ tk:s.tk, v:s.priceData[LAST], y:py, base:false, sin:true, precio:true });
         labels.sort(function(a,b){ return a.y-b.y; });
       });
+      // Tercera línea (cosecha hacia `DATA.cosechaDestino`): mismo patrón, su propia
+      // etiqueta en su punto final.
+      list.forEach(function(s){
+        if (!s.cosechaData) return;
+        var pc = y(s.cosechaData[LAST]);
+        for (var i=1;i<labels.length;i++) if (Math.abs(labels[i].y - pc) < 14){ pc = labels[i].y + 14; }
+        labels.push({ tk:s.tk, v:s.cosechaData[LAST], y:pc, base:false, cosecha:true });
+        labels.sort(function(a,b){ return a.y-b.y; });
+      });
       for (var i=1;i<labels.length;i++) if (labels[i].y - labels[i-1].y < 14) labels[i].y = labels[i-1].y + 14;
       labels.forEach(function(L){
-        var color = L.sin ? CASH : (L.base ? INK : COL[L.tk]);
-        // Sin DRIP el fondo base tiene dos líneas: sólida (precio+efectivo) y
-        // punteada (solo precio). La etiqueta debe distinguirlas sin leer el pie.
-        var nombre = L.precio ? L.tk + ' · solo precio' : (L.sin ? L.tk + ' + efectivo' : L.tk);
+        var color = L.cosecha ? COL[DATA.cosechaDestino] : (L.sin ? CASH : (L.base ? INK : COL[L.tk]));
+        // Sin DRIP el fondo base tiene hasta tres líneas: sólida (precio+efectivo),
+        // punteada (solo precio) y la de cosecha (efectivo puesto a trabajar en el
+        // destino). La etiqueta debe distinguir las tres sin leer el pie.
+        var nombre = L.precio ? L.tk + ' · solo precio' : (L.cosecha ? L.tk + ' → ' + DATA.cosechaDestino : (L.sin ? L.tk + ' + efectivo' : L.tk));
         out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"'+(L.precio?' opacity=".85"':'')+'><tspan font-weight="700" fill="'+color+'">'+nombre+'</tspan> '+fmtPct(L.v)+'</text>');
       });
 
@@ -1306,7 +1352,12 @@
           .map(function(s){ return '<div style="display:flex;gap:8px;white-space:nowrap"><span style="width:9px;height:3px;background:'+
             (s.tk===state.base?getComputedStyle(document.documentElement).getPropertyValue("--ink").trim():COL[s.tk])+
             ';align-self:center"></span>'+s.tk+'<span class="t-v" style="margin-left:auto;padding-left:12px">'+fmtPct(s.data[m])+'</span></div>'; }).join("");
-        showTip('<div class="t-h">'+mLabel(m)+'</div>'+rows, pt.clientX, pt.clientY);
+        // Tercera línea (cosecha): su propia fila, mismo nombre/color que la etiqueta.
+        var rowsCosecha = _lastList.filter(function(s){ return s.cosechaData && s.cosechaData[m] != null; })
+          .map(function(s){ return '<div style="display:flex;gap:8px;white-space:nowrap"><span style="width:9px;height:3px;background:'+
+            COL[DATA.cosechaDestino]+';align-self:center"></span>'+s.tk+' → '+DATA.cosechaDestino+
+            '<span class="t-v" style="margin-left:auto;padding-left:12px">'+fmtPct(s.cosechaData[m])+'</span></div>'; }).join("");
+        showTip('<div class="t-h">'+mLabel(m)+'</div>'+rows+rowsCosecha, pt.clientX, pt.clientY);
       }
       hit.addEventListener("mousemove", at);
       hit.addEventListener("mouseenter", at);
@@ -1382,6 +1433,27 @@
         ((state.mode === "roc" && DATA.roc19a && DATA.roc19a[state.base])
           ? ' En este modo el área incluye además lo que el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron y están ahí dentro, como efectivo.'
           : ''));
+      // Tercera línea: el mismo efectivo puesto a comprar `DATA.cosechaDestino` en vez de
+      // quedarse quieto. Ausente para el propio destino y para fondos sin dividendo — ver
+      // `ui.adapters.comparacion_data`.
+      if (sin && DATA.idxCosecha[state.mode] && DATA.idxCosecha[state.mode][state.base]) {
+        var usdCosecha = DATA.cosechaUSD[state.mode][state.base];
+        var cosS = seriesSin(state.base, state.mode, _t0).cosechaData[LAST];
+        var conS2 = series(state.base, _t0, state.mode).data[LAST];
+        var ppRot = Math.round((cosS - conS2) * 100), ganaRotar = cosS >= conS2;
+        parts.push('<span class="flag">El efectivo puesto a trabajar:</span> la tercera línea toma cada distribución de ' +
+          state.base + ' el día que se cobra y compra ' + DATA.cosechaDestino + ' con ella, reinvirtiendo también ' +
+          'los dividendos del propio ' + DATA.cosechaDestino + '. La banda entre las dos líneas es la diferencia: ' +
+          'por cada $100 invertidos, ' + usd(usdCosecha.cash) + ' cobrados que, quietos, siguen siendo ' + usd(usdCosecha.cash) +
+          ' — y puestos en ' + DATA.cosechaDestino + ' valdrían <b>' + usd(usdCosecha.destino) + '</b> hoy. ' +
+          'Ojo con la lectura: <b>esto no es «' + state.base + ' vs ' + DATA.cosechaDestino + '»</b> — es ' + state.base +
+          ' con su flujo rotado al mercado amplio, una cartera de dos activos. Para la otra pregunta, enciende el ' +
+          'comparador ' + DATA.cosechaDestino + ', que parte del 100% invertido desde el día 1.');
+        parts.push('<span class="flag">Rotar vs reinvertir (' + state.base + '):</span> sacar el flujo a ' + DATA.cosechaDestino +
+          ' dio ' + fmtPct(cosS) + ' y reinvertirlo en el propio fondo dio ' + fmtPct(conS2) + ' → ' +
+          (ganaRotar ? 'rotar gana' : 'reinvertir gana') + ' por <b>' + Math.abs(ppRot) +
+          ' pp</b>. No es una regla: depende de si el fondo aguantó su NAV en la ventana.');
+      }
       if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
       if (DATA.faltantes && DATA.faltantes.length) parts.push('<span class="flag">Sin datos:</span> ' + DATA.faltantes.join(", ") + ' no se pudo descargar (ni caché ni en vivo) — no aparece en el gráfico.');
       elNotes.innerHTML = parts.join("<br>");
