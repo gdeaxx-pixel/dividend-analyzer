@@ -307,6 +307,20 @@ def render_placeholder(ruta: "Ruta | None" = None, titulo: str | None = None) ->
 
 _ESTILOS = """
         * { box-sizing: border-box; }
+        /* Caret fantasma al hacer clic en contenedores no-editables (reportado 2026-08-25):
+           `section.stMain` (el contenedor principal) es focusable (`tabindex=0`) y con
+           `user-select: auto`, así que el clic le pasa el foco y el navegador pinta el
+           caret de inserción de texto. Se desactiva la selección en los contenedores
+           estructurales — inputs, textareas, tablas y [contenteditable] conservan su
+           comportamiento normal. */
+        section[data-testid="stMain"], [data-testid="stAppViewContainer"],
+        [data-testid="stHeader"], .block-container {
+          user-select: none; -webkit-user-select: none;
+        }
+        input, textarea, [contenteditable="true"], [data-testid="stDataFrame"],
+        [data-testid="stDataFrame"] *, [data-testid="stCode"], pre, code {
+          user-select: text; -webkit-user-select: text;
+        }
         html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"] {
           background: var(--ground); color: var(--ink);
           font-family: var(--font-sans); -webkit-font-smoothing: antialiased;
