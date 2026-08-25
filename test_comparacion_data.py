@@ -504,3 +504,152 @@ class TestMonotoniaFiscalEstructural:
     # depende es exactamente el antipatrón que la Regla 5 del contrato describe: un test que
     # se rompe sin que nadie haya roto nada. Lo escribí yo en el PR #62; el error fue duplicar
     # el guard, no la propiedad.
+
+# ── Tercera línea de "Sin DRIP": cosecha hacia CMP_COSECHA_DESTINO (SCHB) ────────────────
+
+class TestCosechaHaciaDestino:
+    """`idxCosecha`/`cosechaUSD`: en vez de dejar el efectivo cobrado quieto (lo que ya
+    dibuja `idxSin`), esta serie lo pone a comprar `CMP_COSECHA_DESTINO` (SCHB) el mismo día
+    que se cobra, con DRIP dentro del destino. No es un motor nuevo — reutiliza el TRI de
+    SCHB que `comparacion_data` ya corre una vez por modo, y la misma corrida `drip=False`
+    del fondo base que alimenta `idxSin` (Regla 2b: todas las columnas del mismo mundo).
+    """
+
+    _ESPERADO_BRUTO_PCT = {
+        # Ground truth medido contra el snapshot congelado (`knowledge/price_cache_frozen/`),
+        # igual criterio que `_RETORNO_ESPERADO`: la entrada no se mueve con el refresh
+        # semanal del caché vivo.
+        "NVDY": 251.9, "TSLY": 66.2, "CONY": 161.4, "MSTY": 215.8, "CHPY": 155.2,
+    }
+
+    @pytest.mark.parametrize("tk", ["NVDY", "TSLY", "CONY", "MSTY", "CHPY"])
+    def test_retorno_contra_ground_truth_congelado(self, datos, tk):
+        obtenido_pct = _retorno_total(datos, tk, "bruto", "idxCosecha") * 100.0
+        esperado_pct = self._ESPERADO_BRUTO_PCT[tk]
+        assert obtenido_pct == pytest.approx(esperado_pct, abs=0.5), (
+            f"{tk} → {datos['cosechaDestino']}: esperado {esperado_pct}%, "
+            f"obtenido {obtenido_pct:.1f}%")
+
+    def test_destino_no_aparece_en_su_propia_cosecha(self, datos):
+        """SCHB cosechado hacia sí mismo sería la misma línea que ya dibuja `idx`/`idxSin` —
+        la clave simplemente no debe existir, no un cero ni una copia."""
+        destino = datos["cosechaDestino"]
+        for modo in TRG_MODOS:
+            assert destino not in datos["idxCosecha"][modo], (
+                f"{destino} no debería tener cosecha hacia sí mismo en modo {modo}")
+            assert destino not in datos["cosechaUSD"][modo]
+
+    def test_tickers_sin_dividendo_tampoco_tienen_cosecha(self, datos):
+        """Nada que rotar si el ticker no paga distribución — mismo criterio que ya usa
+        `test_accion_sin_dividendos_es_indiferente_al_drip_y_al_modo` para `idx`/`idxSin`."""
+        for tk in datos["sin_dividendos"]:
+            for modo in TRG_MODOS:
+                assert tk not in datos["idxCosecha"][modo], (
+                    f"{tk} no paga dividendo — no debería tener serie de cosecha")
+
+    @pytest.mark.parametrize("tk", ["NVDY", "TSLY", "CONY", "MSTY", "CHPY"])
+    def test_arranca_en_el_mismo_punto_que_idxsin_y_precio(self, datos, tk):
+        """Las tres líneas nacen del mismo mes y del mismo valor — si no, la vista pintaría
+        una discontinuidad al mes de incepción del fondo base."""
+        incep = str(datos["incep"][tk])
+        v_cosecha = datos["idxCosecha"]["bruto"][tk][incep]
+        v_sin = datos["idxSin"]["bruto"][tk][incep]
+        v_precio = datos["precioSin"][tk][incep]
+        assert v_cosecha == pytest.approx(v_sin, abs=1e-6)
+        assert v_cosecha == pytest.approx(v_precio, abs=1e-6)
+
+
+class TestIdentidadCosechaAlPropioTicker:
+    """Gate de identidad (fuente independiente, no la fórmula que generó el dato): si el
+    destino de la cosecha fuera el PROPIO fondo base, la serie tiene que reproducir
+    exactamente `idx` (Con DRIP) — es una identidad algebraica del motor (lineal en el
+    número de acciones), no una coincidencia de mercado. Solo vale en modos SIN escudo ROC
+    devengado (`bruto`/`plano`): en `roc`, Con DRIP compra más acciones ⇒ cobra más
+    dividendo bruto ⇒ devenga más `roc_receivable` que la versión Sin DRIP, así que las dos
+    series divergen por diseño, no por bug."""
+
+    @pytest.mark.parametrize("tk", ["MSTY", "TSLY", "NVDY"])
+    @pytest.mark.parametrize("modo", ["bruto", "plano"])
+    def test_cosechar_al_propio_ticker_reproduce_con_drip(self, tk, modo):
+        from conftest import frozen_price_cache
+        with frozen_price_cache():
+            h = price_cache.load_history(tk).history.sort_index()
+            start = h.index.min()
+            roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+            pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
+            r_con = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=True, nra_rate=pol.rate, history=h,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
+            r_sin = backtest.run_backtest(tk, start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=False, nra_rate=pol.rate, history=h,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
+        from ui.adapters import _serie_cosecha
+        serie = _serie_cosecha(r_sin, r_con.daily["total_value"])
+        assert serie is not None
+        assert serie.iloc[-1] == pytest.approx(r_con.daily["total_value"].iloc[-1], abs=1e-6), (
+            f"{tk} modo={modo}: cosechar al propio ticker no reprodujo Con DRIP "
+            "— revisar doble conteo de cash_accum en _serie_cosecha")
+
+    def test_en_modo_roc_la_identidad_no_se_cumple_y_es_lo_esperado(self):
+        """Documenta la excepción de arriba: NO es un bug que en `roc` cosechar al propio
+        ticker no reproduzca Con DRIP exacto. Si algún día SÍ coincidieran, sería señal de
+        que el escudo ROC dejó de reaccionar a cuántas acciones hay — otro bug."""
+        from conftest import frozen_price_cache
+        with frozen_price_cache():
+            h = price_cache.load_history("MSTY").history.sort_index()
+            start = h.index.min()
+            roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+            pol = _politica_fiscal("MSTY", "roc", roc19a, roc_ici)
+            r_con = backtest.run_backtest("MSTY", start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=True, nra_rate=pol.rate, history=h,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
+            r_sin = backtest.run_backtest("MSTY", start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=False, nra_rate=pol.rate, history=h,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
+        from ui.adapters import _serie_cosecha
+        serie = _serie_cosecha(r_sin, r_con.daily["total_value"])
+        assert serie is not None
+        diferencia = abs(serie.iloc[-1] - r_con.daily["total_value"].iloc[-1])
+        assert diferencia > 0.5, (
+            "En modo roc se esperaba una divergencia real (más acciones con DRIP → más "
+            "roc_receivable) — si esto da 0 revisar si el escudo ROC sigue dependiendo "
+            "del número de acciones")
+
+
+class TestDobleConteoDeEfectivo:
+    """El bug más probable de `_serie_cosecha`: sumar `cash_accum` ADEMÁS del destino
+    comprado, contando el mismo dólar dos veces. Se caza reintroduciendo exactamente ese
+    bug y confirmando que el resultado deja de cuadrar contra `idxSin` cuando el destino es
+    plano (TRI constante ⇒ la cosecha debería ser IDÉNTICA a `idxSin`, ni un centavo más)."""
+
+    def test_tri_constante_reproduce_idxsin_sin_doble_conteo(self):
+        import pandas as pd
+        from ui.adapters import _serie_cosecha
+        from conftest import frozen_price_cache
+        with frozen_price_cache():
+            h = price_cache.load_history("MSTY").history.sort_index()
+            start = h.index.min()
+            r_sin = backtest.run_backtest("MSTY", start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=False, nra_rate=0.0, history=h)
+        tri_constante = pd.Series(1.0, index=r_sin.daily.index)  # destino que nunca se mueve
+        serie = _serie_cosecha(r_sin, tri_constante)
+        assert serie is not None
+        # Con TRI=1 constante, "unidades compradas" == dólares cobrados: la cosecha tiene
+        # que coincidir con total_value (Sin DRIP) exactamente, no con un extra sumado.
+        assert serie.iloc[-1] == pytest.approx(r_sin.daily["total_value"].iloc[-1], abs=1e-6), (
+            "La cosecha con un destino plano no coincide con idxSin — sospechar de "
+            "cash_accum sumado dos veces en _serie_cosecha")
+
+    def test_tri_incompleto_devuelve_none_en_vez_de_interpolar(self):
+        """Si el destino no cubre toda la ventana del fondo base (empieza después), NO se
+        interpola ni se dibuja a medias: la serie se omite."""
+        from ui.adapters import _serie_cosecha
+        from conftest import frozen_price_cache
+        with frozen_price_cache():
+            h = price_cache.load_history("MSTY").history.sort_index()
+            start = h.index.min()
+            r_sin = backtest.run_backtest("MSTY", start_date=start, initial_capital=_INDICE_CAPITAL,
+                                          drip=False, nra_rate=0.0, history=h)
+        tri_recortado = r_sin.daily["total_value"].iloc[5:]  # empieza después que r_sin
+        assert _serie_cosecha(r_sin, tri_recortado) is None
+
