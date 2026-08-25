@@ -61,7 +61,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **654 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+Línea base: **647 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+`9d95dbf`, tras podar el menú Detalle a solo Portafolios: `ui/heredadas.py` pierde las
+vistas Ingresos, Proyección y Estrategias —1136 líneas—, y `test_estrategias_datos.py`
+se jubila completo porque su sujeto ya no existe; se van 7 tests netos). Antes: **654
+passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
 `e17a639`, tras podar 4 claves de `metodo_data()` sin consumidor —`ratiosTot`, `nra`,
 `paybackContraejemplo`, `ymMedido`— y `pbn` de `ratios[]`: se van 9 tests, no 4 —
 `test_ymmedido_real_yield_reconcilia_contra_matriz` estaba parametrizado ×5 tickers, la
