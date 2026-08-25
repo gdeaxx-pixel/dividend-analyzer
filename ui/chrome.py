@@ -85,14 +85,16 @@ class Ruta:
 
 def _vistas(categoria: str) -> dict:
     """Vistas de una categoría. Comparación y Método tienen las suyas; las categorías
-    con ETF comparten las tres secciones (Cash flow · Salud NAV · Hoja Excel); Detalle
-    (heredada, fuera del artifact) trae las suyas propias."""
+    «Largo Plazo» solo trae Cash flow (decisión de Daniel 2026-08-25): Salud NAV y
+    Hoja Excel quedan exclusivas de Dividendos."""
     if categoria == "comparacion":
         return dict(nav.CMP_VIEWS)
     if categoria == "metodo":
         return dict(nav.MET_VIEWS)
     if categoria == heredadas.CAT_CLAVE:
         return dict(heredadas.VIEWS)
+    if categoria == "largo":
+        return {"viaje": nav.SECTIONS["viaje"]}
     return dict(nav.SECTIONS)
 
 
@@ -122,6 +124,8 @@ def _orden(categoria: str) -> tuple:
         return nav.MET_ORDER
     if categoria == heredadas.CAT_CLAVE:
         return heredadas.VIEW_ORDER
+    if categoria == "largo":
+        return ("viaje",)
     return tuple(nav.SECTION_ORDER)
 
 
