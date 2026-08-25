@@ -1270,7 +1270,10 @@
       for (var i=1;i<labels.length;i++) if (labels[i].y - labels[i-1].y < 14) labels[i].y = labels[i-1].y + 14;
       labels.forEach(function(L){
         var color = L.sin ? CASH : (L.base ? INK : COL[L.tk]);
-        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+L.tk+'</tspan> '+fmtPct(L.v)+'</text>');
+        // Sin DRIP el fondo base tiene dos líneas: sólida (precio+efectivo) y
+        // punteada (solo precio). La etiqueta debe distinguirlas sin leer el pie.
+        var nombre = L.sin ? L.tk + ' + efectivo' : L.tk;
+        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+nombre+'</tspan> '+fmtPct(L.v)+'</text>');
       });
 
       out.push('<line id="cmpXh" x1="0" y1="'+MT+'" x2="0" y2="'+(H-MB)+'" stroke="'+MUT+'" stroke-width="1" opacity="0"/>');
