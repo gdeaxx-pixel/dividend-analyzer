@@ -12,7 +12,7 @@ import backtest
 import logic
 import price_cache
 from ui.adapters import _tiene_datos, trg_real_data
-from ui.heredadas import _agregados, _cuadricula_roc_consolidada
+from ui.heredadas import _agregados
 from ui.validacion import _separar_excluidos
 
 
@@ -3236,36 +3236,16 @@ def test_agregados_ib_no_cambia_dividendos_ya_netos(monkeypatch):
 
 
 def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
-    """PR C, Parte 3: `ui/heredadas.py:740,763` — la columna "Div. pagados (neto)" leía
-    `total_dividends` (`dividends_collected_cash + dividends_collected_drip`), que mezcla
-    bases: para Schwab el cash es BRUTO y el drip es neto, así que la columna llamada "neto"
-    en realidad mostraba una mezcla bruto/neto. `dividends_net_total` (objeto fiscal único,
-    `logic.build_dividend_tax_totals`) sí es neto de verdad — ground truth de
-    `fixtures/schwab_synth_2` MSTY: bruto $462.00, retención $138.60, neto $323.40, sin DRIP
-    (mismas cifras que test_analyze_portfolio_schwab_msty_dividend_base_convention)."""
-    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
-                             "synthetic_transactions.csv"), "rb").read()
-    df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
-    dfc = logic.normalize_csv(df)
-    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
-    results = logic.analyze_portfolio(dfc, version="TEST_HEREDADAS_CUADRICULA")
-
-    import ui.heredadas as heredadas_mod
-    capturado = {}
-
-    def _spy_dataframe(df_arg, *args, **kwargs):
-        capturado["df"] = df_arg
-
-    monkeypatch.setattr(heredadas_mod.st, "dataframe", _spy_dataframe)
-    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda *a, **k: None)
-    monkeypatch.setattr(heredadas_mod.st, "caption", lambda *a, **k: None)
-
-    _cuadricula_roc_consolidada([("MSTY", {})], results, {})
-
-    fila_msty = capturado["df"][capturado["df"]["ETF"] == "MSTY"].iloc[0]
-    assert fila_msty["Div. pagados (neto)"] == "$323"
-    fila_total = capturado["df"][capturado["df"]["ETF"] == "TOTAL"].iloc[0]
-    assert fila_total["Div. pagados (neto)"] == "$323"
+    """Jubilado con la poda de Detalle (2026-08-25): `_cuadricula_roc_consolidada` se
+    borró de `ui/heredadas.py` con las vistas Ingresos/Proyección/Estrategias. La
+    columna "Div. pagados (neto)" ya no existe en UI; el invariante que este test
+    vigilaba (que lo mostrado como neto es `dividends_net_total`, no la mezcla
+    bruto/neto de `total_dividends`) vive ahora en el objeto fiscal único, verificado
+    por test_analyze_portfolio_schwab_msty_dividend_base_convention y por la identidad
+    neto = drip + efectivo de test_heredadas_base_mixta."""
+    assert not hasattr(heredadas_mod := __import__("ui.heredadas", fromlist=["x"]),
+                       "_cuadricula_roc_consolidada"), (
+        "la vista podada no debe reintroducirse")
 
 
 def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
@@ -3278,14 +3258,11 @@ def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
     script = """
 import sys
 sys.path.insert(0, {path!r})
-from ui.heredadas import render_estrategias, render_ingresos, render_portafolios, render_proyeccion
+from ui.heredadas import render_portafolios
 from ui.vistas import obtener_resultados
 
 resultados = obtener_resultados()
 render_portafolios(resultados)
-render_ingresos(resultados)
-render_proyeccion(resultados)
-render_estrategias(resultados)
 """.format(path=os.path.dirname(os.path.abspath(__file__)))
 
     at = AppTest.from_string(script)

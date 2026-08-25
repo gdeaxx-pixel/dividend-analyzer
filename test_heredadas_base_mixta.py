@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 
 import logic
-from ui.heredadas import _resumen_consolidado, _cuadricula_roc_consolidada
+from ui.heredadas import _resumen_consolidado
 
 
 class FakeFile:
@@ -121,37 +121,17 @@ def test_base_mixta_resumen_cuadricula_y_objeto_fiscal_coinciden(monkeypatch):
             logic.build_dividend_tax_totals(_filas_ticker(mixto, t))["net"], abs=0.01), (
             f"{t}: stats y el objeto re-derivado del CSV divergen")
 
-    # ── vista 2: _cuadricula_roc_consolidada — identidad exacta por ticker y en TOTAL ──
-    capturado.clear()
-    items = [(t, {}) for t in todos]
-    _cuadricula_roc_consolidada(items, results, {})
-
-    def _num(celda):
-        return float(str(celda).replace("$", "").replace(",", "")
-                     .replace("(", "-").replace(")", "") or 0)
-
-    df_grid = capturado["df"]
+    # ── vista 2 (jubilada): _cuadricula_roc_consolidada se podó de `ui/heredadas.py`
+    # con las vistas Ingresos/Proyección/Estrategias de Detalle (2026-08-25). La
+    # identidad neto = bruto − retención sigue vigilada contra el objeto fiscal único
+    # (en Schwab `dividends_collected_cash` es BRUTO: la retención vive aparte): ──
     for t in todos:
-        fila = df_grid[df_grid["ETF"] == t].iloc[0]
-        neto, drip, cash = (_num(fila["Div. pagados (neto)"]),
-                            _num(fila["Reinvertidos"]), _num(fila["En efectivo"]))
-        # criterio de aceptación EXACTO, en los dos brókers
-        assert neto - (drip + cash) == pytest.approx(0.0, abs=0.005), (
+        neto = results[t]["dividends_net_total"]
+        bruto = results[t]["dividends_gross_total"]
+        retencion = results[t]["withheld_tax_total"]
+        assert neto == pytest.approx(bruto - retencion, abs=0.005), (
             f"{t} ({'Schwab' if t in schwab_tickers else 'IB'}): "
-            f"neto {neto} − (drip {drip} + efectivo {cash}) != 0 — base mixta viva")
-
-        # y la columna «neto» de la cuadrícula == dividends_net_total del objeto único
-        assert neto == pytest.approx(round(results[t]["dividends_net_total"], 0), abs=1.0)
-
-    fila_total = df_grid[df_grid["ETF"] == "TOTAL"].iloc[0]
-    neto_t, drip_t, cash_t = (_num(fila_total["Div. pagados (neto)"]),
-                              _num(fila_total["Reinvertidos"]),
-                              _num(fila_total["En efectivo"]))
-    assert neto_t - (drip_t + cash_t) == pytest.approx(0.0, abs=0.05), (
-        "TOTAL de la cuadrícula: la identidad neto = drip + efectivo no cierra")
-    assert neto_t == pytest.approx(
-        sum(results[t]["dividends_net_total"] for t in todos), abs=1.0), (
-        "el TOTAL de «Div. pagados (neto)» diverge de la suma del objeto fiscal único")
+            f"neto {neto} != bruto {bruto} − retención {retencion} — base mixta viva")
 
 
 def test_base_mixta_roi_consolidado_resta_retencion_schwab(monkeypatch):
