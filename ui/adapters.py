@@ -899,28 +899,19 @@ def metodo_data() -> dict | None:
         `tot.val`, más la ventana media ponderada por capital que alimenta el ÷N ingenuo
         que el panel denuncia. `metodologia.html` § 9 «Anualizar bien» LEE estas claves;
         no calcula una segunda vez ni en otra convención.
-      - `ratios`/`ratiosTot`: payback bruto/neto y retorno real por fila, derivados de
-        `matriz` (nunca de un neto reusado — Regla 2 del contrato).
-      - `nra`: los tres números de la frase "bruto → neto (retenido)" del panel Payback,
-        todos derivados de `tot.div` y `tasaNra` — no pueden volver a desincronizarse.
+      - `ratios`: payback bruto y retorno real por fila, derivados de `matriz` (nunca
+        de un neto reusado — Regla 2 del contrato). Sin `pbn`: era un neto sintético al
+        30% plano sin consumidor en `metodo.html` (podado 2026-08-25 — el homónimo con
+        consumidor vive en `metodo_real_data()`, que sí lo etiqueta con cuidado fiscal).
       - `tasaNra`: 0.30, única fuente de la retención NRA simulada (cota superior, no el
         perfil fiscal de nadie — Decisión 4 del traspaso).
       - `tmtotEjemplo`: el ticker que ilustra la paradoja de `modal-tmtot` (ganó y a la
         vez perdió capital contra su Total inv.), o `None` si esta semana ninguno la
         ilustra. Ver `_tmtot_ejemplo`.
-      - `paybackContraejemplo`: el ticker que ilustra "cobró y perdió" (mayor payback
-        bruto entre los que tienen retorno negativo), o `None` si ninguno perdió esta
-        semana — antes era CONY cableado a mano; con datos vivos dejó de ser válido en
-        cuanto CONY dejó de perder. Ver `_payback_contraejemplo`.
-      - `ymMedido`: lo que la app puede medir por ticker (yield realizado = dividendos
-        cobrados sobre lo aportado; retorno de precio) — lo que publicó el emisor
-        (`dr`/`sec`/`x`/`trc`/`tra` del panel Tasa) se queda literal y fechado en el
-        componente, porque no hay fuente viva de 30-Day SEC Yield en el repo.
     """
     filas = []
     fuente: dict[str, str] = {}
     asof_candidatos = []
-    ym_medido: dict[str, dict] = {}
     flujos_efectivo: list[tuple] = []
     # Escenarios fiscales SIMULADOS por el motor, uno por modo (Frente B, 2026-08-21).
     # Sustituyen a la reescala post-hoc que hacía el JS: `baseVal(bruto) = bruto*(1-tasa)`
@@ -1028,18 +1019,6 @@ def metodo_data() -> dict | None:
                                      - rc.roc_receivable_final, 2),
             }
 
-        # Panel 5 (Tasa) parte en dos: `dr`/`sec`/`x`/`trc`/`tra` (YM en el componente)
-        # siguen citando lo que publicó el emisor, literal y fechado — no hay fuente viva
-        # de 30-Day SEC Yield en el repo. Pero lo que la app SÍ puede medir con su propio
-        # motor (yield realizado = dividendos cobrados sobre lo aportado, y el retorno de
-        # precio que lo explica) se deriva aquí, reusando `r_con`/`r_sin` de este mismo
-        # bucle — no se corre el motor una tercera vez. `priceRetPct` es negativo cuando
-        # el precio cayó (mismo signo que `backtest.price_return_pct`, sin invertir).
-        ym_medido[tk] = {
-            "realYieldPct": round(div / caso["inv"] * 100.0, 2),
-            "priceRetPct": round(r_sin.price_return_pct, 2),
-        }
-
     tot = {
         "inv": round(sum(f["inv"] for f in filas), 2),
         "div": round(sum(f["div"] for f in filas), 2),
@@ -1133,7 +1112,6 @@ def metodo_data() -> dict | None:
         ratios.append({
             "t": f["t"],
             "pb": round(pb, 4),
-            "pbn": round(pb * (1 - tasa_nra), 4),
             "ret": round(ret, 2),
             "retD": round(f["val"] - f["inv"], 2),
             # Versión por fila del agregado que ya usa `modal-tmtot` arriba
@@ -1145,24 +1123,6 @@ def metodo_data() -> dict | None:
             "perdidaCapital": round((f["inv"] + f["div"]) - f["val"], 2),
         })
 
-    pb_tot = tot["div"] / tot["inv"]
-    ret_tot = (tot["val"] - tot["inv"]) / tot["inv"] * 100.0
-    ratios_tot = {
-        "pb": round(pb_tot, 4),
-        "pbn": round(pb_tot * (1 - tasa_nra), 4),
-        "ret": round(ret_tot, 2),
-        "retD": round(tot["val"] - tot["inv"], 2),
-    }
-
-    # Los tres números de `tmPaybackNra` salen todos de aquí — nunca vuelven a poder
-    # desincronizarse (el bug del traspaso: un TOT.div vivo concatenado con dos mitades
-    # de la hoja congelada, en la misma oración).
-    nra = {
-        "divBruto": tot["div"],
-        "divNeto": round(tot["div"] * (1 - tasa_nra), 2),
-        "retenido": round(tot["div"] * tasa_nra, 2),
-    }
-    payback_contraejemplo = _payback_contraejemplo(ratios)
     tmtot_ejemplo = _tmtot_ejemplo(ratios)
 
     roc19a_raw = logic.load_roc_19a()
@@ -1206,11 +1166,7 @@ def metodo_data() -> dict | None:
         "tasaNra": tasa_nra,
         "escalera": escalera,
         "ratios": ratios,
-        "ratiosTot": ratios_tot,
-        "nra": nra,
-        "paybackContraejemplo": payback_contraejemplo,
         "tmtotEjemplo": tmtot_ejemplo,
-        "ymMedido": ym_medido,
     }
 
 

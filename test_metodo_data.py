@@ -405,43 +405,18 @@ def test_ratios_las_5_filas_en_el_mismo_orden_que_met_caso(datos):
 
 @pytest.mark.parametrize("tk", ["CONY", "NVDY", "MSTY", "TSLY", "NFLY"])
 def test_ratios_por_fila_reconcilian_contra_la_matriz(datos, tk):
-    """`pb`/`pbn`/`ret`/`retD` no son un cálculo aparte: tienen que salir exactamente
+    """`pb`/`ret`/`retD` no son un cálculo aparte: tienen que salir exactamente
     de la misma fila de `matriz` que ya reconcilió `test_val_con_drip_...` — Regla 2
     del contrato, nunca mezclar bases dentro de la misma fila."""
     fila = next(f for f in datos["matriz"] if f["t"] == tk)
     r = next(x for x in datos["ratios"] if x["t"] == tk)
     pb_esperado = fila["div"] / fila["inv"]
     assert r["pb"] == pytest.approx(pb_esperado, abs=0.001)
-    assert r["pbn"] == pytest.approx(pb_esperado * (1 - datos["tasaNra"]), abs=0.001)
     assert r["ret"] == pytest.approx((fila["val"] - fila["inv"]) / fila["inv"] * 100.0, abs=0.01)
     assert r["retD"] == pytest.approx(fila["val"] - fila["inv"], abs=0.01)
 
 
-def test_ratios_tot_se_calcula_sobre_tot_no_promediando_filas(datos):
-    """Traspaso, fórmula explícita: `ratiosTot` sale de `tot`, NUNCA de promediar
-    `ratios[]`. Si algún día alguien cambia la implementación a un promedio de filas,
-    esta cuenta (que pesa por capital, no por ticker) deja de cuadrar."""
-    tot = datos["tot"]
-    rt = datos["ratiosTot"]
-    pb_esperado = tot["div"] / tot["inv"]
-    assert rt["pb"] == pytest.approx(pb_esperado, abs=0.001)
-    assert rt["pbn"] == pytest.approx(pb_esperado * (1 - datos["tasaNra"]), abs=0.001)
-    assert rt["ret"] == pytest.approx((tot["val"] - tot["inv"]) / tot["inv"] * 100.0, abs=0.01)
-    assert rt["retD"] == pytest.approx(tot["val"] - tot["inv"], abs=0.01)
-
-
-# ── `nra`: los tres números de `tmPaybackNra`, un solo objeto ────────────────────────────
-
-def test_nra_reconcilia_bruto_neto_retenido_contra_tot_div(datos):
-    """El bug del traspaso: un `TOT.div` vivo concatenado con dos mitades de la hoja
-    congelada, sumando a algo que no era `TOT.div`. Con `nra` como fuente única, los
-    tres números por construcción cuadran: bruto = neto + retenido, misma base."""
-    tot, tasa, nra = datos["tot"], datos["tasaNra"], datos["nra"]
-    assert nra["divBruto"] == pytest.approx(tot["div"], abs=0.01)
-    assert nra["divNeto"] == pytest.approx(tot["div"] * (1 - tasa), abs=0.01)
-    assert nra["retenido"] == pytest.approx(tot["div"] * tasa, abs=0.01)
-    assert nra["divNeto"] + nra["retenido"] == pytest.approx(nra["divBruto"], abs=0.02)
-
+# ── `tasaNra`: la única cifra fiscal simulada que sigue expuesta ──────────────────────
 
 def test_tasa_nra_es_030_la_cota_superior_de_siempre(datos):
     # Decisión 3/4 del traspaso: el valor no cambia, solo deja de estar escrito dos
@@ -449,30 +424,7 @@ def test_tasa_nra_es_030_la_cota_superior_de_siempre(datos):
     assert datos["tasaNra"] == pytest.approx(0.30)
 
 
-# ── `ymMedido`: lo que la app puede medir, por ticker ─────────────────────────────────
-
-def test_ymmedido_tiene_los_5_tickers(datos):
-    assert set(datos["ymMedido"]) == {"CONY", "NVDY", "MSTY", "TSLY", "NFLY"}
-
-
-@pytest.mark.parametrize("tk", ["CONY", "NVDY", "MSTY", "TSLY", "NFLY"])
-def test_ymmedido_real_yield_reconcilia_contra_matriz(datos, tk):
-    """`realYieldPct` es el mismo `div/inv` que ya usa `ratios[].pb`, expresado en
-    porcentaje — no una tercera fórmula que pueda divergir de las otras dos."""
-    fila = next(f for f in datos["matriz"] if f["t"] == tk)
-    m = datos["ymMedido"][tk]
-    assert m["realYieldPct"] == pytest.approx(fila["div"] / fila["inv"] * 100.0, abs=0.01)
-    # El precio no puede caer más del 100% de sí mismo.
-    assert m["priceRetPct"] > -100.001
-
-
 # ── `paybackContraejemplo`: por dato, no a mano (Duda 2 del traspaso) ────────────────────
-
-def test_payback_contraejemplo_reconcilia_contra_ratios(datos):
-    negativos = [r for r in datos["ratios"] if r["ret"] < 0]
-    esperado = max(negativos, key=lambda r: r["pb"])["t"] if negativos else None
-    assert datos["paybackContraejemplo"] == esperado
-
 
 def test_payback_contraejemplo_elige_el_de_mayor_pb_entre_los_negativos_sintetico():
     """Reconciliación independiente de `_payback_contraejemplo` con datos sintéticos —
@@ -496,72 +448,6 @@ def test_payback_contraejemplo_es_none_si_nadie_perdio_capital_sintetico():
         {"t": "BBB", "pb": 3.50, "ret": 12.0},
     ]
     assert _payback_contraejemplo(ratios) is None
-
-
-# ── No hay cifras congeladas: ESCALERA/RATIOS/RATIOS_TOT/TASA_NRA viejos, ni el
-# contraejemplo cableado a mano, pueden reaparecer ────────────────────────────────────────
-
-def test_metodo_html_escalera_ratios_ya_no_son_arrays_literales():
-    """`ratios`/`ratiosTot` en minúscula a propósito (a diferencia de `MATRIZ`/`TOT`):
-    el barrido de `/auditoria-financiera` (bloque 5) sigue rastreando `var
-    RATIOS`/`var RATIOS_TOT` en MAYÚSCULA como pendiente-de-portar; ya se portó, así
-    que el nombre en minúscula deja de generar ese WARN fantasma sin tener que tocar
-    el script del skill (fuera de este repo)."""
-    with open(_COMPONENTE, encoding="utf-8") as f:
-        html = f.read()
-
-    # Las vistas 3-5 se retiraron el 2026-08-24: solo sobrevive `ratios`, que el
-    # modal de la paradoja sigue leyendo. `ratiosTot`/`var ESC` murieron con ellas.
-    assert "var ratios = DATA.ratios" in html
-    assert "var ratiosTot" not in html and "var ESC " not in html
-
-    # El patrón viejo: `var RATIOS = [{ t:"CONY", pb:2.54, ... }, ...]` — la copia
-    # congelada de la hoja, en MAYÚSCULA. No puede reaparecer, en ningún nombre.
-    assert not re.search(r"var (RATIOS|ratios)\s*=\s*\[", html), (
-        "`RATIOS`/`ratios` volvió a declararse como array-literal")
-    assert not re.search(r't\s*:\s*"CONY"\s*,\s*pb\s*:\s*[\d.]+', html), (
-        "encontré un literal tipo `{ t:\"CONY\", pb:N.NN, ... }` — parece RATIOS viejo")
-
-
-def test_metodo_html_tasa_nra_lee_de_data_no_esta_hardcodeada():
-    with open(_COMPONENTE, encoding="utf-8") as f:
-        html = f.read()
-    assert "var TASA_NRA = DATA.tasaNra" in html
-    assert not re.search(r"var TASA_NRA\s*=\s*0\.3\d*\s*;", html), (
-        "`var TASA_NRA` volvió a ser un literal (0.30) en vez de leer DATA.tasaNra")
-
-
-def test_metodo_html_ym_ya_no_tiene_el_campo_real_congelado():
-    """El literal `YM` (fichas del emisor para la vista «Rendimiento vs tasa») se
-    retiró con su vista el 2026-08-24. Que vuelva a declararse indicaría que la
-    vista regresó sin pasar por la decisión de Daniel."""
-    with open(_COMPONENTE, encoding="utf-8") as f:
-        html = f.read()
-    cuerpo = re.sub(r"//[^\n]*", "", html)   # sin comentarios: solo código vivo
-    assert not re.search(r"var YM\s*=\s*\[", cuerpo), (
-        "`var YM` (literal del emisor) volvió al componente — ¿regresó la vista?")
-    assert "YM_MEDIDO" not in cuerpo and "ymMedido" not in cuerpo
-
-
-def test_metodo_html_contraejemplo_ya_no_esta_cableado_a_mano_a_cony():
-    """La vista «Payback ≠ ganancia» (donde vivía `renderPayback` y su flag
-    «cobró y perdió») se retiró el 2026-08-24. Que vuelva a existir la función
-    indicaría que la vista regresó sin pasar por la decisión de Daniel."""
-    with open(_COMPONENTE, encoding="utf-8") as f:
-        html = f.read()
-    assert "renderPayback" not in re.sub(r"//[^\n]*", "", html)
-
-
-def test_metodo_html_tmpaybacknra_ya_no_concatena_un_vivo_con_dos_congelados():
-    """El bug aritméticamente roto del traspaso: `fmtMoney(TOT.div)` (vivo, se
-    refresca semanal) concatenado con `~$78,182.80`/`~$33,506.91` (mitades de la hoja
-    fechada 5/1/2026) en la misma oración — nunca cuadraba. El párrafo vivía en la
-    vista «Payback», retirada el 2026-08-24: los literales no pueden volver."""
-    with open(_COMPONENTE, encoding="utf-8") as f:
-        html = f.read()
-    assert "~$78,182.80" not in html
-    assert "~$33,506.91" not in html
-
 
 def test_la_leyenda_por_modo_vive_en_el_modal_y_no_suelta_en_la_vista():
     """`#tmModoCap` se mudó a `#mMetodoEscenario` dentro de `#modal-tmmetodo` para
