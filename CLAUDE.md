@@ -61,8 +61,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **660 passed, 2 skipped, 3 deselected** (medido 2026-08-23 sobre `main` =
-`b72f4ae`, con el #71 —vistas heredadas con base mixta, A2/A3— y el #72 —las 3 copias inline
+Línea base: **663 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre esta rama,
+que parte de `main` = `05236b8`: 661 en `main` más los 2 del guard de sintaxis de este PR).
+Antes: **660**, medido 2026-08-23 sobre `main` =
+`b72f4ae` — y quedó desfasado enseguida, porque el #84 añadió su guard de balance sin tocar
+esta línea; `main` corría 661 de verdad. Con el #71 —vistas heredadas con base mixta, A2/A3— y el #72 —las 3 copias inline
 del predicado de fila-de-impuesto al predicado único, más cobertura IB de la tasa aplicada—
 dentro. **Ninguno de los dos PRs actualizó este número, y menos mal**: cada uno medía sobre su
 propia rama (658 y 657), habrían chocado al mergear y los dos habrían quedado mal — el real
@@ -112,6 +115,17 @@ no está montado, los tests hacen **skip** — y un skip no es un pass: hay que 
   se responde reintroduciendo el bug y confirmando que la suite falla.
 - **Nunca** ampliar una tolerancia para que algo pase. Una entrega declaró "PASSED" con 4.80% de
   desviación bajo una tolerancia inventada del 8%.
+- Un corte **estructural** (borrar una vista, una función, una rama) necesita un guard que
+  **PARSEE**, no que compare texto. Un test de texto no puede ver un `SyntaxError`, y un
+  `SyntaxError` mata el script **entero**: pantalla en blanco, consola limpia, cero tests rojos.
+  Ya pasó (#83 → #84: el corte se comió el `})();` de `initMetodo`). Tras quitar un trozo de
+  código la pregunta no es «¿sigue diciendo lo que quiero?» sino **«¿sigue parseando?»**.
+  Guard vigente: `test_contrato_componentes.py`, `node --check` sobre los 14 scripts de los 7
+  componentes (con balance de delimitadores como piso, para cuando no hay node).
+- Para decidir si un guard **basta**, escribir 2-3 **mutantes** con la forma del bug real y medir
+  cuántos caza. Convierte «¿será suficiente?» en un número. Medido así: ante un corte balanceado
+  pero roto —cortar la rama `if` dejando un `else {` huérfano, que es la forma exacta del #84—
+  el balance de delimitadores pasa **verde** y sólo `node --check` lo caza.
 
 ## Deploy
 

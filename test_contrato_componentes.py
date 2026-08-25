@@ -11,9 +11,15 @@ prevenir. Estos tests fijan las dos mitades de la reparación —el texto retira
 gatillo desarmado— y, sobre todo, protegen el contrato que SÍ sigue vivo, para que
 «retirar banners» no se lea algún día como «aquí ya nada se genera».
 """
+import glob
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
+
+import pytest
 
 BASE = os.path.dirname(__file__)
 COMPONENTES = os.path.join(BASE, "ui", "componentes")
@@ -85,3 +91,110 @@ def test_los_contratos_vivos_siguen_pasando_su_check():
             f"extract_{nombre}.py --check dejó de pasar: ese contrato SÍ está vivo\n"
             f"{r.stdout}{r.stderr}")
         assert "OK" in r.stdout
+
+
+# ── Guard de sintaxis: el JS de los componentes tiene que PARSEAR ────────────────────
+#
+# Nace del #84. Al retirar 4 sub-vistas de `metodo.html` (#83), el corte se comió también
+# el `})();` que cerraba `initMetodo()` — en el original venían dos cierres seguidos. El
+# `SyntaxError: Unexpected end of input` mató el script ENTERO al parsear: tablas y gráfica
+# en blanco, consola limpia, cero tests rojos. Los tests de este repo comparan substrings
+# del HTML y por construcción no pueden ver eso.
+#
+# El #84 respondió con un balance de llaves sobre `metodo.html`
+# (`test_metodo_serie.py::test_el_script_principal_del_componente_es_javascript_valido`).
+# Ese test se queda —es el piso que no depende de nada externo— pero no basta, y está
+# medido: sobre tres mutantes con la forma del bug real, el balance caza 1 de 3 y
+# `node --check` caza 3 de 3. El mutante que el balance no ve —cortar la rama `if` de un
+# `if/else` dejando un `else {` huérfano— es la forma EXACTA del #84; aquella vez lo cazó
+# sólo porque ese corte además desbalanceaba.
+#
+# Los componentes se descubren por glob, no por lista: uno nuevo queda cubierto solo.
+
+_PLACEHOLDER = re.compile(r"\{\{\w+\}\}")
+_SCRIPT = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S)
+
+
+def _scripts_de(ruta):
+    """Los `<script>` de un componente, listos para parsear.
+
+    Los placeholders de plantilla (`{{DATA_JSON}}`, `{{SERIE_JSON}}`, `{{VISTA_ACTIVA}}`…)
+    se sustituyen por `null`: en crudo `var DATA = {{DATA_JSON}};` NO es JavaScript, y un
+    guard que fallara por eso estaría reportando la plantilla, no el código. `null` sirve
+    igual dentro de una cadena (`"{{TEMA}}"` → `"null"`) que suelto.
+    """
+    html = _PLACEHOLDER.sub("null", _leer(ruta))
+    cuerpos = _SCRIPT.findall(html)
+    # Un guard que se salta scripts en silencio no muerde. Si alguien abre un `<script>`
+    # que el regex no casa (sin cerrar, anidado en un comentario), la cuenta no cuadra y
+    # esto lo dice en vez de dar por revisado lo que nunca miró.
+    assert len(cuerpos) == html.count("<script"), (
+        f"{os.path.basename(ruta)}: hay {html.count('<script')} etiquetas <script> pero "
+        f"sólo pude extraer {len(cuerpos)} — el guard estaría dando por buenas las que no ve")
+    return cuerpos
+
+
+def _componentes():
+    return sorted(glob.glob(os.path.join(COMPONENTES, "*.html")))
+
+
+def _sin_cadenas_ni_comentarios(js):
+    """Quita cadenas ANTES que comentarios, en un solo alternate.
+
+    El orden importa y es el que separa este stripper del que usan los tests de ausencia
+    (`re.sub(r"//[^\\n]*", "", html)` a secas): ése se come todo lo que siga a un `//`
+    dentro de una cadena. Hoy ningún componente tiene un `https://` en un string, así que
+    aquel es seguro por suerte y no por construcción.
+    """
+    return re.sub(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\n]*|/\*.*?\*/",
+                  "", js, flags=re.S)
+
+
+def test_todos_los_componentes_balancean_sus_delimitadores():
+    """El piso, siempre activo: no depende de node, así que no puede saltarse.
+
+    Cubre los 7 componentes, no sólo `metodo.html`. El modo de fallo del #84 es genérico
+    —cualquier corte estructural puede comerse un cierre— y hasta ahora el guard miraba
+    1 script de 14.
+    """
+    for ruta in _componentes():
+        for i, js in enumerate(_scripts_de(ruta)):
+            limpio = _sin_cadenas_ni_comentarios(js)
+            for abre, cierra in (("{", "}"), ("(", ")"), ("[", "]")):
+                assert limpio.count(abre) == limpio.count(cierra), (
+                    f"{os.path.basename(ruta)} script #{i}: desbalance de {abre}{cierra} "
+                    f"({limpio.count(abre)} vs {limpio.count(cierra)}) — el JS no parsea y "
+                    "TODO el panel muere en blanco, sin error en consola")
+
+
+@pytest.mark.skipif(
+    shutil.which("node") is None,
+    reason="node no está en el PATH: el guard de sintaxis NO corrió. Un skip no es un "
+           "pass — el balance de delimitadores queda como único piso, y ése sólo caza "
+           "1 de cada 3 cortes rotos (ver el comentario de cabecera de este bloque).")
+def test_todos_los_componentes_parsean_como_javascript():
+    """El techo: `node --check` de verdad, sobre los 14 scripts de los 7 componentes.
+
+    Esto es lo único de la suite que puede ver un `SyntaxError`, que es el único fallo de
+    esta familia que el usuario percibe (pantalla en blanco) y el único que no deja rastro
+    en ninguna parte.
+    """
+    rotos = []
+    for ruta in _componentes():
+        for i, js in enumerate(_scripts_de(ruta)):
+            with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                             encoding="utf-8") as tmp:
+                tmp.write(js)
+                destino = tmp.name
+            try:
+                r = subprocess.run(["node", "--check", destino],
+                                   capture_output=True, text=True)
+            finally:
+                os.unlink(destino)
+            if r.returncode != 0:
+                # El mensaje de node cita la línea del temporal; se recorta a lo útil.
+                detalle = "\n".join(r.stderr.strip().split("\n")[:4])
+                rotos.append(f"{os.path.basename(ruta)} script #{i}:\n{detalle}")
+    assert not rotos, (
+        "hay JavaScript que no parsea — el script entero muere al cargar y el panel queda "
+        "en blanco sin error visible:\n\n" + "\n\n".join(rotos))
