@@ -1267,13 +1267,22 @@
 
       var labels = list.map(function(s){ return { tk:s.tk, v:s.data[LAST], y:y(s.data[LAST]),
                                                   base:s.tk===state.base, sin:!!s.priceData }; }).sort(function(a,b){ return a.y-b.y; });
+      // La línea punteada (solo precio, vista Sin DRIP) es un segundo trazo del
+      // fondo base: le damos su propia etiqueta en su punto final.
+      list.forEach(function(s){
+        if (!s.priceData) return;
+        var py = y(s.priceData[LAST]);
+        for (var i=1;i<labels.length;i++) if (Math.abs(labels[i].y - py) < 14){ py = labels[i].y + 14; }
+        labels.push({ tk:s.tk, v:s.priceData[LAST], y:py, base:false, sin:true, precio:true });
+        labels.sort(function(a,b){ return a.y-b.y; });
+      });
       for (var i=1;i<labels.length;i++) if (labels[i].y - labels[i-1].y < 14) labels[i].y = labels[i-1].y + 14;
       labels.forEach(function(L){
         var color = L.sin ? CASH : (L.base ? INK : COL[L.tk]);
         // Sin DRIP el fondo base tiene dos líneas: sólida (precio+efectivo) y
         // punteada (solo precio). La etiqueta debe distinguirlas sin leer el pie.
-        var nombre = L.sin ? L.tk + ' + efectivo' : L.tk;
-        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"><tspan font-weight="700" fill="'+color+'">'+nombre+'</tspan> '+fmtPct(L.v)+'</text>');
+        var nombre = L.precio ? L.tk + ' · solo precio' : (L.sin ? L.tk + ' + efectivo' : L.tk);
+        out.push('<text x="'+(W-MR+10)+'" y="'+(L.y+3.5).toFixed(1)+'" font-size="11" fill="'+MUT+'"'+(L.precio?' opacity=".85"':'')+'><tspan font-weight="700" fill="'+color+'">'+nombre+'</tspan> '+fmtPct(L.v)+'</text>');
       });
 
       out.push('<line id="cmpXh" x1="0" y1="'+MT+'" x2="0" y2="'+(H-MB)+'" stroke="'+MUT+'" stroke-width="1" opacity="0"/>');
