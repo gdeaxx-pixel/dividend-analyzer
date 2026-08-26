@@ -1045,7 +1045,7 @@
       </div>
 
       <div class="cmp-plot-wrap">
-        <svg class="cmp-svg" id="cmpSvg" viewBox="0 0 920 380" role="img" aria-label="Gráfica de rendimiento total comparativo"></svg>
+        <svg class="cmp-svg" id="cmpSvg" viewBox="0 0 1024 380" role="img" aria-label="Gráfica de rendimiento total comparativo"></svg>
       </div>
 
       <p class="cmp-summary" id="cmpSummary"></p>
@@ -1216,7 +1216,12 @@
     // `comparacion_data` (no una posición real) — se declara así en el copy.
     function usd(v){ return "$" + Math.round(v).toLocaleString("en-US"); }
 
-    var W = 920, H = 380, ML = 48, MR = 96, MT = 14, MB = 26;
+    // W/MR ampliados de 920/96 a 1024/200 (medido con getComputedTextLength() en vivo:
+    // "NVDY · solo precio -37%" mide 152.3 unidades desde x=834 y se salía del viewBox
+    // -- bug preexistente del commit que sumó la etiqueta "solo precio", no de la
+    // cosecha. El delta (+104) se suma a ambos para no mover el área del propio
+    // gráfico: W-ML-MR (ancho del plot) queda igual, 776, así que el eje X no cambia.
+    var W = 1024, H = 380, ML = 48, MR = 200, MT = 14, MB = 26;
     var _lastList = [], _x = null, _t0 = 0;
 
     function draw(){
