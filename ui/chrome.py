@@ -61,7 +61,7 @@ def _consumir_cierre_popover() -> None:
 # Categoría «Detalle» compuesta sobre la taxonomía generada: `ui/nav.py` es el espejo
 # verificable del artifact (el demo solo tiene 4 categorías) y no se edita para meterla
 # ahí — se compone aquí, en tiempo de import, sin tocar el generador (traspaso § Fase 5).
-CAT_ORDER_TOTAL = nav.CAT_ORDER + (heredadas.CAT_CLAVE,)
+CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE,) + nav.CAT_ORDER
 CAT_LABELS_TOTAL = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL}
 
 
