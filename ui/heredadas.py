@@ -42,12 +42,9 @@ CAT_LABEL = "Detalle"
 
 VIEWS = {
     "portafolios": "Portafolios",
-    "ingresos": "Ingresos",
-    "proyeccion": "Proyección",
-    "estrategias": "Estrategias",
 }
 
-VIEW_ORDER = ("portafolios", "ingresos", "proyeccion", "estrategias")
+VIEW_ORDER = ("portafolios",)
 
 
 # ── Helpers de formato y presentación ───────────────────────────────────────────
