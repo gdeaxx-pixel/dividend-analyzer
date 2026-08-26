@@ -38,7 +38,7 @@ import logic
 from ui import estado
 
 CAT_CLAVE = "detalle"
-CAT_LABEL = "Detalle"
+CAT_LABEL = "Portafolios"
 
 VIEWS = {
     "portafolios": "Portafolios",
@@ -575,7 +575,7 @@ def _detalle_por_portafolio(resultados: dict, mode_a: list[str]) -> None:
 
 def render_portafolios(resultados: dict) -> None:
     if not resultados:
-        st.markdown('<span class="vd-badge">Detalle</span>', unsafe_allow_html=True)
+        st.markdown('<span class="vd-badge">Portafolios</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">Portafolios</h2>', unsafe_allow_html=True)
         st.markdown('<p class="vd-lede">Carga tu CSV de transacciones para ver esta vista.</p>',
                     unsafe_allow_html=True)

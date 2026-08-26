@@ -242,7 +242,13 @@ def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
             st.session_state[clave_etf] = etfs[0]
         etf = st.session_state[clave_etf]
 
-    kinds = ["cat", "sep", "vista"]
+    # Categoría con una sola vista (Portafolios, decisión de Daniel 2026-08-26): no se
+    # dibuja el segmento de vista — presentar directo, sin sub-menú de un solo elemento.
+    unica_vista = len(vistas) <= 1
+
+    kinds = ["cat"]
+    if not unica_vista:
+        kinds += ["sep", "vista"]
     if con_etf:
         kinds += ["sep", "etf"]
     kinds += ["ayuda"]
