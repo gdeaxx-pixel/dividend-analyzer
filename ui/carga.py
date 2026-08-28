@@ -221,7 +221,8 @@ def _render_residencia_fiscal() -> None:
         elegido = st.selectbox(
             "Tu residencia fiscal", opciones, index=idx, key="_vd_residencia",
             help="Determina la retención a la que tienes DERECHO sobre dividendos de "
-                 "fuente EE.UU.: 30% base para no-residentes, 10% México y 15% Chile por "
+                 "fuente EE.UU.: 30% base para no-residentes, 10% México y 15% Chile, "
+                 "España y Venezuela por "
                  "tratado, 0% si eres residente fiscal en EE.UU. Sin este dato no "
                  "estimamos cuánto de lo retenido puedes recuperar.")
     estado.declarar_pais(None if elegido == _SIN_DECLARAR else elegido)

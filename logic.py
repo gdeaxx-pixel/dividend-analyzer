@@ -168,6 +168,8 @@ def income_code_str(value):
 _1042S_COUNTRY_CODES = {
     'MX': 'México',
     'CI': 'Chile', 'CL': 'Chile',
+    'VE': 'Venezuela',
+    'SP': 'España', 'ES': 'España',
     'CO': 'Colombia',
     'PE': 'Perú',
     'AR': 'Argentina',
@@ -354,6 +356,118 @@ def _sum_roc_credit_from_forms(per_form):
     if not matched:
         return {"credit": 0.0, "roc_gross": 0.0, "per_form": []}
     return {"credit": credit_total, "roc_gross": gross_total, "per_form": matched}
+
+
+def diagnose_broker_refund_from_forms(per_form):
+    """¿El bróker ya devolvió la retención en exceso, o el dinero sigue en el IRS?
+
+    En el 1042-S la **casilla 10** ("Total withholding credit") es por definición
+    `7a + 8 + 9`, donde:
+      - 7a = "Federal tax withheld" (lo que retuvo este agente),
+      - 8  = "Tax withheld by other withholding agents",
+      - 9  = "Overwithheld tax repaid to recipient" (lo que el bróker YA devolvió).
+
+    Si asumimos casilla 8 = 0 (un solo agente), entonces:
+        devuelto_por_broker = 7a − casilla_10
+
+    Ejemplos reales (formularios de Daniel):
+      - 2022, code 36: 7a=$1.00, casilla_10=$0.00 → devuelto $1.00 → 'devuelto'.
+      - 2025, code 37: 7a=$83.00, casilla_10=$83.00 → devuelto $0.00 → 'pendiente'
+        (el dinero está en el IRS: toca ITIN + 1040-NR).
+
+    ⚠️ NO se usa el fallback de `_sum_roc_credit_from_forms` (si falta
+    `withholding_credit`, usar 7a). Ese respaldo aquí daría `7a − 7a = 0` y afirmaría
+    "no te devolvieron nada" cuando la verdad es que **no se sabe**. Un cero falso en
+    una cifra de dólares de impuesto está prohibido (specs/roc-nra-invariants.md).
+    Regla: sin `withholding_credit` numérico → veredicto 'indeterminado', nunca 0.0.
+    Igual si `devuelto` sale negativo: la casilla 8 no es cero y la fórmula de dos
+    términos no aplica → 'indeterminado', no un número truncado.
+
+    No filtra por income code: sirve para cualquiera (el caso de 2022 es code 36).
+
+    Devuelve {'devuelto': float|None, 'retenido': float, 'pendiente': float|None,
+              'veredicto': str, 'per_form': [...]}.
+    """
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _num_or_none(v):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    filas = []
+    seen_keys = set()
+    for row in per_form or []:
+        if not isinstance(row, dict):
+            continue
+        fed_7a = _num(row.get("federal_tax_withheld"))
+        wc = _num_or_none(row.get("withholding_credit"))
+
+        form_id = row.get("unique_form_id")
+        if form_id:
+            dedupe_key = ("id", str(form_id))
+        else:
+            dedupe_key = ("tuple", row.get("income_code"), _num(row.get("gross_income")),
+                          fed_7a, wc)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
+        if wc is None:
+            veredicto = "indeterminado"
+            devuelto = None
+        else:
+            devuelto = fed_7a - wc
+            if devuelto < -0.01:
+                veredicto = "indeterminado"
+                devuelto = None
+            elif abs(devuelto) <= 0.01 and fed_7a > 0.01:
+                veredicto = "pendiente"
+            elif abs(devuelto - fed_7a) <= 0.01:
+                veredicto = "devuelto"
+            elif 0.0 < devuelto < fed_7a:
+                veredicto = "parcial"
+            else:
+                veredicto = "indeterminado"
+                devuelto = None
+
+        filas.append({
+            "income_code": row.get("income_code"),
+            "federal_tax_withheld": fed_7a,
+            "withholding_credit": wc,
+            "devuelto": devuelto,
+            "veredicto": veredicto,
+        })
+
+    retenido = sum(f["federal_tax_withheld"] for f in filas)
+
+    if not filas:
+        return {"devuelto": None, "retenido": 0.0, "pendiente": None,
+                "veredicto": "indeterminado", "per_form": []}
+
+    if any(f["veredicto"] == "indeterminado" for f in filas):
+        return {"devuelto": None, "retenido": retenido, "pendiente": None,
+                "veredicto": "indeterminado", "per_form": filas}
+
+    devuelto_total = sum(f["devuelto"] for f in filas)
+    pendiente = retenido - devuelto_total
+
+    if all(f["veredicto"] == "devuelto" for f in filas):
+        veredicto = "devuelto"
+    elif all(f["veredicto"] == "pendiente" for f in filas):
+        veredicto = "pendiente"
+    else:
+        veredicto = "parcial"
+
+    return {"devuelto": devuelto_total, "retenido": retenido, "pendiente": pendiente,
+            "veredicto": veredicto, "per_form": filas}
 
 
 def extract_roc_credit_from_pdf(pdf_bytes, api_key):
@@ -4473,6 +4587,8 @@ NRA_COUNTRY_RATES = {
     'Estados Unidos': (0.0, False),   # residente fiscal US: no hay retención NRA
     'México':      (10.0, True),
     'Chile':       (15.0, True),
+    'Venezuela':   (15.0, True),
+    'España':      (15.0, True),
     'Colombia':    (30.0, False),
     'Perú':        (30.0, False),
     'Argentina':   (30.0, False),

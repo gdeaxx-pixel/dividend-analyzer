@@ -412,3 +412,69 @@ def test_contra_el_1042s_real():
     div = next(f for f in r["forms"] if f["income_code"] == "06")
     observada = div["federal_tax_withheld"] / div["gross_income"] * 100
     assert observada == pytest.approx(tasas["06"], abs=2.0)
+
+
+# ── Fase 1 · diagnose_broker_refund_from_forms ──────────────────────────────────
+# «¿El bróker ya me devolvió la retención en exceso?» = 7a − casilla 10.
+
+
+def test_refund_caso_real_2022_devuelto():
+    """2022, code 36: 7a=$1.00, casilla 10=$0.00 → el bróker corrigió, devolvió $1.00."""
+    rows = [{"income_code": "36", "gross_income": 3.0,
+             "federal_tax_withheld": 1.0, "withholding_credit": 0.0}]
+    r = logic.diagnose_broker_refund_from_forms(rows)
+    assert r["veredicto"] == "devuelto"
+    assert r["devuelto"] == pytest.approx(1.0)
+    assert r["pendiente"] == pytest.approx(0.0)
+
+
+def test_refund_caso_real_2025_pendiente():
+    """2025, code 37: 7a=$83.00, casilla 10=$83.00 → nada volvió, toca 1040-NR."""
+    rows = [{"income_code": "37", "gross_income": 276.0,
+             "federal_tax_withheld": 83.0, "withholding_credit": 83.0}]
+    r = logic.diagnose_broker_refund_from_forms(rows)
+    assert r["veredicto"] == "pendiente"
+    assert r["devuelto"] == pytest.approx(0.0)
+    assert r["pendiente"] == pytest.approx(83.0)
+
+
+def test_refund_sin_withholding_credit_es_indeterminado_no_cero():
+    """Sin casilla 10 numérica el veredicto es 'indeterminado', NUNCA un cero falso."""
+    for ausente in (None, "", "  ", "n/a"):
+        rows = [{"income_code": "37", "gross_income": 276.0,
+                 "federal_tax_withheld": 83.0, "withholding_credit": ausente}]
+        r = logic.diagnose_broker_refund_from_forms(rows)
+        assert r["veredicto"] == "indeterminado"
+        assert r["devuelto"] is None
+        assert r["devuelto"] != 0.0
+        assert r["pendiente"] is None
+
+
+def test_refund_devuelto_negativo_es_indeterminado():
+    """7a=$5, casilla 10=$8 → devuelto −$3: la casilla 8 no es cero, no aplica la
+    fórmula de dos términos. Ni número negativo ni truncado a cero."""
+    rows = [{"income_code": "06", "gross_income": 20.0,
+             "federal_tax_withheld": 5.0, "withholding_credit": 8.0}]
+    r = logic.diagnose_broker_refund_from_forms(rows)
+    assert r["veredicto"] == "indeterminado"
+    assert r["devuelto"] is None
+
+
+def test_refund_parcial():
+    """7a=$10, casilla 10=$4 → devuelto $6 (0 < devuelto < 7a)."""
+    rows = [{"income_code": "37", "gross_income": 100.0,
+             "federal_tax_withheld": 10.0, "withholding_credit": 4.0}]
+    r = logic.diagnose_broker_refund_from_forms(rows)
+    assert r["veredicto"] == "parcial"
+    assert r["devuelto"] == pytest.approx(6.0)
+    assert r["pendiente"] == pytest.approx(4.0)
+
+
+def test_refund_no_triplica_copias_bcd():
+    """El mismo formulario 3× (copias B/C/D) no debe triplicar el retenido."""
+    fila = {"income_code": "37", "gross_income": 276.0,
+            "federal_tax_withheld": 83.0, "withholding_credit": 83.0}
+    r = logic.diagnose_broker_refund_from_forms([dict(fila), dict(fila), dict(fila)])
+    assert len(r["per_form"]) == 1
+    assert r["retenido"] == pytest.approx(83.0)
+    assert r["veredicto"] == "pendiente"
