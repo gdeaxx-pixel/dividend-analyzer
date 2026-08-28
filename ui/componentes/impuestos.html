@@ -1,0 +1,415 @@
+<!-- Escrito y mantenido A MANO. Esta vista (categoría «Impuestos») nunca existió en el
+     demo del artifact, así que NO hay un `tools/extract_impuestos.py` y no se genera de
+     ninguna fuente. Se cablea a datos reales por {{DATA_JSON}} (armado en
+     `ui/adapters.py::impuestos_data`, que solo lee objetos fiscales ya calculados por
+     `logic.py` — Regla 3 de `specs/roc-nra-invariants.md`).
+     Lo que SÍ se sigue generando del demo es la taxonomía y los tokens, con
+     `tools/extract_design_system.py`; ese contrato está vivo y su `--check` pasa. El
+     bloque de auto-alto del final es el de `tools/_auto_alto.py`, igual que los demás
+     componentes. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:      #f4f7fa;
+    --panel:       #ffffff;
+    --panel-tint:  #eef4f9;
+    --ink:         #021C36;
+    --ink-2:       #33475a;
+    --ink-mut:     #6a7b8a;
+    --hair:        #d5e0ea;
+    --hair-soft:   #e6edf3;
+    --accent:      #006497;
+    --accent-tint: rgba(0,100,151,0.10);
+    --cash:        #1f8a5b;
+    --loss:        #A32D2D;
+    --warn:        #a06a1a;
+    --coral:       #c0522d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+      --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6;
+      --accent-tint:rgba(62,160,214,0.14); --cash:#35b07d; --loss:#e07a7a; --warn:#d9a441;
+      --coral:#e0885f;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497;
+    --accent-tint:rgba(0,100,151,0.10); --cash:#1f8a5b; --loss:#A32D2D; --warn:#a06a1a;
+    --coral:#c0522d;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6;
+    --accent-tint:rgba(62,160,214,0.14); --cash:#35b07d; --loss:#e07a7a; --warn:#d9a441;
+    --coral:#e0885f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--font-sans); -webkit-font-smoothing: antialiased; line-height: 1.5;
+  }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) 64px; }
+
+  .imp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
+  .imp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .imp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
+  .imp-lede b { color: var(--ink); font-weight: 600; }
+
+  /* escalera vertical — un peldaño por fila, nada se mueve, se lee de arriba a abajo */
+  .imp-escalera { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+  .imp-step {
+    padding: 14px 18px; background: var(--panel); border: 1px solid var(--hair);
+    border-left: 3px solid var(--hair-soft);
+  }
+  .imp-step.activo { border-left-color: var(--accent); }
+  .imp-step.pendiente { border-left-color: var(--hair); opacity: .7; }
+  .imp-step-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; }
+  .imp-step-q { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+  .imp-step-n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); }
+  .imp-step-val { text-align: right; }
+  .imp-step-money { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--ink); }
+  .imp-step-pct { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
+  .imp-step-sub { font-size: 11.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.5; }
+  .imp-step-sub b { color: var(--ink-2); }
+  .imp-step-body { min-height: 20px; }
+
+  /* CTA de residencia (peldaño 3 sin país) — reserva su espacio para que declarar el
+     país no empuje nada de abajo */
+  .imp-cta { margin-top: 8px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--warn); font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .imp-cta b { color: var(--ink); }
+
+  /* tres buckets de la retención — tres colores porque los remedios son tres */
+  .imp-buckets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  @media (max-width: 560px) { .imp-buckets { grid-template-columns: 1fr; } }
+  .imp-bucket { padding: 11px 13px; background: var(--panel-tint); border-top: 3px solid var(--hair); }
+  .imp-bucket.gris { border-top-color: var(--ink-mut); }
+  .imp-bucket.ambar { border-top-color: var(--warn); }
+  .imp-bucket.coral { border-top-color: var(--coral); }
+  .imp-bucket-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 6px; }
+  .imp-bucket-money { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); }
+  .imp-bucket-pct { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); }
+  .imp-bucket.gris .imp-bucket-lab { color: var(--ink-2); }
+  .imp-bucket.ambar .imp-bucket-lab { color: var(--warn); }
+  .imp-bucket.coral .imp-bucket-lab { color: var(--coral); }
+  .imp-bucket-note { font-size: 10.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.45; }
+
+  .imp-conc { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--accent); font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+  .imp-conc b { font-family: var(--font-mono); }
+
+  /* tabla por fondo — el desglose va DENTRO del componente, no en la ruta */
+  .imp-block { margin-top: 30px; }
+  .imp-block-lab { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 10px; }
+  .imp-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .imp-tbl { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
+  .imp-tbl th, .imp-tbl td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--hair-soft); white-space: nowrap; }
+  .imp-tbl th { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; border-bottom: 2px solid var(--ink); }
+  .imp-tbl th:first-child, .imp-tbl td:first-child { text-align: left; }
+  .imp-tbl td { font-family: var(--font-mono); color: var(--ink); }
+  .imp-tbl td.tk { font-family: var(--font-sans); font-weight: 800; }
+  .imp-tbl td.mut { color: var(--ink-mut); font-weight: 400; }
+  .imp-tbl tr.total td { border-bottom: none; border-top: 2px solid var(--ink); font-weight: 700; }
+  .imp-tbl .c-ambar { color: var(--warn); }
+  .imp-tbl .c-coral { color: var(--coral); }
+
+  /* Ruta A / Ruta B — cómo recuperar lo que sí vuelve */
+  .imp-rutas { margin-top: 30px; display: flex; flex-direction: column; gap: 14px; }
+  .imp-ruta { padding: 14px 16px; background: var(--panel); border: 1px solid var(--hair); border-left: 3px solid var(--accent); }
+  .imp-ruta-h { font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.03em; color: var(--accent); margin: 0 0 8px; }
+  .imp-ruta-p { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 8px; }
+  .imp-ruta-p:last-child { margin-bottom: 0; }
+  .imp-ruta-p b { color: var(--ink); font-weight: 600; }
+  .imp-ruta-est { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn); }
+  .imp-ruta ol { margin: 6px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--ink-2); line-height: 1.65; }
+  .imp-ruta ol li { margin: 0 0 5px; }
+  .imp-ruta ol li b { color: var(--ink); }
+
+  .imp-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 11px; color: var(--ink-mut); line-height: 1.6; }
+</style>
+<main class="wrap">
+  <header class="imp-head">
+    <h2 class="imp-title" id="impTitle">La escalera de tus impuestos</h2>
+    <p class="imp-lede" id="impLede"></p>
+  </header>
+
+  <div class="imp-escalera" id="impEscalera"></div>
+
+  <section class="imp-block">
+    <p class="imp-block-lab">Fondo por fondo</p>
+    <div class="imp-scroll">
+      <table class="imp-tbl" id="impTabla"></table>
+    </div>
+  </section>
+
+  <section class="imp-rutas" id="impRutas"></section>
+
+  <p class="imp-foot" id="impFoot"></p>
+</main>
+<script>
+(function initImpuestos() {
+  "use strict";
+  var D = {{DATA_JSON}};
+
+  function money(x) {
+    var n = (x == null || isNaN(x)) ? 0 : Number(x);
+    return (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
+  }
+  function pct(p) {
+    if (p == null || isNaN(p)) return "";
+    return p.toFixed(1) + "% del bruto";
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+  function set(id, html) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
+  var P = D.peldanos || {};
+  var tasaTxt = D.declarado ? (D.tasa_pct + "% " + (D.tiene_tratado ? "por el tratado con EE.UU." : "sin tratado")) : null;
+
+  set("impLede",
+    D.declarado
+      ? "Vives en <b>" + esc(D.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
+        + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
+      : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
+        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto.");
+
+  // ---- peldaños ----
+  function stepRow(n, q, val, pctVal, sub, cls) {
+    var right = val == null
+      ? '<span class="imp-step-money" style="color:var(--ink-mut)">—</span>'
+      : '<span class="imp-step-money">' + money(val) + '</span>'
+        + (pctVal == null ? '' : '<span class="imp-step-pct">' + esc(pct(pctVal)) + '</span>');
+    return '<div class="imp-step ' + (cls || 'activo') + '">'
+      + '<div class="imp-step-top">'
+      + '<div><span class="imp-step-n">' + esc(n) + '</span><br><span class="imp-step-q">' + esc(q) + '</span></div>'
+      + '<div class="imp-step-val">' + right + '</div>'
+      + '</div>'
+      + '<div class="imp-step-body">' + (sub || '') + '</div>'
+      + '</div>';
+  }
+
+  var rocEfectivo = null;
+  if (P.bruto && P.bruto.monto > 0 && P.gravable) {
+    rocEfectivo = (1 - P.gravable.monto / P.bruto.monto) * 100;
+  }
+
+  var pasos = [];
+
+  pasos.push(stepRow("Peldaño 1", "¿Cuánto te repartió el fondo?",
+    P.bruto ? P.bruto.monto : 0, P.bruto ? P.bruto.pct : null,
+    '<p class="imp-step-sub">El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.</p>',
+    "activo"));
+
+  pasos.push(stepRow("Peldaño 2", "¿Cuánto era renta de verdad?",
+    P.gravable ? P.gravable.monto : 0, P.gravable ? P.gravable.pct : null,
+    '<p class="imp-step-sub">Gravable = bruto × (1 − ROC). El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no paga impuesto hoy'
+      + (rocEfectivo != null && rocEfectivo > 0.5
+          ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver tabla por fondo)'
+          : '')
+      + '.</p>',
+    "activo"));
+
+  if (D.declarado && P.corresponde) {
+    pasos.push(stepRow("Peldaño 3", "¿Cuánto te corresponde pagar?",
+      P.corresponde.monto, P.corresponde.pct,
+      '<p class="imp-step-sub">Tu tasa de residencia (<b>' + esc(D.tasa_pct + '%') + '</b>) aplicada sobre la parte gravable. Es lo que un bróker debería retenerte si tu W-8BEN está al día.</p>',
+      "activo"));
+  } else {
+    pasos.push(stepRow("Peldaño 3", "¿Cuánto te corresponde pagar?",
+      null, null,
+      '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Declara tu país en el Paso 2.</b></div>',
+      "activo"));
+  }
+
+  // Peldaño 4 — retenido AL COBRO. Tres estados: 'sin_pais' (CTA), 'parcial' (aviso: hay
+  // fondos cuyo desglose no es fiable), 'ok' (los tres buckets suman el monto).
+  var R = P.retenido || {};
+  var buckets = '';
+  if (R.estado === "ok") {
+    buckets = '<div class="imp-buckets">'
+      + '<div class="imp-bucket gris"><p class="imp-bucket-lab">Retención correcta</p>'
+        + '<span class="imp-bucket-money">' + money(R.correcta.monto) + '</span> '
+        + '<span class="imp-bucket-pct">' + esc(pct(R.correcta.pct)) + '</span>'
+        + '<p class="imp-bucket-note">Permanente. No se recupera.</p></div>'
+      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Exceso por ROC</p>'
+        + '<span class="imp-bucket-money">' + money(R.recuperable_roc.monto) + '</span> '
+        + '<span class="imp-bucket-pct">' + esc(pct(R.recuperable_roc.pct)) + '</span>'
+        + '<p class="imp-bucket-note">Puede volver solo en el cierre anual del bróker (IB ene–mar, Schwab jun–sep).</p></div>'
+      + '<div class="imp-bucket coral"><p class="imp-bucket-lab">Gap de tratado / W-8BEN</p>'
+        + '<span class="imp-bucket-money">' + money(R.gap_w8ben.monto) + '</span> '
+        + '<span class="imp-bucket-pct">' + esc(pct(R.gap_w8ben.pct)) + '</span>'
+        + '<p class="imp-bucket-note">Nunca vuelve solo. Se repite cada año hasta renovar el formulario.</p></div>'
+      + '</div>';
+  } else if (R.estado === "parcial") {
+    var sin = (R.fondos_sin_desglose || []).join(", ");
+    buckets = '<div class="imp-cta">No podemos separar tu retención en tres con seguridad: en '
+      + '<b>' + esc(sin) + '</b> el CSV de tu bróker mezcla los reversos del split inverso de dic-2025 con las filas de impuesto, '
+      + 'y la retención «al cobro» de esos fondos no es una cifra fiable. Mostramos lo retenido neto por fondo en la tabla, sin el desglose.</div>';
+  } else {
+    buckets = '<div class="imp-cta">Declara tu país para separar lo retenido en lo que es permanente, lo que vuelve solo por ROC y el gap de tratado. Son tres cifras con tres remedios distintos — sumarlas en una sola es el error que este diseño evita.</div>';
+  }
+
+  // Reembolso YA acreditado — movimiento aparte, NO entra en la descomposición de los tres
+  // buckets (carril distinto de la Regla 4). Dato crudo del CSV, se muestra tal cual.
+  var yaDev = R.ya_devuelto || {monto: 0};
+  var devLine = '<div class="imp-conc" style="border-left-color:var(--cash)">'
+    + 'De esa retención al cobro, el bróker <b>ya te devolvió</b> ' + money(yaDev.monto)
+    + (yaDev.pct != null ? ' (' + yaDev.pct.toFixed(1) + '% del bruto)' : '')
+    + ' en la reclasificación anual del ROC — es un movimiento aparte, no una de las tres porciones.</div>';
+
+  var conc = '';
+  if (D.concentracion && D.concentracion.otro_ticker) {
+    var C = D.concentracion;
+    conc = '<div class="imp-conc"><b>' + C.pct.toFixed(1) + '%</b> de tu retención salió de un solo fondo: '
+      + '<b>' + esc(C.ticker) + '</b> ' + money(C.retenido) + ' frente a <b>' + esc(C.otro_ticker) + '</b> ' + money(C.otro_retenido)
+      + '. La retención NRA se concentra donde se concentra el rendimiento.</div>';
+  }
+
+  pasos.push(stepRow("Peldaño 4", "¿Cuánto te retuvieron al cobro?",
+    R.monto == null ? 0 : R.monto, R.pct,
+    '<p class="imp-step-sub">Lo que el bróker descontó <b>al momento del cobro</b> del dividendo, según tu CSV.'
+      + (R.estado === "ok" ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : '') + '</p>'
+      + (yaDev.monto > 0.01 ? devLine : '') + buckets + conc,
+    "activo"));
+
+  // Peldaños reservados (Fases 3 y 4) — espacio reservado, sin contenido inventado
+  (D.slots_pendientes || []).forEach(function (s) {
+    pasos.push(stepRow("Próximamente", s.titulo, null, null,
+      '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',
+      "pendiente"));
+  });
+
+  set("impEscalera", pasos.join(""));
+
+  // ---- tabla por fondo ----
+  var T = P.retenido || {};
+  var hayDevuelto = (T.ya_devuelto && T.ya_devuelto.monto > 0.01);
+  var conBuckets = D.declarado;                 // columnas Correcta/ROC/W-8BEN
+  var np = '<span class="mut">no publ.</span>';
+  var head = '<tr><th>Fondo</th><th>Bruto</th><th>ROC</th><th>Gravable</th>'
+    + (D.declarado ? '<th>Te toca</th>' : '')
+    + '<th>Al cobro</th>'
+    + (hayDevuelto ? '<th>Devuelto</th>' : '')
+    + (conBuckets ? '<th>Correcta</th><th class="c-ambar">ROC</th><th class="c-coral">W-8BEN</th>' : '')
+    + '</tr>';
+  var body = '';
+  (D.fondos || []).forEach(function (f) {
+    var rocCell = f.roc_pct == null ? '<span class="mut">—</span>' : (f.roc_pct.toFixed(0) + '%');
+    body += '<tr>'
+      + '<td class="tk">' + esc(f.ticker) + '</td>'
+      + '<td>' + money(f.bruto) + '</td>'
+      + '<td>' + rocCell + '</td>'
+      + '<td>' + money(f.gravable) + '</td>'
+      + (D.declarado ? '<td>' + (f.corresponde == null ? '—' : money(f.corresponde)) + '</td>' : '')
+      + '<td>' + money(f.retenido) + '</td>'
+      + (hayDevuelto ? '<td class="mut">' + (f.ya_devuelto > 0.01 ? money(f.ya_devuelto) : '—') + '</td>' : '')
+      + (conBuckets ? (f.indeterminado
+          ? '<td class="mut">' + np + '</td><td class="c-ambar">' + np + '</td><td class="c-coral">' + np + '</td>'
+          : '<td class="mut">' + money(f.retencion_correcta) + '</td>'
+            + '<td class="c-ambar">' + money(f.recuperable_roc) + '</td>'
+            + '<td class="c-coral">' + money(f.gap_w8ben) + '</td>') : '')
+      + '</tr>';
+  });
+  var totBuckets = (T.estado === "ok")
+    ? '<td class="mut">' + money(T.correcta.monto) + '</td>'
+      + '<td class="c-ambar">' + money(T.recuperable_roc.monto) + '</td>'
+      + '<td class="c-coral">' + money(T.gap_w8ben.monto) + '</td>'
+    : '<td class="mut">' + np + '</td><td class="c-ambar">' + np + '</td><td class="c-coral">' + np + '</td>';
+  var tot = '<tr class="total">'
+    + '<td>Cartera</td>'
+    + '<td>' + money(P.bruto ? P.bruto.monto : 0) + '</td>'
+    + '<td>' + (rocEfectivo == null ? '—' : rocEfectivo.toFixed(0) + '%') + '</td>'
+    + '<td>' + money(P.gravable ? P.gravable.monto : 0) + '</td>'
+    + (D.declarado ? '<td>' + money(P.corresponde ? P.corresponde.monto : 0) + '</td>' : '')
+    + '<td>' + money(T.monto) + '</td>'
+    + (hayDevuelto ? '<td class="mut">' + money(T.ya_devuelto.monto) + '</td>' : '')
+    + (conBuckets ? totBuckets : '')
+    + '</tr>';
+  set("impTabla", head + body + tot);
+
+  // ---- Ruta A / Ruta B ----
+  var A = D.ruta_a || {};
+  var estimadoA = A.tiene_1042s ? '' : '<span class="imp-ruta-est">estimado — sin 1042-S cargado</span> ';
+  var rutaA;
+  if (A.sin_retencion && A.tiene_1042s) {
+    rutaA = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta A · el bróker ya lo resolvió</p>'
+      + '<p class="imp-ruta-p">Tu 1042-S no muestra retención pendiente (casilla 7a en cero). No hay nada que reclamar por esta vía.</p></div>';
+  } else {
+    rutaA = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta A · lo que vuelve solo (ROC)</p>'
+      + '<p class="imp-ruta-p">' + estimadoA
+        + 'El 1042-S <b>no se presenta — se lee</b>: si el bróker reclasificó el ROC, la <b>casilla 9</b> («Overwithheld tax repaid») debería decir <b>' + money(A.casilla9_esperada) + '</b>. '
+        + 'Se descubre comparando las casillas 9 y 10 del formulario que te llega a inicio de año — no hay trámite que iniciar.</p>';
+    if (A.tiene_1042s && A.veredicto === "pendiente") {
+      rutaA += '<p class="imp-ruta-p">Tu 1042-S dice que <b>' + money(A.pendiente) + '</b> sigue en el IRS: esa parte va por la Ruta B.</p>';
+    } else if (A.tiene_1042s && A.veredicto === "devuelto") {
+      rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
+    }
+    rutaA += '</div>';
+  }
+
+  var rutaB = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta B · lo que hay que reclamar al IRS</p>'
+    + '<p class="imp-ruta-p">El gap de tratado / W-8BEN no vuelve solo. Para recuperarlo:</p>'
+    + '<ol>'
+    + '<li>Solicita un <b>ITIN</b> con el formulario <b>W-7</b>.</li>'
+    + '<li>Presenta un <b>1040-NR</b> del <b>año exacto</b> de la retención.</li>'
+    + '<li>Adjunta copia de tu <b>1042-S</b> de ese año.</li>'
+    + '<li>Tienes <b>3 años</b> desde la fecha de la retención para reclamar.</li>'
+    + '</ol>'
+    + '<p class="imp-ruta-p">Existe la <b>Excepción 1(b) del W-7</b> (ingreso pasivo con retención de terceros) para obtener el ITIN sin esperar a declarar. <b>Confírmala con tu bróker</b> — no está verificada con Schwab, no la des por garantizada.</p></div>';
+
+  set("impRutas", rutaA + rutaB);
+
+  set("impFoot",
+    "Todas las cifras salen de objetos fiscales ya calculados sobre tu CSV y, si lo cargaste, tu 1042-S. "
+    + "El ROC y su fuente vienen del cierre fiscal del fondo cuando existe, y de la estimación 19(a) del gestor mientras el año sigue abierto. "
+    + "Esto no es asesoría fiscal: confirma con tu bróker o un asesor.");
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h || Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>

@@ -61,7 +61,15 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **668 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre la rama de la
+Línea base: **683 passed, 2 skipped, 3 deselected** (medido 2026-08-28 sobre la rama
+`fiscal/vista-impuestos`, base `main` = `319a5d0`, tras sumar 9 tests en
+`test_vista_impuestos.py` — la escalera fiscal de cartera Fase 2 + el fix del bucket gris
+negativo: reconciliación cruzada del peldaño 1 contra `cashflow_data`/`hoja_data`; el residuo
+al cobro contra `withheld_at_payment` con reembolso positivo (repro de auditoría); el guard
+'parcial' cuando `withheld_at_payment` no reconcilia (reversos de split inverso en IB); «sin
+país ⇒ peldaño 3 None»; la regresión ROC 100 %). OJO: `main` corría **674** de verdad al
+ramificar, no los 668 que esta línea seguía afirmando — desfasado otra vez (nadie actualizó
+tras el #90). Antes: **668 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre la rama de la
 tercera línea de «Sin DRIP» — cosechar el efectivo hacia `CMP_COSECHA_DESTINO`/SCHB en vez
 de dejarlo quieto, base `main` = `0fbaa73` —, tras sumar 21 tests en
 `test_comparacion_data.py`: 12 en `TestCosechaHaciaDestino` —ground truth congelado,
