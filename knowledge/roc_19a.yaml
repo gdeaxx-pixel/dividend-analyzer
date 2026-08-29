@@ -1,10 +1,12 @@
 # Generado por fetch_roc_19a.py (fuente: páginas oficiales de YieldMax).
 # Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.
 MSTY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/msty/
-  weighted_pct: 70.72
+  weighted_pct: 71.94
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 98.54
   - date: '2026-08-19'
     roc_pct: 0.0
   - date: '2026-08-12'
@@ -114,10 +116,12 @@ MSTY:
   - date: '2024-04-03'
     roc_pct: 100.0
 AMDY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/amdy/
-  weighted_pct: 57.35
+  weighted_pct: 56.51
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 12.93
   - date: '2026-08-19'
     roc_pct: 96.73
   - date: '2026-08-12'
@@ -229,10 +233,12 @@ AMDY:
   - date: '2025-01-07'
     roc_pct: 0.0
 AMZY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/amzy/
-  weighted_pct: 54.38
+  weighted_pct: 50.01
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 0.0
   - date: '2026-08-19'
     roc_pct: 19.99
   - date: '2026-08-12'
@@ -344,10 +350,12 @@ AMZY:
   - date: '2025-01-15'
     roc_pct: 30.39
 CONY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/cony/
-  weighted_pct: 51.83
+  weighted_pct: 52.82
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 96.91
   - date: '2026-08-19'
     roc_pct: 94.89
   - date: '2026-08-12'
@@ -544,10 +552,12 @@ DISO:
   - date: '2025-05-07'
     roc_pct: 94.23
 JPMO:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/jpmo/
-  weighted_pct: 58.37
+  weighted_pct: 57.65
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 0.0
   - date: '2026-08-19'
     roc_pct: 0.0
   - date: '2026-08-12'
@@ -661,10 +671,12 @@ JPMO:
   - date: '2025-01-02'
     roc_pct: 30.9
 MSFO:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/msfo/
-  weighted_pct: 91.32
+  weighted_pct: 91.47
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 96.41
   - date: '2026-08-19'
     roc_pct: 96.18
   - date: '2026-08-12'
@@ -774,10 +786,12 @@ MSFO:
   - date: '2025-02-05'
     roc_pct: 86.27
 NFLY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/nfly/
-  weighted_pct: 59.76
+  weighted_pct: 60.22
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 93.51
   - date: '2026-08-19'
     roc_pct: 93.06
   - date: '2026-08-12'
@@ -887,10 +901,12 @@ NFLY:
   - date: '2025-02-05'
     roc_pct: 96.05
 NVDY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/nvdy/
-  weighted_pct: 46.29
+  weighted_pct: 45.69
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 0.0
   - date: '2026-08-19'
     roc_pct: 10.87
   - date: '2026-08-12'
@@ -1000,10 +1016,12 @@ NVDY:
   - date: '2023-08-03'
     roc_pct: 94.58
 PLTY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/plty/
-  weighted_pct: 45.74
+  weighted_pct: 46.22
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 67.81
   - date: '2026-08-19'
     roc_pct: 0.0
   - date: '2026-08-12'
@@ -1109,10 +1127,12 @@ PLTY:
   - date: '2025-04-23'
     roc_pct: 98.08
 TSLY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/tsly/
-  weighted_pct: 55.77
+  weighted_pct: 56.41
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 100.0
   - date: '2026-08-19'
     roc_pct: 100.0
   - date: '2026-08-12'
@@ -1216,9 +1236,9 @@ TSLY:
   - date: '2025-05-14'
     roc_pct: 97.9
 YMAG:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/ymag/
-  weighted_pct: 56.59
+  weighted_pct: 55.77
   per_distribution:
   - date: '2026-08-18'
     roc_pct: 35.73
@@ -1365,9 +1385,9 @@ YMAG:
   - date: '2025-02-05'
     roc_pct: 92.99
 YMAX:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/ymax/
-  weighted_pct: 52.63
+  weighted_pct: 52.24
   per_distribution:
   - date: '2026-08-18'
     roc_pct: 48.95
@@ -1512,10 +1532,12 @@ YMAX:
   - date: '2025-02-05'
     roc_pct: 94.58
 GOOY:
-  asof: '2026-08-22'
+  asof: '2026-08-29'
   source_url: https://yieldmaxetfs.com/our-etfs/gooy/
-  weighted_pct: 59.93
+  weighted_pct: 59.35
   per_distribution:
+  - date: '2026-08-26'
+    roc_pct: 10.2
   - date: '2026-08-19'
     roc_pct: 7.94
   - date: '2026-08-12'
