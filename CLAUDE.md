@@ -61,7 +61,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **690 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+Línea base: **700 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+`fiscal/foreign-tax-paid`, base `main` = `e4fb6c5` = #92, tras sumar 10 tests: separar
+`Foreign Tax Paid` (impuesto extranjero, ZIM/Israel) del eje de retención NRA vía
+`_is_nra_withholding_action` — coherente en `withheld_tax_total`, `_classify_tax_rows` y familia
+—, el campo `foreign_tax_paid_total` en `stats` y su línea propia en la vista de Impuestos.
+Antes: **690 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
 `fiscal/ib-reversos-split`, base `main` = `0ba86c9`, tras sumar 7 tests: el clasificador único
 de reversos de split de IB —`_classify_tax_rows`— con su invariante `al cobro == neteado +
 devuelto` contra el CSV real, la guarda de la tasa aplicada imposible, y la reescritura de los

@@ -429,3 +429,135 @@ def test_ib_real_ground_truth_los_cuatro_tickers():
         assert net == pytest.approx(neteado, abs=0.01), f"{tk} neteado"
         assert ref == pytest.approx(devuelto, abs=0.01), f"{tk} ya devuelto"
         assert wap == pytest.approx(net + ref, abs=0.01), f"{tk} invariante"
+
+
+# ── C5 · «Foreign Tax Paid» separado de la retención NRA (fix 2026-08-29) ────────
+
+
+def test_predicado_nra_no_toca_ib():
+    """La trampa principal: en IB la retención NRA SE LLAMA `Dividend - Foreign Tax
+    Withholding`. El discriminante es `'foreign tax paid'` EXACTO, nunca `'foreign tax'`."""
+    assert logic._is_nra_withholding_action("Dividend - Foreign Tax Withholding") is True
+    assert logic._is_nra_withholding_action("NRA Tax Adj") is True
+    assert logic._is_nra_withholding_action("Foreign Tax Paid") is False
+    assert logic._is_foreign_tax_credit_action("Foreign Tax Paid") is True
+    assert logic._is_foreign_tax_credit_action("Dividend - Foreign Tax Withholding") is False
+
+
+def test_predicado_nra_sobre_las_465_filas_reales_de_ib():
+    """Ninguna fila de retención de IB puede quedar fuera del eje NRA."""
+    import glob
+    rutas = [p for p in glob.glob(os.path.join(
+        BASE, "real_examples", "interactive_brokers_data", "1", "*.csv"))
+        if not p.endswith("expected.json")]
+    if not rutas:
+        pytest.skip("real_examples no montado")
+
+    class _FF:
+        def __init__(self, b, n):
+            self._b, self.name = b, n
+
+        def read(self):
+            return self._b
+
+        def seek(self, *a):
+            pass
+
+    with open(rutas[0], "rb") as fh:
+        out = logic.load_and_detect_csv(_FF(fh.read(), os.path.basename(rutas[0])))
+    df = logic.normalize_csv(out[0] if isinstance(out, tuple) else out)
+    tax = df[df["Action"].apply(logic._is_tax_row_action)]
+    nra = df[df["Action"].apply(logic._is_nra_withholding_action)]
+    assert len(tax) == len(nra) > 0, "IB no tiene ninguna fila 'Foreign Tax Paid'; nada debe caer"
+
+
+def test_foreign_tax_paid_sale_de_la_tasa_aplicada():
+    """NRA $300 + FTP $35 sobre bruto $1000 → aplicada 30.0% (no 33.5%), implausible=False,
+    y para un colombiano el veredicto es 'coincide'."""
+    s = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
+                        ("2025-06-01", "NRA Tax Adj", -300.0),
+                        ("2025-06-01", "Foreign Tax Paid", -35.0)], roc=0.0)
+    d = logic.applied_withholding_rate(s)
+    assert d["withheld_at_payment"] == pytest.approx(300.0)
+    assert d["applied_pct"] == pytest.approx(30.0)
+    assert d["implausible"] is False
+    diag = logic.build_withholding_diagnosis(s, "MSTY", entitled_pct=30.0, country="Colombia")
+    assert diag["verdict"] == "coincide"
+
+
+def test_foreign_tax_paid_no_mueve_withheld_tax_total_de_ib():
+    """Coherencia del eje: `withheld_tax_total` cae exactamente el FTP y ni un centavo más."""
+    con_ftp = _hist([("2025-06-01", "Cash Dividend", 1000.0),
+                     ("2025-06-01", "NRA Tax Adj", -300.0),
+                     ("2025-06-01", "Foreign Tax Paid", -35.0)])
+    sin_ftp = _hist([("2025-06-01", "Cash Dividend", 1000.0),
+                     ("2025-06-01", "NRA Tax Adj", -300.0)])
+    assert logic.withheld_tax_total(con_ftp) == pytest.approx(300.0)
+    assert logic.withheld_tax_total(sin_ftp) == pytest.approx(300.0)
+    assert logic.foreign_tax_paid_total(con_ftp) == pytest.approx(35.0)
+    assert logic.foreign_tax_paid_total(sin_ftp) == pytest.approx(0.0)
+    # invariante: al cobro == neteado + devuelto, con y sin FTP
+    for h in (con_ftp, sin_ftp):
+        alc = round(sum(logic.withheld_at_payment_by_year(h).values()), 2)
+        dev = round(sum(logic.observed_tax_refund_by_year(h).values()), 2)
+        assert alc == pytest.approx(logic.withheld_tax_total(h) + dev)
+
+
+def test_schwab_fixture_invariante_con_ftp_estrechado():
+    """SCHB de `schwab_synth_1`: NRA -$0.45 + FTP -$0.08. Coherente → al cobro 0.45,
+    neteado 0.45, invariante 0.00 (a medias daría -0.08 y 'parcial')."""
+    df = logic.normalize_csv(
+        pd.read_csv(os.path.join(BASE, "fixtures", "schwab_synth_1",
+                                 "synthetic_transactions.csv")))
+    g = df[df["Ticker"] == "SCHB"]
+    alc = round(sum(logic.withheld_at_payment_by_year(g).values()), 2)
+    dev = round(sum(logic.observed_tax_refund_by_year(g).values()), 2)
+    net = logic.withheld_tax_total(g)
+    assert alc == pytest.approx(0.45)
+    assert net == pytest.approx(0.45)
+    assert alc == pytest.approx(net + dev)
+    assert logic.foreign_tax_paid_total(g) == pytest.approx(0.08)
+
+
+def test_ib_ground_truth_no_se_mueve_con_este_fix():
+    """Los 4 tickers de IB no tienen ni una fila `Foreign Tax Paid`: sus cifras de retención
+    NO deben moverse respecto al PR anterior."""
+    import glob
+    rutas = [p for p in glob.glob(os.path.join(
+        BASE, "real_examples", "interactive_brokers_data", "1", "*.csv"))
+        if not p.endswith("expected.json")]
+    if not rutas:
+        pytest.skip("real_examples no montado")
+
+    class _FF:
+        def __init__(self, b, n):
+            self._b, self.name = b, n
+
+        def read(self):
+            return self._b
+
+        def seek(self, *a):
+            pass
+
+    with open(rutas[0], "rb") as fh:
+        out = logic.load_and_detect_csv(_FF(fh.read(), os.path.basename(rutas[0])))
+    df = logic.normalize_csv(out[0] if isinstance(out, tuple) else out)
+    esperado = {"CONY": 202.98, "MSTY": 545.52, "TSLY": 495.01, "NVDY": 798.30}
+    for tk, neteado in esperado.items():
+        g = df[df["Ticker"] == tk]
+        assert logic.withheld_tax_total(g) == pytest.approx(neteado, abs=0.01), tk
+        assert logic.foreign_tax_paid_total(g) == pytest.approx(0.0), f"{tk} sin FTP"
+
+
+def test_regresion_zim_impuesto_israeli():
+    """El caso real: ZIM $0.63 + $2.11 en dic-2024 queda FUERA de la retención NRA y DENTRO
+    de `foreign_tax_paid`."""
+    ruta = os.path.join(BASE, "real_examples", "charles_schwab_data", "2",
+                        "indiv_transactions.csv")
+    if not os.path.exists(ruta):
+        pytest.skip("real_examples no montado")
+    df = logic.normalize_csv(pd.read_csv(ruta))
+    z = df[df["Ticker"] == "ZIM"]
+    assert logic.foreign_tax_paid_total(z) == pytest.approx(2.74, abs=0.01)
+    assert logic.foreign_tax_paid_by_year(z) == {2024: pytest.approx(2.74, abs=0.01)}
+    assert logic.withheld_tax_total(z) == pytest.approx(0.0), "el impuesto israelí no es NRA"

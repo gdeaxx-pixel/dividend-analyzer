@@ -2799,6 +2799,10 @@ def test_analyze_portfolio_ib_msty_dividend_base_convention(monkeypatch):
     assert s["dividends_net_total"] == pytest.approx(6679.07, abs=0.01)
     assert s["withheld_tax_total"] == pytest.approx(545.52, abs=0.01)
     assert {y: round(v, 2) for y, v in s["tax_refund_observed_by_year"].items()} == {2026: 23.25}
+    # IB no tiene ninguna fila 'Foreign Tax Paid' → el campo nuevo queda en cero y la
+    # retención NRA no se movió por el fix del impuesto extranjero.
+    assert s["foreign_tax_paid_total"] == pytest.approx(0.0)
+    assert s["foreign_tax_paid_by_year"] == {}
 
 
 def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):
@@ -2815,6 +2819,21 @@ def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):
     assert s["dividends_gross_total"] == pytest.approx(462.00, abs=0.01)
     assert s["dividends_net_total"] == pytest.approx(323.40, abs=0.01)
     assert s["withheld_tax_total"] == pytest.approx(138.60, abs=0.01)
+
+
+def test_analyze_portfolio_propaga_foreign_tax_paid(monkeypatch):
+    """`schwab_synth_1` SCHB: NRA -$0.45 + `Foreign Tax Paid` -$0.08. `analyze_portfolio`
+    saca el FTP del eje NRA (`withheld_tax_total` = 0.45, no 0.53) y lo expone en su propio
+    campo. `dividends_net_total` sube el mismo importe que salió de la retención."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_1",
+                             "synthetic_transactions.csv"), "rb").read()
+    df, _ = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_1.csv"))
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(logic.normalize_csv(df), version="TEST_FTP")
+    s = res["SCHB"]
+    assert s["withheld_tax_total"] == pytest.approx(0.45, abs=0.01)
+    assert s["foreign_tax_paid_total"] == pytest.approx(0.08, abs=0.01)
+    assert s["foreign_tax_paid_by_year"] == {2025: pytest.approx(0.08, abs=0.01)}
 
 
 def test_analyze_portfolio_roi_neto_schwab_no_ignora_la_retencion(monkeypatch):

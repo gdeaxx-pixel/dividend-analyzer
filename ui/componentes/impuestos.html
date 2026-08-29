@@ -268,6 +268,18 @@
     + (yaDev.pct != null ? ' (' + yaDev.pct.toFixed(1) + '% del bruto)' : '')
     + ' en la reclasificación anual del ROC — es un movimiento aparte, no una de las tres porciones.</div>';
 
+  // Impuesto EXTRANJERO (`Foreign Tax Paid`, p. ej. ZIM/Israel) — línea aparte, NUNCA un
+  // cuarto bucket: los tres buckets son la partición de la retención NRA de EE.UU. Esto es
+  // otro impuesto, de otra jurisdicción, con otro remedio.
+  var ftp = R.impuesto_extranjero;
+  var ftpLine = '';
+  if (ftp && ftp.monto > 0.01) {
+    ftpLine = '<div class="imp-conc" style="border-left-color:var(--ink-mut)">'
+      + 'Además pagaste ' + money(ftp.monto) + ' de impuesto retenido por <b>emisores de otros '
+      + 'países</b> (p. ej. ZIM, Israel). No es retención de EE.UU. y no se reclama con el '
+      + '1040-NR: suele ser <b>crédito fiscal</b> en tu país de residencia.</div>';
+  }
+
   var conc = '';
   if (D.concentracion && D.concentracion.otro_ticker) {
     var C = D.concentracion;
@@ -280,7 +292,7 @@
     R.monto == null ? 0 : R.monto, R.pct,
     '<p class="imp-step-sub">Lo que el bróker descontó <b>al momento del cobro</b> del dividendo, según tu CSV.'
       + (R.estado === "ok" ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : '') + '</p>'
-      + (yaDev.monto > 0.01 ? devLine : '') + buckets + conc,
+      + (yaDev.monto > 0.01 ? devLine : '') + buckets + ftpLine + conc,
     "activo"));
 
   // Peldaños reservados (Fases 3 y 4) — espacio reservado, sin contenido inventado
