@@ -74,6 +74,21 @@ Base y momento no bastan para detectar este error: en el bug del caso origen las
 > `gross` para cada ticker. El guard independiente `ui.adapters._bruto_independiente_del_csv`
 > conserva su copia deliberada del criterio para no depender del predicado que audita.
 
+> **Actualizado (2026-08-29, clasificador único de filas de impuesto).** Los reversos de split
+> inverso de IB aparecen en el CSV como un par exacto (retención negativa + su reverso positivo,
+> mismo día / |importe| / ticker). `logic._classify_tax_rows` es el primitivo único que los
+> empareja 1:1 y voraz (`Counter`) y separa: **retención al cobro real** (negativas − revertidas)
+> y **reembolsos genuinos** (positivas huérfanas = crédito de reclasificación ROC). Lo consumen
+> `withheld_at_payment_by_year` (antes contaba TODAS las negativas → tasa aplicada imposible
+> >30% para IB → falsa alarma «Revisa tu W-8BEN») y `observed_tax_refund_by_year` (antes excluía
+> IB en bloque → tiraba reembolsos ROC reales, "pendiente" de dinero ya recibido). `withheld_tax_total`
+> NO cambió: ya neteaba por signo y su cifra sigue siendo la buena. Invariante que lo ata:
+> `al_cobro == neteado + ya_devuelto`, exacto, medido sobre el CSV real de IB en CONY/MSTY/TSLY/NVDY
+> (`test_tasa_aplicada.py::test_ib_real_ground_truth_los_cuatro_tickers`,
+> `test_logic.py::test_ib_observed_refund_separa_reverso_de_split_de_reembolso_genuino`). Guarda
+> blanda en `applied_withholding_rate` (`'implausible'`): una tasa aplicada > techo NRA hace que
+> `build_withholding_diagnosis` caiga a `'indeterminado'` en vez de acusar de W-8BEN vencido.
+
 **Scenario:** Tres vistas, un solo cálculo
 - **WHEN** el usuario abre los cuadritos del viaje del dinero, la Hoja Excel y el paso "Impuesto NRA" para el mismo ticker en la misma sesión
 - **THEN** las tres vistas leen el mismo `tax_summary` del ticker y muestran valores de `retenido_real`, `retención_justa` y `devolución_estimada` idénticos entre sí (no solo "consistentes", sino la misma fuente)

@@ -61,7 +61,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **683 passed, 2 skipped, 3 deselected** (medido 2026-08-28 sobre la rama
+Línea base: **690 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+`fiscal/ib-reversos-split`, base `main` = `0ba86c9`, tras sumar 7 tests: el clasificador único
+de reversos de split de IB —`_classify_tax_rows`— con su invariante `al cobro == neteado +
+devuelto` contra el CSV real, la guarda de la tasa aplicada imposible, y la reescritura de los
+3 tests que codificaban la vieja exclusión de IB en bloque). Antes: **683 passed, 2 skipped, 3
+deselected** (medido 2026-08-28 sobre la rama
 `fiscal/vista-impuestos`, base `main` = `319a5d0`, tras sumar 9 tests en
 `test_vista_impuestos.py` — la escalera fiscal de cartera Fase 2 + el fix del bucket gris
 negativo: reconciliación cruzada del peldaño 1 contra `cashflow_data`/`hoja_data`; el residuo

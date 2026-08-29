@@ -345,21 +345,28 @@ def test_ib_smcy_nke_no_se_pierden_en_ingesta_solo_en_clasificacion(ticker):
         "(not_known_etf), no por otra causa — si esto cambia, la Fase 0 debe revisarse")
 
 
-@pytest.mark.parametrize("ticker", ["MSTY", "TSLY", "CONY"])
-def test_ib_observed_refund_no_confunde_reverso_de_split_con_reembolso(ticker):
-    """Efecto colateral del fix de ingesta que hay que blindar: al dejar de fundir
-    'Foreign Tax Withholding' en 'Dividend' puro, los reversos positivos .OLD (mecánica del
-    split inverso, NO una devolución de impuesto real) podrían colarse en
-    observed_tax_refund_by_year() y mostrarle al usuario un "ya te devolvieron $X" falso.
-    observed_tax_refund_by_year() debe seguir devolviendo {} para IB (mismo comportamiento
-    documentado de antes del fix) — separar reembolso genuino de reverso de split es del
-    objeto fiscal único (PR B), no de esta capa de ingesta."""
+@pytest.mark.parametrize("ticker,esperado", [
+    ("MSTY", {2026: 23.25}),   # positiva huérfana 2026-01-26 = reembolso ROC genuino
+    ("TSLY", {2026: 7.31}),    # ídem
+    ("CONY", {}),              # todas sus positivas emparejan con una negativa gemela
+])
+def test_ib_observed_refund_separa_reverso_de_split_de_reembolso_genuino(ticker, esperado):
+    """Resuelto 2026-08-29 (antes: exclusión de IB en bloque). El clasificador único
+    `_classify_tax_rows` empareja los reversos de split .OLD 1:1 con su negativa gemela
+    (mismo día, |importe|, ticker) y los deja fuera; las positivas HUÉRFANAS —el crédito de
+    reclasificación ROC que IB acredita en ene–mar— sí se cuentan. Antes esta función
+    excluía IB entero y tiraba a la basura reembolsos reales."""
     dfc = _load_real_ib_1()
     sub = dfc[dfc["Ticker"] == ticker]
     assert len(sub) > 0
-    assert logic.withheld_tax_total(sub) > 0, "la retención neta SÍ debe calcularse (fix)"
-    assert logic.observed_tax_refund_by_year(sub) == {}, (
-        f"{ticker}: no debe inventar un reembolso observado a partir del reverso .OLD")
+    assert logic.withheld_tax_total(sub) > 0, "la retención neta SÍ debe calcularse"
+    obs = logic.observed_tax_refund_by_year(sub)
+    assert {y: round(v, 2) for y, v in obs.items()} == esperado, (
+        f"{ticker}: los reversos .OLD no cuentan; las huérfanas ROC sí")
+    # Invariante que lo ata: al cobro == neteado + ya devuelto, exacto.
+    al_cobro = round(sum(logic.withheld_at_payment_by_year(sub).values()), 2)
+    devuelto = round(sum(obs.values()), 2)
+    assert al_cobro == pytest.approx(logic.withheld_tax_total(sub) + devuelto, abs=0.01)
 
 
 # ── Regresión: correcciones negativas de dividendo IB ────────────────────────
@@ -2780,9 +2787,9 @@ def test_build_dividend_tax_totals_ib_no_rompe_pr_a(ticker, expected_withheld):
 
 def test_analyze_portfolio_ib_msty_dividend_base_convention(monkeypatch):
     """`analyze_portfolio` propaga el objeto fiscal único al dict de resultados: convención
-    detectada, bruto/neto agregados, y `observed_tax_refund_by_year` sigue vacío para IB (no
-    debe inventar un reembolso — invariante del PR A, ver
-    `test_ib_observed_refund_no_confunde_reverso_de_split_con_reembolso`)."""
+    detectada, bruto/neto agregados, y `observed_tax_refund_by_year` con el reembolso ROC
+    genuino de IB ($23.25 en 2026, positiva huérfana) — ya NO se excluye IB en bloque, ver
+    `test_ib_observed_refund_separa_reverso_de_split_de_reembolso_genuino`."""
     dfc = _load_real_ib_1()
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     res = logic.analyze_portfolio(dfc, version="TEST_TAX_TOTALS_IB")
@@ -2791,7 +2798,7 @@ def test_analyze_portfolio_ib_msty_dividend_base_convention(monkeypatch):
     assert s["dividends_gross_total"] == pytest.approx(7224.59, abs=0.01)
     assert s["dividends_net_total"] == pytest.approx(6679.07, abs=0.01)
     assert s["withheld_tax_total"] == pytest.approx(545.52, abs=0.01)
-    assert s["tax_refund_observed_by_year"] == {}
+    assert {y: round(v, 2) for y, v in s["tax_refund_observed_by_year"].items()} == {2026: 23.25}
 
 
 def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):

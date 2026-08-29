@@ -100,7 +100,7 @@ def render_aviso_retencion(stats: dict, ticker: str) -> None:
             c2.metric("No vuelve solo (W-8BEN)", f"${diag['gap_w8ben']:,.2f}",
                       help="Retención por encima de tu tratado. Hay que presentar el "
                            "W-8BEN y reclamar lo cobrado de más con el 1040-NR.")
-    elif diag["verdict"] == "menor_de_lo_esperado":
+    elif diag["verdict"] in ("menor_de_lo_esperado", "indeterminado"):
         st.info(diag["label"])
 
 

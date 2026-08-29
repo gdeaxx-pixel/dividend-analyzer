@@ -365,21 +365,20 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         refund_roc = _f(diag.get("refund_roc"))
         gap_w8ben = _f(diag.get("gap_w8ben"))
         # Reembolso YA acreditado, dato CRUDO del CSV (`stats`, no `tax_summary['refund_observed']`
-        # que sale 0 sin país declarado). Ojo IB: `observed_tax_refund_by_year` EXCLUYE a
-        # propósito las filas positivas de 'Foreign Tax Withholding' — son reversos del split
-        # inverso de dic-2025, no créditos ROC (limitación documentada en `logic.py`).
+        # que sale 0 sin país declarado). Desde 2026-08-29 `observed_tax_refund_by_year` cuenta
+        # también las positivas GENUINAS de IB (huérfanas, sin negativa gemela): el clasificador
+        # único `logic._classify_tax_rows` empareja los reversos de split 1:1 y deja fuera solo
+        # esos.
         ya_devuelto = sum(_f(v) for v in
                           (stats.get("tax_refund_observed_by_year") or {}).values())
 
-        # MOMENTO «al cobro». Los tres buckets se restan contra `withheld_at_payment` (solo
-        # filas negativas, sin netear) — restar contra `withheld_real` (neteado) mezcla
-        # momentos y da un bucket gris negativo (bug de la 1a entrega). PERO para IB
-        # `withheld_at_payment` queda INFLADO por los reversos de split que `logic.py` netea
-        # y NO expone como reembolso: no reconcilia con `neteado + ya_devuelto`. Cuando no
-        # reconcilia, la cifra al cobro no es fiable → se usa la económica (neteado + lo
-        # devuelto) y NO se publica el desglose de ese fondo. Arreglarlo de raíz es
-        # `logic.py` (`applied_withholding_rate`/`build_withholding_diagnosis`), fuera de
-        # alcance de esta fase — ver traspaso.
+        # MOMENTO «al cobro». Los tres buckets se restan contra `withheld_at_payment` (sin
+        # netear la devolución del ROC) — restar contra `withheld_real` (neteado) mezcla
+        # momentos y da un bucket gris negativo (bug de la 1a entrega). El guard de
+        # reconciliación se queda: protege contra otros brókers con la misma patología de
+        # reversos que `logic.py` aún no separe. Para IB ya reconcilia —el clasificador único
+        # descuenta los reversos de split de `withheld_at_payment` y expone las positivas
+        # genuinas como reembolso—, así que este `if` deja de dispararse para los fondos IB.
         wap = _f(diag.get("withheld_at_payment"))
         economico = round(netted + ya_devuelto, 2)
         _tol = max(0.02, 0.01 * wap)

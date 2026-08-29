@@ -8,7 +8,7 @@ from curl_cffi import requests as crequests
 import re
 import io
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 try:
     import yaml as _yaml
@@ -5034,35 +5034,98 @@ def withheld_tax_total_by_year(history_df) -> dict:
     return out
 
 
-def withheld_at_payment_by_year(history_df) -> dict:
-    """Retención AL COBRO por año: solo las filas negativas, SIN netear reembolsos.
+def _row_day(dt):
+    """Día calendario (Timestamp normalizado a medianoche) de una fila, o None si no es
+    una fecha válida. Clave de emparejamiento de los reversos de split de IB."""
+    if dt is None:
+        return None
+    try:
+        if pd.isna(dt):
+            return None
+        return pd.Timestamp(dt).normalize()
+    except (TypeError, ValueError):
+        return None
 
-    Es el complemento de `withheld_tax_total_by_year`, que netea. La diferencia importa por
-    el MOMENTO (Regla 2 del contrato): para inferir a qué tasa te retuvieron hay que mirar lo
-    que el agente descontó cuando pagó el dividendo, no el saldo después de la devolución.
 
-    Sin esta separación, un cliente de IB con reembolso automático de la porción ROC mostraría
-    una tasa efectiva de ~7.5% y parecería tener un tratado que no tiene. La devolución del
-    ROC es un carril distinto (Regla 4) y ya se mide aparte.
+def _classify_tax_rows(history_df) -> dict:
+    """Clasificador ÚNICO de filas de impuesto: separa la retención AL COBRO real de los
+    reembolsos GENUINOS, descontando los pares de reverso de split inverso de IB.
 
-    Misma detección de filas de impuesto que `withheld_tax_total` — incluidas las de IB, que
-    llevan 'dividend' en el Action.
+    En los CSV de IB cada reverso de split aparece como un par exacto: la retención original
+    en negativo y su reverso en positivo, mismo día, mismo |importe|, mismo ticker (el parser
+    ya normaliza `MSTY.OLD` → `MSTY`). Contar solo las negativas —como hacía
+    `withheld_at_payment_by_year`— cuenta retenciones que fueron revertidas y nunca se
+    cobraron, inflando la tasa aplicada por encima del techo estatutario NRA del 30%.
+
+    Reglas de emparejamiento (no negociables):
+      - Clave: `(día, |importe| redondeado a 2, ticker)`.
+      - Emparejamiento 1:1 y VORAZ (`Counter`, no "existe alguna coincidencia"): con 3
+        negativas de −$10 y 1 positiva de +$10 el mismo día se cancela UNA, no las tres.
+
+    Devuelve `{'withheld_at_payment_by_year': {año: monto>0},
+               'genuine_refund_by_year': {año: monto>0}}`:
+      - retención al cobro real = negativas − las revertidas por un reverso.
+      - reembolsos genuinos = positivas que NO son la mitad de un par (p. ej. el crédito de
+        reclasificación ROC que IB acredita en ene–mar).
     """
-    out = {}
+    out = {'withheld_at_payment_by_year': {}, 'genuine_refund_by_year': {}}
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
         return out
+
+    negatives, positives = [], []          # (año, clave, monto con signo)
     for _, row in history_df.iterrows():
-        action = str(row.get('Action', '')).lower()
-        if not _is_tax_row_action(action):
+        if not _is_tax_row_action(row.get('Action', '')):
             continue
         amt = _clean_money(row.get('Amount', 0))
-        if pd.isna(amt) or float(amt) >= 0:       # solo retenciones (montos negativos)
+        if pd.isna(amt) or float(amt) == 0.0:
             continue
+        amt = float(amt)
         y = _row_year(row.get('Date'))
         if y is None:
             continue
-        out[y] = round(out.get(y, 0.0) - float(amt), 2)
+        key = (_row_day(row.get('Date')), round(abs(amt), 2),
+               str(row.get('Ticker', '')).upper().strip())
+        (negatives if amt < 0 else positives).append((y, key, amt))
+
+    pos_pool = Counter(k for _, k, _ in positives)   # positivas disponibles para emparejar
+    paired = Counter()                               # pares cancelados por clave
+
+    wh = {}
+    for y, key, amt in negatives:
+        if pos_pool[key] > 0:                        # esta retención tiene un reverso: no es cobro
+            pos_pool[key] -= 1
+            paired[key] += 1
+            continue
+        wh[y] = round(wh.get(y, 0.0) - amt, 2)
+    out['withheld_at_payment_by_year'] = wh
+
+    skip = Counter(paired)
+    ref = {}
+    for y, key, amt in positives:
+        if skip[key] > 0:                            # mitad positiva de un par: no es reembolso
+            skip[key] -= 1
+            continue
+        ref[y] = round(ref.get(y, 0.0) + amt, 2)
+    out['genuine_refund_by_year'] = ref
     return out
+
+
+def withheld_at_payment_by_year(history_df) -> dict:
+    """Retención AL COBRO por año: lo que el agente descontó al pagar, SIN netear la
+    devolución del ROC — pero SÍ descontando los reversos de split de IB, que nunca se
+    cobraron.
+
+    Es el complemento de `withheld_tax_total_by_year`, que netea también los reembolsos. La
+    diferencia importa por el MOMENTO (Regla 2 del contrato): para inferir a qué tasa te
+    retuvieron hay que mirar lo que el agente descontó cuando pagó el dividendo, no el saldo
+    después de la devolución del ROC.
+
+    Un reverso de split inverso NO es un cobro: la retención original y su reverso se cancelan
+    el mismo día. Antes esta función contaba solo las negativas y producía tasas aplicadas
+    imposibles (>30%) para clientes de IB. El emparejamiento vive en el clasificador único
+    `_classify_tax_rows`; esta función lo consume (Regla 3).
+    """
+    return _classify_tax_rows(history_df)['withheld_at_payment_by_year']
 
 
 def observed_tax_refund_by_year(history_df) -> dict:
@@ -5074,33 +5137,16 @@ def observed_tax_refund_by_year(history_df) -> dict:
     Schwab, o un 'Foreign Tax Withholding' positivo en IB). Sirve para distinguir en la UI
     "ya te devolvieron $X" (dato real) de "pendiente" (estimado).
 
-    Limitación conocida (INTENCIONAL, no re-resolver aquí): en IB las filas 'Foreign Tax
-    Withholding' —negativas y positivas— quedan etiquetadas 'Dividend - Foreign Tax
-    Withholding' durante el parseo (`action_map`, fix de ingesta .OLD/reversos) precisamente
-    para que sigan neteando dentro de `dividends_collected_cash` como antes. Esta función las
-    EXCLUYE a propósito (filtro `'dividend' not in action` abajo): sus reversos positivos son
-    en su mayoría mecánica de los splits inversos .OLD (MSTY/TSLY/CONY dic-2025), no créditos
-    de reclasificación ROC reales — contarlos aquí inventaría un "ya te devolvieron $X"
-    falso. Separar reembolso genuino de reverso de split para IB es trabajo del objeto fiscal
-    único (PR B, `estimate_roc_refund`/`build_tax_summary`), no de la capa de ingesta. Con esta
-    exclusión el comportamiento para IB es igual al de antes del fix: devuelve {} (pendiente).
+    IB (resuelto 2026-08-29): las filas 'Foreign Tax Withholding' quedan etiquetadas
+    'Dividend - Foreign Tax Withholding' durante el parseo. La mayoría de sus positivas son
+    reversos de split inverso (.OLD, MSTY/TSLY/CONY dic-2025) que NO son créditos de
+    reclasificación ROC — pero unas pocas SÍ lo son (positivas huérfanas, ene–mar). El
+    clasificador único `_classify_tax_rows` empareja los reversos 1:1 con su negativa gemela
+    y deja fuera solo esos; las huérfanas se cuentan aquí, para IB también. Antes esta
+    función excluía IB en bloque (`'dividend' not in action`) y tiraba a la basura reembolsos
+    reales — la app decía "pendiente" de un dinero ya recibido.
     """
-    out = {}
-    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
-        return out
-    for _, row in history_df.iterrows():
-        action = str(row.get('Action', '')).lower()
-        is_tax = _is_tax_row_action(action) and 'dividend' not in action  # excluye IB (ver docstring)
-        if not is_tax:
-            continue
-        amt = _clean_money(row.get('Amount', 0))
-        if pd.isna(amt) or float(amt) <= 0:      # solo reembolsos (montos positivos)
-            continue
-        y = _row_year(row.get('Date'))
-        if y is None:
-            continue
-        out[y] = round(out.get(y, 0.0) + float(amt), 2)
-    return out
+    return _classify_tax_rows(history_df)['genuine_refund_by_year']
 
 
 # ============================================================
@@ -6132,6 +6178,7 @@ def build_yieldmax_total_return_series(tickers: list, start: str = None) -> pd.D
 # hay redondeos al centavo, dividendos a caballo entre años y correcciones del bróker. 2
 # puntos porcentuales distinguen 10 de 30 sin gritar por ruido.
 TASA_TOLERANCIA_PP = 2.0
+NRA_TECHO_ESTATUTARIO = 30.0   # techo de retención NRA sobre dividendos; una tasa aplicada por encima es imposible
 
 
 def applied_withholding_rate(stats: dict) -> dict:
@@ -6173,9 +6220,15 @@ def applied_withholding_rate(stats: dict) -> dict:
     except (TypeError, ValueError):
         applied = None
 
+    # Guarda blanda: una tasa aplicada por encima del techo estatutario NRA sobre dividendos
+    # (30%, con tolerancia) es IMPOSIBLE. Si sale, la cifra de retención al cobro está
+    # inflada (p. ej. reversos de split mal contados) — se marca para que el diagnóstico no
+    # acuse al cliente de un W-8BEN vencido con base en un número que el código sabe irreal.
+    implausible = applied is not None and applied > NRA_TECHO_ESTATUTARIO + TASA_TOLERANCIA_PP
+
     return {'applied_pct': applied, 'gross': gross_total,
             'withheld_at_payment': wh_total, 'by_year': by_year,
-            'years': sorted(by_year)}
+            'years': sorted(by_year), 'implausible': implausible}
 
 
 def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
@@ -6199,6 +6252,8 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
       'coincide'            — la aplicada cuadra con la que corresponde.
       'tratado_no_aplicado' — le retienen de más para su país. Señal de W-8BEN.
       'menor_de_lo_esperado'— le retienen de menos; puede ser ROC ya reclasificado.
+      'indeterminado'       — la tasa aplicada medida es imposible (>30% NRA): la cifra de
+                              retención al cobro no es fiable, no se emite acusación.
     """
     diag = applied_withholding_rate(stats)
     applied = diag['applied_pct']
@@ -6208,6 +6263,7 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         'applied_pct': applied,
         'gross': diag['gross'], 'withheld_at_payment': diag['withheld_at_payment'],
         'by_year': diag['by_year'],
+        'implausible': diag.get('implausible', False),
         'refund_roc': 0.0, 'gap_w8ben': 0.0,
         'verdict': 'sin_datos', 'label': '',
     }
@@ -6219,6 +6275,14 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         return out
     if applied is None or diag['withheld_at_payment'] <= 0.01:
         out['label'] = 'No hay retención registrada en este archivo para medir la tasa.'
+        return out
+    if diag.get('implausible'):
+        out['verdict'] = 'indeterminado'
+        out['label'] = (
+            'La retención registrada en este archivo da una tasa por encima del 30%, que '
+            'no es posible para retención NRA sobre dividendos. Puede haber movimientos de '
+            'ajuste (reversos, reclasificaciones) que distorsionan el cálculo. Verifícalo '
+            'contra tu 1042-S.')
         return out
 
     entitled = float(entitled_pct)
