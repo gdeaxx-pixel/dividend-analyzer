@@ -134,9 +134,21 @@ def test_la_tolerancia_absorbe_el_ruido_pero_no_un_tratado():
         casi, "MSTY", entitled_pct=30.0, country="Colombia")["verdict"] == "coincide"
 
     lejos = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
-                            ("2025-06-01", "NRA Tax Adj", -330.0)], roc=0.0)
+                            ("2025-06-01", "NRA Tax Adj", -300.0)], roc=0.0)
     assert logic.build_withholding_diagnosis(
-        lejos, "MSTY", entitled_pct=30.0, country="Colombia")["verdict"] == "tratado_no_aplicado"
+        lejos, "MSTY", entitled_pct=10.0, country="México")["verdict"] == "tratado_no_aplicado"
+
+
+def test_tasa_aplicada_imposible_no_acusa_del_w8ben():
+    """Una tasa aplicada por encima del techo NRA del 30% no es posible: la cifra de
+    retención al cobro está inflada (típicamente reversos mal contados). El diagnóstico
+    NO debe emitir 'tratado_no_aplicado' con base en un número que el código sabe irreal."""
+    s = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
+                        ("2025-06-01", "NRA Tax Adj", -360.0)], roc=0.0)
+    d = logic.build_withholding_diagnosis(s, "TSLY", entitled_pct=30.0, country="Colombia")
+    assert d["implausible"] is True
+    assert d["verdict"] == "indeterminado"
+    assert d["verdict"] != "tratado_no_aplicado"
 
 
 # ── C3 · los dos buckets, separados y exactos ───────────────────────────────────
@@ -306,3 +318,114 @@ def test_contra_el_csv_real_de_schwab():
     for tk, pct in medidas.items():
         assert pct == pytest.approx(30.0, abs=1.0), (
             f"{tk}: {pct}% — el 1042-S del mismo cliente declara 30% en la casilla 3b")
+
+
+# ── C4 · reversos de split inverso de IB (fix 2026-08-29) ───────────────────────
+
+
+def test_par_de_reverso_no_cuenta_como_cobro():
+    """−$38.30 y +$38.30 el mismo día/ticker (reverso de split .OLD): al cobro $0."""
+    h = _hist([("2025-12-29", "Dividend - Foreign Tax Withholding", -38.30),
+               ("2025-12-29", "Dividend - Foreign Tax Withholding", 38.30)])
+    cls = logic._classify_tax_rows(h)
+    assert cls["withheld_at_payment_by_year"].get(2025, 0.0) == pytest.approx(0.0)
+    assert cls["genuine_refund_by_year"].get(2025, 0.0) == pytest.approx(0.0)
+    assert logic.withheld_at_payment_by_year(h) == {} or \
+        logic.withheld_at_payment_by_year(h).get(2025, 0.0) == pytest.approx(0.0)
+
+
+def test_emparejamiento_uno_a_uno_voraz():
+    """Tres negativas de −$10 y una positiva de +$10 el mismo día → al cobro $20, no $0 ni $30."""
+    h = _hist([("2025-12-19", "Dividend - Foreign Tax Withholding", -10.0),
+               ("2025-12-19", "Dividend - Foreign Tax Withholding", -10.0),
+               ("2025-12-19", "Dividend - Foreign Tax Withholding", -10.0),
+               ("2025-12-19", "Dividend - Foreign Tax Withholding", 10.0)])
+    cls = logic._classify_tax_rows(h)
+    assert cls["withheld_at_payment_by_year"][2025] == pytest.approx(20.0)
+    assert cls["genuine_refund_by_year"].get(2025, 0.0) == pytest.approx(0.0)
+
+
+def test_positiva_huerfana_es_reembolso_genuino_incluso_en_ib():
+    """Positiva sin negativa gemela → entra en `observed_tax_refund_by_year`, y para IB
+    (Action con 'dividend') TAMBIÉN — lo que antes no pasaba (exclusión en bloque)."""
+    h = _hist([("2025-12-29", "Dividend - Foreign Tax Withholding", -38.30),
+               ("2025-12-29", "Dividend - Foreign Tax Withholding", 38.30),
+               ("2026-01-26", "Dividend - Foreign Tax Withholding", 7.31)])   # huérfana = ROC real
+    ref = logic.observed_tax_refund_by_year(h)
+    assert ref.get(2026, 0.0) == pytest.approx(7.31)
+    assert ref.get(2025, 0.0) == pytest.approx(0.0)   # el par no cuenta
+
+
+def test_invariante_al_cobro_igual_neteado_mas_devuelto():
+    """al_cobro == neteado + ya_devuelto, exacto, sobre un fixture con pares y una huérfana."""
+    filas = [
+        ("2025-12-29", "Dividend - Foreign Tax Withholding", -38.30),
+        ("2025-12-29", "Dividend - Foreign Tax Withholding", 38.30),   # reverso
+        ("2025-12-19", "Dividend - Foreign Tax Withholding", -29.02),
+        ("2025-12-19", "Dividend - Foreign Tax Withholding", 29.02),   # reverso
+        ("2025-11-15", "Dividend - Foreign Tax Withholding", -50.00),  # retención real
+        ("2026-01-26", "Dividend - Foreign Tax Withholding", 7.31),    # reembolso genuino
+    ]
+    h = _hist(filas)
+    al_cobro = round(sum(logic.withheld_at_payment_by_year(h).values()), 2)
+    devuelto = round(sum(logic.observed_tax_refund_by_year(h).values()), 2)
+    neteado = logic.withheld_tax_total(h)
+    assert al_cobro == pytest.approx(50.0)
+    assert devuelto == pytest.approx(7.31)
+    assert neteado == pytest.approx(42.69)   # −(−38.30+38.30−29.02+29.02−50.00+7.31) = 42.69
+    assert al_cobro == pytest.approx(neteado + devuelto)
+
+
+def test_withheld_tax_total_no_se_mueve_con_el_fix():
+    """La propiedad de seguridad: `withheld_tax_total` ya neteaba bien y su cifra no cambia."""
+    casos = [
+        [("2025-06-01", "NRA Tax Adj", -300.0)],
+        [("2025-06-01", "NRA Tax Adj", -300.0), ("2025-09-01", "NRA Tax Adj", 225.0)],
+        [("2025-12-29", "Dividend - Foreign Tax Withholding", -38.30),
+         ("2025-12-29", "Dividend - Foreign Tax Withholding", 38.30),
+         ("2025-11-15", "Dividend - Foreign Tax Withholding", -50.0)],
+    ]
+    esperado = [300.0, 75.0, 50.0]
+    for filas, exp in zip(casos, esperado):
+        assert logic.withheld_tax_total(_hist(filas)) == pytest.approx(exp)
+
+
+def test_ib_real_ground_truth_los_cuatro_tickers():
+    """Ground truth medido en la auditoría, sobre el CSV real de IB."""
+    import glob
+    rutas = [p for p in glob.glob(os.path.join(
+        BASE, "real_examples", "interactive_brokers_data", "1", "*.csv"))
+        if not p.endswith("expected.json")]
+    if not rutas:
+        pytest.skip("real_examples no montado (data privada)")
+
+    class _FF:
+        def __init__(self, b, n):
+            self._b = b
+            self.name = n
+
+        def read(self):
+            return self._b
+
+        def seek(self, *a):
+            pass
+
+    with open(rutas[0], "rb") as fh:
+        out = logic.load_and_detect_csv(_FF(fh.read(), os.path.basename(rutas[0])))
+    df = logic.normalize_csv(out[0] if isinstance(out, tuple) else out)
+
+    esperado = {   # ticker: (al_cobro, neteado, ya_devuelto)
+        "CONY": (202.98, 202.98, 0.00),
+        "MSTY": (568.77, 545.52, 23.25),
+        "TSLY": (502.32, 495.01, 7.31),
+        "NVDY": (798.30, 798.30, 0.00),
+    }
+    for tk, (al_cobro, neteado, devuelto) in esperado.items():
+        g = df[df["Ticker"] == tk]
+        wap = round(sum(logic.withheld_at_payment_by_year(g).values()), 2)
+        ref = round(sum(logic.observed_tax_refund_by_year(g).values()), 2)
+        net = logic.withheld_tax_total(g)
+        assert wap == pytest.approx(al_cobro, abs=0.01), f"{tk} al cobro"
+        assert net == pytest.approx(neteado, abs=0.01), f"{tk} neteado"
+        assert ref == pytest.approx(devuelto, abs=0.01), f"{tk} ya devuelto"
+        assert wap == pytest.approx(net + ref, abs=0.01), f"{tk} invariante"
