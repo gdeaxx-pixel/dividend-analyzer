@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import streamlit as st
 import streamlit.components.v1 as components
 
-from ui import heredadas, nav
+from ui import heredadas, impuestos, nav
 from ui.tokens import css_variables
 
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
@@ -58,11 +58,17 @@ def _consumir_cierre_popover() -> None:
         height=0,
     )
 
-# Categoría «Detalle» compuesta sobre la taxonomía generada: `ui/nav.py` es el espejo
-# verificable del artifact (el demo solo tiene 4 categorías) y no se edita para meterla
-# ahí — se compone aquí, en tiempo de import, sin tocar el generador (traspaso § Fase 5).
-CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE,) + nav.CAT_ORDER
-CAT_LABELS_TOTAL = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL}
+# Categorías «Portafolios» e «Impuestos» compuestas sobre la taxonomía generada:
+# `ui/nav.py` es el espejo verificable del artifact (el demo solo tiene 4 categorías) y no
+# se edita para meterlas ahí — se componen aquí, en tiempo de import, sin tocar el
+# generador (traspaso § Fase 5, y § Fase 2 de la vista fiscal para «Impuestos»).
+#
+# El ORDEN importa: `CAT_ORDER_TOTAL[0]` es la categoría de aterrizaje por defecto (commit
+# `bec1061`, decisión de Daniel) y debe seguir siendo «Portafolios». «Impuestos» va al
+# final.
+CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE,) + nav.CAT_ORDER + (impuestos.CAT_CLAVE,)
+CAT_LABELS_TOTAL = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL,
+                    impuestos.CAT_CLAVE: impuestos.CAT_LABEL}
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,8 @@ def _vistas(categoria: str) -> dict:
         return dict(nav.MET_VIEWS)
     if categoria == heredadas.CAT_CLAVE:
         return dict(heredadas.VIEWS)
+    if categoria == impuestos.CAT_CLAVE:
+        return dict(impuestos.VIEWS)
     if categoria == "largo":
         return {"viaje": nav.SECTIONS["viaje"]}
     return dict(nav.SECTIONS)
@@ -114,6 +122,7 @@ def _ancla_metodologia(categoria: str, vista: str) -> str | None:
         return "mt-tr"
     if categoria == "metodo":
         return "mt-metodo"
+    # «Impuestos» no tiene todavía una entrada 1:1 en Metodología: se abre sin resaltar.
     return None
 
 
@@ -124,6 +133,8 @@ def _orden(categoria: str) -> tuple:
         return nav.MET_ORDER
     if categoria == heredadas.CAT_CLAVE:
         return heredadas.VIEW_ORDER
+    if categoria == impuestos.CAT_CLAVE:
+        return impuestos.VIEW_ORDER
     if categoria == "largo":
         return ("viaje",)
     return tuple(nav.SECTION_ORDER)

@@ -80,6 +80,17 @@ ALTO_METODOLOGIA = 7000
 # de medición en vivo con un portafolio real (`?demo=ib`/`schwab`/`schwab2`).
 ALTO_METODO_REAL = 2600
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. Escrito a mano (esta vista nunca
+# existió en el artifact). Medido en el navegador: `?demo=schwab` sin país declarado
+# (8 fondos, tabla de 10 filas, 6 peldaños, 2 rutas) = `document.body.scrollHeight` 1897px a
+# escritorio y **2711px a 375px de viewport** (ancho FINAL del iframe 337px, no el 300 por
+# defecto); `?demo=ib` sin país = 1972px a escritorio. El estado con país declarado añade la
+# rejilla de 3 buckets + la línea del reembolso (~180px) o, en 'parcial', el aviso de
+# desglose incompleto (~140px). 3000 cubre el peor caso con margen — con `scrolling=False`
+# lo que no cabe es inalcanzable, nunca bajarlo a la medida de escritorio.
+ALTO_IMPUESTOS = 3000
+
 
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
@@ -226,6 +237,18 @@ def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> 
     lo maneja quien llama (mismo patrón que `render_comparacion_real`/`render_trg_real`).
     """
     html = _plantilla("metodo_real.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None:
+    """Dibuja la escalera de Impuestos (categoría «Impuestos», Fase 2). `datos` viene de
+    `ui.adapters.impuestos_data` — objetos fiscales ya resueltos; el componente solo
+    RENDERIZA (Regla 3). Calcado de `render_hoja`: mismo patrón `{{DATA_JSON}}` y el
+    componente vive a mano (nunca existió en el artifact, así que no hay extractor).
+    """
+    html = _plantilla("impuestos.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)

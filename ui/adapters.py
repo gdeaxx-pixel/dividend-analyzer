@@ -291,6 +291,232 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     }
 
 
+def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | None:
+    """La escalera de Impuestos, de CARTERA (Fase 2 de la vista fiscal).
+
+    Cuatro peldaños, cada uno leído de un objeto fiscal que ya existe — esta capa NO
+    calcula fiscalidad (Regla 3 de `specs/roc-nra-invariants.md`):
+
+      1. «¿Cuánto te repartió el fondo?» — `stats['dividends_gross_total']` (BRUTO, declara
+         su procedencia vía `build_dividend_tax_totals`).
+      2. «¿Cuánto era renta de verdad?» — `tax_summary['roc_pct_used']`/`roc_source`;
+         gravable = bruto × (1 − ROC/100). El % ROC y su fuente salen del objeto, no se
+         re-derivan.
+      3. «¿Cuánto te corresponde pagar?» — `perfil['rate_pct']` × gravable. Si
+         `rate_declared` es False este peldaño devuelve `None` (Regla 2: sin país no se
+         publica una cifra — `RATE_UNDECLARED` no es 0%).
+      4. «¿Cuánto te retuvieron AL COBRO?», en TRES buckets que no se suman en uno solo
+         (`build_withholding_diagnosis`): retención correcta (gris, permanente), exceso por
+         ROC (ámbar, vuelve solo) y gap de tratado / W-8BEN (coral, no vuelve solo). Los
+         tres viven en el MOMENTO «al cobro» — su minuendo es `diag['withheld_at_payment']`,
+         NO `withheld_tax_total` (que netea los reembolsos ya acreditados). Restar cifras de
+         distinto momento es exactamente lo que prohíbe la Regla 2 (fue un bucket gris de
+         −$61 en la primera entrega). El reembolso que el bróker YA devolvió se muestra
+         APARTE, fuera de la descomposición (`tax_summary['refund_observed']`, carril
+         distinto de la Regla 4).
+
+    Ruta A / Ruta B: `diagnose_broker_refund_from_forms` sobre el 1042-S cargado. Sin
+    formulario, la leyenda de Ruta A va rotulada como estimada.
+
+    `perfil` es `ui.estado.perfil_fiscal()`; `forms_1042s` es
+    `(session_state['_wizard_1042s'] or {})['forms']`. Devuelve `None` si no hay resultados
+    utilizables.
+    """
+    if not resultados:
+        return None
+
+    declarado = bool(perfil.get("rate_declared"))
+    tasa_pct = float(perfil["rate_pct"]) if declarado else None
+    pais = perfil.get("country")
+    _tasa_arg = tasa_pct if declarado else logic.RATE_UNDECLARED
+
+    # Capa 2 del objeto fiscal único (Regla 3): re-derivado por la residencia declarada.
+    # SIEMPRE con ambos kwargs — `build_tax_summaries(resultados)` a secas significaría
+    # «sin declarar» aunque el cliente sí lo haya hecho (ver `test_perfil_fiscal.py`).
+    resumenes = logic.build_tax_summaries(resultados, base_rate_pct=_tasa_arg, country=pais)
+
+    fondos: list[dict] = []
+    bruto_total = gravable_total = corresponde_total = 0.0
+    retenido_cobro_total = ya_devuelto_total = 0.0
+    correcta_total = refund_roc_total = gap_w8ben_total = 0.0
+    fondos_sin_desglose: list[str] = []
+
+    for ticker, stats in sorted((resultados or {}).items()):
+        if not _tiene_datos(stats):
+            continue
+        ts = resumenes.get(ticker) or {}
+        bruto = _f(stats.get("dividends_gross_total"))
+        netted = _f(ts.get("withheld_real"), _f(stats.get("withheld_tax_total")))
+        if bruto <= 0.005 and netted <= 0.005:
+            continue  # posición de crecimiento sin distribuciones: no entra en la escalera
+
+        try:
+            fuente_bruto = logic.build_dividend_tax_totals(
+                stats.get("history")).get("gross_source")
+        except Exception:
+            fuente_bruto = None
+
+        roc_pct = ts.get("roc_pct_used")
+        gravable = bruto * (1.0 - (float(roc_pct) if roc_pct is not None else 0.0) / 100.0)
+        corresponde = round(tasa_pct / 100.0 * gravable, 2) if declarado else None
+
+        diag = logic.build_withholding_diagnosis(
+            stats, ticker, entitled_pct=(tasa_pct if declarado else None), country=pais)
+        refund_roc = _f(diag.get("refund_roc"))
+        gap_w8ben = _f(diag.get("gap_w8ben"))
+        # Reembolso YA acreditado, dato CRUDO del CSV (`stats`, no `tax_summary['refund_observed']`
+        # que sale 0 sin país declarado). Ojo IB: `observed_tax_refund_by_year` EXCLUYE a
+        # propósito las filas positivas de 'Foreign Tax Withholding' — son reversos del split
+        # inverso de dic-2025, no créditos ROC (limitación documentada en `logic.py`).
+        ya_devuelto = sum(_f(v) for v in
+                          (stats.get("tax_refund_observed_by_year") or {}).values())
+
+        # MOMENTO «al cobro». Los tres buckets se restan contra `withheld_at_payment` (solo
+        # filas negativas, sin netear) — restar contra `withheld_real` (neteado) mezcla
+        # momentos y da un bucket gris negativo (bug de la 1a entrega). PERO para IB
+        # `withheld_at_payment` queda INFLADO por los reversos de split que `logic.py` netea
+        # y NO expone como reembolso: no reconcilia con `neteado + ya_devuelto`. Cuando no
+        # reconcilia, la cifra al cobro no es fiable → se usa la económica (neteado + lo
+        # devuelto) y NO se publica el desglose de ese fondo. Arreglarlo de raíz es
+        # `logic.py` (`applied_withholding_rate`/`build_withholding_diagnosis`), fuera de
+        # alcance de esta fase — ver traspaso.
+        wap = _f(diag.get("withheld_at_payment"))
+        economico = round(netted + ya_devuelto, 2)
+        _tol = max(0.02, 0.01 * wap)
+        reconcilia = abs(wap - economico) <= _tol
+        retenido_cobro = wap if reconcilia else economico
+
+        desglose_ok = declarado and reconcilia
+        correcta = round(retenido_cobro - refund_roc - gap_w8ben, 2)
+        if desglose_ok and correcta < -0.01:
+            desglose_ok = False   # residuo negativo pese a reconciliar: no publicar
+        if declarado and not desglose_ok:
+            fondos_sin_desglose.append(ticker)
+
+        fondos.append({
+            "ticker": ticker,
+            "bruto": round(bruto, 2),
+            "bruto_fuente": fuente_bruto,
+            "roc_pct": roc_pct,
+            "roc_fuente": ts.get("roc_source"),
+            "gravable": round(gravable, 2),
+            "corresponde": corresponde,
+            "retenido": round(retenido_cobro, 2),           # al cobro (o económico si no reconcilia)
+            "ya_devuelto": round(ya_devuelto, 2),
+            "retencion_correcta": correcta if desglose_ok else None,
+            "recuperable_roc": round(refund_roc, 2) if desglose_ok else None,
+            "gap_w8ben": round(gap_w8ben, 2) if desglose_ok else None,
+            "indeterminado": bool(declarado and not desglose_ok),
+            "sin_retencion": retenido_cobro <= 0.01,
+        })
+        bruto_total += bruto
+        gravable_total += gravable
+        retenido_cobro_total += retenido_cobro
+        ya_devuelto_total += ya_devuelto
+        if declarado:
+            corresponde_total += corresponde
+        if desglose_ok:
+            correcta_total += correcta
+            refund_roc_total += refund_roc
+            gap_w8ben_total += gap_w8ben
+
+    if not fondos:
+        return None
+
+    # Estado del peldaño 4: 'sin_pais' (no declarado), 'parcial' (declarado pero ≥1 fondo
+    # sin desglose fiable), 'ok'. En 'parcial' NO se publican los buckets de cartera: un
+    # desglose que omite fondos engaña más de lo que informa.
+    if not declarado:
+        retenido_estado = "sin_pais"
+    elif fondos_sin_desglose:
+        retenido_estado = "parcial"
+    else:
+        retenido_estado = "ok"
+
+    def _pct(valor: float):
+        return round(valor / bruto_total * 100.0, 1) if bruto_total > 0.005 else None
+
+    peldanos = {
+        "bruto": {"monto": round(bruto_total, 2), "pct": _pct(bruto_total)},
+        "gravable": {"monto": round(gravable_total, 2), "pct": _pct(gravable_total)},
+        "corresponde": ({"monto": round(corresponde_total, 2), "pct": _pct(corresponde_total)}
+                        if declarado else None),
+        "retenido": {
+            # Lo que el bróker descontó al cobro (económico cuando `withheld_at_payment` no
+            # es fiable — ver el bloque del bucle).
+            "monto": round(retenido_cobro_total, 2), "pct": _pct(retenido_cobro_total),
+            # 'sin_pais' | 'parcial' | 'ok'. El componente decide qué dibuja: CTA, aviso de
+            # desglose incompleto, o los tres buckets.
+            "estado": retenido_estado,
+            "fondos_sin_desglose": list(fondos_sin_desglose),
+            "correcta": ({"monto": round(correcta_total, 2), "pct": _pct(correcta_total)}
+                         if retenido_estado == "ok" else None),
+            "recuperable_roc": ({"monto": round(refund_roc_total, 2),
+                                 "pct": _pct(refund_roc_total)}
+                                if retenido_estado == "ok" else None),
+            "gap_w8ben": ({"monto": round(gap_w8ben_total, 2), "pct": _pct(gap_w8ben_total)}
+                          if retenido_estado == "ok" else None),
+            # Reembolso YA acreditado por el bróker — movimiento aparte, fuera de la
+            # descomposición (carril distinto, Regla 4). Dato crudo del CSV.
+            "ya_devuelto": {"monto": round(ya_devuelto_total, 2), "pct": _pct(ya_devuelto_total)},
+        },
+    }
+
+    concentracion = None
+    if retenido_cobro_total > 0.01:
+        ordenados = sorted(fondos, key=lambda f: f["retenido"], reverse=True)
+        top = ordenados[0]
+        menor = ordenados[-1] if len(ordenados) > 1 else None
+        concentracion = {
+            "ticker": top["ticker"],
+            "retenido": top["retenido"],
+            "pct": round(top["retenido"] / retenido_cobro_total * 100.0, 1),
+            "otro_ticker": menor["ticker"] if menor else None,
+            "otro_retenido": menor["retenido"] if menor else None,
+        }
+
+    ruta = logic.diagnose_broker_refund_from_forms(forms_1042s or [])
+    retenido_1042s = round(_f(ruta.get("retenido")), 2)
+    ruta_a = {
+        "tiene_1042s": bool(forms_1042s),
+        "veredicto": ruta.get("veredicto"),
+        "devuelto": ruta.get("devuelto"),
+        "retenido_1042s": retenido_1042s,
+        "pendiente": ruta.get("pendiente"),
+        # Lo que la casilla 9 («Overwithheld tax repaid to recipient») DEBERÍA decir si el
+        # bróker ya reclasificó el ROC. No es un trámite que el cliente inicie: es un
+        # resultado que se lee comparando las casillas 9 y 10 del formulario que le llega.
+        "casilla9_esperada": round(refund_roc_total, 2),
+        # Nota del auditor de la Fase 1: una fila con 7a==0 y casilla 10==0 cae en veredicto
+        # 'devuelto'. En la UI eso se lee como «el bróker te devolvió» cuando en realidad no
+        # hubo retención. Se trata aquí, sin tocar `logic.py`.
+        "sin_retencion": retenido_1042s <= 0.01,
+    }
+
+    return {
+        "declarado": declarado,
+        "pais": pais,
+        "tasa_pct": tasa_pct,
+        "tiene_tratado": bool(perfil.get("has_treaty")),
+        "bruto_inicial": round(bruto_total, 2),
+        "peldanos": peldanos,
+        "fondos": fondos,
+        "concentracion": concentracion,
+        "ruta_a": ruta_a,
+        # Espacio reservado para las fases siguientes (Regla de UI de Daniel: nada se mueve
+        # entre estados, solo aparece lo nuevo). Sin contenido inventado — van rotulados
+        # «pendiente» y vacíos.
+        "slots_pendientes": [
+            {"id": "ganancias_capital",
+             "titulo": "Ganancias de capital cuando vendas",
+             "nota": "El ROC bajó tu base de costo; el impuesto diferido se paga al vender."},
+            {"id": "impuesto_local",
+             "titulo": "Impuesto en tu país de residencia",
+             "nota": "Lo que declares en tu país por esta renta de fuente extranjera."},
+        ],
+    }
+
+
 # Las cifras que este guard compara. Todas tienen que ser números reales antes de
 # entrar a cualquier resta: ver la nota sobre NaN en `verificar_identidades`.
 _CLAVES_FINITAS = (

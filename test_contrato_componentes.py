@@ -153,7 +153,7 @@ def _sin_cadenas_ni_comentarios(js):
 def test_todos_los_componentes_balancean_sus_delimitadores():
     """El piso, siempre activo: no depende de node, así que no puede saltarse.
 
-    Cubre los 7 componentes, no sólo `metodo.html`. El modo de fallo del #84 es genérico
+    Cubre los 8 componentes, no sólo `metodo.html`. El modo de fallo del #84 es genérico
     —cualquier corte estructural puede comerse un cierre— y hasta ahora el guard miraba
     1 script de 14.
     """
@@ -173,7 +173,7 @@ def test_todos_los_componentes_balancean_sus_delimitadores():
            "pass — el balance de delimitadores queda como único piso, y ése sólo caza "
            "1 de cada 3 cortes rotos (ver el comentario de cabecera de este bloque).")
 def test_todos_los_componentes_parsean_como_javascript():
-    """El techo: `node --check` de verdad, sobre los 14 scripts de los 7 componentes.
+    """El techo: `node --check` de verdad, sobre los 16 scripts de los 8 componentes.
 
     Esto es lo único de la suite que puede ver un `SyntaxError`, que es el único fallo de
     esta familia que el usuario percibe (pantalla en blanco) y el único que no deja rastro
