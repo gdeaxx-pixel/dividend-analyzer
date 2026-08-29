@@ -6297,11 +6297,37 @@ def applied_withholding_rate(stats: dict) -> dict:
     except (TypeError, ValueError):
         applied = None
 
-    # Guarda blanda: una tasa aplicada por encima del techo estatutario NRA sobre dividendos
-    # (30%, con tolerancia) es IMPOSIBLE. Si sale, la cifra de retención al cobro está
-    # inflada (p. ej. reversos de split mal contados) — se marca para que el diagnóstico no
-    # acuse al cliente de un W-8BEN vencido con base en un número que el código sabe irreal.
-    implausible = applied is not None and applied > NRA_TECHO_ESTATUTARIO + TASA_TOLERANCIA_PP
+    # Guarda blanda: una retención al cobro por encima del techo estatutario NRA (30%, con
+    # tolerancia) es IMPOSIBLE — la cifra está inflada (p. ej. reversos de split mal contados)
+    # y el diagnóstico no debe acusar al cliente de un W-8BEN vencido con base en un número
+    # que el código sabe irreal.
+    #
+    # La holgura se compara EN DÓLARES, no en puntos porcentuales, porque el error que hay
+    # que absorber es el REDONDEO DE CENTAVOS del bróker, y ese es absoluto: el 30% de $0.12
+    # son $0.036 y Schwab redondea a $0.04 → 33.3% aparente sobre 4 centavos. El redondeo
+    # ocurre POR PAGO, así que el margen escala con el número de filas de impuesto (`N`), no
+    # con el bruto: los YieldMax reparten semanalmente y una posición pequeña acumula decenas
+    # de pagos diminutos, cada uno redondeando hasta medio centavo (más el redondeo del propio
+    # bruto → un centavo entero por fila). Una tolerancia en pp contra el bruto total NO
+    # contempla esa acumulación y rompe justo en ese perfil (medido: 20 pagos de $0.15 al 30%
+    # real dan 33.3% y la fórmula porcentual los deja pasar como implausibles).
+    n_tax_rows = 0
+    if hist is not None and len(hist) and 'Action' in getattr(hist, 'columns', []):
+        for _, row in hist.iterrows():
+            if not _is_nra_withholding_action(row.get('Action', '')):
+                continue
+            amt = _clean_money(row.get('Amount', 0))
+            if not pd.isna(amt) and float(amt) != 0.0:
+                n_tax_rows += 1
+
+    implausible = False
+    try:
+        if gross_total and float(gross_total) > 0.01:
+            techo = (float(gross_total) * (NRA_TECHO_ESTATUTARIO + TASA_TOLERANCIA_PP) / 100.0
+                     + n_tax_rows * 0.01)
+            implausible = wh_total > techo
+    except (TypeError, ValueError):
+        implausible = False
 
     return {'applied_pct': applied, 'gross': gross_total,
             'withheld_at_payment': wh_total, 'by_year': by_year,

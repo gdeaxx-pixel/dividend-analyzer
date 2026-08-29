@@ -561,3 +561,103 @@ def test_regresion_zim_impuesto_israeli():
     assert logic.foreign_tax_paid_total(z) == pytest.approx(2.74, abs=0.01)
     assert logic.foreign_tax_paid_by_year(z) == {2024: pytest.approx(2.74, abs=0.01)}
     assert logic.withheld_tax_total(z) == pytest.approx(0.0), "el impuesto israelí no es NRA"
+
+
+# ── C6 · el redondeo de centavos no dispara el guard (fix 2026-08-29) ───────────
+#
+# El guard de la tasa imposible compara EN DÓLARES, no en pp: el error a absorber es el
+# redondeo de centavos del bróker, que es absoluto y ocurre POR PAGO. `techo = bruto ·
+# (30+TOL)/100 + N·0.01`, con N = número de filas de impuesto.
+
+
+def test_mu_redondeo_de_centavos_no_es_implausible():
+    """MU real: $0.12 de dividendo, $0.04 de retención (30% = $0.036, Schwab redondea a
+    $0.04). 33.3% aparente sobre 4 centavos — NO es sobre-retención."""
+    s = _stats(0.12, [("2025-03-01", "Cash Dividend", 0.12),
+                      ("2025-03-01", "NRA Tax Adj", -0.04)], roc=0.0)
+    d = logic.applied_withholding_rate(s)
+    assert d["implausible"] is False
+    diag = logic.build_withholding_diagnosis(s, "MU", entitled_pct=30.0, country="Colombia")
+    assert diag["verdict"] != "indeterminado"
+
+
+def test_acumulacion_de_pagos_diminutos_no_es_implausible():
+    """El caso que DESCARTA la fórmula porcentual: 20 pagos semanales de $0.15 con
+    retención 30% real redondeada a $0.05 cada uno → bruto $3.00, retenido $1.00, 33.3%
+    aparente. El redondeo se acumula con el nº de pagos (perfil YieldMax semanal); una
+    tolerancia en pp contra el bruto total lo dejaría pasar como implausible."""
+    filas = []
+    for i in range(20):
+        d = f"2025-{(i % 12) + 1:02d}-0{(i % 3) + 1}"
+        filas.append((d, "Cash Dividend", 0.15))
+        filas.append((d, "NRA Tax Adj", -0.05))
+    s = _stats(3.00, filas, roc=0.0)
+    d = logic.applied_withholding_rate(s)
+    assert d["withheld_at_payment"] == pytest.approx(1.00)
+    assert d["applied_pct"] == pytest.approx(33.33)
+    assert d["implausible"] is False
+
+
+@pytest.mark.parametrize("retenido,esperado", [
+    (300.0, False),   # 30% exacto
+    (320.0, False),   # 32%, en el borde de la tolerancia
+    (330.0, True),    # 33%, apenas pasado el borde
+    (360.0, True),    # 36%, sobre-retención real
+])
+def test_el_termino_absoluto_no_relaja_lo_material(retenido, esperado):
+    """Con bruto de $1,000 el término `N·0.01` es despreciable: los cuatro casos mantienen
+    exactamente el veredicto que tenían antes del fix. Propiedad de seguridad."""
+    s = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
+                        ("2025-06-01", "NRA Tax Adj", -retenido)], roc=0.0)
+    assert logic.applied_withholding_rate(s)["implausible"] is esperado
+
+
+def test_el_caso_ib_pre_fix_de_reversos_sigue_cazandose():
+    """El bug que motivó el guard: NVDY IB pre-clasificador, $4,117.61 de bruto, $1,628.35
+    contados al cobro (reversos incluidos), 40 filas de impuesto. Debe seguir marcándose
+    implausible — el término absoluto ($0.40) no lo rescata."""
+    filas = [("2025-01-15", "Cash Dividend", 4117.61)]
+    resto, acum = 1628.35, 0.0
+    for i in range(40):
+        v = round(1628.35 / 40, 2) if i < 39 else round(1628.35 - acum, 2)
+        acum += v
+        filas.append((f"2025-{(i % 12) + 1:02d}-15",
+                      "Dividend - Foreign Tax Withholding", -v))
+    s = _stats(4117.61, filas, roc=0.0)
+    assert logic.applied_withholding_rate(s)["implausible"] is True
+
+
+def test_ib_ground_truth_intacto_bajo_el_guard_en_dolares():
+    """Los 4 tickers de IB: al cobro exacto, invariante en cero, y NINGUNO implausible."""
+    import glob
+    rutas = [p for p in glob.glob(os.path.join(
+        BASE, "real_examples", "interactive_brokers_data", "1", "*.csv"))
+        if not p.endswith("expected.json")]
+    if not rutas:
+        pytest.skip("real_examples no montado")
+
+    class _FF:
+        def __init__(self, b, n):
+            self._b, self.name = b, n
+
+        def read(self):
+            return self._b
+
+        def seek(self, *a):
+            pass
+
+    with open(rutas[0], "rb") as fh:
+        out = logic.load_and_detect_csv(_FF(fh.read(), os.path.basename(rutas[0])))
+    df = logic.normalize_csv(out[0] if isinstance(out, tuple) else out)
+    esperado = {"CONY": 202.98, "MSTY": 568.77, "TSLY": 502.32, "NVDY": 798.30}
+    for tk, al_cobro in esperado.items():
+        g = df[df["Ticker"] == tk]
+        tot = logic.build_dividend_tax_totals(g)
+        s = {"history": g, "dividends_gross_total": tot["gross"],
+             "dividends_gross_by_year": tot["gross_by_year"], "roc_percent": 0.0}
+        d = logic.applied_withholding_rate(s)
+        assert d["withheld_at_payment"] == pytest.approx(al_cobro, abs=0.01), tk
+        assert d["implausible"] is False, f"{tk} no debe caer en el guard"
+        dev = round(sum(logic.observed_tax_refund_by_year(g).values()), 2)
+        assert d["withheld_at_payment"] == pytest.approx(
+            logic.withheld_tax_total(g) + dev, abs=0.01), f"{tk} invariante"

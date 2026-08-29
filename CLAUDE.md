@@ -61,7 +61,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **700 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+Línea base: **708 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+`fiscal/guard-falsos-positivos`, base `main` = `21384da` = #93, tras sumar 8 tests: el guard de
+la tasa imposible compara EN DÓLARES con un término absoluto `N·0.01` (N = nº de filas de
+impuesto) en vez de en puntos porcentuales — el redondeo de centavos del bróker es absoluto y
+se acumula por pago (perfil YieldMax semanal). El techo del 30% y `TASA_TOLERANCIA_PP` no se
+tocan. Antes: **700 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
 `fiscal/foreign-tax-paid`, base `main` = `e4fb6c5` = #92, tras sumar 10 tests: separar
 `Foreign Tax Paid` (impuesto extranjero, ZIM/Israel) del eje de retención NRA vía
 `_is_nra_withholding_action` — coherente en `withheld_tax_total`, `_classify_tax_rows` y familia
