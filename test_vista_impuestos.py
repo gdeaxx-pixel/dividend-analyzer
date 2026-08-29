@@ -293,3 +293,36 @@ def test_regresion_roc_100_todo_recuperable_y_roc_0_nada():
 
     # y la escalera de cartera suma los dos fondos sin doble conteo
     assert datos["peldanos"]["retenido"]["monto"] == pytest.approx(86.95, abs=0.02)
+
+
+# ── 5. «Foreign Tax Paid» — línea aparte, no un cuarto bucket ──────────────────────────
+
+def test_foreign_tax_paid_linea_aparte_no_cuarto_bucket(monkeypatch):
+    """`schwab_synth_1` SCHB tiene `Foreign Tax Paid` -$0.08. `impuestos_data` lo expone en
+    `peldanos.retenido.impuesto_extranjero` — una línea aparte —, NUNCA como un cuarto
+    elemento de la partición de la retención NRA (los tres buckets siguen sumando exacto lo
+    retenido, sin el impuesto extranjero dentro)."""
+    res, _ = _resultados_de_fixture(monkeypatch, "schwab_synth_1", "IMP_FTP")
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
+    R = datos["peldanos"]["retenido"]
+
+    assert R["impuesto_extranjero"] is not None
+    assert R["impuesto_extranjero"]["monto"] == pytest.approx(0.08, abs=0.01)
+
+    # sigue siendo la partición de la retención NRA: los tres buckets, sin el FTP dentro
+    if R["estado"] == "ok":
+        suma = (R["correcta"]["monto"] + R["recuperable_roc"]["monto"]
+                + R["gap_w8ben"]["monto"])
+        assert suma == pytest.approx(R["monto"], abs=0.02)
+        assert suma == pytest.approx(R["monto"])  # el FTP no infla el monto retenido
+
+    # y el fondo SCHB lleva su propio importe
+    fondos = {f["ticker"]: f for f in datos["fondos"]}
+    assert fondos["SCHB"]["impuesto_extranjero"] == pytest.approx(0.08, abs=0.01)
+
+
+def test_sin_foreign_tax_paid_no_hay_linea(monkeypatch):
+    """`ib_synth_1` no tiene ninguna fila `Foreign Tax Paid` → la línea no aparece (None)."""
+    res, _ = _resultados_de_fixture(monkeypatch, "ib_synth_1", "IMP_NO_FTP")
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
+    assert datos["peldanos"]["retenido"]["impuesto_extranjero"] is None

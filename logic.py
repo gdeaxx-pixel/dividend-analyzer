@@ -2202,6 +2202,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _withheld = _dividend_tax_totals['withheld']
         _withheld_by_year = _dividend_tax_totals['withheld_by_year']
         _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)
+        _foreign_tax_paid_by_year = foreign_tax_paid_by_year(ticker_df)
         _gross_by_year = _dividend_tax_totals['gross_by_year']
         _cadence_change = detect_cadence_change(ticker_df)
 
@@ -2320,6 +2321,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_gross_by_year": _gross_by_year,
             "withheld_by_year": dict(_withheld_by_year),
             "tax_refund_observed_by_year": dict(_refund_obs_by_year),
+            # Impuesto extranjero (`Foreign Tax Paid`, p. ej. ZIM/Israel) — fuera del eje NRA,
+            # su propia línea en la vista de Impuestos. Ver `foreign_tax_paid_by_year`.
+            "foreign_tax_paid_total": round(sum(_foreign_tax_paid_by_year.values()), 2),
+            "foreign_tax_paid_by_year": dict(_foreign_tax_paid_by_year),
             # Objeto fiscal único (PR B): bruto/neto agregados, con procedencia declarada.
             # Desde el fix de la familia `_dividend_*` el ledger es BRUTO en ambas
             # convenciones y el neto se deriva restando la retención; la convención solo
@@ -4076,6 +4081,31 @@ def _is_tax_row_action(action) -> bool:
             or 'foreign tax' in a or 'retención' in a or 'retencion' in a)
 
 
+def _is_nra_withholding_action(action) -> bool:
+    """Predicado ESTRECHO: fila de retención NRA de EE.UU. — `_is_tax_row_action` MENOS
+    `Foreign Tax Paid`.
+
+    `Foreign Tax Paid` es impuesto de OTRA jurisdicción retenido por un emisor extranjero
+    (p. ej. ZIM, naviera israelí): no es retención del IRS, no tiene techo del 30% ni
+    relación con el W-8BEN, y en el país de residencia es crédito fiscal por impuesto pagado
+    en el exterior. Sumarlo con la NRA producía tasas aplicadas > 30% (imposibles para NRA).
+
+    OJO — la trampa: en IB la retención NRA SE LLAMA `Dividend - Foreign Tax Withholding`.
+    El discriminante es la frase EXACTA `'foreign tax paid'`, nunca `'foreign tax'` a secas
+    (eso borraría las 465 filas de retención de IB). En todo el corpus solo hay tres Action
+    de impuesto: `Dividend - Foreign Tax Withholding` (IB, SÍ NRA), `NRA Tax Adj` (Schwab,
+    SÍ NRA) y `Foreign Tax Paid` (NO NRA).
+    """
+    return _is_tax_row_action(action) and 'foreign tax paid' not in str(action).lower()
+
+
+def _is_foreign_tax_credit_action(action) -> bool:
+    """Predicado del crédito fiscal extranjero: la fila `Foreign Tax Paid` — impuesto de otra
+    jurisdicción, complemento exacto de `_is_nra_withholding_action` dentro de
+    `_is_tax_row_action`."""
+    return 'foreign tax paid' in str(action).lower()
+
+
 def _csv_dividends_in_window(history_df, start=None, end=None) -> float:
     """Suma el dividendo BRUTO declarado en el CSV, opcionalmente restringido a una ventana.
 
@@ -4989,12 +5019,18 @@ def withheld_tax_total(history_df) -> float:
     MÁS retención (bug: $105 retenidos + $75 devueltos → reportaba $180 en vez de $30 neto).
     Ahora la retención neta = −Σ(montos con signo), acotada a ≥0. La detección/exhibición del
     reembolso como movimiento propio vive aparte (objeto fiscal único, ver estimate_roc_refund).
+
+    Cuenta SOLO retención NRA (`_is_nra_withholding_action`): las filas `Foreign Tax Paid`
+    (impuesto extranjero, p. ej. ZIM/Israel) quedan fuera de este eje — van a
+    `foreign_tax_paid_total`. Mantener este predicado coherente con `withheld_tax_total_by_year`
+    y `_classify_tax_rows`: si uno estrecha y otro no, se rompe el invariante
+    `al_cobro == neteado + devuelto` que la vista de Impuestos usa como gate.
     """
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
         return 0.0
     signed = 0.0                       # + reembolsos, − retenciones (tal cual el CSV)
     for _, row in history_df.iterrows():
-        if not _is_tax_row_action(row.get('Action', '')):
+        if not _is_nra_withholding_action(row.get('Action', '')):
             continue
         amt = _clean_money(row.get('Amount', 0))
         if pd.isna(amt):
@@ -5014,13 +5050,15 @@ def withheld_tax_total_by_year(history_df) -> dict:
     solo crédito 'NRA Tax Adj' positivo en >1 año de historial). Por eso la devolución se
     ESTIMA (`estimate_roc_refund_by_year`), no se lee de aquí: es una recuperación teórica que
     el inversor tendría que reclamar (1040-NR), no un reembolso automático garantizado.
+
+    Solo retención NRA (`_is_nra_withholding_action`); `Foreign Tax Paid` va aparte.
     """
     out = {}
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
         return out
     signed = {}                        # por año: + reembolsos, − retenciones (tal cual el CSV)
     for _, row in history_df.iterrows():
-        if not _is_tax_row_action(row.get('Action', '')):
+        if not _is_nra_withholding_action(row.get('Action', '')):
             continue
         amt = _clean_money(row.get('Amount', 0))
         if pd.isna(amt):
@@ -5032,6 +5070,43 @@ def withheld_tax_total_by_year(history_df) -> dict:
     for y, s in signed.items():
         out[y] = round(max(0.0, -s), 2)  # retención neta del año (≥0)
     return out
+
+
+def foreign_tax_paid_by_year(history_df) -> dict:
+    """Impuesto EXTRANJERO pagado (`Foreign Tax Paid`), por año calendario, ≥0.
+
+    Impuesto de otra jurisdicción retenido por un emisor extranjero (p. ej. ZIM, naviera
+    israelí: $0.63 y $2.11 en dic-2024). NO es retención NRA de EE.UU.: no tiene techo del
+    30%, no se relaciona con el W-8BEN, y su remedio es el crédito fiscal por impuesto pagado
+    en el exterior en el país de residencia, no el 1040-NR. Se saca del eje de retención NRA
+    (`withheld_tax_total` y familia) y se muestra en su propia línea para no perder el dinero.
+
+    Neteado por signo dentro de cada año, acotado a ≥0 — igual criterio que `withheld_tax_total`.
+    """
+    out = {}
+    if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
+        return out
+    signed = {}
+    for _, row in history_df.iterrows():
+        if not _is_foreign_tax_credit_action(row.get('Action', '')):
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        y = _row_year(row.get('Date'))
+        if y is None:
+            continue
+        signed[y] = signed.get(y, 0.0) + float(amt)
+    for y, s in signed.items():
+        v = round(max(0.0, -s), 2)
+        if v > 0:
+            out[y] = v
+    return out
+
+
+def foreign_tax_paid_total(history_df) -> float:
+    """Total de `foreign_tax_paid_by_year` — impuesto extranjero pagado, ≥0."""
+    return round(sum(foreign_tax_paid_by_year(history_df).values()), 2)
 
 
 def _row_day(dt):
@@ -5067,6 +5142,8 @@ def _classify_tax_rows(history_df) -> dict:
       - retención al cobro real = negativas − las revertidas por un reverso.
       - reembolsos genuinos = positivas que NO son la mitad de un par (p. ej. el crédito de
         reclasificación ROC que IB acredita en ene–mar).
+
+    Solo retención NRA (`_is_nra_withholding_action`); `Foreign Tax Paid` no entra en este eje.
     """
     out = {'withheld_at_payment_by_year': {}, 'genuine_refund_by_year': {}}
     if history_df is None or len(history_df) == 0 or 'Action' not in history_df.columns:
@@ -5074,7 +5151,7 @@ def _classify_tax_rows(history_df) -> dict:
 
     negatives, positives = [], []          # (año, clave, monto con signo)
     for _, row in history_df.iterrows():
-        if not _is_tax_row_action(row.get('Action', '')):
+        if not _is_nra_withholding_action(row.get('Action', '')):
             continue
         amt = _clean_money(row.get('Amount', 0))
         if pd.isna(amt) or float(amt) == 0.0:

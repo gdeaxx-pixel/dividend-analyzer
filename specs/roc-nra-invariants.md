@@ -89,6 +89,22 @@ Base y momento no bastan para detectar este error: en el bug del caso origen las
 > blanda en `applied_withholding_rate` (`'implausible'`): una tasa aplicada > techo NRA hace que
 > `build_withholding_diagnosis` caiga a `'indeterminado'` en vez de acusar de W-8BEN vencido.
 
+> **Actualizado (2026-08-29, «Foreign Tax Paid» ≠ retención NRA).** El eje de retención NRA es
+> ahora `_is_nra_withholding_action` = `_is_tax_row_action` MENOS la frase exacta
+> `'foreign tax paid'`. `Foreign Tax Paid` es impuesto de otra jurisdicción retenido por un
+> emisor extranjero (ZIM/Israel: $0.63 + $2.11 en dic-2024); no tiene techo del 30%, no se
+> relaciona con el W-8BEN y su remedio es crédito fiscal en el país de residencia. Sumarlo con
+> la NRA producía tasas aplicadas > 30% (imposibles). **La trampa:** en IB la retención NRA se
+> llama `Dividend - Foreign Tax Withholding` — el discriminante es `'foreign tax paid'` EXACTO,
+> nunca `'foreign tax'`. El **bruto** sigue excluyendo las tres clases (`_is_tax_row_action`, sin
+> tocar); solo se estrecha el eje de retención: `_classify_tax_rows`, `withheld_at_payment_by_year`,
+> `observed_tax_refund_by_year`, `withheld_tax_total` y `withheld_tax_total_by_year` — todos
+> coherentes, o se rompe el invariante `al_cobro == neteado + devuelto`. Campo nuevo
+> `foreign_tax_paid_total` / `_by_year` en `stats`; en la vista de Impuestos es una **línea
+> aparte**, nunca un cuarto bucket. Los 4 tickers de IB (sin ninguna fila `Foreign Tax Paid`) no
+> se movieron ni un centavo; SCHB del fixture pasó de al-cobro $0.53 a $0.45 con el FTP en su
+> propio campo.
+
 **Scenario:** Tres vistas, un solo cálculo
 - **WHEN** el usuario abre los cuadritos del viaje del dinero, la Hoja Excel y el paso "Impuesto NRA" para el mismo ticker en la misma sesión
 - **THEN** las tres vistas leen el mismo `tax_summary` del ticker y muestran valores de `retenido_real`, `retención_justa` y `devolución_estimada` idénticos entre sí (no solo "consistentes", sino la misma fuente)

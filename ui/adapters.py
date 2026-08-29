@@ -339,6 +339,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
     bruto_total = gravable_total = corresponde_total = 0.0
     retenido_cobro_total = ya_devuelto_total = 0.0
     correcta_total = refund_roc_total = gap_w8ben_total = 0.0
+    foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
 
     for ticker, stats in sorted((resultados or {}).items()):
@@ -402,6 +403,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
             "corresponde": corresponde,
             "retenido": round(retenido_cobro, 2),           # al cobro (o económico si no reconcilia)
             "ya_devuelto": round(ya_devuelto, 2),
+            "impuesto_extranjero": round(_f(stats.get("foreign_tax_paid_total")), 2),
             "retencion_correcta": correcta if desglose_ok else None,
             "recuperable_roc": round(refund_roc, 2) if desglose_ok else None,
             "gap_w8ben": round(gap_w8ben, 2) if desglose_ok else None,
@@ -412,6 +414,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         gravable_total += gravable
         retenido_cobro_total += retenido_cobro
         ya_devuelto_total += ya_devuelto
+        foreign_tax_paid_total += _f(stats.get("foreign_tax_paid_total"))
         if declarado:
             corresponde_total += corresponde
         if desglose_ok:
@@ -458,6 +461,13 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
             # Reembolso YA acreditado por el bróker — movimiento aparte, fuera de la
             # descomposición (carril distinto, Regla 4). Dato crudo del CSV.
             "ya_devuelto": {"monto": round(ya_devuelto_total, 2), "pct": _pct(ya_devuelto_total)},
+            # Impuesto EXTRANJERO (`Foreign Tax Paid`, p. ej. ZIM/Israel) — NO es retención
+            # NRA, NO es un cuarto bucket (los tres son la partición de la retención NRA).
+            # Línea aparte: su remedio es crédito fiscal en el país de residencia, no el
+            # 1040-NR. Solo presente si hubo. Independiente del estado del peldaño.
+            "impuesto_extranjero": (
+                {"monto": round(foreign_tax_paid_total, 2), "pct": _pct(foreign_tax_paid_total)}
+                if foreign_tax_paid_total > 0.005 else None),
         },
     }
 
