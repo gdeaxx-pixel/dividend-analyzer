@@ -9,8 +9,9 @@ viven fuera del repo).
 Los fixtures NO sustituyen la validación contra casos reales: esa la corre la auditoría
 con `DIVIDEND_REAL_EXAMPLES_DIR` apuntando a la ruta privada.
 
-Uso:
-    python3 fixtures/generate_fixtures.py
+DESARMADO el 2026-08-30: ya no escribe, sale con error. Ver `_DESARMADO` al final del archivo
+para el porqué y las 4 correcciones que revertiría. El gate vigente es
+`fixtures/verify_fixtures.py`.
 
 Vocabulario replicado de los exports reales:
   Schwab  Action:           Buy · Sell · Cash Dividend · Qualified Dividend ·
@@ -26,6 +27,7 @@ Vocabulario replicado de los exports reales:
 import csv
 import json
 import os
+import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -305,23 +307,44 @@ IB_EXPECTED = {
 }
 
 
-def main():
-    schwab_dir = os.path.join(BASE, "schwab_synth_1")
-    ib_dir = os.path.join(BASE, "ib_synth_1")
+_DESARMADO = """Este generador ya NO escribe (desarmado el 2026-08-30).
 
-    txn, inc = write_schwab(schwab_dir)
-    with open(os.path.join(schwab_dir, "expected.json"), "w", encoding="utf-8") as f:
-        json.dump(SCHWAB_EXPECTED, f, indent=2, ensure_ascii=False)
+Nació con un contrato real: era la fuente de `schwab_synth_1/` e `ib_synth_1/`, y se corría para
+regenerarlos. Ese contrato murió sin que nadie lo declarara: los fixtures se mantienen A MANO
+desde hace ~5 commits, porque lo que hoy vive en ellos NO es derivable — son OBSERVACIONES.
+Un generador no puede derivar una observación, sólo hardcodearla, y entonces es una segunda copia
+de la verdad que hay que sincronizar a mano. Ni siquiera conoce `schwab_synth_2`.
 
-    ib_txn = write_ibkr(ib_dir)
-    with open(os.path.join(ib_dir, "expected.json"), "w", encoding="utf-8") as f:
-        json.dump(IB_EXPECTED, f, indent=2, ensure_ascii=False)
+Regenerar hoy no actualizaría nada: revertiría 4 correcciones auditadas. Medido sobre árbol
+limpio el 2026-08-30 (`git diff` de 4 archivos, 25 líneas), no supuesto:
 
-    for p in (txn, inc, ib_txn):
-        print("escrito:", os.path.relpath(p, BASE))
-    print("escrito: schwab_synth_1/expected.json")
-    print("escrito: ib_synth_1/expected.json")
+  1. Las compras de `ib_synth_1` volverían al 2025-01-20, que fue MLK Day — el mercado estaba
+     CERRADO. Con esa fecha imposible logic.py pierde el importe de la curva de costo entera y
+     NVDY/SMH salen 'no_cost_recorded'.
+  2. Las shares split-ajustadas volverían a las crudas: MSTY 8.36364 → 41.8182, CONY 8.0 → 80.0,
+     TSLY 10.0 → 50.0. Esos ajustes atraviesan reverse splits REALES (2025-12) y son parte de lo
+     que el fixture verifica; sus propias notas dicen «si vuelve a hacer split, actualízalo, no
+     lo borres».
+  3. Las clasificaciones `reliability: unreliable` de `assess_ticker_quality`, que se obtuvieron
+     CORRIÉNDOLO, desaparecerían junto con la nota que explica por qué son correctas.
+  4. El `Income Type` de `synthetic_investment_income.csv` volvería de `Received` a `Reported`
+     — y `expected.json` declara `income_expected.received`.
+
+Tampoco se conserva `--check`: contra artefactos mantenidos a mano sólo puede responder
+DESACTUALIZADO, siempre y por diseño. Los seis extractores lo retiraron el 2026-08-18 por esta
+misma razón.
+
+**El gate vigente es `fixtures/verify_fixtures.py`**, que cruza los fixtures contra logic.py.
+
+Este archivo se conserva como referencia histórica: documenta el intent fila por fila —qué cubre
+cada caso y qué ruido debe ignorar el parser sin romperse—, que es información que no está en
+ningún otro sitio."""
+
+
+def main() -> int:
+    print(_DESARMADO)
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

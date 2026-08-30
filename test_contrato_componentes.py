@@ -71,6 +71,62 @@ def test_los_seis_extractores_no_escriben():
             f"extract_{nombre}.py no explica por qué no corre")
 
 
+FIXTURES = os.path.join(BASE, "fixtures")
+
+
+@pytest.fixture
+def generador_en_copia():
+    """Corre `generate_fixtures.py` sobre una COPIA de `fixtures/` y devuelve
+    `(resultado, ruta_de_la_copia)`.
+
+    Nunca contra el árbol real: si alguien re-arma el generador, un test que lo ejecuta
+    in situ sobrescribe los fixtures de verdad. Medido, no hipotético — la primera versión
+    de estos dos tests hacía eso, dejaba 4 archivos modificados en el working tree y de paso
+    enmascaraba al segundo test, que comparaba contra los archivos ya pisados y pasaba en
+    verde. El generador deriva `BASE` de su propio `__file__`, así que copiarlo basta para
+    redirigirlo.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        copia = os.path.join(tmp, "fixtures")
+        shutil.copytree(FIXTURES, copia)
+        r = subprocess.run([sys.executable, os.path.join(copia, "generate_fixtures.py")],
+                           capture_output=True, text=True)
+        yield r, copia
+
+
+def test_el_generador_de_fixtures_no_escribe(generador_en_copia):
+    """Mismo patrón que los seis extractores, mismo motivo, otro artefacto.
+
+    `fixtures/generate_fixtures.py` decía ser la fuente de `schwab_synth_1/` e `ib_synth_1/`.
+    Dejó de serlo: los fixtures se mantienen a mano porque lo que vive en ellos son
+    OBSERVACIONES —shares ajustadas por reverse splits reales, clasificaciones sacadas de
+    correr `assess_ticker_quality`, una fecha corregida por día festivo—, y una observación
+    no se deriva. Correrlo hoy revierte 4 correcciones auditadas (medido: 4 archivos,
+    25 líneas). Si vuelve a salir con 0, alguien lo re-armó.
+    """
+    r, _ = generador_en_copia
+    salida = r.stdout + r.stderr
+    assert r.returncode != 0, (
+        "generate_fixtures.py volvió a salir con 0 — ¿volvió a sobrescribir los fixtures?\n"
+        f"{salida}")
+    assert "ya NO escribe" in salida, "generate_fixtures.py no explica por qué no corre"
+    assert "verify_fixtures.py" in salida, (
+        "el mensaje no dice cuál es el gate vigente, que es la mitad útil de la explicación")
+
+
+def test_el_generador_desarmado_no_deja_ni_un_byte_distinto(generador_en_copia):
+    """La contracara, y la que tiene mordida real: no basta con salir != 0 — puede escribir
+    y luego fallar. Se compara byte a byte lo que quedó en la copia contra el árbol."""
+    _, copia = generador_en_copia
+    for ruta in sorted(glob.glob(os.path.join(FIXTURES, "*_synth_*", "*"))):
+        rel = os.path.relpath(ruta, FIXTURES)
+        with open(ruta, "rb") as f:
+            antes = f.read()
+        with open(os.path.join(copia, rel), "rb") as f:
+            despues = f.read()
+        assert antes == despues, f"generate_fixtures.py reescribió {rel}"
+
+
 def test_el_extractor_desarmado_no_reintroduce_el_banner_falso():
     """Aunque no escriba: si alguien lo re-arma, no puede volver a estampar el banner que
     este trabajo retiró."""
