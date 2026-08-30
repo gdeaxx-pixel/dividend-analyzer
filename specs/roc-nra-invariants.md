@@ -105,6 +105,16 @@ Base y momento no bastan para detectar este error: en el bug del caso origen las
 > se movieron ni un centavo; SCHB del fixture pasó de al-cobro $0.53 a $0.45 con el FTP en su
 > propio campo.
 
+> **Actualizado (2026-08-29, el guard de la tasa imposible compara en DÓLARES).** La holgura de
+> `applied_withholding_rate['implausible']` es absoluta, no en pp: el error que absorbe es el
+> redondeo de centavos del bróker (el 30% de $0.12 son $0.036 → Schwab redondea a $0.04 → 33.3%
+> aparente), que es absoluto y ocurre POR PAGO. `techo = bruto·(30 + TASA_TOLERANCIA_PP)/100 +
+> N·0.01`, con `N` = nº de filas de retención NRA. Una tolerancia en pp contra el bruto total no
+> contempla la acumulación (20 pagos de $0.15 al 30% real dan 33.3%: perfil YieldMax semanal). El
+> techo del 30% y `TASA_TOLERANCIA_PP` **no se tocan**; para importes materiales (bruto > $100) el
+> veredicto es idéntico al de antes. El caso IB pre-clasificador ($4,117.61 / $1,628.35 / 40
+> filas) se sigue cazando.
+
 **Scenario:** Tres vistas, un solo cálculo
 - **WHEN** el usuario abre los cuadritos del viaje del dinero, la Hoja Excel y el paso "Impuesto NRA" para el mismo ticker en la misma sesión
 - **THEN** las tres vistas leen el mismo `tax_summary` del ticker y muestran valores de `retenido_real`, `retención_justa` y `devolución_estimada` idénticos entre sí (no solo "consistentes", sino la misma fuente)
