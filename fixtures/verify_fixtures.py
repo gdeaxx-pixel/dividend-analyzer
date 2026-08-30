@@ -149,6 +149,31 @@ def main():
                     check(f"{ticker} income est/pago", pp,
                           summ["tickers"].get(ticker, {}).get("est_per_payment") or 0.0, failures)
 
+                # ── El cruce que faltaba: TRANSACCIONES contra income_expected.
+                #
+                # Hasta el 2026-08-30 este archivo comparaba el income CSV contra
+                # `expected.json` pero NUNCA cruzaba el CSV de transacciones, así que los dos
+                # artefactos podían contradecirse indefinidamente sin que nadie lo viera. Y se
+                # contradecían: `schwab_synth_1` declaraba $156 de bruto de MSTY en el income
+                # CSV y en `income_expected`, mientras las transacciones daban $116 — una fila
+                # `Reinvest Dividend` escrita en negativo que se restaba del bruto. Efecto:
+                # tasa aplicada 40.34% e `implausible=True` sobre un fixture que se suponía
+                # limpio. Este bloque es el gate que lo habría cazado el primer día.
+                #
+                # Cubre los dos casos Schwab (los que traen `income_glob`) y los dos pasan.
+                # `ib_synth_1` queda fuera por el `if` de arriba, y NO conviene extenderlo sin
+                # pensarlo: medido el 2026-08-30, ahí las dos cifras difieren en $1.20 para
+                # NVDY, que es exactamente su fila `Payment in Lieu`. No es un fixture roto —
+                # `income_expected.received` la excluye a propósito (lo dice su nota) y
+                # `build_dividend_tax_totals` la incluye. Son dos definiciones distintas de
+                # «bruto», no dos vistas del mismo número, así que compararlas sería un test
+                # que falla por diseño. Si algún día se decide que un pago sustitutivo no es
+                # dividendo bruto, eso se cambia en logic.py y con auditoría, no aquí.
+                for ticker, total in iexp["received"].items():
+                    sub = clean[clean["Ticker"] == ticker]
+                    check(f"{ticker} bruto transacciones vs income", total,
+                          logic.build_dividend_tax_totals(sub)["gross"], failures)
+
                 # Proyección: solo la declaran los casos que traen filas 'Estimated'.
                 # Es la rama que `schwab_synth_1` no puede alcanzar por diseño.
                 pexp_proj = {k: v for k, v in (iexp.get("projection_expected") or {}).items()

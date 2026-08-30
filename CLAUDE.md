@@ -78,8 +78,16 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base (`main` = `c650d4f`, tras los #95 y #96): **723 passed, 2 skipped, 3 deselected**
-(medido 2026-08-30). Los #95 (guard de la barra pendiente, +6 tests) y #96 (el veredicto de
+Línea base: **725 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+`fiscal/fixtures-fuente-unica`, base `main` = `e8c1924`, tras sumar 2 guards en
+`test_contrato_componentes.py`: `fixtures/generate_fixtures.py` queda **desarmado** —decía ser la
+fuente de los fixtures y dejó de serlo hace ~5 commits; correrlo revertía 4 correcciones
+auditadas (MLK Day, shares split-ajustadas, clasificaciones `unreliable`, `Received`→`Reported`)—
+y `schwab_synth_1` se contradecía a sí mismo sobre el bruto de MSTY: $156 en el income CSV y en
+`expected.json`, $116 en las transacciones, por una fila `Reinvest Dividend` escrita en negativo.
+`verify_fixtures.py` cruza ahora las transacciones contra `income_expected` y lo habría cazado.
+Antes: **723 passed, 2 skipped, 3 deselected**
+(medido 2026-08-30, `main` = `c650d4f`, tras los #95 y #96). Los #95 (guard de la barra pendiente, +6 tests) y #96 (el veredicto de
 W-8BEN compara en dólares, +9 tests) entraron sobre los 708 de `20d2ca7`. Del #96:
 el VEREDICTO de W-8BEN compara EN DÓLARES (`exceso` vs `holgura = bruto·TASA_TOLERANCIA_PP/100 +
 N·0.01`), reusando el `n_tax_rows` que ya expone `applied_withholding_rate` — mismo principio que
