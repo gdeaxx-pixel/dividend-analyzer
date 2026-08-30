@@ -88,7 +88,12 @@
 
   /* tres buckets de la retención — tres colores porque los remedios son tres */
   .imp-buckets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
-  @media (max-width: 560px) { .imp-buckets { grid-template-columns: 1fr; } }
+  /* peldaño 5: dos cajas, no tres. Va como clase y NO como `style` inline — un inline gana
+     a la media query de abajo y dejaba dos columnas de ~110px en móvil (medido a 375px). */
+  .imp-buckets.dos { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 560px) {
+    .imp-buckets, .imp-buckets.dos { grid-template-columns: 1fr; }
+  }
   .imp-bucket { padding: 11px 13px; background: var(--panel-tint); border-top: 3px solid var(--hair); }
   .imp-bucket.gris { border-top-color: var(--ink-mut); }
   .imp-bucket.ambar { border-top-color: var(--warn); }
@@ -295,7 +300,67 @@
       + (yaDev.monto > 0.01 ? devLine : '') + buckets + ftpLine + conc,
     "activo"));
 
-  // Peldaños reservados (Fases 3 y 4) — espacio reservado, sin contenido inventado
+  // ---- Peldaño 5: ganancias de capital (Fase 3) ----
+  // Mismo fondo que el peldaño 4, resultado OPUESTO: aquí EE.UU. no retiene nada. Por eso
+  // la cifra grande del peldaño es $0 y las ganancias van en el cuerpo — el peldaño responde
+  // «¿cuánto te retienen?», no «¿cuánto ganaste?».
+  var G = D.ganancias_capital;
+  if (!G) {
+    pasos.push(stepRow("Próximamente", "Ganancias de capital cuando vendas", null, null,
+      '<p class="imp-step-sub">El ROC bajó tu base de costo; el impuesto diferido se paga al '
+      + 'vender. <b>Pendiente</b> — no hay ninguna posición medible en este CSV.</p>',
+      "pendiente"));
+  } else {
+    var gBody = '<p class="imp-step-sub">Para un no residente, la ganancia de capital de un ETF '
+      + 'o una acción normal <b>no es renta de fuente estadounidense</b>: EE.UU. no te retiene '
+      + 'nada al vender. Mismo fondo que el peldaño de arriba, resultado opuesto.</p>';
+
+    // Las dos ganancias van como cajas hermanas, NO sumadas: son momentos distintos (al
+    // cierre de la venta vs. a precio de hoy). Reusa `.imp-bucket` — misma rejilla que el
+    // peldaño 4, que es justo la lectura que se busca: cifras que conviven sin sumarse.
+    var gCajas = '';
+    if (G.no_realizado) {
+      gCajas += '<div class="imp-bucket gris"><p class="imp-bucket-lab">Latente · aún no vendes</p>'
+        + '<span class="imp-bucket-money">' + money(G.no_realizado.monto) + '</span>'
+        + '<p class="imp-bucket-note">Valor hoy ' + money(G.no_realizado.valor_mercado)
+        + ' &minus; base de costo ' + money(G.no_realizado.base)
+        + '. Se mueve con el mercado todos los días.</p></div>';
+    }
+    if (G.realizado) {
+      gCajas += '<div class="imp-bucket gris"><p class="imp-bucket-lab">Ya realizada · '
+        + G.realizado.n_ventas + (G.realizado.n_ventas === 1 ? ' venta' : ' ventas')
+        + '</p><span class="imp-bucket-money">' + money(G.realizado.monto) + '</span>'
+        + '<p class="imp-bucket-note">Cerrada al precio al que vendiste. Ya no cambia.</p></div>';
+    }
+    var gFaltan = (G.tickers_indeterminados || []).length;
+
+    if (gCajas) {
+      // Un total PARCIAL no puede presentarse como el de la cartera: se declara el alcance
+      // ANTES de las cifras, no en una nota debajo.
+      if (gFaltan) {
+        gBody += '<p class="imp-step-sub"><b>Solo ' + G.n_fondos + ' de tus '
+          + G.n_fondos_total + ' fondos.</b> Las cifras de abajo NO son las de tu cartera '
+          + 'completa — de los otros ' + gFaltan + ' no se puede saber la base de costo.</p>';
+      }
+      gBody += '<div class="imp-buckets dos">' + gCajas + '</div>'
+        + '<p class="imp-step-sub">'
+        + (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
+        + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
+        + 'que costaron.</p>';
+    }
+    if (gFaltan) {
+      gBody += '<div class="imp-cta">Sin base de costo para <b>'
+        + esc(G.tickers_indeterminados.join(", "))
+        + '</b>: en tu CSV esas acciones llegaron por traspaso o el historial no alcanza hasta '
+        + 'la compra original, así que <b>el archivo no dice qué costaron</b>. '
+        + '<b>No las contamos como costo cero</b> — eso las haría parecer ganancia pura. Para '
+        + 'verlas aquí necesitas el historial completo desde que abriste la posición.</div>';
+    }
+    pasos.push(stepRow("Peldaño 5", "¿Y cuando vendas?", G.retencion_eeuu, null,
+      gBody, "activo"));
+  }
+
+  // Peldaño reservado (Fase 4) — espacio reservado, sin contenido inventado
   (D.slots_pendientes || []).forEach(function (s) {
     pasos.push(stepRow("Próximamente", s.titulo, null, null,
       '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',

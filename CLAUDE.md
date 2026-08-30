@@ -78,8 +78,18 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **725 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
-`fiscal/fixtures-fuente-unica`, base `main` = `e8c1924`, tras sumar 2 guards en
+Línea base: **753 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+`fiscal/ganancias-capital`, base `main` = `4366f20`, tras sumar 28 tests en
+`test_ganancias_capital.py` — el motor de ganancia de capital por **costo promedio ponderado**
+(`logic.build_capital_gains`) y el quinto peldaño de la vista de Impuestos. Eje NUEVO: ni
+`pocket_investment` (flujo de caja neto) ni `net_profit` sirven de base fiscal. **El gate que
+vale es el cruzado sobre los demos** (`test_cruce_contra_analyze_portfolio_sobre_los_casos_reales`),
+que cazó dos defectos que los fixtures sintéticos no vieron: acciones llegadas por traspaso con
+`Amount $0.00` diluyendo la base (XLK de `?demo=schwab`, $1,087.00 de ganancia fantasma) y el
+doble ajuste por split cuando la fila viene DENTRO del CSV (MSTY de `?demo=schwab2`, 5.39% en
+las acciones). El ROC **todavía no ajusta esta base** y el objeto lo declara en
+`roc_basis_adjustment_applied`. Antes: **725 passed, 2 skipped, 3 deselected** (medido
+2026-08-30 sobre la rama `fiscal/fixtures-fuente-unica`, base `main` = `e8c1924`, tras sumar 2 guards en
 `test_contrato_componentes.py`: `fixtures/generate_fixtures.py` queda **desarmado** —decía ser la
 fuente de los fixtures y dejó de serlo hace ~5 commits; correrlo revertía 4 correcciones
 auditadas (MLK Day, shares split-ajustadas, clasificaciones `unreliable`, `Received`→`Reported`)—
