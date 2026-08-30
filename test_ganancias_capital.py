@@ -302,6 +302,64 @@ def test_la_fila_de_split_no_cuenta_como_acciones_sin_costo():
     assert logic.build_capital_gains(df, 'MSTY', market_price=50.0)['estado'] == 'ok'
 
 
+# ── Ramas que los datos reales NO ejercitan (M4 §3): forzadas a mano ────────────────
+
+def test_traspaso_de_SALIDA_se_lleva_su_parte_de_la_base():
+    """Rama que ningún demo alcanza hoy: acciones que SALEN por traspaso.
+
+    Se van con su parte proporcional de la base — eso es contabilidad correcta, no una
+    venta: no hay ingreso, así que no hay ganancia que realizar.
+
+    **Diverge de `pocket_investment` a propósito**, y hay que saberlo: ese número es un flujo
+    de caja y no se mueve aquí (no salió dinero), así que se queda en $1,000 mientras la base
+    real baja a $600. Los dos son correctos y miden cosas distintas — que es exactamente el
+    hallazgo que motivó esta fase. Por eso el test cruzado sobre los demos excluye estos
+    tickers en vez de exigir que cuadren.
+    """
+    df = _df([
+        ('2024-01-10', 'Buy',               'AAA', 100, 10.00, -1000.00),
+        ('2024-06-01', 'Internal Transfer', 'AAA', -40,  0.00,     0.00),
+    ])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=12.00)
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    assert cg['realized'] == [], "un traspaso de salida NO es una venta: no realiza ganancia"
+    assert cg['unrealized']['shares'] == pytest.approx(60.0)
+    assert cg['unrealized']['basis'] == pytest.approx(600.00, abs=0.01), (
+        "las 40 acciones que salieron se llevan su parte proporcional del costo")
+    assert cg['unrealized']['gain'] == pytest.approx(120.00, abs=0.01)
+
+
+def test_sin_precio_de_mercado_no_se_inventa_una_ganancia_latente():
+    """Rama no alcanzada por los demos (allí siempre hay precio): sin `market_price` la
+    ganancia latente es `None`, no cero. Cero diría «no has ganado nada»."""
+    df = _df([('2024-01-10', 'Buy', 'AAA', 100, 10.00, -1000.00)])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=None)
+
+    assert cg['estado'] == 'ok'
+    assert cg['unrealized']['market_value'] is None
+    assert cg['unrealized']['gain'] is None
+    assert cg['unrealized']['basis'] == pytest.approx(1000.00, abs=0.01), (
+        "la base sí se conoce aunque falte el precio")
+
+
+def test_fecha_ilegible_no_revienta_ni_inventa_tenencia():
+    """Rama no alcanzada: una fila con fecha que no parsea. El tramo de 2 años decide tarifa
+    en la Fase 4, así que ante una fecha ilegible el tramo tiene que ser `None`, no un
+    valor por defecto."""
+    df = _df([
+        ('no-es-una-fecha', 'Buy',  'AAA', 100, 10.00, -1000.00),
+        ('no-es-una-fecha', 'Sell', 'AAA',  50, 20.00,  1000.00),
+    ])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=20.0)
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    r = cg['realized'][0]
+    assert r['gain'] == pytest.approx(500.00, abs=0.01), "la aritmética no depende de la fecha"
+    assert r['holding_days'] is None
+    assert r['tramo'] is None, "sin fecha no se puede afirmar el tramo de 2 años"
+
+
 # ── Regla 3b: dos vistas del mismo número ───────────────────────────────────────────
 
 def test_identidad_exacta_sin_ventas_contra_pocket_investment():
@@ -524,7 +582,18 @@ def test_cruce_contra_analyze_portfolio_sobre_los_casos_reales(caso):
 
         # La base solo es comparable SIN ventas: con una venta `pocket_investment` resta el
         # importe recibido y deja de ser base de costo (el hallazgo que motivó esta fase).
-        if (stats.get('shares_sold') or 0) == 0:
+        #
+        # Y tampoco con un traspaso de SALIDA: ahí las acciones se van con su parte de la base
+        # (contabilidad correcta) mientras `pocket_investment` no se mueve, porque es un flujo
+        # de caja y no salió dinero. Los dos números son correctos y distintos. Se excluye a
+        # propósito y no por comodidad — hoy ningún demo tiene uno, y sin esta exclusión el
+        # día que aparezca este test daría un rojo falso, que es como se entrena a ignorarlos.
+        acciones = pd.to_numeric(stats['history'].get('Quantity'), errors='coerce')
+        acts = stats['history']['Action'].astype(str).str.lower()
+        salida = bool(((acts.str.contains('transfer') | acts.str.contains('journal'))
+                       & (acciones < 0)).any())
+
+        if (stats.get('shares_sold') or 0) == 0 and not salida:
             esperado = ((stats.get('pocket_investment') or 0.0)
                         + (stats.get('dividends_collected_drip') or 0.0))
             assert u['basis'] == pytest.approx(esperado, abs=0.02), (

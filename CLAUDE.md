@@ -78,8 +78,8 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **753 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
-`fiscal/ganancias-capital`, base `main` = `4366f20`, tras sumar 28 tests en
+Línea base: **756 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+`fiscal/ganancias-capital`, base `main` = `4366f20`, tras sumar 31 tests en
 `test_ganancias_capital.py` — el motor de ganancia de capital por **costo promedio ponderado**
 (`logic.build_capital_gains`) y el quinto peldaño de la vista de Impuestos. Eje NUEVO: ni
 `pocket_investment` (flujo de caja neto) ni `net_profit` sirven de base fiscal. **El gate que
