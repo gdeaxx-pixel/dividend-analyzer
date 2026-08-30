@@ -291,6 +291,97 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     }
 
 
+def _ganancias_capital_cartera(resultados: dict) -> dict:
+    """Agrega `stats['capital_gains']` de todos los tickers para el quinto peldaño.
+
+    Esta capa NO calcula fiscalidad (Regla 3): solo suma lo que `logic.build_capital_gains`
+    ya resolvió por ticker. Dos cosas que hace a propósito:
+
+    - **Recorre TODOS los tickers**, no los `fondos` de la escalera. Esa lista excluye las
+      posiciones sin distribuciones, y una acción de crecimiento sin dividendos sí tiene
+      ganancia de capital.
+    - **No suma realizado con no realizado.** Son momentos distintos (`al_cierre_de_la_venta`
+      vs `a_precio_de_mercado_hoy`) y la Regla 2 prohíbe combinarlos en un total. Salen como
+      dos cifras separadas, cada una con su rótulo.
+
+    Un ticker en `'indeterminado'` NO aporta $0 al total: se aparta y se nombra. Sumarlo como
+    cero es exactamente el cero falso que el motor evita.
+    """
+    realizado = no_realizado = valor_mercado = base_viva = 0.0
+    n_ventas = 0
+    n_ok = 0
+    indeterminados: list[str] = []
+    por_ticker: list[dict] = []
+    hay_dato = False
+
+    for ticker, stats in sorted((resultados or {}).items()):
+        if not _tiene_datos(stats):
+            continue
+        cg = (stats or {}).get("capital_gains") or {}
+        if not cg:
+            continue
+        if cg.get("estado") != "ok":
+            indeterminados.append(ticker)
+            por_ticker.append({"ticker": ticker, "estado": "indeterminado",
+                               "motivo": cg.get("motivo"),
+                               "realizado": None, "no_realizado": None, "tramo": None})
+            continue
+
+        hay_dato = True
+        n_ok += 1
+        r_tot = _f(cg.get("realized_total"))
+        realizado += r_tot
+        n_ventas += len(cg.get("realized") or [])
+
+        u = cg.get("unrealized") or {}
+        u_gain = u.get("gain")
+        u_val = u.get("market_value")
+        if u_gain is not None:
+            no_realizado += _f(u_gain)
+            valor_mercado += _f(u_val)
+            base_viva += _f(u.get("basis"))
+
+        por_ticker.append({
+            "ticker": ticker,
+            "estado": "ok",
+            "motivo": None,
+            "realizado": round(r_tot, 2) if (cg.get("realized") or []) else None,
+            "no_realizado": round(_f(u_gain), 2) if u_gain is not None else None,
+            "tramo": u.get("tramo"),
+        })
+
+    if not hay_dato and not indeterminados:
+        return None
+
+    return {
+        "estado": ("ok" if hay_dato and not indeterminados else
+                   ("parcial" if hay_dato else "indeterminado")),
+        "method": "costo_promedio_ponderado",
+        # Cuántos fondos cubren las cifras de abajo, y sobre cuántos. Sin esto un total
+        # PARCIAL se lee como el total de la cartera — que es la mentira más fácil de contar
+        # aquí: medido en `?demo=schwab`, la ganancia latente cubre 3 fondos de 8.
+        "n_fondos": n_ok,
+        "n_fondos_total": n_ok + len(indeterminados),
+        "realizado": ({"monto": round(realizado, 2), "n_ventas": n_ventas}
+                      if hay_dato and n_ventas else None),
+        "no_realizado": ({"monto": round(no_realizado, 2),
+                          "valor_mercado": round(valor_mercado, 2),
+                          "base": round(base_viva, 2)}
+                         if hay_dato and valor_mercado > 0.005 else None),
+        # El mensaje del peldaño, y el contraste con el de dividendos: para un no residente
+        # sin presencia sustancial en EE.UU., la ganancia de capital de un ETF o acción normal
+        # NO es renta de fuente estadounidense gravable. Mismo fondo que el peldaño 4,
+        # resultado opuesto. No es una estimación: es cero por definición.
+        "retencion_eeuu": 0.0,
+        "tickers_indeterminados": indeterminados,
+        "por_ticker": por_ticker,
+        # Declarado explícitamente para que la vista no pueda afirmar que el ROC ya bajó esta
+        # base. La Regla 1 dice que la reclasificación SÍ mueve la base fiscal — pero es otro
+        # momento, y aquí todavía no se aplica.
+        "roc_basis_adjustment_applied": False,
+    }
+
+
 def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | None:
     """La escalera de Impuestos, de CARTERA (Fase 2 de la vista fiscal).
 
@@ -512,13 +603,14 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         "fondos": fondos,
         "concentracion": concentracion,
         "ruta_a": ruta_a,
-        # Espacio reservado para las fases siguientes (Regla de UI de Daniel: nada se mueve
-        # entre estados, solo aparece lo nuevo). Sin contenido inventado — van rotulados
-        # «pendiente» y vacíos.
+        # Peldaño 5 (Fase 3). Llena el slot que la Fase 2 dejó reservado — no se crea uno
+        # nuevo ni se reordenan los de arriba (Regla de UI de Daniel: nada se mueve entre
+        # estados, solo aparece lo nuevo). `None` si no hay ni una posición medible, y
+        # entonces el componente vuelve a pintar el «PRÓXIMAMENTE» de siempre.
+        "ganancias_capital": _ganancias_capital_cartera(resultados),
+        # Espacio reservado para la fase siguiente (Fase 4). Sin contenido inventado — va
+        # rotulado «pendiente» y vacío.
         "slots_pendientes": [
-            {"id": "ganancias_capital",
-             "titulo": "Ganancias de capital cuando vendas",
-             "nota": "El ROC bajó tu base de costo; el impuesto diferido se paga al vender."},
             {"id": "impuesto_local",
              "titulo": "Impuesto en tu país de residencia",
              "nota": "Lo que declares en tu país por esta renta de fuente extranjera."},

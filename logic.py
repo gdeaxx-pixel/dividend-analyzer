@@ -2301,6 +2301,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "csv_coverage_pct":    csv_coverage_pct,
             "csv_inception_yf":    csv_inception_yf,
             "corporate_actions":   corporate_actions,
+            # Ganancia de capital (Fase 3). Eje propio: ni `pocket_investment` (flujo de caja
+            # neto — las ventas restan el importe recibido) ni `net_profit` (incluye dividendos
+            # y no separa realizado de no realizado) sirven de base fiscal. Se le inyecta el
+            # MISMO `_splits_col` que usa el recorrido de arriba, para que el ajuste por split
+            # sea uno solo y no dos implementaciones que puedan divergir.
+            "capital_gains": build_capital_gains(
+                ticker_df, ticker,
+                market_price=current_price,
+                splits=_splits_col,
+                history_incomplete=history_incomplete,
+            ),
             # ROC
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
@@ -4199,6 +4210,254 @@ def _dividend_tax_netted(history_df) -> bool:
         if _is_tax_row_action(action) and ('dividend' in action or 'dividendo' in action):
             return True
     return False
+
+
+CAPITAL_GAINS_TRAMO_DIAS = 730  # 2 años — el corte que la Fase 4 usará para la tarifa local
+
+
+def build_capital_gains(ticker_df, ticker: str = None, market_price: float = None,
+                        today=None, splits=None,
+                        history_incomplete: bool = False) -> dict:
+    """Objeto único de GANANCIA DE CAPITAL por ticker — realizada y no realizada.
+
+    Es un eje NUEVO, no una vista de uno existente. Antes de esta función no había ninguna
+    ganancia de capital en el repo, y las dos cifras que más se le parecen NO sirven de base
+    fiscal:
+
+    - `pocket_investment` es **flujo de caja neto**: las ventas restan el importe recibido,
+      así que mezcla devolución de capital con ganancia.
+    - `net_profit = gross_value − pocket_investment` incluye dividendos y no separa lo
+      realizado de lo no realizado.
+
+    **Método: costo promedio ponderado**, declarado en el objeto (`method`). No es arbitrario
+    — es el método que la ley colombiana usa para acciones, así que la capa de país (Fase 4)
+    se apoya en él sin conversión.
+
+    Las tres trampas que esta función blinda:
+
+    1. **Splits.** Las cantidades se ajustan con `_cumul_split_factor`, el MISMO ajuste que
+       usa el recorrido de `analyze_portfolio` — inyectado vía `splits=`, no reimplementado.
+       Leer `Quantity` en crudo convierte una ganancia de $200 en una pérdida de $400.
+    2. **DRIP.** Las acciones compradas por reinversión SUBEN la base. La distinción aporte
+       propio vs. DRIP no se puede hacer mirando el bróker (IB rotula ambos `Buy`, Schwab usa
+       `Reinvest Shares`); se resuelve fila por fila con los mismos predicados del recorrido
+       principal.
+    3. **Historia incompleta = base DESCONOCIDA, no base cero.** Sin las compras originales la
+       base sale ~$0 y la ganancia sale igual a TODO el importe de la venta — un cero falso en
+       una cifra fiscal en dólares. En ese caso `estado='indeterminado'` y las cifras salen
+       `None`, nunca un número.
+
+    Regla 2 del contrato (`specs/roc-nra-invariants.md`): cada cifra declara su base y su
+    momento. Los realizados son `'al_cierre_de_la_venta'`; el no realizado es
+    `'a_precio_de_mercado_hoy'` y por eso `is_estimate=True`.
+
+    **El ROC todavía NO ajusta esta base**, y el objeto lo declara explícitamente en
+    `roc_basis_adjustment_applied`. La Regla 1 dice que la reclasificación mueve la base
+    fiscal de la posición, así que la base ajustada por ROC es una cifra REAL y distinta de
+    esta — pero es otro momento (`'tras reclasificación anual'`) y mezclarla aquí sin
+    declararlo violaría la Regla 2. Se deja el campo para que ninguna vista pueda afirmar que
+    el ROC ya está dentro cuando no lo está.
+
+    `holding_days_ponderado` del no realizado se pondera por acciones: con compras escalonadas
+    es una aproximación, no una fecha de adquisición real.
+    """
+    vacio = {
+        'ticker': ticker,
+        'method': 'costo_promedio_ponderado',
+        'estado': 'indeterminado',
+        'motivo': 'sin_transacciones',
+        'realized': [],
+        'realized_total': None,
+        'unrealized': None,
+        'basis': 'costo_promedio',
+        'moment_realized': 'al_cierre_de_la_venta',
+        'moment_unrealized': 'a_precio_de_mercado_hoy',
+        'roc_basis_adjustment_applied': False,
+        'is_estimate': True,
+    }
+    if ticker_df is None or len(ticker_df) == 0:
+        return vacio
+
+    def _safe_float(val):
+        try:
+            if pd.isna(val):
+                return 0.0
+            return float(val)
+        except (ValueError, TypeError):
+            try:
+                return float(str(val).replace('$', '').replace(',', '').replace(' ', ''))
+            except ValueError:
+                return 0.0
+
+    def _dia(dt):
+        """Fecha de la fila como número de días. None si no se puede leer."""
+        try:
+            ts = pd.Timestamp(dt)
+            if pd.isna(ts):
+                return None
+            if ts.tzinfo is not None:
+                ts = ts.tz_localize(None)
+            return ts.normalize().value / 86_400_000_000_000
+        except (ValueError, TypeError):
+            return None
+
+    shares = 0.0          # acciones vivas, ya ajustadas por split
+    basis_total = 0.0     # costo total de esas acciones
+    dias_wsum = 0.0       # Σ(acciones × día de adquisición) — compañero natural del promedio
+    realized = []
+    indeterminado = bool(history_incomplete)
+    motivo = 'history_incomplete' if history_incomplete else None
+    ultimo_dia = None
+
+    for _, row in ticker_df.iterrows():
+        action = str(row.get('Action', '')).lower()
+        qty = _safe_float(row.get('Quantity', 0))
+        amount = _safe_float(row.get('Amount', 0))
+        fecha = row.get('Date', None)
+        dia = _dia(fecha)
+        if dia is not None:
+            ultimo_dia = dia if ultimo_dia is None else max(ultimo_dia, dia)
+
+        # Mismos predicados que el recorrido de `analyze_portfolio`. No se decide por bróker.
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        is_buy = ('buy' in action or 'bought' in action or 'compra' in action) and not is_drip
+        is_sell = 'sell' in action or 'sold' in action or 'venta' in action
+        is_deposit = ('deposit' in action or 'depósito' in action or 'transfer' in action
+                      or 'journal' in action or 'contribution' in action)
+
+        sf = _cumul_split_factor(fecha, splits) if splits is not None else 1.0
+
+        def _adquirir(cantidad, costo):
+            nonlocal shares, basis_total, dias_wsum, indeterminado, motivo
+            if cantidad <= 0:
+                return
+            if costo <= 0:
+                # Acciones que ENTRAN sin importe: el CSV no dice qué costaron. Es la trampa
+                # 3 en su forma parcial y más traicionera — no deja la base en cero, la
+                # DILUYE, así que el guard de «base total <= 0» no la ve y la ganancia sale
+                # inflada por el valor entero de esas acciones. Caso real que lo destapó:
+                # XLK del demo de Schwab, un `Internal Transfer` de 8.2230 acciones con
+                # Amount $0.00 (37% de la posición) — la base salía $904.22 contra los
+                # $1,991.22 que el resto de la app reconoce, $1,087.00 de ganancia fantasma.
+                indeterminado = True
+                motivo = motivo or 'acciones_sin_costo_registrado'
+            shares += cantidad
+            basis_total += costo
+            if dia is not None:
+                dias_wsum += cantidad * dia
+
+        if is_buy:
+            _adquirir(abs(qty) * sf, abs(amount))
+        elif is_deposit:
+            # Traspaso interno: la cantidad viene con signo (salida negativa / entrada
+            # positiva). Solo hay base de costo cuando las acciones ENTRAN.
+            es_interno = 'transfer' in action or 'journal' in action
+            cantidad = (qty if es_interno else abs(qty)) * sf
+            if cantidad > 0:
+                _adquirir(cantidad, abs(amount))
+            elif es_interno and cantidad < 0 and shares > 0:
+                # Salen acciones sin ser venta: se van con su parte de la base, sin ganancia.
+                salen = min(abs(cantidad), shares)
+                prop = salen / shares
+                basis_total -= basis_total * prop
+                dias_wsum -= dias_wsum * prop
+                shares -= salen
+        elif is_drip:
+            # Patrón «Reinvest Shares»: es la COMPRA. «Reinvest Dividend» es la fila de
+            # ingreso y no mueve acciones — misma separación que el recorrido principal,
+            # y saltársela es lo que evita contar la reinversión dos veces.
+            if 'share' in action or 'acciones' in action:
+                _adquirir(abs(qty) * sf, abs(amount))
+            elif 'dividend' in action or 'dividendo' in action:
+                pass
+            else:
+                _adquirir(abs(qty) * sf, abs(amount) if amount < 0 else 0.0)
+        elif is_sell:
+            vendidas = abs(qty) * sf
+            if vendidas <= 0:
+                continue
+            if shares <= 0 or vendidas > shares + 1e-9 or basis_total <= 0:
+                # Base desconocida, NO base cero: sin las compras originales la ganancia
+                # saldría igual a todo el importe de la venta.
+                indeterminado = True
+                motivo = motivo or 'ventas_sin_compras_registradas'
+                shares = max(shares - vendidas, 0.0)
+                continue
+            prop = vendidas / shares
+            base_vendida = basis_total * prop
+            dia_medio = (dias_wsum / shares) if shares > 0 else None
+            dias_tenencia = None
+            if dia_medio is not None and dia is not None:
+                dias_tenencia = max(int(round(dia - dia_medio)), 0)
+            realized.append({
+                'fecha_venta': str(fecha)[:10] if fecha is not None else None,
+                'shares': vendidas,
+                'proceeds': abs(amount),
+                'basis': base_vendida,
+                'gain': abs(amount) - base_vendida,
+                'holding_days': dias_tenencia,
+                'tramo': (None if dias_tenencia is None else
+                          ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
+            })
+            basis_total -= base_vendida
+            dias_wsum -= dias_wsum * prop
+            shares -= vendidas
+
+        # Split declarado DENTRO del CSV: reinicio de balance, exactamente como el recorrido
+        # de `analyze_portfolio` (la fila anuncia el saldo POST-split y manda sobre lo
+        # acumulado). Va como `if` aparte, no `elif`, igual que allí.
+        #
+        # Sin esto, el factor de mercado (`_cumul_split_factor`) y la fila del CSV se
+        # aplicaban los dos y las acciones divergían: medido sobre los demos, MSTY salía
+        # 9.6443 contra las 9.1508 de `stats['shares_owned']` en `?demo=schwab2` (5.39%), y
+        # 98.2993 contra 98.1600 en `?demo=schwab`. La base en dólares NO se toca: un split
+        # reparte el mismo costo entre otro número de acciones.
+        if 'split' in action and qty > 0:
+            if shares > 0:
+                dias_wsum *= qty / shares
+            shares = qty
+
+    if shares > 1e-9 and basis_total <= 0:
+        indeterminado = True
+        motivo = motivo or 'acciones_sin_costo_registrado'
+
+    if indeterminado:
+        salida = dict(vacio)
+        salida['motivo'] = motivo or 'indeterminado'
+        return salida
+
+    unrealized = None
+    if shares > 1e-9:
+        dia_medio = dias_wsum / shares if dias_wsum else None
+        dia_hoy = _dia(today) if today is not None else ultimo_dia
+        dias_tenencia = None
+        if dia_medio is not None and dia_hoy is not None:
+            dias_tenencia = max(int(round(dia_hoy - dia_medio)), 0)
+        valor = (shares * market_price) if market_price is not None else None
+        unrealized = {
+            'shares': shares,
+            'basis': basis_total,
+            'market_value': valor,
+            'gain': (valor - basis_total) if valor is not None else None,
+            'holding_days_ponderado': dias_tenencia,
+            'tramo': (None if dias_tenencia is None else
+                      ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
+        }
+
+    return {
+        'ticker': ticker,
+        'method': 'costo_promedio_ponderado',
+        'estado': 'ok',
+        'motivo': None,
+        'realized': realized,
+        'realized_total': sum(r['gain'] for r in realized) if realized else 0.0,
+        'unrealized': unrealized,
+        'basis': 'costo_promedio',
+        'moment_realized': 'al_cierre_de_la_venta',
+        'moment_unrealized': 'a_precio_de_mercado_hoy',
+        'roc_basis_adjustment_applied': False,
+        'is_estimate': True,
+    }
 
 
 def build_dividend_tax_totals(history_df) -> dict:
