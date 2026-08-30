@@ -62,18 +62,25 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
 
-> ⚠️ **`main` = `97560e1` (#94) está en ROJO: 12 tests fallan** (medido 2026-08-30). Todos en el
-> eje del motor de simulación fiscal — `test_metodo_serie.py`, `test_metodo_data.py`
-> (`test_div_val_ult_max_son_positivos` ×5), `test_contrafactico_sin_drip.py`,
-> `test_un_solo_motor_fiscal.py::test_retener_menos_deja_mas` — que producen **series todas en
-> cero**. Bisecado: el commit automático `127e2f6` («refresh price/dividend/split cache») lo
-> rompió; en `21384da` (#93, antes del refresco) esos tests pasan. **No es del #94.** Es
-> probable que las vistas «Método» / «Comparación» estén mostrando ceros en producción.
-> Pendiente de triage propio.
+> ✅ **CERRADO (2026-08-30).** Hubo un incidente: el commit automático `127e2f6` («refresh
+> price/dividend/split cache») guardó una fila final `2026-08-28` con `Close = NaN` en los 14
+> parquets — la sesión del día en curso, que yfinance devuelve sin publicar. El NaN se propagó
+> por el motor de backtest, dejó **12 tests en rojo** y puso producción a mostrar
+> «VALOR MER. $0.00» en todos los fondos, con el veredicto del DRIP invertido ($67,535 «a favor
+> del efectivo»). **Verificado en la app desplegada, no inferido.** Mitigado con
+> `git revert 127e2f6` (`20d2ca7`) y cerrado en el **#95**: `fetch_price_cache.py` descarta las
+> filas finales con `Close` nulo, trata un nulo a media serie como fallo (conserva el cache
+> previo, workflow en rojo) y hay un guard sobre los parquets versionados. La discriminación es
+> segura porque yfinance **no emite fila** para festivos ni días sin sesión: una fila que existe
+> con `Close` nulo solo puede ser una barra pendiente.
+>
+> Lección: el refresco automático es un commit a `main` como cualquier otro, y **no pasa por
+> PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
+> primer sitio donde mirar es la última fila de los parquets.
 
-Línea base (rama `fiscal/veredicto-en-dolares`, base `main` = `97560e1`): **705 passed, 12 failed,
-2 skipped, 3 deselected** — los 12 fallos son los de `127e2f6` de arriba, **idénticos antes y
-después** de este cambio (orbital: solo toca `build_withholding_diagnosis`). Tras sumar 9 tests:
+Línea base (`main` = `c650d4f`, tras los #95 y #96): **723 passed, 2 skipped, 3 deselected**
+(medido 2026-08-30). Los #95 (guard de la barra pendiente, +6 tests) y #96 (el veredicto de
+W-8BEN compara en dólares, +9 tests) entraron sobre los 708 de `20d2ca7`. Del #96:
 el VEREDICTO de W-8BEN compara EN DÓLARES (`exceso` vs `holgura = bruto·TASA_TOLERANCIA_PP/100 +
 N·0.01`), reusando el `n_tax_rows` que ya expone `applied_withholding_rate` — mismo principio que
 el guard `implausible` del #94, una capa más abajo. En producción MU (cliente colombiano) daba
