@@ -661,3 +661,70 @@ def test_ib_ground_truth_intacto_bajo_el_guard_en_dolares():
         dev = round(sum(logic.observed_tax_refund_by_year(g).values()), 2)
         assert d["withheld_at_payment"] == pytest.approx(
             logic.withheld_tax_total(g) + dev, abs=0.01), f"{tk} invariante"
+
+
+# ── C7 · el VEREDICTO también compara en dólares (fix 2026-08-30) ───────────────
+#
+# `build_withholding_diagnosis` decidía en puntos porcentuales — mismo problema de redondeo
+# que el guard `implausible` del #94, una capa más abajo. En producción MU (cliente
+# colombiano, 30% con derecho) daba 'tratado_no_aplicado' por un exceso real de $0.0040.
+
+
+@pytest.mark.parametrize("nombre,bruto,retenido,derecho,n,esperado", [
+    ("MU real (redondeo)",            0.12,  0.04, 30.0,  1, "coincide"),
+    ("20 pagos de $0.15 redondeados", 3.00,  1.00, 30.0, 20, "coincide"),
+    ("gap de tratado real (Mexico)",  1000.0, 300.0, 10.0, 1, "tratado_no_aplicado"),
+    ("W-8BEN vencido (derecho 15%)",  1000.0, 300.0, 15.0, 1, "tratado_no_aplicado"),
+    ("30% exacto con derecho 30%",    1000.0, 300.0, 30.0, 1, "coincide"),
+    ("retienen de menos (ROC)",       1000.0, 100.0, 30.0, 1, "menor_de_lo_esperado"),
+])
+def test_veredicto_en_dolares_los_casos_del_traspaso(nombre, bruto, retenido, derecho, n, esperado):
+    """Los casos de la tabla del traspaso. El caso «12c / 6c → tratado_no_aplicado» NO se
+    incluye: el guard `implausible` del #94 lo intercepta antes (6c sobre 12c = 50% aplicada,
+    por encima del techo), y ese guard queda fuera de alcance. Cae en 'indeterminado', que
+    tampoco acusa — ver el traspaso de vuelta."""
+    if n == 1:
+        filas = [("2025-03-01", "Cash Dividend", bruto),
+                 ("2025-03-01", "NRA Tax Adj", -retenido)]
+    else:
+        filas = []
+        for i in range(n):
+            d = f"2025-{(i % 12) + 1:02d}-0{(i % 3) + 1}"
+            filas.append((d, "Cash Dividend", round(bruto / n, 2)))
+            filas.append((d, "NRA Tax Adj", -round(retenido / n, 2)))
+    s = _stats(bruto, filas, roc=0.0)
+    d = logic.build_withholding_diagnosis(s, "X", entitled_pct=derecho, country="Colombia")
+    assert d["verdict"] == esperado, f"{nombre}: {d['verdict']}"
+
+
+def test_mu_exceso_contra_holgura():
+    """MU: exceso $0.0040 contra holgura $0.0124 (bruto·2% + 1·$0.01) → coincide."""
+    s = _stats(0.12, [("2025-03-01", "Cash Dividend", 0.12),
+                      ("2025-03-01", "NRA Tax Adj", -0.04)], roc=0.0)
+    d = logic.build_withholding_diagnosis(s, "MU", entitled_pct=30.0, country="Colombia")
+    assert d["verdict"] == "coincide"
+    # la descomposición no cambia: no hay exceso material que repartir
+    assert d["refund_roc"] == pytest.approx(0.0, abs=0.01)
+    assert d["gap_w8ben"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_n_tax_rows_se_reusa_del_mismo_dict():
+    """Regla 3: el veredicto usa el MISMO `n_tax_rows` que el guard `implausible`, no una
+    copia. `applied_withholding_rate` lo expone."""
+    s = _stats(1000.0, [("2025-01-01", "Cash Dividend", 500.0),
+                        ("2025-01-01", "NRA Tax Adj", -150.0),
+                        ("2025-07-01", "Cash Dividend", 500.0),
+                        ("2025-07-01", "NRA Tax Adj", -150.0)], roc=0.0)
+    assert logic.applied_withholding_rate(s)["n_tax_rows"] == 2
+
+
+def test_gap_de_tratado_real_no_se_relaja_con_el_termino_absoluto():
+    """El término `N·0.01` no puede tapar un gap real ni con muchas filas: México 10%,
+    retienen 30% sobre $1,000 en 12 pagos → sigue siendo tratado_no_aplicado."""
+    filas = []
+    for i in range(12):
+        filas.append((f"2025-{i + 1:02d}-01", "Cash Dividend", round(1000.0 / 12, 2)))
+        filas.append((f"2025-{i + 1:02d}-01", "NRA Tax Adj", -round(300.0 / 12, 2)))
+    s = _stats(1000.0, filas, roc=0.0)
+    d = logic.build_withholding_diagnosis(s, "X", entitled_pct=10.0, country="México")
+    assert d["verdict"] == "tratado_no_aplicado"

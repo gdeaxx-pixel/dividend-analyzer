@@ -6331,7 +6331,8 @@ def applied_withholding_rate(stats: dict) -> dict:
 
     return {'applied_pct': applied, 'gross': gross_total,
             'withheld_at_payment': wh_total, 'by_year': by_year,
-            'years': sorted(by_year), 'implausible': implausible}
+            'years': sorted(by_year), 'implausible': implausible,
+            'n_tax_rows': n_tax_rows}
 
 
 def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
@@ -6389,7 +6390,21 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         return out
 
     entitled = float(entitled_pct)
-    delta = applied - entitled
+
+    # El VEREDICTO se decide en DÓLARES, no en puntos porcentuales — misma razón que el guard
+    # `implausible` del #94: una tolerancia en pp no absorbe el redondeo de centavos del bróker,
+    # que es un error ABSOLUTO y se acumula por pago. Medido en producción: MU (cliente
+    # colombiano) daba 'tratado_no_aplicado' por 33.3% aparente cuando el exceso real sobre el
+    # 30% eran $0.0040 — el 30% de $0.12 son $0.036 y el bróker redondea a $0.04.
+    #   exceso  = retención al cobro − bruto · derecho/100
+    #   holgura = bruto · TASA_TOLERANCIA_PP/100 + N · 0.01   (N = filas de impuesto NRA)
+    # `N` se reúsa del dict de `applied_withholding_rate`, no se recalcula (Regla 3).
+    # `applied_pct` sigue siendo lo que se muestra en los labels; solo deja de decidir.
+    gross_v = float(diag['gross'] or 0.0)
+    wap_v = float(diag['withheld_at_payment'] or 0.0)
+    n_rows = int(diag.get('n_tax_rows') or 0)
+    exceso = wap_v - gross_v * entitled / 100.0
+    holgura = gross_v * TASA_TOLERANCIA_PP / 100.0 + n_rows * 0.01
 
     # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y
     # deja de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención.
@@ -6407,11 +6422,11 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         out['gap_w8ben'] = round(max(0.0, justa_a_la_aplicada - justa_con_derecho), 2)
         out['roc_pct_usado'] = float(roc_pct) if roc_pct is not None else 0.0
 
-    if abs(delta) <= TASA_TOLERANCIA_PP:
+    if abs(exceso) <= holgura:
         out['verdict'] = 'coincide'
         out['label'] = (f'Te retienen al {applied:.1f}%, que es lo que te corresponde'
                         + (f' en {country}.' if country else '.'))
-    elif delta > TASA_TOLERANCIA_PP:
+    elif exceso > holgura:
         out['verdict'] = 'tratado_no_aplicado'
         pais = country or 'tu país'
         out['label'] = (
