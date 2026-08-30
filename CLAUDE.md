@@ -61,7 +61,24 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 ```
 
 **La suite completa, nunca un subconjunto.** Los archivos cubren clases de regresión distintas.
-Línea base: **708 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+
+> ⚠️ **`main` = `97560e1` (#94) está en ROJO: 12 tests fallan** (medido 2026-08-30). Todos en el
+> eje del motor de simulación fiscal — `test_metodo_serie.py`, `test_metodo_data.py`
+> (`test_div_val_ult_max_son_positivos` ×5), `test_contrafactico_sin_drip.py`,
+> `test_un_solo_motor_fiscal.py::test_retener_menos_deja_mas` — que producen **series todas en
+> cero**. Bisecado: el commit automático `127e2f6` («refresh price/dividend/split cache») lo
+> rompió; en `21384da` (#93, antes del refresco) esos tests pasan. **No es del #94.** Es
+> probable que las vistas «Método» / «Comparación» estén mostrando ceros en producción.
+> Pendiente de triage propio.
+
+Línea base (rama `fiscal/veredicto-en-dolares`, base `main` = `97560e1`): **705 passed, 12 failed,
+2 skipped, 3 deselected** — los 12 fallos son los de `127e2f6` de arriba, **idénticos antes y
+después** de este cambio (orbital: solo toca `build_withholding_diagnosis`). Tras sumar 9 tests:
+el VEREDICTO de W-8BEN compara EN DÓLARES (`exceso` vs `holgura = bruto·TASA_TOLERANCIA_PP/100 +
+N·0.01`), reusando el `n_tax_rows` que ya expone `applied_withholding_rate` — mismo principio que
+el guard `implausible` del #94, una capa más abajo. En producción MU (cliente colombiano) daba
+«Revisa tu W-8BEN» por un exceso real de $0.0040. Antes: **708 passed, 2 skipped, 3 deselected**
+(medido 2026-08-29 sobre la rama
 `fiscal/guard-falsos-positivos`, base `main` = `21384da` = #93, tras sumar 8 tests: el guard de
 la tasa imposible compara EN DÓLARES con un término absoluto `N·0.01` (N = nº de filas de
 impuesto) en vez de en puntos porcentuales — el redondeo de centavos del bróker es absoluto y

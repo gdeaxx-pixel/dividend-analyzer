@@ -115,6 +115,21 @@ Base y momento no bastan para detectar este error: en el bug del caso origen las
 > veredicto es idéntico al de antes. El caso IB pre-clasificador ($4,117.61 / $1,628.35 / 40
 > filas) se sigue cazando.
 
+> **Actualizado (2026-08-30, el VEREDICTO de W-8BEN también compara en DÓLARES).** El guard de
+> `implausible` (arriba) tapaba, una capa más abajo, el mismo defecto en la decisión del veredicto
+> de `build_withholding_diagnosis`, que se tomaba en pp (`abs(applied − entitled) ≤
+> TASA_TOLERANCIA_PP`). Al arreglarse el guard (#94), MU (cliente colombiano, 30% con derecho)
+> quedó dando `'tratado_no_aplicado'` por un exceso REAL sobre el 30% de **$0.0040** — el 30% de
+> $0.12 son $0.036 y el bróker redondea a $0.04. Ahora:
+> `exceso = retención_al_cobro − bruto·derecho/100`;
+> `holgura = bruto·TASA_TOLERANCIA_PP/100 + N·0.01` (N = filas de impuesto NRA, **reusado** del
+> dict de `applied_withholding_rate`, no recalculado — Regla 3). `abs(exceso) ≤ holgura` →
+> `'coincide'`; `exceso > holgura` → `'tratado_no_aplicado'`; `exceso < −holgura` →
+> `'menor_de_lo_esperado'`. `TASA_TOLERANCIA_PP` y `NRA_TECHO_ESTATUTARIO` no se tocan;
+> `applied_pct` se sigue publicando (es lo que se muestra, deja de ser lo que decide). La
+> descomposición `refund_roc`/`gap_w8ben` no cambia. Los 4 fondos de IB y sus veredictos quedan
+> igual.
+
 **Scenario:** Tres vistas, un solo cálculo
 - **WHEN** el usuario abre los cuadritos del viaje del dinero, la Hoja Excel y el paso "Impuesto NRA" para el mismo ticker en la misma sesión
 - **THEN** las tres vistas leen el mismo `tax_summary` del ticker y muestran valores de `retenido_real`, `retención_justa` y `devolución_estimada` idénticos entre sí (no solo "consistentes", sino la misma fuente)
