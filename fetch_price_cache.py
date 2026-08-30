@@ -113,6 +113,42 @@ def main(argv):
             continue
 
         cols = hist[["Close", "Dividends"]].copy()
+
+        # Barra pendiente de yfinance: la sesión del día en curso puede venir como fila con
+        # `Close` NULO. No es "un día sin datos" — yfinance NO emite fila para festivos ni
+        # días sin sesión, así que una fila que EXISTE con Close nulo es una barra que aún no
+        # se publicó. Si se guarda, el NaN se propaga por el motor de backtest y las series
+        # salen TODAS en cero (incidente 2026-08-29: `127e2f6` metió una fila 2026-08-28 con
+        # Close NaN en los 14 parquets; 12 tests en rojo y producción mostrando
+        # «VALOR MER. $0.00» en todos los fondos).
+        #
+        # Se recortan solo las nulas del FINAL. Un nulo a media serie no se descarta en
+        # silencio: eso cambiaría la serie sin dejar rastro, así que se trata como fallo y el
+        # ticker conserva su cache previo (el workflow sale en rojo por `regressions`).
+        n_antes = len(cols)
+        while len(cols) and pd.isna(cols["Close"].iloc[-1]):
+            cols = cols.iloc[:-1]
+        if len(cols) < n_antes:
+            print(f"::warning::{tk}: descartadas {n_antes - len(cols)} fila(s) final(es) con "
+                  f"Close nulo (barra pendiente de yfinance).", file=sys.stderr)
+
+        if cols["Close"].isna().any():
+            n_huecos = int(cols["Close"].isna().sum())
+            print(f"::warning::{tk}: {n_huecos} fila(s) con Close nulo a MEDIA serie — no se "
+                  f"descartan en silencio. Conservo el cache previo.", file=sys.stderr)
+            failures.append(tk)
+            if had_prior:
+                regressions.append(tk)
+            continue
+
+        if cols.empty:
+            print(f"::warning::{tk}: no queda ninguna fila con Close tras recortar las "
+                  f"pendientes. Conservo el cache previo.", file=sys.stderr)
+            failures.append(tk)
+            if had_prior:
+                regressions.append(tk)
+            continue
+
         cols.to_parquet(_parquet_path(tk))
 
         meta[tk] = {

@@ -358,3 +358,86 @@ def test_sabotage_desaligning_cached_split_fails_the_gate():
         print(f"[sabotaje cache splits] gate FALLA como se esperaba: {diff_pct:.1f}% de "
               f"diferencia (cache corrompido reconstruyo ${engine_gross:,.2f} vs "
               f"${csv_gross:,.2f} real)")
+
+
+# ── Barra pendiente de yfinance (incidente 2026-08-29, commit `127e2f6`) ────────────────
+#
+# El refresco semanal guardó una fila final `2026-08-28` con `Close = NaN` en los 14
+# parquets: yfinance devuelve la sesión del día en curso antes de que cierre. El NaN se
+# propagó por el motor de backtest, dejó 12 tests en rojo y puso producción a mostrar
+# «VALOR MER. $0.00» en todos los fondos, con el veredicto invertido («$67,535 a favor del
+# efectivo»). Mitigado con `git revert`; estos tests impiden que vuelva.
+#
+# La discriminación es segura porque yfinance NO emite fila para festivos ni días sin
+# sesión: una fila que EXISTE con Close nulo es una barra pendiente, no un día sin datos.
+# Medido sobre el cache real: 0 NaN en 14 archivos, 350–943 filas cada uno.
+
+import datetime as dt                                    # noqa: E402
+import fetch_price_cache as fpc                          # noqa: E402
+
+
+def _hist(cierres, inicio="2026-08-24"):
+    """Historia mínima con la forma que devuelve `bt.fetch_history`."""
+    idx = pd.date_range(inicio, periods=len(cierres), freq="D")
+    return pd.DataFrame({"Close": cierres, "Dividends": [0.0] * len(cierres)}, index=idx)
+
+
+def _correr_main(monkeypatch, tmp_path, hist):
+    """Corre `fetch_price_cache.main` para un solo ticker contra un cache temporal."""
+    monkeypatch.setattr(fpc, "CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(fpc, "META_PATH", str(tmp_path / "_meta.yaml"))
+    monkeypatch.setattr(fpc, "SPLITS_PATH", str(tmp_path / "_splits.yaml"))
+    monkeypatch.setattr(fpc, "fetch_one", lambda tk: (hist, None))
+    rc = fpc.main(["fetch_price_cache.py", "TEST"])
+    p = tmp_path / "TEST.parquet"
+    return rc, (pd.read_parquet(p) if p.exists() else None)
+
+
+def test_la_barra_pendiente_del_dia_no_se_guarda(monkeypatch, tmp_path):
+    """El caso exacto del incidente: última fila con Close NaN → se recorta, el resto se
+    guarda intacto."""
+    rc, guardado = _correr_main(monkeypatch, tmp_path, _hist([10.0, 11.0, 12.0, float("nan")]))
+    assert rc == 0
+    assert guardado is not None and len(guardado) == 3, "debía recortar solo la fila pendiente"
+    assert not guardado["Close"].isna().any()
+    assert guardado["Close"].tolist() == [10.0, 11.0, 12.0]
+
+
+def test_varias_barras_pendientes_al_final_se_recortan_todas(monkeypatch, tmp_path):
+    """Un fin de semana largo puede dejar más de una fila sin publicar."""
+    _, guardado = _correr_main(monkeypatch, tmp_path,
+                               _hist([10.0, 11.0, float("nan"), float("nan")]))
+    assert len(guardado) == 2 and not guardado["Close"].isna().any()
+
+
+def test_un_hueco_a_MEDIA_serie_no_se_descarta_en_silencio(monkeypatch, tmp_path):
+    """Recortar por el final es seguro; borrar una fila interna cambiaría la serie sin dejar
+    rastro. Eso se trata como fallo: el ticker conserva su cache previo y el workflow sale en
+    rojo, en vez de commitear datos alterados."""
+    rc, guardado = _correr_main(monkeypatch, tmp_path, _hist([10.0, float("nan"), 12.0, 13.0]))
+    assert guardado is None, "no debía escribir el parquet con un hueco interno"
+    assert rc == 0, "sin cache previo no hay regresión, pero tampoco se escribe"
+
+
+def test_una_serie_entera_de_pendientes_no_borra_el_cache(monkeypatch, tmp_path):
+    """Si TODO viene sin publicar, no se escribe un parquet vacío."""
+    _, guardado = _correr_main(monkeypatch, tmp_path, _hist([float("nan")] * 3))
+    assert guardado is None
+
+
+def test_la_serie_sana_pasa_intacta(monkeypatch, tmp_path):
+    """El guard no puede tocar el caso normal."""
+    _, guardado = _correr_main(monkeypatch, tmp_path, _hist([10.0, 11.0, 12.0]))
+    assert len(guardado) == 3 and guardado["Close"].tolist() == [10.0, 11.0, 12.0]
+
+
+def test_el_cache_real_no_tiene_ningun_close_nulo():
+    """Guard sobre los datos versionados: si un refresco vuelve a colar un NaN, esto lo caza
+    antes de que el motor de backtest lo convierta en series a cero."""
+    import glob
+    malos = []
+    for f in glob.glob(os.path.join(BASE, "knowledge", "price_cache", "*.parquet")):
+        d = pd.read_parquet(f)
+        if "Close" in d.columns and d["Close"].isna().any():
+            malos.append((os.path.basename(f), int(d["Close"].isna().sum())))
+    assert not malos, f"parquets con Close nulo: {malos}"
