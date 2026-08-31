@@ -105,6 +105,14 @@
   .imp-bucket.ambar .imp-bucket-lab { color: var(--warn); }
   .imp-bucket.coral .imp-bucket-lab { color: var(--coral); }
   .imp-bucket-note { font-size: 10.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.45; }
+  /* Base fiscal tras el ROC. Panel propio y NO una tercera caja de `.imp-buckets`: las cajas
+     de ahí son cifras hermanas que conviven; ésta es la MISMA cifra en otro momento, y
+     ponerla al lado invitaría justo a la resta que la Regla 2 del contrato prohíbe. */
+  .imp-fiscal { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--ink-mut); }
+  .imp-fiscal-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 6px; }
+  .imp-fiscal-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 10px 0 0; font-size: 11.5px; color: var(--ink-mut); }
+  .imp-fiscal-par b { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink); }
+  .imp-fiscal-flecha { font-family: var(--font-mono); color: var(--ink-mut); }
 
   .imp-conc { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--accent); font-size: 12.5px; color: var(--ink); line-height: 1.55; }
   .imp-conc b { font-family: var(--font-mono); }
@@ -307,8 +315,9 @@
   var G = D.ganancias_capital;
   if (!G) {
     pasos.push(stepRow("Próximamente", "Ganancias de capital cuando vendas", null, null,
-      '<p class="imp-step-sub">El ROC bajó tu base de costo; el impuesto diferido se paga al '
-      + 'vender. <b>Pendiente</b> — no hay ninguna posición medible en este CSV.</p>',
+      '<p class="imp-step-sub">Cuando vendas, lo que pagues depende de tu base de costo — y el '
+      + 'ROC que te devolvieron la baja. <b>Pendiente</b> — no hay ninguna posición medible en '
+      + 'este CSV.</p>',
       "pendiente"));
   } else {
     var gBody = '<p class="imp-step-sub">Para un no residente, la ganancia de capital de un ETF '
@@ -348,6 +357,48 @@
         + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
         + 'que costaron.</p>';
     }
+    // ── Base fiscal tras el ROC ────────────────────────────────────────────────
+    // Va DESPUÉS de las cajas y en panel aparte: es la misma posición en otro momento
+    // ('tras_reclasificacion_anual'), no una tercera cifra que conviva con las de arriba.
+    // Todas sus cifras vienen del MISMO alcance (`fiscal_roc.*_mercado`), nunca de los
+    // totales de la cartera, que cubren más fondos.
+    var F = G.fiscal_roc;
+    if (F && F.n_fondos) {
+      var fAlcance = (F.n_fondos === G.n_fondos_total)
+        ? 'Tus ' + F.n_fondos + ' fondos'
+        : F.n_fondos + ' de tus ' + G.n_fondos_total + ' fondos';
+      gBody += '<div class="imp-fiscal">'
+        + '<p class="imp-fiscal-lab">Tu base fiscal · tras la reclasificación del ROC</p>'
+        + '<p class="imp-step-sub">' + esc(fAlcance) + ' (<b>' + esc(F.tickers.join(", "))
+        + '</b>) te devolvieron parte de tu propio capital dentro de las distribuciones. Eso '
+        + '<b>no cambia lo que pusiste</b> — cambia lo que el fisco considera que te costó, '
+        + 'y por eso importa el día que vendas. Estimado con los avisos <b>19a</b> que '
+        + 'publica cada fondo.</p>'
+        + '<p class="imp-fiscal-par">Base de costo <b>' + money(F.base_mercado) + '</b>'
+        + '<span class="imp-fiscal-flecha">&rarr;</span>base fiscal <b>' + money(F.base) + '</b></p>'
+        + '<p class="imp-step-sub">Con esa base, la ganancia latente de <b>esos mismos fondos</b> '
+        + 'es <b>' + money(F.no_realizado) + '</b> en vez de ' + money(F.no_realizado_mercado)
+        + '.' + (F.realizado != null
+            ? ' Y la ya realizada, <b>' + money(F.realizado) + '</b> en vez de '
+              + money(F.realizado_mercado) + '.'
+            : '')
+        + ' <b>Las dos no se suman ni se restan:</b> son el mismo dinero medido en dos '
+        + 'momentos — al comprar, y tras la reclasificación anual.</p>'
+        + ((F.tickers_19a_sin_ajuste && F.tickers_19a_sin_ajuste.length)
+            ? '<p class="imp-step-sub"><b>' + esc(F.tickers_19a_sin_ajuste.join(", "))
+              + '</b> también publica avisos 19a, pero su ROC salió del costo que reporta tu '
+              + 'bróker y ahí todavía no aparece — la reclasificación es de fin de año. '
+              + 'Su base fiscal <b>no está ajustada arriba</b>, así que no lo leas como que '
+              + 'ese fondo no tiene ROC.</p>'
+            : '')
+        + (F.roc_exceso > 0.01
+            ? '<p class="imp-step-sub"><b>' + money(F.roc_exceso) + '</b> de ese ROC superó tu '
+              + 'base de costo. Una base fiscal no baja de cero: ese excedente es ganancia de '
+              + 'capital desde ya, no un costo negativo.</p>'
+            : '')
+        + '</div>';
+    }
+
     if (gFaltan) {
       gBody += '<div class="imp-cta">Sin base de costo para <b>'
         + esc(G.tickers_indeterminados.join(", "))
