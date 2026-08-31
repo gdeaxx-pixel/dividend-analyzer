@@ -493,6 +493,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
     correcta_total = refund_roc_total = gap_w8ben_total = 0.0
     foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
+    fondos_sin_roc: list[str] = []   # peldaño 2: sin dato de ROC → tributan sobre el 100% del bruto
 
     for ticker, stats in sorted((resultados or {}).items()):
         if not _tiene_datos(stats):
@@ -510,6 +511,8 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
             fuente_bruto = None
 
         roc_pct = ts.get("roc_pct_used")
+        if roc_pct is None:
+            fondos_sin_roc.append(ticker)
         gravable = bruto * (1.0 - (float(roc_pct) if roc_pct is not None else 0.0) / 100.0)
         corresponde = round(tasa_pct / 100.0 * gravable, 2) if declarado else None
 
@@ -592,7 +595,15 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
 
     peldanos = {
         "bruto": {"monto": round(bruto_total, 2), "pct": _pct(bruto_total)},
-        "gravable": {"monto": round(gravable_total, 2), "pct": _pct(gravable_total)},
+        "gravable": {
+            "monto": round(gravable_total, 2), "pct": _pct(gravable_total),
+            # Cobertura del peldaño 2 (se declara ANTES de la cifra, como el peldaño 5 con
+            # «solo 3 de tus 8 fondos»): los fondos sin dato de ROC tributan sobre el 100% del
+            # bruto — dirección conservadora, la app muestra MÁS impuesto del que toca.
+            "sin_roc": list(fondos_sin_roc),
+            "cubiertos": len(fondos) - len(fondos_sin_roc),
+            "total": len(fondos),
+        },
         "corresponde": ({"monto": round(corresponde_total, 2), "pct": _pct(corresponde_total)}
                         if declarado else None),
         "retenido": {

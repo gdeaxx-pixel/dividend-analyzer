@@ -2618,12 +2618,19 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
     # roc_dollars sigue viniendo de _roc_pct_for (weighted_pct 19a) — no del tax_summary.
     assert r["roc_pct"] == pytest.approx(65.0, abs=0.01)
     assert round(r["roc_dollars"], 2) == round(0.65 * gross, 2)
-    # Regla 4 sobre un summary declarado: la capa 1 ya no trae `roc_pct_used` porque sin
-    # residencia no corre la aritmética fiscal. Los carriles siguen sin cruzarse.
-    ts = logic.build_tax_summaries(
+    # Regla 4: el summary trae `roc_pct_used` = `roc_percent` (ROC realizado del holder),
+    # SIEMPRE distinto de `_roc_pct_for` (19a ponderado) que alimenta `roc_dollars`. El % de
+    # ROC no depende de la tasa ni de la retención, así que lo publican también las rutas
+    # nulas (sin país / sin retención) — ver `test_roc_sin_pais_ni_retencion.py`.
+    ts_dec = logic.build_tax_summaries(
         results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
-    assert ts["roc_pct_used"] == pytest.approx(s["roc_percent"], abs=0.01)
-    assert ts["roc_pct_used"] != pytest.approx(r["roc_pct"], abs=0.01)  # carriles distintos
+    ts_sin = logic.build_tax_summaries(results)["MSTY"]   # capa 1, sin declarar
+    for ts in (ts_dec, ts_sin):
+        assert ts["roc_pct_used"] == pytest.approx(s["roc_percent"], abs=0.01)
+        assert ts["roc_pct_used"] != pytest.approx(r["roc_pct"], abs=0.01)  # carriles distintos
+    # ...pero sin país NO corre la aritmética fiscal: nada de devolución.
+    assert ts_sin["refund_estimated"] == 0.0
+    assert ts_sin["method"] is None
 
 
 def test_build_tax_summaries_respeta_tasa_de_tratado(monkeypatch):
@@ -2690,6 +2697,94 @@ def test_sin_declarar_no_es_cero_por_ciento(monkeypatch):
     assert sin_declarar["rate_declared"] is False
     assert sin_declarar["refund_estimated"] == 0.0        # no se estima, no es que sea cero
     assert sin_declarar["withheld_real"] == pytest.approx(retenido, abs=0.01)
+
+
+def _stats_roc(withheld, roc_percent, roc_source="19a", gross=1000.0):
+    """`stats` mínimo para `build_tax_summary` — un solo año, retención plegada estilo IB."""
+    return {
+        "withheld_tax_total": withheld,
+        "total_dividends": round(gross - withheld, 2),
+        "dividends_gross_total": gross,
+        "dividends_gross_by_year": {2025: gross},
+        "withheld_by_year": {2025: withheld} if withheld > 0.01 else {},
+        "tax_refund_observed_by_year": {},
+        "roc_percent": roc_percent, "roc_source": roc_source,
+    }
+
+
+def test_roc_sin_pais_ni_retencion_igual_publica_el_roc():
+    """El % de ROC no depende de la tasa de residencia ni de que haya habido retención NRA.
+    Las dos rutas nulas de `build_tax_summary` (`_undeclared`, `withheld <= 0.01`) publican
+    ahora `roc_pct_used`/`roc_source` — antes cableaban `None` (daño colateral). Lo que sí
+    sigue nulo es todo lo que depende de la tasa/retención: devolución y método."""
+    # Ruta «sin país declarado» (RATE_UNDECLARED), con retención real.
+    ts_und = logic.build_tax_summary(_stats_roc(50.0, 61.24, "19a"), "CONY",
+                                     base_rate_pct=logic.RATE_UNDECLARED)
+    assert ts_und["roc_pct_used"] == pytest.approx(61.24, abs=0.01)
+    assert ts_und["roc_source"] == "19a"
+    assert ts_und["rate_declared"] is False
+    assert ts_und["refund_estimated"] == 0.0
+    assert ts_und["method"] is None
+    assert ts_und["withheld_real"] == pytest.approx(50.0, abs=0.01)
+
+    # Ruta «sin retención NRA registrada» ($0), con país declarado.
+    ts_wh0 = logic.build_tax_summary(_stats_roc(0.0, 72.59, "19a"), "MSTY",
+                                     base_rate_pct=30.0, country="Colombia")
+    assert ts_wh0["roc_pct_used"] == pytest.approx(72.59, abs=0.01)
+    assert ts_wh0["roc_source"] == "19a"
+    assert ts_wh0["refund_estimated"] == 0.0
+    assert ts_wh0["method"] is None
+
+
+def test_roc_negativo_es_sin_dato():
+    """Un `roc_percent` negativo (resta del método 'broker' que no cuadra — traspasos con
+    costo base sin importe) NO es un hecho fiscal: `roc_pct_used`/`roc_source` salen `None`
+    y la fila tributa sobre el bruto completo. El saneado vive en el carril fiscal, no en
+    `stats['roc_percent']` (Regla 4)."""
+    for roc_neg in (-0.78, -65.29):
+        # con país declarado + retención: el negativo cae a la ruta nula por «sin % ROC».
+        ts = logic.build_tax_summary(_stats_roc(40.0, roc_neg, "broker"), "PLTY",
+                                     base_rate_pct=30.0, country="Colombia")
+        assert ts["roc_pct_used"] is None, roc_neg
+        assert ts["roc_source"] is None, roc_neg
+        assert ts["refund_estimated"] == 0.0
+        # sin país tampoco lo resucita
+        ts_und = logic.build_tax_summary(_stats_roc(40.0, roc_neg, "broker"), "PLTY",
+                                         base_rate_pct=logic.RATE_UNDECLARED)
+        assert ts_und["roc_pct_used"] is None, roc_neg
+
+
+def test_roc_cero_medido_sigue_siendo_dato():
+    """`roc_percent == 0.0` es un CERO MEDIDO (SMH del demo de Schwab: `roc 0.0 / broker`),
+    no «sin dato»: se conserva `roc_pct_used == 0.0` y `roc_source` intacto. Es el caso que
+    separa un guard bien escrito (`< 0`) de uno con `if not roc_pct`."""
+    ts = logic.build_tax_summary(_stats_roc(20.0, 0.0, "broker"), "SMH",
+                                 base_rate_pct=30.0, country="Colombia")
+    assert ts["roc_pct_used"] == 0.0
+    assert ts["roc_source"] == "broker"
+    # ROC 0% ⇒ no reduce la retención, pero eso es un resultado, no ausencia de dato.
+    ts_und = logic.build_tax_summary(_stats_roc(0.0, 0.0, "broker"), "SMH",
+                                     base_rate_pct=logic.RATE_UNDECLARED)
+    assert ts_und["roc_pct_used"] == 0.0
+    assert ts_und["roc_source"] == "broker"
+
+
+def test_ninguna_ruta_null_publica_devolucion():
+    """Invariante que el fix NO puede romper: ninguna de las rutas nulas —tocadas o no—
+    publica una devolución estimada ni un método."""
+    casos = [
+        # (stats, kwargs)
+        (_stats_roc(50.0, 60.0), dict(base_rate_pct=logic.RATE_UNDECLARED)),         # _undeclared
+        (_stats_roc(0.0, 60.0), dict(base_rate_pct=30.0, country="Colombia")),       # withheld<=0.01
+        (_stats_roc(50.0, None), dict(base_rate_pct=30.0, country="Colombia")),      # roc None
+        (_stats_roc(50.0, -12.0), dict(base_rate_pct=30.0, country="Colombia")),     # roc negativo
+    ]
+    for stats, kw in casos:
+        ts = logic.build_tax_summary(stats, "X", **kw)
+        assert ts["refund_estimated"] == 0.0, kw
+        assert ts["method"] is None, kw
+        assert ts["fair_withholding"] == 0.0, kw
+        assert ts["by_year"] is False, kw
 
 
 def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
