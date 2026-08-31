@@ -308,6 +308,26 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
     cero es exactamente el cero falso que el motor evita.
     """
     realizado = no_realizado = valor_mercado = base_viva = 0.0
+    # Gemelas fiscales (momento 'tras_reclasificacion_anual'). Se acumulan SOLO sobre los
+    # fondos donde el ajuste por ROC se aplicó de verdad, y se publican con su propio alcance.
+    # Mezclarlas con las de arriba —o completarlas con la base sin ajustar de los fondos que
+    # no lo tienen— sería un total de base mixta, justo lo que la Regla 2 prohíbe.
+    no_realizado_fiscal = base_fiscal = valor_mercado_fiscal = roc_aplicado = 0.0
+    # Las MISMAS cifras sin ajustar, restringidas a los fondos que sí llevan ajuste. Sin esto
+    # la vista solo puede contrastar contra los totales de arriba, que cubren MÁS fondos: en
+    # `?demo=ib` son 5 contra 9, y la resta de dos alcances distintos no significa nada.
+    no_realizado_mercado_alcance = base_mercado_alcance = roc_exceso = 0.0
+    realizado_mercado_alcance = 0.0
+    realizado_fiscal = 0.0
+    n_ventas_fiscal = 0
+    tickers_roc: list[str] = []
+    # Fondos que PUBLICAN avisos 19a y aun así no llevan ajuste, porque su ROC se resolvió por
+    # la ruta del bróker. No es lo mismo que un ETF amplio sin ROC: aquí sí hay ROC conocido y
+    # la app no lo está midiendo. Se nombran para que el alcance no se lea como «los demás no
+    # tienen ROC». Medido: la ruta se decide por si el costo del bróker quedó por DEBAJO de
+    # (aportado + reinvertido), y PLTY del demo de IB cae a $0.72 de ese borde — dos centavos
+    # al otro lado cambian su ROC de −$0.01 a $96.26.
+    tickers_19a_sin_ajuste: list[str] = []
     n_ventas = 0
     n_ok = 0
     indeterminados: list[str] = []
@@ -340,6 +360,24 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
             no_realizado += _f(u_gain)
             valor_mercado += _f(u_val)
             base_viva += _f(u.get("basis"))
+
+        if not cg.get("roc_basis_adjustment_applied"):
+            if (stats or {}).get("roc_19a_published"):
+                tickers_19a_sin_ajuste.append(ticker)
+        if cg.get("roc_basis_adjustment_applied"):
+            tickers_roc.append(ticker)
+            roc_aplicado += _f(cg.get("roc_basis_applied_total"))
+            roc_exceso += _f(cg.get("roc_basis_excess"))
+            if u.get("gain_roc_adjusted") is not None:
+                no_realizado_fiscal += _f(u.get("gain_roc_adjusted"))
+                base_fiscal += _f(u.get("basis_roc_adjusted"))
+                valor_mercado_fiscal += _f(u_val)
+                no_realizado_mercado_alcance += _f(u_gain)
+                base_mercado_alcance += _f(u.get("basis"))
+            if cg.get("realized"):
+                realizado_fiscal += _f(cg.get("realized_total_roc_adjusted"))
+                realizado_mercado_alcance += r_tot
+                n_ventas_fiscal += len(cg.get("realized") or [])
 
         por_ticker.append({
             "ticker": ticker,
@@ -375,10 +413,33 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
         "retencion_eeuu": 0.0,
         "tickers_indeterminados": indeterminados,
         "por_ticker": por_ticker,
-        # Declarado explícitamente para que la vista no pueda afirmar que el ROC ya bajó esta
-        # base. La Regla 1 dice que la reclasificación SÍ mueve la base fiscal — pero es otro
-        # momento, y aquí todavía no se aplica.
-        "roc_basis_adjustment_applied": False,
+        # La base fiscal: la misma posición tras la reclasificación del ROC. Va APARTE y con
+        # su propio alcance (`n_fondos`, `tickers`) porque cubre menos fondos que las cifras
+        # de arriba — solo aquellos cuyo ROC sale de los avisos 19a. Completar el resto con su
+        # base sin ajustar daría un total de momento mixto (Regla 2), y presentarlo como el de
+        # la cartera repetiría la mentira que `n_fondos` ya evita en el bloque de arriba.
+        "fiscal_roc": ({
+            "no_realizado": round(no_realizado_fiscal, 2),
+            "base": round(base_fiscal, 2),
+            "valor_mercado": round(valor_mercado_fiscal, 2),
+            "realizado": (round(realizado_fiscal, 2) if n_ventas_fiscal else None),
+            "roc_aplicado": round(roc_aplicado, 2),
+            # ROC que superó la base de algún fondo: ganancia de capital inmediata, no una
+            # base negativa. Cero en los tres demos; se publica igual para que la vista pueda
+            # decirlo el día que ocurra en vez de omitirlo en silencio.
+            "roc_exceso": round(roc_exceso, 2),
+            # Contraparte sin ajustar, MISMO alcance. Es contra esto que se compara, nunca
+            # contra los totales de la cartera.
+            "no_realizado_mercado": round(no_realizado_mercado_alcance, 2),
+            "base_mercado": round(base_mercado_alcance, 2),
+            "realizado_mercado": (round(realizado_mercado_alcance, 2) if n_ventas_fiscal
+                                  else None),
+            "n_fondos": len(tickers_roc),
+            "tickers": tickers_roc,
+            "tickers_19a_sin_ajuste": tickers_19a_sin_ajuste,
+        } if tickers_roc else None),
+        "moment_fiscal_roc": "tras_reclasificacion_anual",
+        "roc_basis_adjustment_applied": bool(tickers_roc),
     }
 
 

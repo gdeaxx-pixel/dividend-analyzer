@@ -600,3 +600,216 @@ def test_cruce_contra_analyze_portfolio_sobre_los_casos_reales(caso):
                 f"{caso}/{ticker}: la base de costo no cuadra con pocket_investment + DRIP")
 
     assert comprobados > 0, f"el caso {caso} no ejerció ni un ticker — el test no probó nada"
+
+
+# ── Ajuste de la base por ROC (Fase 3.5) ────────────────────────────────────────────
+#
+# La Regla 1 del contrato dice que la reclasificación mueve la base fiscal de la posición.
+# Estos tests cubren las dos cosas que hacen que eso sea correcto y no una resta:
+#   (1) el ROC entra FECHADO — a una venta solo le toca el ROC devengado antes de ella;
+#   (2) la cifra ajustada viaja APARTE, sin pisar `basis`/`gain` (Regla 2: otro momento).
+
+def _roc_caso_base():
+    """Compra 100 @ $10; venta de 40 @ $12; ROC de $200 ANTES de la venta y $300 DESPUÉS."""
+    df = _df([
+        ('2024-01-15', 'Buy',  'YMAX', 100, 10.00, -1000.00),
+        ('2024-06-01', 'Sell', 'YMAX',  40, 12.00,   480.00),
+    ])
+    eventos = [(pd.Timestamp('2024-03-01'), 200.0),   # antes de la venta
+               (pd.Timestamp('2024-09-01'), 300.0)]   # después
+    return df, eventos
+
+
+def test_el_roc_posterior_a_la_venta_no_baja_la_base_de_lo_vendido():
+    """El corazón del diseño fechado. Con $200 de ROC antes y $300 después de la venta:
+
+    - a las 40 acciones vendidas solo les toca su parte de los $200 → base $320, ganancia $160;
+    - los $300 posteriores caen enteros sobre las 60 que quedaron.
+
+    Restar el ROC ACUMULADO al final daría $80 (la misma ganancia que sin ROC, porque la resta
+    ocurriría después de que la venta ya se cerró); repartirlo a prorrata sobre todas las
+    acciones daría $200. Las dos son cifras distintas de la correcta, así que este assert
+    distingue el modelo fechado de sus dos alternativas plausibles.
+    """
+    df, eventos = _roc_caso_base()
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                   roc_events=eventos, roc_source='19a')
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    assert cg['roc_basis_adjustment_applied'] is True
+    assert cg['roc_basis_source'] == '19a'
+
+    venta = cg['realized'][0]
+    assert venta['basis'] == pytest.approx(400.00, abs=0.01)
+    assert venta['basis_roc_adjusted'] == pytest.approx(320.00, abs=0.01)
+    assert venta['gain_roc_adjusted'] == pytest.approx(160.00, abs=0.01)
+
+    u = cg['unrealized']
+    assert u['basis'] == pytest.approx(600.00, abs=0.01)
+    assert u['basis_roc_adjusted'] == pytest.approx(180.00, abs=0.01)
+
+
+def test_las_cifras_sin_ajustar_no_se_mueven_al_aplicar_el_roc():
+    """Regla 2: la base ajustada es otro MOMENTO, no una corrección de la original.
+
+    Correr el mismo CSV con y sin serie de ROC tiene que dar `basis`/`gain` idénticos al
+    centavo. Si el ajuste se hiciera en sitio, las vistas que ya consumen esos campos
+    cambiarían de significado sin que nadie las tocara.
+    """
+    df, eventos = _roc_caso_base()
+    sin = logic.build_capital_gains(df, 'YMAX', market_price=8.00)
+    con = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                    roc_events=eventos, roc_source='19a')
+
+    assert con['realized'][0]['basis'] == pytest.approx(sin['realized'][0]['basis'], abs=0.001)
+    assert con['realized'][0]['gain'] == pytest.approx(sin['realized'][0]['gain'], abs=0.001)
+    assert con['realized_total'] == pytest.approx(sin['realized_total'], abs=0.001)
+    assert con['unrealized']['basis'] == pytest.approx(sin['unrealized']['basis'], abs=0.001)
+    assert con['unrealized']['gain'] == pytest.approx(sin['unrealized']['gain'], abs=0.001)
+
+
+def test_sin_serie_de_roc_las_gemelas_salen_none_y_no_una_copia():
+    """Sin ROC que aplicar, la cifra ajustada NO existe — no es igual a la sin ajustar.
+
+    Publicar una copia haría que una vista la mostrara como segunda confirmación de un número
+    que en realidad nadie ajustó. Es el mismo criterio por el que `estado='indeterminado'`
+    devuelve `None` en vez de cero.
+    """
+    df, _ = _roc_caso_base()
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00)
+
+    assert cg['roc_basis_adjustment_applied'] is False
+    assert cg['roc_basis_source'] is None
+    assert cg['roc_basis_applied_total'] is None
+    assert cg['realized_total_roc_adjusted'] is None
+    assert cg['realized'][0]['basis_roc_adjusted'] is None
+    assert cg['realized'][0]['gain_roc_adjusted'] is None
+    assert cg['unrealized']['basis_roc_adjusted'] is None
+    assert cg['unrealized']['gain_roc_adjusted'] is None
+
+
+def test_el_origen_broker_no_ajusta_la_base():
+    """`roc_source='broker'` es la resta contra el costo de HOY: no tiene fecha que repartir,
+    y M1 §4 lo tiene medido como subestimador del ROC cuando hay reinversión ($18 contra $191
+    reales en MSTY). Aunque llegue una serie, con ese origen no se aplica nada.
+    """
+    df, eventos = _roc_caso_base()
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                   roc_events=eventos, roc_source='broker')
+
+    assert cg['roc_basis_adjustment_applied'] is False
+    assert cg['unrealized']['basis_roc_adjusted'] is None
+
+
+def test_el_roc_que_excede_la_base_no_la_deja_negativa():
+    """Una base fiscal negativa no existe: el ROC que supera la base es ganancia de capital
+    inmediata. Se topa en cero y el excedente se declara aparte, para que una vista pueda
+    decirlo en vez de mostrar un número imposible.
+    """
+    df = _df([('2024-01-15', 'Buy', 'YMAX', 100, 10.00, -1000.00)])
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=5.00,
+                                   roc_events=[(pd.Timestamp('2024-06-01'), 1500.0)],
+                                   roc_source='19a')
+
+    assert cg['unrealized']['basis_roc_adjusted'] == pytest.approx(0.0, abs=0.01)
+    assert cg['roc_basis_applied_total'] == pytest.approx(1000.00, abs=0.01)
+    assert cg['roc_basis_excess'] == pytest.approx(500.00, abs=0.01)
+
+
+def test_conservacion_la_base_baja_exactamente_lo_que_el_roc_aplico():
+    """Invariante ESTRUCTURAL (no un hecho de mercado): la suma de lo que bajó la base —lo que
+    queda vivo más lo que se fue con las ventas— es exactamente `roc_basis_applied_total`.
+
+    Es lo que ata el reparto en el tiempo: si el recorrido perdiera un evento, contara uno dos
+    veces, o no descontara la parte proporcional al vender, esta identidad se rompe.
+    """
+    df, eventos = _roc_caso_base()
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                   roc_events=eventos, roc_source='19a')
+
+    bajada_viva = cg['unrealized']['basis'] - cg['unrealized']['basis_roc_adjusted']
+    bajada_vendida = sum(r['basis'] - r['basis_roc_adjusted'] for r in cg['realized'])
+    assert bajada_viva + bajada_vendida == pytest.approx(cg['roc_basis_applied_total'], abs=0.01)
+
+
+def test_una_distribucion_anterior_a_la_primera_compra_no_baja_nada():
+    """Sin posición viva no hay base que reducir. Un evento huérfano no puede empujar la base
+    a negativo ni contarse como exceso: el exceso es ROC que supera una base EXISTENTE.
+    """
+    df = _df([('2024-05-01', 'Buy', 'YMAX', 100, 10.00, -1000.00)])
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=9.00,
+                                   roc_events=[(pd.Timestamp('2024-01-01'), 400.0)],
+                                   roc_source='19a')
+
+    assert cg['unrealized']['basis_roc_adjusted'] == pytest.approx(1000.00, abs=0.01)
+    assert cg['roc_basis_applied_total'] == pytest.approx(0.0, abs=0.01)
+    assert cg['roc_basis_excess'] == pytest.approx(0.0, abs=0.01)
+
+
+@pytest.mark.parametrize('caso', ['ib', 'schwab', 'schwab2'])
+def test_el_roc_aplicado_cuadra_con_el_acumulado_del_motor(caso):
+    """Regla 5 del contrato: dos vistas del mismo número, comparadas ENTRE SÍ sobre datos
+    reales. `roc_basis_applied_total` sale del recorrido cronológico de `build_capital_gains`;
+    `stats['roc_accumulated']` sale del estimador que suma las distribuciones en
+    `analyze_portfolio`. Son dos caminos distintos hasta el mismo dólar.
+
+    La identidad solo se exige cuando NO hubo ventas ni exceso: al vender, parte del ROC ya
+    aplicado se va con las acciones vendidas y la base viva deja de contenerlo entero —
+    seguirían cuadrando, pero contra la suma de las dos patas, que es justo lo que verifica
+    `test_conservacion_la_base_baja_exactamente_lo_que_el_roc_aplico` sobre datos sintéticos.
+    """
+    demo_mode = _demos()
+    bundle = demo_mode.load_demo_case(caso)
+    if not bundle:
+        pytest.skip(f"el caso {caso} no está disponible")
+
+    comprobados = 0
+    for ticker, stats in sorted((bundle.get('_results') or {}).items()):
+        cg = (stats or {}).get('capital_gains') or {}
+        if not cg.get('roc_basis_adjustment_applied'):
+            continue
+        if cg.get('realized') or (cg.get('roc_basis_excess') or 0) > 0.01:
+            continue
+        comprobados += 1
+        assert cg['roc_basis_applied_total'] == pytest.approx(
+            stats.get('roc_accumulated'), abs=0.02), (
+            f"{caso}/{ticker}: el ROC repartido en el tiempo no suma el acumulado del motor")
+
+    assert comprobados > 0, (
+        f"{caso}: ningún ticker ejerció el ajuste por ROC — el cruce no probó nada")
+
+
+def test_un_fondo_con_19a_pero_sin_ajuste_se_nombra_en_vez_de_desaparecer():
+    """El alcance del bloque fiscal no puede leerse como «los demás no tienen ROC».
+
+    Un fondo puede publicar avisos 19a y aun así quedarse sin ajuste, porque su ROC se
+    resolvió por la ruta del costo del bróker — donde la reclasificación de fin de año todavía
+    no aparece. Ese fondo NO es un ETF amplio sin ROC, y callarlo convierte un «no lo sabemos»
+    en un «no lo tiene».
+
+    El borde que lo produce está medido: la ruta se decide por si el costo del bróker quedó
+    por debajo de (aportado + reinvertido), y PLTY del demo de IB cae a $0.72 de ese umbral —
+    dos centavos al otro lado mueven su ROC de −$0.01 a $96.26.
+    """
+    from ui import adapters
+
+    demo_mode = _demos()
+    bundle = demo_mode.load_demo_case('ib')
+    if not bundle:
+        pytest.skip("el caso ib no está disponible")
+
+    resultados = bundle.get('_results') or {}
+    datos = adapters._ganancias_capital_cartera(resultados)
+    fiscal = (datos or {}).get('fiscal_roc') or {}
+    assert fiscal, "el demo de IB tiene que ejercer el bloque fiscal"
+
+    nombrados = set(fiscal.get('tickers') or []) | set(fiscal.get('tickers_19a_sin_ajuste') or [])
+    olvidados = [
+        tk for tk, st in resultados.items()
+        if (st or {}).get('roc_19a_published')
+        and ((st or {}).get('capital_gains') or {}).get('estado') == 'ok'
+        and tk not in nombrados
+    ]
+    assert not olvidados, (
+        f"fondos que publican 19a y no se nombran ni como ajustados ni como pendientes: "
+        f"{olvidados} — el lector los leería como fondos sin ROC")

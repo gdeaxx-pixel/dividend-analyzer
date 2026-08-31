@@ -18,6 +18,39 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 - **WHEN** el broker reclasifica al cierre del año una distribución que antes se trató como dividendo ordinario, marcándola ahora como ROC (19a)
 - **THEN** el capital aportado mostrado en cualquier vista de la app permanece exactamente igual al que había antes de la reclasificación; solo cambian el bucket de impuesto y la base fiscal registrada para esa posición
 
+> **Implementado (2026-08-30, el ROC ajusta la base fiscal — `fiscal/roc-base-costo`).** La
+> segunda mitad de esta regla («la base fiscal de la posición») dejó de ser una promesa:
+> `build_capital_gains` publica `basis_roc_adjusted` / `gain_roc_adjusted` (y su gemela por
+> venta) junto a las originales, con `roc_basis_adjustment_applied` diciendo cuál está viva.
+> **Van APARTE, nunca encima de `basis`/`gain`**: son otro momento
+> (`moment_basis_roc_adjusted = 'tras_reclasificacion_anual'`) y pisarlas cambiaría en silencio
+> el significado de campos que las vistas ya consumen. La primera mitad de la regla se respeta
+> igual: `pocket_investment` no se movió ni un centavo (test
+> `test_las_cifras_sin_ajustar_no_se_mueven_al_aplicar_el_roc`).
+>
+> **El ROC entra FECHADO** (`_roc_events_from_19a`, una entrada por distribución) y se aplica
+> dentro del mismo recorrido cronológico de la función, no como un total al final: a las
+> acciones vendidas solo les corresponde el ROC devengado ANTES de la venta. Las tres lecturas
+> son distintas y están medidas sobre MSTY del demo de IB (venta del 2.72% de la posición):
+> restar el acumulado al final deja la ganancia realizada en −$178.78 (sin efecto), repartirlo
+> a prorrata la lleva a +$32.81 (cambia de signo, y es incorrecto), y el reparto fechado da
+> **−$85.13**. `_estimate_roc_from_19a` pasó a ser la SUMA de esa serie — un solo empate por
+> fecha, no dos implementaciones (Regla 3).
+>
+> **Solo se acepta `roc_source='19a'`.** El método `'broker'` —`(aportado + reinvertido) −
+> costo del bróker`— no tiene fecha que repartir y subestima el ROC cuando hay reinversión: la
+> brecha contra los 19a es del tamaño de las distribuciones del año en curso, que el bróker aún
+> no ha reclasificado (TSLY $859 contra un bruto 2026 de $924; NVDY $1,139 contra $1,351). Son
+> dos MOMENTOS, no dos versiones del mismo número.
+>
+> Piso duro: la base no baja de cero; el ROC que la excede es ganancia de capital inmediata y se
+> declara en `roc_basis_excess`. Gates: 8 tests en `test_ganancias_capital.py`, con los 4
+> sabotajes de M4 verificados. **Alcance declarado, no supuesto:** el agregado
+> `ui.adapters._ganancias_capital_cartera` publica `fiscal_roc` con sus propias cifras SIN
+> ajustar del mismo alcance (`base_mercado`, `no_realizado_mercado`) — comparar contra los
+> totales de cartera restaría dos alcances distintos (5 fondos contra 9 en `?demo=ib`) — y
+> nombra en `tickers_19a_sin_ajuste` los fondos que publican 19a y aun así no llevan ajuste.
+
 **Scenario:** Señal de alarma — cifra sospechosa por definición
 - **WHEN** una vista muestra un "capital real" o "capital ajustado" que sube o baja después de aplicar un porcentaje de ROC
 - **THEN** esa cifra se considera sospechosa por definición y debe rechazarse o corregirse antes de desplegar — el ROC nunca es motivo válido para mover el capital aportado

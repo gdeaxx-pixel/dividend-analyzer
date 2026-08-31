@@ -2189,6 +2189,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
                 _roc_source = '19a'
 
+        # Serie FECHADA del ROC para la base fiscal de la ganancia de capital. Solo cuando el
+        # origen es 19a: el método 'broker' es una resta contra el costo de HOY, no tiene
+        # fecha que repartir en el tiempo, y subestima el ROC al reinvertir (M1 §4). Sale del
+        # mismo empate por fecha que alimentó `_roc_accum` — no es un segundo cálculo.
+        _roc_events = _roc_events_from_19a(ticker, dist_dated) if _roc_source == '19a' else None
+
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
         # Objeto fiscal único de bruto/retención/neto (PR B): `divs_by_year` mezcla bases
@@ -2311,12 +2317,19 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 market_price=current_price,
                 splits=_splits_col,
                 history_incomplete=history_incomplete,
+                roc_events=_roc_events,
+                roc_source=_roc_source,
             ),
             # ROC
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
             "roc_percent":         _roc_pct,
             "roc_source":          _roc_source,
+            # ¿El fondo publica avisos 19a? Es distinto de «su ROC salió de los 19a»: un fondo
+            # puede publicarlos y aun así tomar la ruta 'broker' (el snapshot del bróker todavía
+            # no refleja la reclasificación). Sin este flag, esa diferencia es invisible para
+            # las vistas y un fondo con ROC conocido se presenta como uno sin ROC.
+            "roc_19a_published":   str(ticker).upper() in load_roc_19a(),
             # Reconciliación desde la captura del broker
             "reconciled_from_snapshot": reconciled_from_snapshot,
             "reconciled_fields":        reconciled_fields,
@@ -3373,19 +3386,28 @@ def latest_health_verdict(ticker):
     return last.get('verdict')
 
 
-def _estimate_roc_from_19a(ticker, dist_dated):
-    """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
+def _roc_events_from_19a(ticker, dist_dated):
+    """Serie FECHADA del ROC del holder: `[(fecha, roc_$)]`, una entrada por distribución.
 
     `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
     Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
-    usa el % ponderado del fondo (`weighted_pct`). Devuelve (roc_$|None, roc_%|None).
+    usa el % ponderado del fondo (`weighted_pct`).
+
+    Existe porque el ROC **acumulado no sirve para la base fiscal de una venta**: a las
+    acciones vendidas solo les corresponde el ROC devengado ANTES de venderlas, así que hay
+    que recorrerlo en el tiempo y no restar un total al final. Medido sobre MSTY del demo de
+    IB: repartir el acumulado a prorrata por acciones da $211.59 a una venta del 2.72% de la
+    posición y mueve la ganancia realizada de −$178.78 a +$32.81 — el signo depende de esto,
+    no es un decimal.
+
+    Devuelve `None` —y no una lista parcial— si el fondo no publica 19a o si alguna
+    distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
+    estimador: un ROC a medias mezclado con distribuciones sin catalogar no es una base
+    fiscal, es un híbrido, y la Regla 2 lo prohíbe.
     """
     info = load_roc_19a().get(str(ticker).upper())
     if not info or not dist_dated:
-        return None, None
-    total = sum(abs(a or 0) for _, a in dist_dated)
-    if total <= 0:
-        return None, None
+        return None
 
     dated = []
     for rowp in (info.get('per_distribution') or []):
@@ -3396,7 +3418,7 @@ def _estimate_roc_from_19a(ticker, dist_dated):
     weighted = info.get('weighted_pct')
     weighted = float(weighted) if weighted is not None else None
 
-    roc_sum = 0.0
+    eventos = []
     for dt, amt in dist_dated:
         amt = abs(amt or 0)
         pct = None
@@ -3407,8 +3429,29 @@ def _estimate_roc_from_19a(ticker, dist_dated):
         if pct is None:
             pct = weighted
         if pct is None:
-            return None, None
-        roc_sum += amt * (pct / 100.0)
+            return None
+        eventos.append((dt, amt * (pct / 100.0)))
+    return eventos
+
+
+def _estimate_roc_from_19a(ticker, dist_dated):
+    """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
+
+    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    Devuelve (roc_$|None, roc_%|None).
+
+    Es la SUMA de `_roc_events_from_19a`, no un segundo empate por fecha: el criterio de
+    emparejar cada distribución con su aviso (±7 días, respaldo al `weighted_pct`) vive en
+    un solo sitio. Dos implementaciones del mismo empate es exactamente la divergencia que
+    la Regla 3 del contrato prohíbe.
+    """
+    total = sum(abs(a or 0) for _, a in dist_dated) if dist_dated else 0.0
+    if total <= 0:
+        return None, None
+    eventos = _roc_events_from_19a(ticker, dist_dated)
+    if eventos is None:
+        return None, None
+    roc_sum = sum(a for _, a in eventos)
     return roc_sum, (roc_sum / total * 100.0)
 # ── Veredicto de salud del NAV: ¿el ROC es destructivo o contable? ───────────
 # Umbrales del clasificador. La VERDAD sobre destructividad es la tendencia del NAV
@@ -4217,7 +4260,8 @@ CAPITAL_GAINS_TRAMO_DIAS = 730  # 2 años — el corte que la Fase 4 usará para
 
 def build_capital_gains(ticker_df, ticker: str = None, market_price: float = None,
                         today=None, splits=None,
-                        history_incomplete: bool = False) -> dict:
+                        history_incomplete: bool = False,
+                        roc_events=None, roc_source: str = None) -> dict:
     """Objeto único de GANANCIA DE CAPITAL por ticker — realizada y no realizada.
 
     Es un eje NUEVO, no una vista de uno existente. Antes de esta función no había ninguna
@@ -4251,12 +4295,24 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
     momento. Los realizados son `'al_cierre_de_la_venta'`; el no realizado es
     `'a_precio_de_mercado_hoy'` y por eso `is_estimate=True`.
 
-    **El ROC todavía NO ajusta esta base**, y el objeto lo declara explícitamente en
-    `roc_basis_adjustment_applied`. La Regla 1 dice que la reclasificación mueve la base
-    fiscal de la posición, así que la base ajustada por ROC es una cifra REAL y distinta de
-    esta — pero es otro momento (`'tras reclasificación anual'`) y mezclarla aquí sin
-    declararlo violaría la Regla 2. Se deja el campo para que ninguna vista pueda afirmar que
-    el ROC ya está dentro cuando no lo está.
+    **El ROC ajusta la base, pero en una cifra APARTE** (`basis_roc_adjusted` /
+    `gain_roc_adjusted`), nunca encima de `basis`. La Regla 1 dice que la reclasificación
+    mueve la base fiscal de la posición; la Regla 2 dice que esa cifra es otro MOMENTO
+    (`'tras_reclasificacion_anual'`) y no puede pisar la de `'al_cierre_de_la_venta'` /
+    `'a_precio_de_mercado_hoy'`. Por eso las dos viajan juntas y `roc_basis_adjustment_applied`
+    dice cuál está viva. Sin `roc_events` las gemelas salen `None`: ninguna vista puede
+    afirmar que el ROC está dentro cuando no lo está.
+
+    **El ROC entra FECHADO, no como total.** `roc_events` es `[(fecha, roc_$)]` de
+    `_roc_events_from_19a`, y se aplica dentro del mismo recorrido cronológico: a las acciones
+    vendidas solo les toca el ROC devengado antes de la venta. Restar el acumulado al final
+    reparte a prorrata ROC que aún no existía — medido en MSTY del demo de IB, eso mueve la
+    ganancia realizada de −$178.78 a +$32.81 (cambia de signo) sobre una venta del 2.72%.
+
+    **Solo se acepta la serie de los 19a** (`roc_source='19a'`). El método `'broker'`
+    —`(invertido + reinvertido) − costo del bróker`— no tiene fecha que repartir, y además
+    subestima el ROC al reinvertir (M1 §4; en los ETFs amplios de los demos vale −$6, que es
+    ruido de comisiones y no ROC). Si llegara con ese origen, no se ajusta nada.
 
     `holding_days_ponderado` del no realizado se pondera por acciones: con compras escalonadas
     es una aproximación, no una fecha de adquisición real.
@@ -4268,11 +4324,16 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         'motivo': 'sin_transacciones',
         'realized': [],
         'realized_total': None,
+        'realized_total_roc_adjusted': None,
         'unrealized': None,
         'basis': 'costo_promedio',
         'moment_realized': 'al_cierre_de_la_venta',
         'moment_unrealized': 'a_precio_de_mercado_hoy',
         'roc_basis_adjustment_applied': False,
+        'roc_basis_source': None,
+        'roc_basis_applied_total': None,
+        'roc_basis_excess': None,
+        'moment_basis_roc_adjusted': 'tras_reclasificacion_anual',
         'is_estimate': True,
     }
     if ticker_df is None or len(ticker_df) == 0:
@@ -4303,11 +4364,59 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
 
     shares = 0.0          # acciones vivas, ya ajustadas por split
     basis_total = 0.0     # costo total de esas acciones
+    # Base fiscal gemela, ajustada por ROC. Viaja EN PARALELO en vez de sustituir a
+    # `basis_total` por dos razones, las dos duras: (1) Regla 2 — es otro momento, y pisar la
+    # original haría que `basis`/`gain` cambiaran de significado en silencio para las vistas
+    # que ya las consumen; (2) el guard de «base total <= 0» de más abajo marca
+    # `acciones_sin_costo_registrado`, y un fondo con ROC alto legítimamente puede llevar su
+    # base fiscal a cero sin que al CSV le falte nada — ajustar en sitio convertiría un
+    # resultado correcto en un falso 'indeterminado'.
+    basis_roc = 0.0
     dias_wsum = 0.0       # Σ(acciones × día de adquisición) — compañero natural del promedio
     realized = []
     indeterminado = bool(history_incomplete)
     motivo = 'history_incomplete' if history_incomplete else None
     ultimo_dia = None
+
+    # ── ROC fechado sobre la base fiscal gemela ───────────────────────────────
+    # Solo la serie de los 19a: el método 'broker' no tiene fecha que repartir (ver docstring).
+    _roc_pend = []
+    if roc_events and roc_source == '19a':
+        for _d, _a in roc_events:
+            _dd = _dia(_d)
+            try:
+                _aa = float(_a)
+            except (TypeError, ValueError):
+                continue
+            if _dd is not None and _aa > 0:
+                _roc_pend.append((_dd, _aa))
+        _roc_pend.sort(key=lambda e: e[0])
+    _roc_activo = bool(_roc_pend)
+    _roc_i = 0
+    roc_aplicado = 0.0
+    roc_exceso = 0.0
+
+    def _aplicar_roc_hasta(dia_limite):
+        """Baja la base gemela con el ROC devengado hasta `dia_limite` (None = todo lo que quede).
+
+        Se llama ANTES de procesar la fila de esa fecha, que es lo que hace que una venta se
+        lleve el ROC ya devengado y no el posterior.
+        """
+        nonlocal _roc_i, basis_roc, roc_aplicado, roc_exceso
+        while _roc_i < len(_roc_pend) and (dia_limite is None or _roc_pend[_roc_i][0] <= dia_limite):
+            monto = _roc_pend[_roc_i][1]
+            _roc_i += 1
+            if shares <= 1e-9:
+                # Distribución sin posición viva: no hay base que bajar. No se acumula como
+                # exceso — el exceso es ROC que SUPERA una base existente, no ROC huérfano.
+                continue
+            # La base fiscal no baja de cero: el ROC que la excede es ganancia de capital
+            # inmediata, no una base negativa. Se cuenta aparte para que una vista pueda
+            # decirlo en vez de mostrar un número imposible.
+            baja = min(monto, max(basis_roc, 0.0))
+            basis_roc -= baja
+            roc_aplicado += baja
+            roc_exceso += monto - baja
 
     for _, row in ticker_df.iterrows():
         action = str(row.get('Action', '')).lower()
@@ -4317,6 +4426,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         dia = _dia(fecha)
         if dia is not None:
             ultimo_dia = dia if ultimo_dia is None else max(ultimo_dia, dia)
+        _aplicar_roc_hasta(dia)
 
         # Mismos predicados que el recorrido de `analyze_portfolio`. No se decide por bróker.
         is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
@@ -4328,7 +4438,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         sf = _cumul_split_factor(fecha, splits) if splits is not None else 1.0
 
         def _adquirir(cantidad, costo):
-            nonlocal shares, basis_total, dias_wsum, indeterminado, motivo
+            nonlocal shares, basis_total, basis_roc, dias_wsum, indeterminado, motivo
             if cantidad <= 0:
                 return
             if costo <= 0:
@@ -4343,6 +4453,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 motivo = motivo or 'acciones_sin_costo_registrado'
             shares += cantidad
             basis_total += costo
+            basis_roc += costo
             if dia is not None:
                 dias_wsum += cantidad * dia
 
@@ -4360,6 +4471,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 salen = min(abs(cantidad), shares)
                 prop = salen / shares
                 basis_total -= basis_total * prop
+                basis_roc -= basis_roc * prop
                 dias_wsum -= dias_wsum * prop
                 shares -= salen
         elif is_drip:
@@ -4385,6 +4497,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 continue
             prop = vendidas / shares
             base_vendida = basis_total * prop
+            base_roc_vendida = basis_roc * prop
             dia_medio = (dias_wsum / shares) if shares > 0 else None
             dias_tenencia = None
             if dia_medio is not None and dia is not None:
@@ -4395,11 +4508,17 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 'proceeds': abs(amount),
                 'basis': base_vendida,
                 'gain': abs(amount) - base_vendida,
+                # Gemela fiscal: misma venta, base ya reducida por el ROC devengado HASTA
+                # esta fecha. `None` cuando no hay serie que aplicar — nunca una copia de
+                # la de arriba, que se leería como una segunda confirmación.
+                'basis_roc_adjusted': (base_roc_vendida if _roc_activo else None),
+                'gain_roc_adjusted': ((abs(amount) - base_roc_vendida) if _roc_activo else None),
                 'holding_days': dias_tenencia,
                 'tramo': (None if dias_tenencia is None else
                           ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
             })
             basis_total -= base_vendida
+            basis_roc -= base_roc_vendida
             dias_wsum -= dias_wsum * prop
             shares -= vendidas
 
@@ -4416,6 +4535,9 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             if shares > 0:
                 dias_wsum *= qty / shares
             shares = qty
+
+    # Distribuciones posteriores a la última transacción del CSV: su ROC también bajó la base.
+    _aplicar_roc_hasta(None)
 
     if shares > 1e-9 and basis_total <= 0:
         indeterminado = True
@@ -4439,6 +4561,13 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             'basis': basis_total,
             'market_value': valor,
             'gain': (valor - basis_total) if valor is not None else None,
+            # Gemelas fiscales. `basis_roc_adjusted` es la base tras el ROC (momento
+            # 'tras_reclasificacion_anual'); `gain_roc_adjusted` la ganancia que se derivaría
+            # de ella. NO se suman ni se restan con las de arriba: son el mismo dinero medido
+            # en dos momentos, y combinarlas es el bug del caso origen del contrato.
+            'basis_roc_adjusted': (basis_roc if _roc_activo else None),
+            'gain_roc_adjusted': ((valor - basis_roc) if (_roc_activo and valor is not None)
+                                  else None),
             'holding_days_ponderado': dias_tenencia,
             'tramo': (None if dias_tenencia is None else
                       ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
@@ -4455,7 +4584,15 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         'basis': 'costo_promedio',
         'moment_realized': 'al_cierre_de_la_venta',
         'moment_unrealized': 'a_precio_de_mercado_hoy',
-        'roc_basis_adjustment_applied': False,
+        'realized_total_roc_adjusted': (
+            sum(r['gain_roc_adjusted'] for r in realized) if (realized and _roc_activo)
+            else (0.0 if _roc_activo else None)),
+        'roc_basis_adjustment_applied': _roc_activo,
+        'roc_basis_source': (roc_source if _roc_activo else None),
+        'roc_basis_applied_total': (roc_aplicado if _roc_activo else None),
+        # ROC que excedió la base: ganancia de capital inmediata, no una base negativa.
+        'roc_basis_excess': (roc_exceso if _roc_activo else None),
+        'moment_basis_roc_adjusted': 'tras_reclasificacion_anual',
         'is_estimate': True,
     }
 
