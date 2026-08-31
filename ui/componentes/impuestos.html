@@ -224,13 +224,24 @@
     '<p class="imp-step-sub">El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.</p>',
     "activo"));
 
+  var gCob = P.gravable || {};
+  var sinRoc = gCob.sin_roc || [];
+  var cobertura = sinRoc.length
+    ? ' El cálculo cubre <b>' + gCob.cubiertos + ' de ' + gCob.total + '</b> '
+        + (gCob.total === 1 ? 'fondo' : 'fondos') + '; '
+        + (sinRoc.length === 1
+            ? 'el fondo <b>' + esc(sinRoc[0]) + '</b> figura sin dato de ROC y tributa'
+            : 'los fondos <b>' + sinRoc.map(esc).join(', ') + '</b> figuran sin dato de ROC y tributan')
+        + ' sobre el bruto completo.'
+    : '';
+
   pasos.push(stepRow("Peldaño 2", "¿Cuánto era renta de verdad?",
     P.gravable ? P.gravable.monto : 0, P.gravable ? P.gravable.pct : null,
     '<p class="imp-step-sub">Gravable = bruto × (1 − ROC). El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no paga impuesto hoy'
       + (rocEfectivo != null && rocEfectivo > 0.5
           ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver tabla por fondo)'
           : '')
-      + '.</p>',
+      + '.' + cobertura + '</p>',
     "activo"));
 
   if (D.declarado && P.corresponde) {

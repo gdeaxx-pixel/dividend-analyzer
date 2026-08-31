@@ -78,7 +78,16 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **767 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+Línea base: **778 passed, 2 skipped, 3 deselected** (medido 2026-08-31 sobre la rama
+`fiscal/peldano2-roc-sin-pais`, base `main` = `54381ae`, tras sumar 11 tests — el peldaño 2
+de la vista de Impuestos publica el % de ROC aunque falte el país o la retención NRA
+(`build_tax_summary._null` lo propaga por las dos rutas nulas), y un `roc_percent` NEGATIVO
+—resta del método 'broker' que no cuadra— se rotula «sin dato» en el carril fiscal sin tocar
+`stats['roc_percent']` (Regla 4). El cero MEDIDO se conserva. La vista declara la cobertura
+(`gravable.sin_roc`/`cubiertos`/`total`) antes de la cifra. Los 3 sabotajes de M4 (guard del
+negativo, guard del cero, `_null` deja de publicar) fallaron donde debían.
+
+Antes: **767 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
 `fiscal/roc-base-costo`, base `main` = `c998feb`, tras sumar 11 tests en
 `test_ganancias_capital.py` — **el ROC ya ajusta la base fiscal**, en una cifra APARTE
 (`basis_roc_adjusted` / `gain_roc_adjusted`) que nunca pisa `basis`/`gain`: son dos momentos

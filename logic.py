@@ -5221,11 +5221,16 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
              else (base_rate_pct if base_rate_pct is not None else NRA_DEFAULT_RATE))
 
     def _null(withheld_real=0.0, label_long='Sin retención NRA o sin % ROC calculado para '
-              'este fondo: no aplica devolución estimada.'):
+              'este fondo: no aplica devolución estimada.',
+              roc_pct_used=None, roc_source=None):
+        # El % de ROC no depende de la tasa de residencia ni de que haya habido retención:
+        # las rutas nulas por «sin país» / «sin retención NRA» igual lo publican si el motor
+        # lo conoce (daño colateral corregido 2026-08-31). Sigue nulo todo lo que SÍ depende
+        # de la tasa o la retención (fair_withholding, refund_*, method, by_year...).
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'rate_declared': not _undeclared,
-            'roc_pct_used': None, 'roc_source': None,
+            'roc_pct_used': roc_pct_used, 'roc_source': roc_source,
             'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
             'net_estimated': round(withheld_real, 2),
@@ -5238,16 +5243,34 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
 
     try:
         withheld_real = float(stats.get('withheld_tax_total') or 0.0)
+
+        # ROC realizado del holder, saneado para el carril fiscal (Regla 4: NO tocar
+        # `stats['roc_percent']` — eso movería salud del NAV y build_hoja_excel). Un ROC
+        # NEGATIVO no es un hecho fiscal: es el síntoma de que el método 'broker'
+        # —(aportado + reinvertido) − costo base del bróker— no cuadra (traspasos con costo
+        # base pero sin importe en el CSV). Se rotula «sin dato», no descuenta. El CERO
+        # medido SÍ es dato y se conserva.
+        _roc_known = stats.get('roc_percent')
+        _roc_src = stats.get('roc_source')
+        if _roc_known is not None and _roc_known < 0:
+            _roc_known, _roc_src = None, None
+
+        # Orden de guardas intacto: `withheld_real <= 0.01` corta antes que `_undeclared`, y
+        # las dos antes del cálculo (reordenar cambia el `label_long` que ve el cliente y
+        # puede resucitar la estimación de devolución sin tasa). Ambas rutas publican ahora
+        # el % de ROC conocido — es daño colateral que cayera con ellas.
         if withheld_real <= 0.01:
-            return _null(withheld_real, 'No hay retención NRA registrada para este fondo.')
+            return _null(withheld_real, 'No hay retención NRA registrada para este fondo.',
+                         roc_pct_used=_roc_known, roc_source=_roc_src)
 
         if _undeclared:
             return _null(withheld_real,
                          'Declara tu residencia fiscal para saber cuánto de esta retención '
                          'te corresponde recuperar. Sin país no estimamos la devolución: la '
-                         'cifra dependería por completo del supuesto.')
+                         'cifra dependería por completo del supuesto.',
+                         roc_pct_used=_roc_known, roc_source=_roc_src)
 
-        roc_pct = stats.get('roc_percent')
+        roc_pct = _roc_known
         if roc_pct is None:
             return _null(withheld_real)
 
@@ -5297,7 +5320,7 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         return {
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'rate_declared': True,
-            'roc_pct_used': roc_pct, 'roc_source': stats.get('roc_source'),
+            'roc_pct_used': roc_pct, 'roc_source': _roc_src,
             'withheld_real': round(withheld_real, 2),
             'fair_withholding': refund_info['fair_withholding'],
             'refund_estimated': refund_estimated, 'refund_pct': refund_info['refund_pct'],

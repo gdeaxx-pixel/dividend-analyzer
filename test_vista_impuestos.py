@@ -326,3 +326,114 @@ def test_sin_foreign_tax_paid_no_hay_linea(monkeypatch):
     res, _ = _resultados_de_fixture(monkeypatch, "ib_synth_1", "IMP_NO_FTP")
     datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
     assert datos["peldanos"]["retenido"]["impuesto_extranjero"] is None
+
+
+# ── 6. Peldaño 2 (gravable) — el % de ROC no depende del país ni de la retención ───────
+
+def test_peldano2_descuenta_roc_sin_pais_declarado():
+    """El bug de `?demo=ib`: sin país declarado el peldaño 2 mostraba el 100 % del bruto
+    como gravable aunque el motor SÍ tenía el % de ROC. Ahora descuenta."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    datos = impuestos_data(res, logic.build_fiscal_profile(), [])   # sin país
+    f = {x["ticker"]: x for x in datos["fondos"]}["MSTY"]
+    assert f["roc_pct"] == pytest.approx(60.0, abs=0.01)
+    assert f["gravable"] == pytest.approx(400.0, abs=0.02)          # 1000 × (1 − 0.60)
+    assert datos["peldanos"]["gravable"]["monto"] == pytest.approx(400.0, abs=0.02)
+    assert datos["peldanos"]["gravable"]["sin_roc"] == []
+
+
+def test_peldano2_descuenta_roc_sin_retencion_nra_con_pais():
+    """El camino que nadie había contado, el de `?demo=schwab`: retención NRA $0 en todos
+    los fondos y país declarado — el peldaño 2 igual descuenta el ROC."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 0.0, 60.0, "19a")}
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
+    f = {x["ticker"]: x for x in datos["fondos"]}["MSTY"]
+    assert f["roc_pct"] == pytest.approx(60.0, abs=0.01)
+    assert f["gravable"] == pytest.approx(400.0, abs=0.02)
+
+
+def test_peldano2_roc_negativo_no_descuenta_y_se_declara():
+    """`roc_percent` negativo (método 'broker' que no cuadra) ⇒ la fila figura «sin dato»
+    (`roc_pct` None) y tributa sobre el bruto completo; el peldaño lo declara en `sin_roc`."""
+    res = {
+        "PLTY": _stats_sinteticos("PLTY", 130.95, 39.21, -0.78, "broker"),
+        "SMH": _stats_sinteticos("SMH", 13.13, 3.94, -65.29, "broker"),
+        "CONY": _stats_sinteticos("CONY", 3162.65, 202.98, 61.24, "19a"),
+    }
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
+    f = {x["ticker"]: x for x in datos["fondos"]}
+    for tk in ("PLTY", "SMH"):
+        assert f[tk]["roc_pct"] is None, tk
+        assert f[tk]["roc_fuente"] is None, tk
+        assert f[tk]["gravable"] == pytest.approx(f[tk]["bruto"], abs=0.01), tk
+    assert f["CONY"]["roc_pct"] == pytest.approx(61.24, abs=0.01)
+    g = datos["peldanos"]["gravable"]
+    assert set(g["sin_roc"]) == {"PLTY", "SMH"}
+    assert g["cubiertos"] == 1 and g["total"] == 3
+
+
+def test_peldano2_roc_cero_medido_es_dato():
+    """`roc_percent == 0.0` (cero MEDIDO, no ausencia) ⇒ `roc_pct` 0.0, fuera de `sin_roc`,
+    gravable == bruto (0 % no reduce nada, pero por resultado, no por falta de dato)."""
+    res = {"SMH": _stats_sinteticos("SMH", 100.0, 10.0, 0.0, "broker")}
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), [])
+    f = {x["ticker"]: x for x in datos["fondos"]}["SMH"]
+    assert f["roc_pct"] == 0.0
+    assert f["roc_fuente"] == "broker"
+    assert datos["peldanos"]["gravable"]["sin_roc"] == []
+    assert datos["peldanos"]["gravable"]["cubiertos"] == 1
+
+
+# ── 7. Cruce contra los demos reales (patrón del #99) ──────────────────────────────────
+#
+# El bruto NO depende del ROC → se pinea exacto. El gravable y `sin_roc` SÍ dependen de
+# `roc_percent`, que para PLTY/QYLD/SVOL (sin parquet en `knowledge/price_cache/`, precio
+# de yfinance en vivo) queda a centímetros del umbral `_prefer_19a_roc` (borde documentado
+# en CLAUDE.md: PLTY a $0.72). Por eso solo `schwab2` —cuyos tres fondos tienen parquet y
+# ROC estable— se pinea al céntimo; para `ib`/`schwab` se asertan las propiedades
+# ESTRUCTURALES (Regla 6: un invariante no es un hecho de mercado).
+
+def _impuestos_demo(alias):
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    bundle = demo_mode.load_demo_case(alias)
+    assert bundle is not None
+    return impuestos_data(bundle["_results"], logic.build_fiscal_profile(), [])
+
+
+def test_cruce_peldano2_schwab2_exacto():
+    """`?demo=schwab2`: MSTY (19a 74.18 %) + SCHB/XLK sin dato. Determinista."""
+    datos = _impuestos_demo("schwab2")
+    g = datos["peldanos"]["gravable"]
+    assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
+    assert g["monto"] == pytest.approx(126.02, abs=0.05)
+    assert set(g["sin_roc"]) == {"SCHB", "XLK"}
+    assert (g["cubiertos"], g["total"]) == (1, 3)
+
+
+@pytest.mark.parametrize("alias,bruto_esp,sin_roc_min", [
+    ("ib", 18319.69, {"SCHB", "SMH", "XLK"}),
+    ("schwab", 5827.18, {"SCHB", "XLK"}),
+])
+def test_cruce_peldano2_estructural(alias, bruto_esp, sin_roc_min):
+    datos = _impuestos_demo(alias)
+    fondos = datos["fondos"]
+    g = datos["peldanos"]["gravable"]
+
+    assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(bruto_esp, abs=0.02)
+    # los ETF de índice con roc_percent sólidamente negativo/None SIEMPRE quedan sin dato
+    assert sin_roc_min <= set(g["sin_roc"])
+    # invariante por fila: sin dato ⇒ gravable == bruto; con dato ⇒ bruto × (1 − ROC/100)
+    for f in fondos:
+        if f["roc_pct"] is None:
+            assert f["gravable"] == pytest.approx(f["bruto"], abs=0.01), f["ticker"]
+        else:
+            esperado = f["bruto"] * (1 - f["roc_pct"] / 100.0)
+            assert f["gravable"] == pytest.approx(esperado, abs=0.02), f["ticker"]
+    # el peldaño reconcilia con la suma por fondo y con la cobertura declarada
+    assert g["monto"] == pytest.approx(sum(f["gravable"] for f in fondos), abs=0.05)
+    assert g["cubiertos"] == len(fondos) - len(g["sin_roc"])
+    assert g["total"] == len(fondos)
+    # al menos un fondo con 19a descuenta de verdad (gravable < bruto de cartera)
+    assert g["monto"] < datos["peldanos"]["bruto"]["monto"] - 1.0
