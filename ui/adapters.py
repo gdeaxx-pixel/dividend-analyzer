@@ -491,6 +491,11 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
     bruto_total = gravable_total = corresponde_total = 0.0
     retenido_cobro_total = ya_devuelto_total = 0.0
     correcta_total = refund_roc_total = gap_w8ben_total = 0.0
+    # Acumulador propio de la casilla 9: el ROC recuperable se mide sin país (helper único en
+    # logic.py), así que NO se gatea por `declarado` como `refund_roc_total`. Sí por `reconcilia`
+    # —el guard de los reversos de split de IB—, y sin el `correcta < -0.01` de `desglose_ok`:
+    # un residuo negativo invalida la partición de tres del peldaño 4, no la medición del ROC.
+    refund_roc_casilla9_total = 0.0
     foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
     fondos_sin_roc: list[str] = []   # peldaño 2: sin dato de ROC → tributan sobre el 100% del bruto
@@ -570,6 +575,8 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         retenido_cobro_total += retenido_cobro
         ya_devuelto_total += ya_devuelto
         foreign_tax_paid_total += _f(stats.get("foreign_tax_paid_total"))
+        if reconcilia:
+            refund_roc_casilla9_total += refund_roc
         if declarado:
             corresponde_total += corresponde
         if desglose_ok:
@@ -658,7 +665,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         # Lo que la casilla 9 («Overwithheld tax repaid to recipient») DEBERÍA decir si el
         # bróker ya reclasificó el ROC. No es un trámite que el cliente inicie: es un
         # resultado que se lee comparando las casillas 9 y 10 del formulario que le llega.
-        "casilla9_esperada": round(refund_roc_total, 2),
+        "casilla9_esperada": round(refund_roc_casilla9_total, 2),
         # Nota del auditor de la Fase 1: una fila con 7a==0 y casilla 10==0 cae en veredicto
         # 'devuelto'. En la UI eso se lee como «el bróker te devolvió» cuando en realidad no
         # hubo retención. Se trata aquí, sin tocar `logic.py`.

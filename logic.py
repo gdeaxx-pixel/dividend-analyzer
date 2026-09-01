@@ -6754,6 +6754,51 @@ def applied_withholding_rate(stats: dict) -> dict:
             'n_tax_rows': n_tax_rows}
 
 
+def _roc_refund_recuperable(diag: dict, stats: dict) -> dict:
+    """El ROC recuperable — la parte de lo retenido AL COBRO que vuelve sola cuando el bróker
+    reclasifica la distribución como Retorno de Capital — se MIDE sin saber el país.
+
+    La fórmula usa la tasa OBSERVADA en el CSV (`applied`) y el escudo del ROC 19a; `entitled`
+    (la tasa CON DERECHO, dato de tratado) NO aparece. Ese dato solo entra en `gap_w8ben`, que
+    es el otro carril (Regla 4): uno vuelve solo, el otro se reclama con 1040-NR.
+
+    Aplica los MISMOS guards de datos que `build_withholding_diagnosis`, en el mismo orden:
+    `applied is None` → nada; `withheld_at_payment <= 0.01` → nada; `implausible` → nada (guard
+    del #92/#94: los reversos de split de IB dan tasas imposibles y sin él la casilla 9 saldría
+    inflada); `gross <= 0` → nada.
+
+    Devuelve `{}` cuando no hay nada medible; si no, un dict con `refund_roc`, `roc_pct_usado`,
+    y los internos `justa_a_la_aplicada` / `escudo` / `gross` que el camino con país reutiliza
+    para el `gap_w8ben` — una sola implementación de la fórmula del escudo (Regla 3).
+    """
+    applied = diag.get('applied_pct')
+    if applied is None:
+        return {}
+    wap = float(diag.get('withheld_at_payment') or 0.0)
+    if wap <= 0.01:
+        return {}
+    if diag.get('implausible'):
+        return {}
+    gross = float(diag.get('gross') or 0.0)
+    if gross <= 0:
+        return {}
+
+    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y deja
+    # de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención. Sin dato de
+    # ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no "desconocido": no hay
+    # reclasificación que esperar.
+    roc_pct = (stats or {}).get('roc_percent')
+    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
+    justa_a_la_aplicada = gross * (applied / 100.0) * escudo
+    return {
+        'refund_roc': round(max(0.0, wap - justa_a_la_aplicada), 2),
+        'roc_pct_usado': float(roc_pct) if roc_pct is not None else 0.0,
+        'justa_a_la_aplicada': justa_a_la_aplicada,
+        'escudo': escudo,
+        'gross': gross,
+    }
+
+
 def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
                                 country: str = None) -> dict:
     """Reconcilia la tasa CON DERECHO contra la APLICADA y separa las dos causas de
@@ -6792,6 +6837,14 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
     }
 
     if entitled_pct is None or entitled_pct == RATE_UNDECLARED:
+        # El ROC recuperable SÍ se publica sin país: su fórmula (helper único) usa la tasa
+        # OBSERVADA en el CSV y el escudo del ROC 19a — `entitled` no aparece, así que el gate
+        # de país no le aplica. `gap_w8ben` se queda en 0.0 porque ESE sí es dato de tratado y
+        # no se puede medir sin residencia (Regla 4: dos carriles, remedios distintos).
+        roc = _roc_refund_recuperable(diag, stats)
+        if roc:
+            out['refund_roc'] = roc['refund_roc']
+            out['roc_pct_usado'] = roc['roc_pct_usado']
         out['verdict'] = 'sin_declarar'
         out['label'] = ('Declara tu residencia fiscal para saber si te están reteniendo lo '
                         'que te corresponde.')
@@ -6825,21 +6878,17 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
     exceso = wap_v - gross_v * entitled / 100.0
     holgura = gross_v * TASA_TOLERANCIA_PP / 100.0 + n_rows * 0.01
 
-    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y
-    # deja de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención.
-    # Sin dato de ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no
-    # "desconocido": no hay reclasificación que esperar, así que todo el exceso sobre la tasa
-    # con derecho es gap de tratado. Dejarlo en None ponía los dos buckets en $0 y hacía
-    # desaparecer un exceso que sí existe.
-    roc_pct = stats.get('roc_percent')
-    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
-    gross = float(diag['gross'] or 0.0)
-    if gross > 0:
-        justa_a_la_aplicada = gross * (applied / 100.0) * escudo
-        out['refund_roc'] = round(max(0.0, diag['withheld_at_payment'] - justa_a_la_aplicada), 2)
-        justa_con_derecho = gross * (entitled / 100.0) * escudo
-        out['gap_w8ben'] = round(max(0.0, justa_a_la_aplicada - justa_con_derecho), 2)
-        out['roc_pct_usado'] = float(roc_pct) if roc_pct is not None else 0.0
+    # `refund_roc` sale del helper único (Regla 3), el mismo que alimenta la rama `sin_declarar`.
+    # El `gap_w8ben` es el otro carril y sí necesita la tasa CON DERECHO: se calcula aquí
+    # reutilizando el escudo/bruto/`justa_a_la_aplicada` que el helper ya devolvió, sin volver a
+    # implementar la fórmula del escudo. Sin dato de ROC el escudo es 1.0 (todo el exceso sobre
+    # la tasa con derecho es gap de tratado).
+    roc = _roc_refund_recuperable(diag, stats)
+    if roc:
+        out['refund_roc'] = roc['refund_roc']
+        out['roc_pct_usado'] = roc['roc_pct_usado']
+        justa_con_derecho = roc['gross'] * (entitled / 100.0) * roc['escudo']
+        out['gap_w8ben'] = round(max(0.0, roc['justa_a_la_aplicada'] - justa_con_derecho), 2)
 
     if abs(exceso) <= holgura:
         out['verdict'] = 'coincide'

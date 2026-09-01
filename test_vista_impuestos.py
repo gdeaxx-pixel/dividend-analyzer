@@ -437,3 +437,73 @@ def test_cruce_peldano2_estructural(alias, bruto_esp, sin_roc_min):
     assert g["total"] == len(fondos)
     # al menos un fondo con 19a descuenta de verdad (gravable < bruto de cartera)
     assert g["monto"] < datos["peldanos"]["bruto"]["monto"] - 1.0
+
+
+# ── 8. La casilla 9 (ROC recuperable) se publica y NO depende del país ─────────────────
+#
+# `ruta_a.casilla9_esperada` es «lo que la casilla 9 del 1042-S DEBERÍA decir si el bróker
+# ya reclasificó el ROC». Su fórmula usa la tasa OBSERVADA en el CSV y el escudo del ROC
+# 19a — `entitled` (dato de tratado) no aparece —, así que es invariante al país. Antes,
+# sin país declarado, `build_withholding_diagnosis` cortaba en 'sin_declarar' y devolvía
+# `refund_roc: 0.0` sin calcularlo nunca: la app AFIRMABA un cero que no midió.
+
+def test_casilla9_no_depende_del_pais(monkeypatch):
+    """Con withheld=$100 y ROC 60 % la casilla 9 es $60.00 (100 × 0.60), idéntica sin país
+    y con Colombia / México / España. El primer caso —sin país— daba $0.00 antes del fix."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    perfiles = {
+        "sin_pais": logic.build_fiscal_profile(),
+        "Colombia": logic.build_fiscal_profile("Colombia"),   # 30 %
+        "México": logic.build_fiscal_profile("México"),       # 10 %
+        "España": logic.build_fiscal_profile("España"),        # 15 %
+    }
+    valores = {
+        nombre: impuestos_data(res, perfil, [])["ruta_a"]["casilla9_esperada"]
+        for nombre, perfil in perfiles.items()
+    }
+    for nombre, v in valores.items():
+        assert v == pytest.approx(60.0, abs=0.05), f"{nombre}: {v}"
+
+
+def test_peldano4_no_amplia_su_alcance_sin_pais():
+    """Publicar la casilla 9 sin país NO amplía el peldaño 4: sin residencia sigue en
+    'sin_pais', sin los tres buckets de cartera. «No puedo separar los tres buckets» y
+    «esta parte vuelve sola» son compatibles (decisión 3 del traspaso 2026-09-01)."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    R = impuestos_data(res, logic.build_fiscal_profile(), [])["peldanos"]["retenido"]
+
+    assert R["estado"] == "sin_pais"
+    assert R["recuperable_roc"] is None
+    assert R["correcta"] is None
+    assert R["gap_w8ben"] is None
+
+
+def test_casilla9_respeta_el_guard_implausible(monkeypatch):
+    """Una tasa aplicada > 30 % (retención inflada, p. ej. reversos de split de IB mal
+    contados) hace que `_roc_refund_recuperable` no toque nada — con y sin país. Sin este
+    guard el fix reabriría el #92 (casilla 9 inflada para clientes de IB)."""
+    res = {"XXXX": _stats_sinteticos("XXXX", 100.0, 50.0, 60.0, "19a")}  # 50 % aplicada
+    assert logic.applied_withholding_rate(res["XXXX"])["implausible"] is True
+
+    for perfil in (logic.build_fiscal_profile(), logic.build_fiscal_profile("Colombia")):
+        datos = impuestos_data(res, perfil, [])
+        assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(0.0, abs=0.005)
+
+
+@pytest.mark.parametrize("alias,casilla9_esp", [
+    ("schwab_1", 0.00),
+    ("schwab_2", 77.95),
+    ("schwab_daniel", 81.22),
+    ("ib_1", 1314.14),  # el traspaso decía 1340.21; `main` ya corría 1314.14 (cifra stale)
+])
+def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
+    """No-regresión: los 4 casos reales con Colombia declarada dan la misma casilla 9 que
+    antes del fix — el cambio solo libera el carril del ROC sin país, no toca el camino con
+    residencia."""
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    bundle = demo_mode.load_demo_case(alias)
+    assert bundle is not None, alias
+    datos = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
+    assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(casilla9_esp, abs=0.05)
