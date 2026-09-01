@@ -78,7 +78,17 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **778 passed, 2 skipped, 3 deselected** (medido 2026-08-31 sobre la rama
+Línea base: **785 passed, 2 skipped, 3 deselected** (medido 2026-09-01 sobre la rama
+`fiscal/casilla9-sin-pais`, base `main` = `1389cfc`, tras sumar 7 tests — la Ruta A publica el
+ROC recuperable (`ruta_a.casilla9_esperada`) aunque falte el país: `build_withholding_diagnosis`
+antes cortaba en `sin_declarar` y devolvía `refund_roc: 0.0` sin calcularlo. Helper único
+`logic._roc_refund_recuperable` (misma fórmula, sin duplicar) llamado también en la rama
+`sin_declarar`; en `ui/adapters.py` un acumulador propio `refund_roc_casilla9_total` gateado solo
+por `reconcilia` (no por `declarado`). El peldaño 4 NO amplía su alcance. Los 4 sabotajes de M4
+—revertir la llamada en `sin_declarar`, quitar el guard `implausible`, gatear por `desglose_ok`,
+forzar `retenido_estado='ok'`— fallaron donde debían.
+
+Antes: **778 passed, 2 skipped, 3 deselected** (medido 2026-08-31 sobre la rama
 `fiscal/peldano2-roc-sin-pais`, base `main` = `54381ae`, tras sumar 11 tests — el peldaño 2
 de la vista de Impuestos publica el % de ROC aunque falte el país o la retención NRA
 (`build_tax_summary._null` lo propaga por las dos rutas nulas), y un `roc_percent` NEGATIVO
