@@ -6161,7 +6161,7 @@ INCOME_PROJ_MIN_PAYMENTS = 4     # mínimo de pagos 'Received' para proyectar co
 INCOME_OVERSTATE_FLAG_PCT = 15.0 # sobre este % de sobreestimación, marcar en la justificación
 
 
-def project_income(income_df, results: dict = None) -> dict:
+def project_income(income_df, results: dict = None, today=None) -> dict:
     """Proyección de ingresos por dividendos a 12 meses: la del broker (filas `Estimated`) vs la
     nuestra (run-rate reciente: promedio de los últimos ~3 meses de pagos × frecuencia anual).
     Todo en base anual/12m para que las barras sean comparables con lo recibido en 12 meses.
@@ -6173,11 +6173,17 @@ def project_income(income_df, results: dict = None) -> dict:
     Devuelve {ticker: {schwab_received_12m, our_received_12m, schwab_received_total,
     our_received_total, schwab_proj, our_proj, anchor_per_payment, recent_per_payment,
     payments_per_year, decline_pct, overstatement_pct}}.
+
+    `today` fija el momento de evaluación. En producción va SIEMPRE en `None` (= hoy); existe
+    para las fixtures, que son exports CONGELADOS de bróker: sus filas 'Estimated' llevan fechas
+    absolutas, así que "futuro" solo significa algo respecto a la fecha del propio export (su
+    cabecera 'as of'). Sin esto la verificación caduca sola cada mes y falla en el NÚMERO, no en
+    el cálculo. Cuando eso pase: congelar el reloj — NO re-pinear la cifra.
     """
     out = {}
     if income_df is None or len(income_df) == 0:
         return out
-    today = pd.Timestamp.today().normalize()
+    today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
     yr_ago = today - pd.Timedelta(days=365)
 
     for tk, g in income_df.groupby('Ticker'):

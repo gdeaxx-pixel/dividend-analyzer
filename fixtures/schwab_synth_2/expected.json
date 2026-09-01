@@ -48,13 +48,14 @@
       "MSTY": 75.0
     },
     "projection_expected": {
+      "as_of": "2026-08-08",
       "MSTY": {
         "schwab_proj": 900.0,
         "our_proj": 600.0,
         "overstatement_pct": 50.0,
         "payments_per_year": 12
       },
-      "note": "schwab_proj = 12 filas 'Estimated' futuras x $75 (el broker repite el pago alto). our_proj = run-rate de los ultimos 3 pagos ((58+50+42)/3 = $50) x 12. La sobreestimacion de 50% supera INCOME_OVERSTATE_FLAG_PCT (15%), asi que este caso SI ejerce la justificacion de sobreestimacion."
+      "note": "schwab_proj = 12 filas 'Estimated' futuras x $75 (el broker repite el pago alto). our_proj = run-rate de los ultimos 3 pagos ((58+50+42)/3 = $50) x 12. La sobreestimacion de 50% supera INCOME_OVERSTATE_FLAG_PCT (15%), asi que este caso SI ejerce la justificacion de sobreestimacion. EVALUACION CONGELADA: as_of = 2026-08-08, la fecha de la cabecera del propio CSV ('Investment Income Transactions as of 08/08/2026'). Las 12 filas 'Estimated' llevan fechas ABSOLUTAS, asi que 'futuras' solo significa algo respecto a ese momento: evaluadas con el reloj de hoy, cada mes que pasa cae una fila y schwab_proj baja sola (825 en sep-2026, 750 en oct...). Si esta comprobacion vuelve a fallar, se corrige el RELOJ, no el numero: re-pinear 900->825 esconde el problema y vuelve a caducar. Ojo con un falso verde: pasado 2027-08 ninguna 'Estimated' cae en la ventana y project_income cae al fallback (ultimo Estimated x ppy = 75 x 12), que da 900 por coincidencia aritmetica, no por haber contado las filas. Por eso test_logic.py pinea TAMBIEN el 825 con el reloj en 2026-09-01: ese es el test que distingue los dos caminos."
     },
     "note": "Dividendos BRUTOS. La retencion NRA va aparte, en las filas 'NRA Tax Adj'. 'Received'/'Estimated' son los literales del export real de Schwab (ver test_logic.py:799-803)."
   },

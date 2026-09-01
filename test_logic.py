@@ -1179,6 +1179,53 @@ def test_filter_income_assets_excludes_index_etf():
     assert any(t == "SCHB" for t, _ in dropped)
 
 
+# ── project_income con el reloj congelado (fixtures/schwab_synth_2) ───────────
+# La fixture es un export CONGELADO de Schwab ('as of 08/08/2026') con 12 filas 'Estimated' de
+# fecha ABSOLUTA. Evaluada con el reloj de hoy caduca sola: cada mes cae una fila fuera de la
+# ventana de 365 días y `schwab_proj` baja ($900 -> $825 en sep-2026 -> $750 en oct...). Por eso
+# se pinea contra `as_of`, no contra hoy. Si esto falla, se congela el reloj — no se re-pinea.
+
+def _income_schwab_synth_2():
+    """El income CSV real de fixtures/schwab_synth_2, parseado por el mismo camino de la app."""
+    raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_2",
+                            "synthetic_investment_income.csv"), "rb").read()
+    inc = logic.parse_schwab_income_csv(raw)
+    return inc[0] if isinstance(inc, tuple) else inc
+
+
+def test_project_income_fixture_congelada_en_as_of():
+    """Ground truth de la fixture evaluada en la fecha de su propia cabecera: 12 x $75 = $900."""
+    m = logic.project_income(_income_schwab_synth_2(), None, today="2026-08-08")["MSTY"]
+    assert m["schwab_proj"] == pytest.approx(900.0, abs=0.01)
+    assert m["our_proj"] == pytest.approx(600.0, abs=0.01)       # (58+50+42)/3 = $50 x 12
+    assert m["overstatement_pct"] == pytest.approx(50.0, abs=0.01)
+    assert m["payments_per_year"] == 12
+
+
+def test_project_income_ventana_cuenta_solo_las_estimated_futuras():
+    """LA TRAMPA. Un mes después del 'as of', la fila del 08/31/2026 ya es pasado: quedan 11 x $75.
+
+    Este test es el que distingue "$900 porque contó las 12 filas futuras" de "$900 porque no
+    contó ninguna": cuando NINGUNA 'Estimated' cae en la ventana, `project_income` no da $0, cae
+    al fallback (último Estimated x ppy = 75 x 12) que devuelve $900 por coincidencia aritmética.
+    Un test que solo asertara 900 pasaría con el filtro `est_future` completamente roto. Este no.
+    """
+    m = logic.project_income(_income_schwab_synth_2(), None, today="2026-09-01")["MSTY"]
+    assert m["schwab_proj"] == pytest.approx(825.0, abs=0.01)     # 11 x $75, no 12
+    assert m["overstatement_pct"] == pytest.approx(37.5, abs=0.01)
+    assert m["our_proj"] == pytest.approx(600.0, abs=0.01)        # el run-rate NO depende del reloj
+
+
+def test_project_income_today_none_sigue_siendo_hoy():
+    """El default de producción no cambia: `today=None` == omitir el argumento == hoy."""
+    inc = _income_schwab_synth_2()
+    hoy = logic.project_income(inc)["MSTY"]
+    explicito = logic.project_income(inc, None, today=None)["MSTY"]
+    assert hoy == explicito
+    congelado = logic.project_income(inc, None, today=pd.Timestamp.today().normalize())["MSTY"]
+    assert hoy["schwab_proj"] == pytest.approx(congelado["schwab_proj"], abs=0.01)
+
+
 def test_filter_income_assets_keeps_yieldmax_without_results():
     """Sin market_value, el yieldmax se conserva por su type (degradación elegante)."""
     proj = logic.project_income(_build_proj_income())

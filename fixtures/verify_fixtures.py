@@ -176,10 +176,14 @@ def main():
 
                 # Proyección: solo la declaran los casos que traen filas 'Estimated'.
                 # Es la rama que `schwab_synth_1` no puede alcanzar por diseño.
-                pexp_proj = {k: v for k, v in (iexp.get("projection_expected") or {}).items()
-                             if isinstance(v, dict)}
+                pexp_all = iexp.get("projection_expected") or {}
+                pexp_proj = {k: v for k, v in pexp_all.items() if isinstance(v, dict)}
                 if pexp_proj:
-                    proj = logic.project_income(income_df, None)
+                    # `as_of` congela el reloj en la fecha del propio export (su cabecera
+                    # 'as of'). Las filas 'Estimated' llevan fechas ABSOLUTAS: sin esto, cada
+                    # mes cae una fuera de la ventana de 365 dias y la comprobacion falla en el
+                    # NUMERO, no en el calculo. Sin `as_of` declarado -> hoy, como siempre.
+                    proj = logic.project_income(income_df, None, today=pexp_all.get("as_of"))
                     for ticker, want in pexp_proj.items():
                         got = proj.get(ticker) or {}
                         for field, value in want.items():
