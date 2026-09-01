@@ -56,8 +56,20 @@ CACHE_START = "2022-11-23"
 # YMAX entra por la vista «Estrategias» (`ui/heredadas._ESTR_ETF_MAP`), que compara el
 # portafolio real contra poner todo en un solo ETF. Sin el en el cache esa vista seguia
 # bajando de yfinance en cada render.
+# PLTY, QYLD y SVOL entran porque eran los unicos tickers del portafolio que `price_cache`
+# resolvia por `source="live"` (medido 2026-09-01: MSTY daba "cache", estos tres "live"), asi
+# que las vistas que SI leen el cache —backtest / Total Return Graph / Estrategias— bajaban su
+# historia de yfinance en cada render. Con el parquet dan "cache" como los demas.
+#
+# OJO CON EL ALCANCE, medido y NO supuesto: esto NO estabiliza el ROC del peldano 2. `logic.py`
+# no importa `price_cache` en absoluto (lo dice el docstring del propio modulo: «ui/ NO importa
+# este modulo todavia, eso es la Fase 3.3») — llama `yf.download`/`yf.Ticker` directo. Un solo
+# `analyze_portfolio` del caso IB real dispara 63 llamadas a yfinance, incluidas las de tickers
+# que YA tienen parquet. Verificado A/B: el `roc_percent` de PLTY sale 66.48 identico con
+# parquet, sin parquet y con la red caida. El no-determinismo de la cobertura del peldano 2 se
+# cierra en la Fase 3.3, no aqui.
 TICKERS = ["NVDY", "TSLY", "CONY", "MSTY", "CHPY", "SCHB", "XLK", "SMH", "NFLY", "YMAX",
-           "NVDA", "TSLA", "COIN", "MSTR"]
+           "NVDA", "TSLA", "COIN", "MSTR", "PLTY", "QYLD", "SVOL"]
 
 
 def _parquet_path(ticker: str) -> str:
