@@ -78,7 +78,23 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **831 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`perf/benchmark-una-sola-descarga`, base `main` = `37f009f`. `yf.download('VOO',
+start=first_date)` vivía DENTRO del bucle por ticker: de las 19 descargas de una corrida de
+`?demo=schwab`, **8 eran VOO** — el 42% del tráfico para traer ocho veces la misma serie.
+Sacada del bucle: **19 → 12 descargas (−37%)**, **11.3 s → 7.8 s (−31%)**, y A/B contra `main`
+sobre los 4 demos con **cero** diferencias en `benchmark_value` / `benchmark_roi` (24 posiciones).
+4 mutantes M4, incluido el que devuelve la descarga al bucle.
+
+> 🔴 **El «batch de yfinance» quedó DESCARTADO, y con medición.** `yf.download(lista)` hace
+> **una petición HTTP por ticker** — Yahoo sirve `/v8/finance/chart/{ticker}` por ticker y
+> yfinance solo las paraleliza con hilos. Medido: uno-a-uno 9 peticiones / 4.5 s contra batch
+> 8 peticiones / 1.2 s. **No reduce peticiones** (que es por donde limita yfinance, la lección
+> de la Fase 3.3); solo reduce latencia, y a cambio pediría reescribir `fetch_market_data`
+> perdiendo su fallback de 3 capas por ticker. Si algún día hace falta la latencia, se
+> paraleliza `fetch_market_data` con hilos conservando el fallback — no con `yf.download(lista)`.
+
+Antes: **831 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `fiscal/base-desde-captura`, base `main` = `19b775a`. La captura de posiciones que el cliente
 confirma en el paso 2 **nunca llegaba al motor**: `ui/vistas.py::_resultados` corría
 `analyze_portfolio(df)` a secas, y `_wizard_positions` solo lo leía `ui/carga.py` para pintar
