@@ -685,3 +685,63 @@ def test_f4_separa_las_dos_antiguedades_cuando_existen_las_dos():
     assert tr["lt_2y"] == {"monto": -200.0, "n_ventas": 1}
     # Y no se compensan en una sola cifra: +500 y −200 NO se publican como +300.
     assert tr["ge_2y"]["monto"] != 300.0 and tr["lt_2y"]["monto"] != 300.0
+
+
+# ── 7. El crédito por impuesto pagado a EE.UU. tiene DOS momentos ─────────────────────
+# Lo retenido al cobro no es todo acreditable: la parte que vuelve al reclasificar el ROC
+# nunca llegó a ser impuesto, y lo que no se pagó no se descuenta en el país de residencia.
+# Publicar el total como «crédito» lo infla — medido: $41.29 de $60.75 (68%) en schwab_synth_1.
+
+@pytest.mark.parametrize("fixture", ["schwab_synth_1", "ib_synth_1"])
+def test_credito_definitivo_mas_lo_que_vuelve_es_lo_retenido(monkeypatch, fixture):
+    """La partición cierra exactamente contra el peldaño 4: nada se pierde ni se duplica."""
+    d = _datos_f4(fixture, monkeypatch)
+    c = d["impuesto_local"]["credito_eeuu"]
+    assert c["monto"] == d["peldanos"]["retenido"]["monto"]
+    if c["definitivo"] is not None:
+        assert round(c["definitivo"] + c["vuelve_por_roc"], 2) == pytest.approx(
+            c["monto"], abs=0.01)
+
+
+def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
+    """GROUND TRUTH de `schwab_synth_1` (el CSV que se subió a producción el 2026-09-02):
+    retenido $60.75, de los que la casilla 9 devuelve $41.29 ⇒ crédito real **$19.46**.
+
+    Antes de este arreglo la vista presentaba los $60.75 enteros como «ya pagado a EE.UU.»,
+    inflando 3.1× la cifra que el cliente llevaría a su contador."""
+    d = _datos_f4("schwab_synth_1", monkeypatch)
+    c = d["impuesto_local"]["credito_eeuu"]
+    assert c["monto"] == pytest.approx(60.75, abs=0.01)
+    assert c["vuelve_por_roc"] == pytest.approx(41.29, abs=0.01)
+    assert c["definitivo"] == pytest.approx(19.46, abs=0.01)
+    assert c["definitivo"] < c["monto"], "el crédito no puede ser todo lo retenido"
+
+
+def test_credito_lee_la_casilla9_no_la_recalcula(monkeypatch):
+    """REGLA 3 — objeto único. `vuelve_por_roc` es EXACTAMENTE `ruta_a.casilla9_esperada`,
+    el objeto que el #102 ya publica (y que funciona sin país declarado)."""
+    d = _datos_f4("schwab_synth_1", monkeypatch)
+    assert (d["impuesto_local"]["credito_eeuu"]["vuelve_por_roc"]
+            == d["ruta_a"]["casilla9_esperada"])
+
+
+def test_credito_definitivo_es_none_cuando_no_hay_con_que_medirlo():
+    """«Medí cero» y «no pude medirlo» no son lo mismo delante de una cifra de dinero. Sin
+    `ruta_a`, el definitivo NO se publica como igual al retenido — se declara el motivo."""
+    from ui import adapters
+    L = adapters._impuesto_local_cartera(
+        {"bruto": {"monto": 100.0}, "gravable": {"monto": 100.0}, "retenido": {"monto": 30.0}},
+        None, {}, ruta_a=None)
+    c = L["credito_eeuu"]
+    assert c["monto"] == 30.0
+    assert c["definitivo"] is None
+    assert c["definitivo_motivo"] == "sin_dato_de_roc_recuperable"
+
+
+def test_credito_definitivo_no_depende_del_pais(monkeypatch):
+    """Lo que el bróker devuelve por ROC no depende del tratado: declarar país no puede
+    mover el crédito definitivo (misma lógica que el #101/#102)."""
+    sin = _datos_f4("schwab_synth_1", monkeypatch)["impuesto_local"]["credito_eeuu"]
+    con = _datos_f4("schwab_synth_1", monkeypatch, pais="México")["impuesto_local"]["credito_eeuu"]
+    assert sin["definitivo"] == con["definitivo"]
+    assert sin["vuelve_por_roc"] == con["vuelve_por_roc"]

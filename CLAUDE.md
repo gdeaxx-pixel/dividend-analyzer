@@ -78,7 +78,16 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **804 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre `main` = `40abad7`
+Línea base: **810 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/credito-eeuu-momento`, base `main` = `cc7bd8a`, tras partir el CRÉDITO del peldaño 6
+en sus dos momentos: lo retenido al cobro NO es todo acreditable, porque la parte que vuelve
+al reclasificar el ROC nunca llegó a ser impuesto. Medido en `schwab_synth_1`: de $60.75
+retenidos vuelven $41.29, así que el crédito real es **$19.46** — la vista mostraba los
+$60.75 enteros, 3.1× inflado. `vuelve_por_roc` LEE `ruta_a.casilla9_esperada` (#102), no la
+recalcula; `definitivo` es `None` —con motivo— cuando no hay con qué medir la devolución,
+porque «medí cero» y «no pude medirlo» no son lo mismo. 3 mutantes M4 cazados.)
+
+Antes: **804 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre `main` = `40abad7`
 FUSIONADO, no sobre la rama, tras la **Fase 4** — el peldaño 6 «¿Y en tu país?». Publica la BASE
 declarable (dividendos en bruto, y aparte la parte que EE.UU. trató como renta y el ROC) y el
 CRÉDITO por impuesto ya pagado a EE.UU., más las ganancias REALIZADAS separadas por el corte de
