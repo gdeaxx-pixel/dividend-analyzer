@@ -1285,6 +1285,49 @@ def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
     return (lo + hi) / 2.0
 
 
+BENCHMARK_TICKER = 'VOO'
+
+
+def _descargar_benchmark(df, ticker=BENCHMARK_TICKER):
+    """La serie del benchmark para TODO el CSV, en una sola petición.
+
+    Devuelve el frame ya normalizado (columnas planas, índice tz-naive) desde la fecha más
+    temprana del CSV, para que cada ticker recorte la suya. Frame vacío si no se pudo bajar —
+    el consumidor ya trata ese caso como «sin benchmark», que es como se comportaba antes
+    cuando la descarga fallaba.
+
+    Vive aparte de `fetch_market_data` a propósito: aquélla tiene tres capas de respaldo
+    (`yf.download` → `Ticker.history` → scraping) porque un ticker de la cartera SIN precio
+    deja al cliente sin cifras. El benchmark es una comparación: si falta, la app sigue
+    entera y solo se queda sin la línea de VOO. Darle el mismo respaldo sería gastar hasta
+    tres peticiones por algo accesorio.
+    """
+    try:
+        primera = pd.to_datetime(df['Date'], errors='coerce').min()
+        if pd.isna(primera):
+            return pd.DataFrame()
+    except (KeyError, TypeError, ValueError):
+        return pd.DataFrame()
+
+    try:
+        session = get_session()
+    except Exception:
+        session = None
+    try:
+        data = yf.download(ticker, start=primera, progress=False,
+                           auto_adjust=False, actions=True, session=session)
+    except Exception as e:
+        print(f"Benchmark {ticker} no disponible: {e}")
+        return pd.DataFrame()
+    if data is None or data.empty:
+        return pd.DataFrame()
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    if getattr(data.index, "tz", None) is not None:
+        data.index = data.index.tz_localize(None)
+    return data
+
+
 @st.cache_data(show_spinner=False)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1315,9 +1358,23 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
     except Exception:
         _snapshot_date = None
 
+    # ── El benchmark se baja UNA vez, no una por ticker ───────────────────────────────
+    # `yf.download('VOO', start=first_date)` vivía dentro del bucle, y `first_date` es lo único
+    # que cambiaba entre vueltas. Medido sobre `?demo=schwab`: de las 19 descargas de una
+    # corrida, **8 eran VOO** — el 42% del tráfico para traer ocho veces la misma serie.
+    #
+    # Se baja desde la fecha MÁS TEMPRANA de todo el CSV y cada ticker recorta la suya. Que el
+    # recorte es equivalente a la descarga directa está medido: `Close` y `Dividends` salen
+    # idénticos al centavo (`test_benchmark_una_sola_descarga`), y no podría ser de otro modo —
+    # es la misma serie de Yahoo pedida desde dos fechas.
+    #
+    # No es un caché: es la invariante sacada del bucle. Un caché a nivel de módulo sobreviviría
+    # entre corridas y podría servir precios rancios; esto nace y muere dentro de la llamada.
+    _bench_df = _descargar_benchmark(df)
+
     # Group by Ticker
     tickers = df['Ticker'].unique()
-    
+
     for ticker in tickers:
         ticker_df = df[df['Ticker'] == ticker].sort_values('Date')
         if ticker_df.empty:
@@ -1857,16 +1914,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             except:
                 pass
 
-            # auto_adjust=False mantiene precios históricos reales (no ajustados por dividendos).
-            # actions=True trae columna Dividends para reinvertirlos en la simulación.
-            spy_data = yf.download(benchmark_ticker, start=first_date, progress=False,
-                                   auto_adjust=False, actions=True, session=session)
-
-            if isinstance(spy_data.columns, pd.MultiIndex):
-                spy_data.columns = spy_data.columns.get_level_values(0)
-
-            if getattr(spy_data.index, "tz", None) is not None:
-                spy_data.index = spy_data.index.tz_localize(None)
+            # La serie ya se bajó una sola vez antes del bucle (ver `_descargar_benchmark`);
+            # aquí solo se recorta a la ventana de ESTE ticker. Las columnas ya vienen planas
+            # y el índice tz-naive.
+            spy_data = _bench_df[_bench_df.index >= pd.to_datetime(first_date)] \
+                if not _bench_df.empty else _bench_df
+            if spy_data.empty:
+                raise ValueError("benchmark sin datos en la ventana del ticker")
 
             spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
             voo_divs   = (spy_data['Dividends'].reindex(daily_history.index).fillna(0)
