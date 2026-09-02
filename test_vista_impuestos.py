@@ -553,3 +553,135 @@ def test_residencia_1042s_no_declara_el_pais_por_su_cuenta():
     assert datos["declarado"] is False
     assert datos["pais"] is None
     assert datos["peldanos"]["corresponde"] is None
+
+
+# ── 6. Peldaño 6 (Fase 4) — qué declaras en tu país ───────────────────────────────────
+# Publica BASE y CRÉDITO, nunca una cifra de impuesto local: la tarifa del país de
+# residencia es progresiva sobre la renta GLOBAL del contribuyente, que la app no conoce.
+
+def _datos_f4(fixture, monkeypatch, pais=None):
+    res, _ = _resultados_de_fixture(monkeypatch, fixture, f"F4_{fixture}")
+    perfil = logic.build_fiscal_profile(pais) if pais else logic.build_fiscal_profile()
+    return impuestos_data(res, perfil, [])
+
+
+@pytest.mark.parametrize("fixture", ["schwab_synth_2", "ib_synth_1"])
+def test_f4_base_y_credito_reconcilian_con_los_peldanos(monkeypatch, fixture):
+    """REGLA 5 — dos vistas del mismo número. El peldaño 6 no recalcula nada: sus tres
+    cifras tienen que ser IDÉNTICAS a los peldaños 1, 2 y 4, que las producen."""
+    d = _datos_f4(fixture, monkeypatch)
+    L, P = d["impuesto_local"], d["peldanos"]
+    assert L["dividendos"]["bruto"] == P["bruto"]["monto"]
+    assert L["dividendos"]["gravable_eeuu"] == P["gravable"]["monto"]
+    assert L["credito_eeuu"]["monto"] == P["retenido"]["monto"]
+    assert L["dividendos"]["roc"] == pytest.approx(
+        round(P["bruto"]["monto"] - P["gravable"]["monto"], 2), abs=0.01)
+
+
+@pytest.mark.parametrize("fixture", ["schwab_synth_2", "ib_synth_1"])
+def test_f4_tramos_reconcilian_con_ganancias_capital(monkeypatch, fixture):
+    """REGLA 5 — el desglose por tramo suma exactamente el realizado del peldaño 5."""
+    d = _datos_f4(fixture, monkeypatch)
+    tr = d["impuesto_local"]["realizado_por_tramo"]
+    suma = round(sum(v["monto"] for v in tr.values()), 2)
+    n = sum(v["n_ventas"] for v in tr.values())
+    gc = d["ganancias_capital"]
+    esperado = (gc.get("realizado") or {}).get("monto", 0.0) if gc else 0.0
+    assert suma == pytest.approx(esperado or 0.0, abs=0.01)
+    assert n == ((gc.get("realizado") or {}).get("n_ventas", 0) if gc else 0)
+
+
+def test_f4_nunca_publica_tarifa_ni_total(monkeypatch):
+    """LA INVARIANTE DE LA FASE. La app no conoce la renta global del contribuyente, así que
+    no puede publicar ni tarifa ni un total de impuesto local — y lo dice, no lo omite."""
+    d = _datos_f4("schwab_synth_2", monkeypatch)
+    L = d["impuesto_local"]
+    assert L["tarifa_pct"] is None
+    assert L["total"] is None
+    assert L["tarifa_motivo"] == "progresiva_sobre_renta_global_no_declarada"
+    assert L["total_motivo"] == "naturalezas_y_momentos_distintos_no_se_suman"
+    # Y ninguna clave del objeto contiene una cifra que se lea como «lo que debes».
+    assert not any(k.startswith("impuesto_") or k == "debes" for k in L)
+
+
+def test_f4_no_suma_dividendos_con_ganancias(monkeypatch):
+    """REGLA 2 — naturalezas y momentos distintos. Ninguna cifra del objeto puede ser la
+    suma de la base de dividendos con la de ganancias realizadas."""
+    d = _datos_f4("ib_synth_1", monkeypatch)
+    L = d["impuesto_local"]
+    tr = L["realizado_por_tramo"]
+    prohibido = round(L["dividendos"]["bruto"] + sum(v["monto"] for v in tr.values()), 2)
+    planas = [v for v in L.values() if isinstance(v, (int, float))]
+    planas += [v2 for v in L.values() if isinstance(v, dict)
+               for v2 in v.values() if isinstance(v2, (int, float))]
+    assert all(abs(v - prohibido) > 0.01 for v in planas if v not in (0, 0.0)), \
+        "hay una cifra que suma dividendos con ganancias de capital"
+
+
+def test_f4_el_no_realizado_se_nombra_pero_queda_fuera(monkeypatch):
+    """Lo latente se declara al vender, no ahora. Se publica APARTE y rotulado como excluido
+    — callarlo invitaría a sumarlo a la base."""
+    d = _datos_f4("ib_synth_1", monkeypatch)
+    L, gc = d["impuesto_local"], d["ganancias_capital"]
+    if gc and gc.get("no_realizado"):
+        assert L["no_realizado_excluido"] == gc["no_realizado"]["monto"]
+        tr = L["realizado_por_tramo"]
+        assert all(v["monto"] != L["no_realizado_excluido"] for v in tr.values())
+
+
+def test_f4_no_depende_del_pais_declarado(monkeypatch):
+    """La base declarable y el crédito son los mismos con o sin residencia declarada: no
+    dependen del tratado con EE.UU. Declarar el país no puede moverlos."""
+    sin = _datos_f4("schwab_synth_2", monkeypatch)["impuesto_local"]
+    con = _datos_f4("schwab_synth_2", monkeypatch, pais="México")["impuesto_local"]
+    assert sin["dividendos"] == con["dividendos"]
+    assert sin["credito_eeuu"] == con["credito_eeuu"]
+    assert sin["realizado_por_tramo"] == con["realizado_por_tramo"]
+
+
+def test_f4_ya_no_queda_slot_proximamente(monkeypatch):
+    """La Fase 4 llena el último slot reservado: la lista queda vacía, no con el peldaño
+    rotulado «pendiente» debajo del que ya publica la cifra."""
+    d = _datos_f4("schwab_synth_2", monkeypatch)
+    assert d["slots_pendientes"] == []
+    assert d["impuesto_local"] is not None
+
+
+def test_f4_pinea_el_reparto_por_tramo_no_solo_la_suma(monkeypatch):
+    """LA TRAMPA. Los dos tests de reconciliación de arriba comparan la SUMA de los tramos,
+    así que pasarían enteros con las ventas clasificadas en el tramo equivocado. Este pinea
+    en qué tramo cae: `ib_synth_1` tiene una única venta, y es de menos de 2 años."""
+    d = _datos_f4("ib_synth_1", monkeypatch)
+    tr = d["impuesto_local"]["realizado_por_tramo"]
+    assert tr["lt_2y"]["n_ventas"] == 1
+    assert tr["lt_2y"]["monto"] == pytest.approx(-20.0, abs=0.01)
+    assert tr["ge_2y"]["n_ventas"] == 0 and tr["ge_2y"]["monto"] == 0.0
+    assert tr["sin_tramo"]["n_ventas"] == 0
+
+
+def test_f4_separa_las_dos_antiguedades_cuando_existen_las_dos():
+    """La rama `ge_2y` NO la alcanza ninguna fixture del repo (medido: schwab_synth_2 no
+    tiene ventas, ib_synth_1 tiene una sola y es `lt_2y`), así que sin este caso el tramo
+    largo viviría sin ejercitar y su verde no diría nada. Se arma a mano, sin tocar los CSV."""
+    res = {
+        "AAA": {
+            "dividends_gross_total": 0.0, "withheld_tax_total": 0.0,
+            "history": pd.DataFrame({"Date": [], "Action": [], "Amount": []}),
+            "capital_gains": {
+                "estado": "ok", "realized_total": 300.0,
+                "realized": [
+                    {"gain": 500.0, "tramo": "ge_2y", "shares": 10},
+                    {"gain": -200.0, "tramo": "lt_2y", "shares": 5},
+                ],
+                "unrealized": {},
+            },
+        },
+    }
+    from ui import adapters
+    tr = adapters._impuesto_local_cartera(
+        {"bruto": {"monto": 0.0}, "gravable": {"monto": 0.0}, "retenido": {"monto": 0.0}},
+        None, res)["realizado_por_tramo"]
+    assert tr["ge_2y"] == {"monto": 500.0, "n_ventas": 1}
+    assert tr["lt_2y"] == {"monto": -200.0, "n_ventas": 1}
+    # Y no se compensan en una sola cifra: +500 y −200 NO se publican como +300.
+    assert tr["ge_2y"]["monto"] != 300.0 and tr["lt_2y"]["monto"] != 300.0

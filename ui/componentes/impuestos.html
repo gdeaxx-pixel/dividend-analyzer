@@ -447,7 +447,65 @@
       gBody, "activo"));
   }
 
-  // Peldaño reservado (Fase 4) — espacio reservado, sin contenido inventado
+  // ---- Peldaño 6: lo que declaras en tu país (Fase 4) ----
+  // Publica BASE y CRÉDITO, nunca una cifra de impuesto local. La tarifa del país de
+  // residencia es progresiva sobre la renta GLOBAL del contribuyente, que la app no conoce:
+  // inventarla sería el mismo error que el peldaño 3 evita al no publicar cifra sin país.
+  // Por eso este peldaño no lleva monto en la cabecera — lleva las dos bases separadas.
+  var L = D.impuesto_local;
+  if (L) {
+    var lBody = '<p class="imp-step-sub">Esta renta es de <b>fuente extranjera</b> para tu país, '
+      + 'así que normalmente se declara allí aunque EE.UU. ya te haya retenido. Lo que sigue es '
+      + '<b>la base</b> y <b>el crédito</b>: las dos cifras que tu declaración necesita.</p>';
+
+    lBody += '<div class="imp-buckets">'
+      + '<div class="imp-bucket gris"><p class="imp-bucket-lab">Dividendos (bruto)</p>'
+        + '<span class="imp-bucket-money">' + money(L.dividendos.bruto) + '</span>'
+        + '<p class="imp-bucket-note">Lo repartido ANTES de la retención — es el bruto el que '
+        + 'viaja a la declaración, no lo que entró a tu cuenta.</p></div>'
+      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Ya pagado a EE.UU.</p>'
+        + '<span class="imp-bucket-money">' + money(L.credito_eeuu.monto) + '</span>'
+        + '<p class="imp-bucket-note">Casi todos los países lo dejan descontar del impuesto '
+        + 'propio. Es el dato que más se pierde el contribuyente: sin él, paga dos veces.</p></div>'
+      + '</div>';
+
+    // El ROC se nombra sin decidir por el contribuyente: que su país reconozca el retorno de
+    // capital de un ETF estadounidense lo decide SU ley, no la de EE.UU.
+    if (L.dividendos.roc > 0.005) {
+      lBody += '<div class="imp-conc">De ese bruto, EE.UU. trató como renta '
+        + '<b>' + money(L.dividendos.gravable_eeuu) + '</b>; el resto, '
+        + '<b>' + money(L.dividendos.roc) + '</b>, fue retorno de capital. '
+        + '<b>Si tu país no reconoce el ROC de un fondo estadounidense, tu base es el bruto.</b> '
+        + 'Eso lo decide la ley de tu país — por eso mostramos las dos cifras y no elegimos una.</div>';
+    }
+
+    // Ganancias realizadas, separadas por antigüedad: varios países cambian el tratamiento
+    // en el corte de 2 años (en Colombia, ganancia ocasional contra renta ordinaria).
+    var TR = L.realizado_por_tramo || {};
+    var nV = (TR.ge_2y.n_ventas || 0) + (TR.lt_2y.n_ventas || 0) + (TR.sin_tramo.n_ventas || 0);
+    if (nV > 0) {
+      var anios = Math.round((L.corte_tramo_dias || 730) / 365);
+      lBody += '<div class="imp-conc">Y por lo que <b>vendiste</b>: '
+        + '<b>' + money(TR.ge_2y.monto) + '</b> con ' + anios + ' años o más de tenencia, '
+        + '<b>' + money(TR.lt_2y.monto) + '</b> por debajo de ese corte. '
+        + 'Van separadas porque varios países las gravan distinto según la antigüedad.</div>';
+    }
+
+    if (L.no_realizado_excluido != null) {
+      lBody += '<div class="imp-conc">Lo que <b>no</b> has vendido ('
+        + money(L.no_realizado_excluido) + ' de ganancia latente) <b>no entra aquí</b>: '
+        + 'todavía no se declara.</div>';
+    }
+
+    lBody += '<div class="imp-cta">No te decimos cuánto pagarás: la tarifa de tu país es '
+      + '<b>progresiva sobre tu renta total</b> —tu sueldo incluido—, y esta app solo ve tu '
+      + 'portafolio. Con la base y el crédito de arriba, tu contador cierra la cuenta en un '
+      + 'minuto. Poner un número aquí sería inventarte el dato que falta.</div>';
+
+    pasos.push(stepRow("Peldaño 6", "¿Y en tu país?", null, null, lBody, "activo"));
+  }
+
+  // Peldaños reservados de fases futuras — sin contenido inventado. Hoy la lista va vacía.
   (D.slots_pendientes || []).forEach(function (s) {
     pasos.push(stepRow("Próximamente", s.titulo, null, null,
       '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',
