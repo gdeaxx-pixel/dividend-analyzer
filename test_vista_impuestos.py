@@ -908,3 +908,22 @@ def test_la_captura_da_base_de_costo_pero_no_cobertura_de_roc():
     # 3. El invariante protegido sigue en pie: subir la foto no cambia lo que te devuelven.
     assert con["ruta_a"]["casilla9_esperada"] == pytest.approx(
         sin["ruta_a"]["casilla9_esperada"], abs=0.05)
+
+
+def test_editar_el_csv_invalida_el_cache_de_resultados():
+    """Sin esto, subir un CSV nuevo muestra las cifras del anterior.
+
+    `ui/vistas.py::_resultados` solo recalcula cuando `_vd_resultados` es `None`, así que el
+    handler que borra `_wizard_df_clean` tiene que borrarlo también. Con la captura dentro del
+    cálculo el síntoma empeora: arrastraría las posiciones de un portafolio al siguiente.
+    """
+    import re
+    fuente = open("ui/carga.py", encoding="utf-8").read()
+    # El bloque de claves del handler de «editar» CSV.
+    bloque = re.search(r'for clave in \(([^)]*)\):', fuente, re.S)
+    assert bloque, "no se encontró el handler que limpia la carga"
+    assert '"_vd_resultados"' in bloque.group(1), (
+        "el handler de editar-CSV tiene que invalidar el caché de analyze_portfolio")
+    # Y el de confirmar posiciones, que cambia la captura que alimenta ese mismo cálculo.
+    assert 'pop("_vd_resultados", None)' in fuente, (
+        "confirmar posiciones tiene que invalidar el caché: la captura entra al cálculo")

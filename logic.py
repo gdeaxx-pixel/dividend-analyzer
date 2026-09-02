@@ -2165,6 +2165,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         except Exception:
             pass
 
+        # ¿El fondo publica avisos 19a? Se calcula UNA vez: lo consumen el motor de ganancias
+        # de capital (que descarta la base de captura de estos fondos) y el flag homónimo que
+        # leen las vistas. Calcularlo dos veces es la puerta a que un día digan cosas distintas.
+        _publica_19a = str(ticker).upper() in load_roc_19a()
+
         # ── ROC: Return of Capital ────────────────────────────────────────
         # El ROC reduce el costo base dólar a dólar; el DRIP (reinversión) lo SUBE dólar a dólar.
         # Por eso el dinero total que entró a comprar acciones = cash de tu bolsillo + reinvertido.
@@ -2338,7 +2343,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 # arriba (`_ov`), no una segunda lectura: si divergieran, la app mostraria
                 # dos posiciones distintas para el mismo ticker.
                 broker_position=_ov,
-                roc_19a_published=str(ticker).upper() in load_roc_19a(),
+                roc_19a_published=_publica_19a,
             ),
             # ROC
             "ib_cost_basis":       _ib_basis,
@@ -2349,7 +2354,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # puede publicarlos y aun así tomar la ruta 'broker' (el snapshot del bróker todavía
             # no refleja la reclasificación). Sin este flag, esa diferencia es invisible para
             # las vistas y un fondo con ROC conocido se presenta como uno sin ROC.
-            "roc_19a_published":   str(ticker).upper() in load_roc_19a(),
+            "roc_19a_published":   _publica_19a,
             # Reconciliación desde la captura del broker
             "reconciled_from_snapshot": reconciled_from_snapshot,
             "reconciled_fields":        reconciled_fields,
@@ -4617,13 +4622,21 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         try:
             _bp_sh = float(_bp.get('shares') or 0)
             _bp_co = float(_bp.get('cost_basis') or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, AttributeError):
             _bp_sh = _bp_co = 0.0
+        # El precio tiene que ser un numero positivo y finito. `current_price` ya viene de un
+        # `dropna()` (el fix del #95, cuando un `Close = NaN` puso `VALOR MER. $0.00` en toda
+        # la cartera), pero un cero superviviente aqui publicaria `gain = −base`: una perdida
+        # del 100% sobre una base que acabamos de tomar de la captura.
+        try:
+            _px_ok = market_price is not None and np.isfinite(float(market_price)) \
+                and float(market_price) > 0
+        except (TypeError, ValueError):
+            _px_ok = False
         if _bp_sh > 0 and _bp_co > 0 and roc_19a_published:
             # Habia con que, y se descarto a proposito (limite 3 del docstring).
             salida['captura_no_usada'] = 'fondo_19a'
-        if (_bp_sh > 0 and _bp_co > 0 and market_price is not None
-                and not roc_19a_published):
+        if _bp_sh > 0 and _bp_co > 0 and _px_ok and not roc_19a_published:
             _valor = _bp_sh * market_price
             salida['estado'] = 'parcial'
             salida['basis_source'] = 'captura_broker'

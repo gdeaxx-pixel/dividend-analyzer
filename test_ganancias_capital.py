@@ -1088,3 +1088,33 @@ def test_la_base_de_captura_no_se_atribuye_al_metodo_de_esta_funcion():
     # La ruta del CSV conserva la suya: no se ha cambiado la etiqueta para todos.
     assert csv['method'] == 'costo_promedio_ponderado'
     assert csv['basis'] == 'costo_promedio'
+
+
+def test_un_precio_invalido_no_publica_una_perdida_del_cien_por_ciento():
+    """Sin esta guarda, `gain = 0 − base`: una pérdida total sobre una base recién tomada.
+
+    No es hipotético en este repo. El #95 nació de un `Close = NaN` que el refresco del caché
+    metió en los parquets y dejó `VALOR MER. $0.00` en toda la cartera, con el veredicto del
+    DRIP invertido. `current_price` ya viene de un `dropna()`, pero la función es pública y su
+    contrato no puede depender de que el único llamador de hoy la proteja.
+    """
+    captura = {'shares': 20.0, 'cost_basis': 1200.00}
+    for precio in (0.0, -5.0, float('nan'), float('inf'), None, 'x'):
+        cg = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                       market_price=precio, broker_position=captura)
+        assert cg['estado'] == 'indeterminado', f"precio {precio!r}"
+        assert cg['unrealized'] is None, f"precio {precio!r}"
+
+    # Con un precio válido sí sale, para que el test no pase por no ejercitar nada.
+    ok = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                   market_price=150.00, broker_position=captura)
+    assert ok['estado'] == 'parcial'
+
+
+def test_una_captura_malformada_no_tumba_el_motor():
+    """`broker_position` viene de sesión/OCR: no se asume su forma."""
+    for captura in ('no soy un dict', 42, {'shares': 'x', 'cost_basis': 'y'},
+                    {'shares': None, 'cost_basis': None}):
+        cg = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                       market_price=150.00, broker_position=captura)
+        assert cg['estado'] == 'indeterminado', f"captura {captura!r}"
