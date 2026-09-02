@@ -78,7 +78,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **815 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **828 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/base-desde-captura`, base `main` = `19b775a`. La captura de posiciones que el cliente
+confirma en el paso 2 **nunca llegaba al motor**: `ui/vistas.py::_resultados` corría
+`analyze_portfolio(df)` a secas, y `_wizard_positions` solo lo leía `ui/carga.py` para pintar
+su propia tabla. Efecto medido en `?demo=schwab`: SCHB mostraba capital invertido de
+**−$100.46** y ROI **−1,834.60%** a un cliente que ya había dado el costo correcto; ahora
+$946.04 y 84.20%. Y el peldaño 5 pasa de cubrir 3 de 8 fondos a 5, con **+$2,918.94** de
+ganancia latente que antes se declaraba no medible.
+Entra `position_overrides` y **NO** `ib_cost_basis_map`: el segundo alimenta la ruta 'broker'
+del ROC —la resta que M1 §4 descarta— y metía a SMH, un ETF amplio sin avisos 19a, en la
+cobertura del peldaño 2 con un ROC del 0% que es ruido de comisiones. Medido: con él,
+`cubiertos` 3→4 con el gravable inmóvil; sin él, 3.
+La casilla 9 **no se mueve**: la convergencia del bloque de abajo se conserva.
+8 mutantes M4 cazados, cada uno en su propio test.)
+
+Antes: **815 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `fiscal/umbral-roc-tolerancia`, base `main` = `691cfdc`. El umbral que decide la ruta del ROC
 (`_prefer_19a_roc`) comparaba con `<` ESTRICTO mientras la rama `elif` de al lado, sobre las
 MISMAS dos cifras, ya usaba `max(2%, $0.50)`. Por esa asimetría PLTY quedaba fuera de la
