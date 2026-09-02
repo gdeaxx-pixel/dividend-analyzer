@@ -78,7 +78,21 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **785 passed, 2 skipped, 3 deselected** (medido 2026-09-01 sobre la rama
+Línea base: **804 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre `main` = `40abad7`
+FUSIONADO, no sobre la rama, tras la **Fase 4** — el peldaño 6 «¿Y en tu país?». Publica la BASE
+declarable (dividendos en bruto, y aparte la parte que EE.UU. trató como renta y el ROC) y el
+CRÉDITO por impuesto ya pagado a EE.UU., más las ganancias REALIZADAS separadas por el corte de
+2 años y lo no realizado rotulado EXCLUIDO. **No publica tarifa ni total, a propósito**: la
+tarifa del país de residencia es progresiva sobre la renta GLOBAL del contribuyente, que la app
+no ve — publicarla sería inventar la base (Regla 2), y sumar dividendos con ganancias mezcla
+naturalezas, casillas y momentos. El objeto lo declara en `tarifa_motivo` / `total_motivo`, no lo
+omite. `logic.py` sin tocar: la capa solo LEE los peldaños 1, 2 y 4 (Regla 3). Los 4 mutantes M4
+—recalcular el bruto, publicar tarifa, sumar en un total, mandar todas las ventas a `ge_2y`—
+cayeron donde debían; el último solo lo caza un test que pinea el REPARTO por tramo, porque los
+de reconciliación comparan la SUMA y ninguna fixture tiene una venta ≥2 años.
+Ya no queda ningún peldaño «PRÓXIMAMENTE» en la escalera.
+
+Antes: **785 passed, 2 skipped, 3 deselected** (medido 2026-09-01 sobre la rama
 `fiscal/casilla9-sin-pais`, base `main` = `1389cfc`, tras sumar 7 tests — la Ruta A publica el
 ROC recuperable (`ruta_a.casilla9_esperada`) aunque falte el país: `build_withholding_diagnosis`
 antes cortaba en `sin_declarar` y devolvía `refund_roc: 0.0` sin calcularlo. Helper único
