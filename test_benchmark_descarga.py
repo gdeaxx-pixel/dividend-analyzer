@@ -109,3 +109,38 @@ def test_un_csv_sin_fechas_usables_no_pide_nada(monkeypatch):
     df = pd.DataFrame({'Date': [None, None], 'Ticker': ['A', 'B']})
     assert logic._descargar_benchmark(df).empty
     assert llamadas == [], "no se pide una serie cuando no hay fecha desde la que pedirla"
+
+
+def test_una_corrida_completa_baja_el_benchmark_una_vez(monkeypatch):
+    """El guard de verdad: cuenta sobre `analyze_portfolio`, no sobre el helper.
+
+    Los tests de arriba prueban `_descargar_benchmark` en aislamiento, y con eso solos alguien
+    puede devolver `yf.download(BENCHMARK_TICKER, ...)` al bucle por ticker y dejarlos a todos
+    en verde — el helper seguiría siendo correcto y nadie lo llamaría. Este cuenta las
+    descargas del benchmark que hace una corrida entera con VARIOS tickers, que es la
+    propiedad que se quiso arreglar.
+    """
+    idx = pd.date_range('2023-12-01', periods=500, freq='D')
+    serie = pd.DataFrame({'Open': 100.0, 'High': 101.0, 'Low': 99.0, 'Close': 100.0,
+                          'Volume': 1000, 'Dividends': 0.0, 'Stock Splits': 0.0}, index=idx)
+
+    bench = []
+
+    def _fake_download(tk, *a, **k):
+        if tk == logic.BENCHMARK_TICKER:
+            bench.append(tk)
+        return serie.copy()
+
+    monkeypatch.setattr(logic.yf, 'download', _fake_download)
+    monkeypatch.setattr(logic, 'fetch_market_data', lambda tk, fd: (serie.copy(), None))
+
+    df = _csv(['SCHB', 'SMH', 'XLK'])
+    resultados = logic.analyze_portfolio(df, version=f'BENCH_{pd.Timestamp.now().value}')
+
+    vivos = [t for t, s in (resultados or {}).items()
+             if not s.get('skipped') and not s.get('error')]
+    assert len(vivos) >= 2, (
+        f"el test necesita VARIOS tickers vivos o no prueba nada: {vivos}")
+    assert len(bench) == 1, (
+        f"{len(bench)} descargas del benchmark para {len(vivos)} tickers — "
+        "volvió a bajarse dentro del bucle")
