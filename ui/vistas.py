@@ -31,14 +31,41 @@ def _resultados() -> dict:
 
     Baja precios de mercado, así que recalcularlo en cada rerun —y el rail provoca uno
     por paso— haría la vista inusable. Se invalida al editar la carga, porque esos
-    handlers borran `_wizard_df_clean`.
+    handlers borran `_wizard_df_clean`, y al confirmar posiciones (ver abajo).
+
+    ── Por qué entra `position_overrides` y NO `ib_cost_basis_map` ────────────────────
+    Son dos entradas distintas y solo una es legítima aquí.
+
+    `position_overrides` es la captura de posiciones del cliente. La necesita
+    `build_capital_gains`: cuando el CSV no llega hasta la compra original, esa captura es
+    la ÚNICA fuente de la base de costo, y sin ella el peldaño 5 declara indeterminadas
+    posiciones cuyo costo el cliente ya nos dio. Medido en `?demo=schwab`: mueve 6 cifras,
+    todas del eje de ganancias de capital, y suma $2,918.94 de ganancia latente que hoy la
+    app no puede medir.
+
+    `ib_cost_basis_map` NO entra, y esto es el punto. Alimenta la ruta 'broker' del ROC
+    —`(aportado + reinvertido) − costo del bróker`—, que el contrato descarta como método
+    (M1 §4: «ROC = casilla 3 del 19a, no la resta»). Pasarlo mete a SMH en la cobertura del
+    peldaño 2 con un ROC del 0% derivado de ruido de comisiones, y la escalera pasaría a
+    decir «cubre 4 de 8 fondos» sin que el monto gravable se mueva un centavo: cobertura
+    sobre-declarada. Medido: con él, `cubiertos` 3→4; sin él, 3.
+
+    El invariante que protege `test_casilla9_converge_con_y_sin_captura` se conserva en las
+    dos formas: la casilla 9 no se mueve. Subir la foto sigue sin cambiar cuánto impuesto te
+    devuelven — solo cuánta base de costo podemos medir, que es justo lo que la foto sabe.
     """
     if st.session_state.get("_vd_resultados") is None:
         df = st.session_state.get("_wizard_df_clean")
         if df is None:
             return {}
+        # Solo la captura CONFIRMADA por el cliente. Lo que sale del OCR sin confirmar no
+        # puede ser base fiscal: el paso 2 existe para que él corrija lo que la foto leyó mal.
+        capturas = None
+        if st.session_state.get("_wizard_pos_confirmed"):
+            capturas = st.session_state.get("_wizard_positions") or None
         with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
-            st.session_state["_vd_resultados"] = logic.analyze_portfolio(df)
+            st.session_state["_vd_resultados"] = logic.analyze_portfolio(
+                df, position_overrides=capturas)
     return st.session_state["_vd_resultados"] or {}
 
 

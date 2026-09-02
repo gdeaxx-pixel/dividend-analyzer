@@ -345,6 +345,10 @@ def render_bloque_posiciones() -> bool:
     if st.button("Confirmar posiciones", key="_vd_confirm_pos", type="primary"):
         st.session_state["_wizard_positions"] = posiciones
         st.session_state["_wizard_pos_confirmed"] = True
+        # La captura entra a `analyze_portfolio` como base de costo (ver `ui/vistas.py`
+        # :_resultados), así que unos resultados calculados ANTES de confirmarla se quedarían
+        # sin ella y el peldaño 5 declararía indeterminado un costo que el cliente ya dio.
+        st.session_state.pop("_vd_resultados", None)
         st.rerun()
     return False
 
