@@ -78,7 +78,7 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **828 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **831 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `fiscal/base-desde-captura`, base `main` = `19b775a`. La captura de posiciones que el cliente
 confirma en el paso 2 **nunca llegaba al motor**: `ui/vistas.py::_resultados` corría
 `analyze_portfolio(df)` a secas, y `_wizard_positions` solo lo leía `ui/carga.py` para pintar
@@ -91,7 +91,14 @@ del ROC —la resta que M1 §4 descarta— y metía a SMH, un ETF amplio sin avi
 cobertura del peldaño 2 con un ROC del 0% que es ruido de comisiones. Medido: con él,
 `cubiertos` 3→4 con el gravable inmóvil; sin él, 3.
 La casilla 9 **no se mueve**: la convergencia del bloque de abajo se conserva.
-8 mutantes M4 cazados, cada uno en su propio test.)
+La auditoría del diff completo añadió cuatro cosas más: el predicado 19a se calculaba DOS
+veces (motor y flag de las vistas) y quedó en un solo `_publica_19a`; una guarda de precio,
+sin la cual un precio 0 publicaba `gain = −base`, una pérdida del 100% sobre una base recién
+tomada de la captura —no es hipotético aquí, el #95 nació de un `Close = NaN`—; una guarda de
+forma sobre `broker_position`, que viene de sesión/OCR; y un hueco de caché **preexistente**:
+el handler de editar-CSV no borraba `_vd_resultados`, así que un CSV nuevo se mostraba con las
+cifras del anterior.
+11 mutantes M4 cazados, cada uno en su propio test.)
 
 Antes: **815 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `fiscal/umbral-roc-tolerancia`, base `main` = `691cfdc`. El umbral que decide la ruta del ROC
