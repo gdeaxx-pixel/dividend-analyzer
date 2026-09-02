@@ -1595,8 +1595,23 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     # reinvertido). Conservamos tu COSTO REAL del CSV —"Invertido", ROI y CAGR usan tu
                     # efectivo, no la base del bróker— y el ROC se estima con el % oficial 19a (la resta
                     # lo subestima al reinvertir). No es 'reconciliado': el historial está completo.
+                    # La comparación lleva la MISMA tolerancia que usa la rama `elif` de
+                    # abajo sobre estas dos cifras. Sin ella, este `<` era estricto y decidía
+                    # la ruta del ROC por el ruido: PLTY del demo de IB tiene costo de bróker
+                    # $535.32 contra $534.60 aportados — **72 centavos, el 0.13%**, seguramente
+                    # comisiones o redondeo. Con eso caía a la ruta 'broker', su ROC salía
+                    # −$0.72 (negativo ⇒ «sin dato» por el #101) y el fondo quedaba FUERA de la
+                    # cobertura fiscal, tributando sobre el 100% del bruto... teniendo un ROC
+                    # oficial del 66.48% publicado en sus propios avisos 19a.
+                    #
+                    # Dos cifras que difieren menos que el ruido no sostienen la afirmación «el
+                    # bróker reporta MÁS costo del que metiste», que es lo único que justifica
+                    # ignorar el 19a. Y el gate `in load_roc_19a()` sigue mandando: esto solo
+                    # alcanza a fondos que publican el aviso, nunca a un ETF amplio (SCHB, SMH,
+                    # XLK salen negativos por la misma resta y NO entran, porque no publican).
+                    _tol_roc = max(0.02 * pocket_investment, 0.5)
                     if (not history_incomplete
-                            and _ov_co_f < pocket_investment + dividends_collected_drip
+                            and _ov_co_f < pocket_investment + dividends_collected_drip + _tol_roc
                             and str(ticker).upper() in load_roc_19a()):
                         _prefer_19a_roc = True
                     elif abs(_ov_co_f - pocket_investment) > max(0.02 * pocket_investment, 0.5):
