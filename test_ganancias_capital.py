@@ -966,14 +966,14 @@ def test_una_posicion_sana_no_mira_la_captura():
 def _cg_parcial(gain, valor, base, motivo="acciones_sin_costo_registrado"):
     """Lo que devuelve el motor cuando la base sale de la captura: latente y nada más."""
     return {
-        "ticker": None, "method": "costo_promedio_ponderado", "estado": "parcial",
+        "ticker": None, "method": "costo_reportado_por_el_broker", "estado": "parcial",
         "motivo": motivo, "motivo_realizado": motivo, "captura_no_usada": None,
         "realized": [], "realized_total": None, "realized_total_roc_adjusted": None,
         "unrealized": {"shares": 20, "basis": base, "market_value": valor, "gain": gain,
                        "basis_roc_adjusted": None, "gain_roc_adjusted": None,
                        "holding_days_ponderado": None, "tramo": None,
                        "basis_source": "captura_broker"},
-        "basis": "costo_promedio", "basis_source": "captura_broker",
+        "basis": "costo_broker", "basis_source": "captura_broker",
         "moment_realized": "al_cierre_de_la_venta",
         "moment_unrealized": "a_precio_de_mercado_hoy",
         "roc_basis_adjustment_applied": False, "is_estimate": True,
@@ -1066,3 +1066,25 @@ def test_un_parcial_sin_latente_medible_vuelve_a_ser_indeterminado():
     assert g["tickers_indeterminados"] == ["XLK"]
     assert g["tickers_base_captura"] == []
     assert g["n_fondos_no_realizado"] == 1
+
+
+def test_la_base_de_captura_no_se_atribuye_al_metodo_de_esta_funcion():
+    """`costo_promedio_ponderado` describe el recorrido del CSV, no lo que hizo el bróker.
+
+    Su método de lotes no lo sabemos —FIFO, lote específico o promedio, varía por bróker y
+    por elección del cliente— y con ventas de por medio decide qué base queda viva. Heredar
+    la etiqueta declararía un método que no se aplicó. Caso vivo: SCHB de `schwab_1` llega
+    a esta ruta con una venta hecha.
+    """
+    parcial = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00,
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+    csv = logic.build_capital_gains(
+        _df([('2024-01-10', 'Buy', 'XLK', 10.0, 100.00, -1000.00)]), 'XLK',
+        market_price=150.00)
+
+    assert parcial['method'] == 'costo_reportado_por_el_broker'
+    assert parcial['basis'] == 'costo_broker'
+    # La ruta del CSV conserva la suya: no se ha cambiado la etiqueta para todos.
+    assert csv['method'] == 'costo_promedio_ponderado'
+    assert csv['basis'] == 'costo_promedio'

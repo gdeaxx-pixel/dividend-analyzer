@@ -4627,6 +4627,14 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             _valor = _bp_sh * market_price
             salida['estado'] = 'parcial'
             salida['basis_source'] = 'captura_broker'
+            # El metodo NO es el de esta funcion. `costo_promedio_ponderado` describe el
+            # recorrido del CSV; esta base la calculo el BROKER, y su metodo de lotes no lo
+            # sabemos (FIFO, lote especifico o promedio — varia por broker y por eleccion del
+            # cliente). Con ventas de por medio importa: la base que queda viva depende de que
+            # lotes relevo el broker, asi que heredar la etiqueta seria declarar un metodo que
+            # no se aplico. Caso vivo: SCHB de `schwab_1` llega aqui con una venta hecha.
+            salida['method'] = 'costo_reportado_por_el_broker'
+            salida['basis'] = 'costo_broker'
             salida['unrealized'] = {
                 'shares': _bp_sh,
                 'basis': _bp_co,

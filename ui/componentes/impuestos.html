@@ -402,7 +402,10 @@
         + '<p class="imp-step-sub">'
         + (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
         + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
-        + 'que costaron.</p>';
+        + 'que costaron'
+        + (gCaptura.length ? ' — salvo los fondos cuya base viene de tu captura, donde el '
+            + 'método de lotes lo eligió tu bróker' : '')
+        + '.</p>';
       // Procedencia de la base cuando no sale del CSV. Va junto a las cifras, no al pie: es
       // parte de qué son, no una aclaración opcional.
       if (gCaptura.length) {
