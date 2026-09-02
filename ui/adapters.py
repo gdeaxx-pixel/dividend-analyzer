@@ -444,8 +444,20 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
     # (aportado + reinvertido), y PLTY del demo de IB cae a $0.72 de ese borde — dos centavos
     # al otro lado cambian su ROC de −$0.01 a $96.26.
     tickers_19a_sin_ajuste: list[str] = []
+    # Fondos cuya base de costo NO sale del CSV sino de la captura del broker. Solo aportan
+    # ganancia LATENTE: de lo ya vendido la captura no sabe nada (ver `build_capital_gains`).
+    # Se nombran porque su cifra tiene otra procedencia y ningun tramo de tenencia, y la vista
+    # no puede presentarla como si viniera del historial.
+    tickers_base_captura: list[str] = []
+    # Fondos que SI traen costo en la captura y aun asi quedan fuera, porque publican avisos
+    # 19a: su costo de broker ya viene reducido por el ROC y el motor le aplicaria encima la
+    # serie 19a. Se nombran aparte de los demas indeterminados porque su remedio es distinto —
+    # no les falta ningun dato.
+    tickers_captura_no_usada: list[str] = []
     n_ventas = 0
     n_ok = 0
+    n_ok_latente = 0
+    n_parcial = 0
     indeterminados: list[str] = []
     por_ticker: list[dict] = []
     hay_dato = False
@@ -456,11 +468,45 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
         cg = (stats or {}).get("capital_gains") or {}
         if not cg:
             continue
-        if cg.get("estado") != "ok":
+        _estado = cg.get("estado")
+        if _estado not in ("ok", "parcial"):
+            if cg.get("captura_no_usada"):
+                tickers_captura_no_usada.append(ticker)
             indeterminados.append(ticker)
             por_ticker.append({"ticker": ticker, "estado": "indeterminado",
                                "motivo": cg.get("motivo"),
                                "realizado": None, "no_realizado": None, "tramo": None})
+            continue
+
+        if _estado == "parcial":
+            # Solo la pierna latente, y con su procedencia declarada. NO entra en `realizado`
+            # ni en `n_ventas`: `realized_total` es `None` (=«no lo se»), y sumarlo como cero
+            # convertiria un hueco en un hecho. Tampoco entra en `fiscal_roc`: sobre una base
+            # de captura no hay ajuste de ROC que aplicar.
+            _u = cg.get("unrealized") or {}
+            _ug = _u.get("gain")
+            if _ug is None:
+                indeterminados.append(ticker)
+                por_ticker.append({"ticker": ticker, "estado": "indeterminado",
+                                   "motivo": cg.get("motivo"),
+                                   "realizado": None, "no_realizado": None, "tramo": None})
+                continue
+            hay_dato = True
+            n_parcial += 1
+            tickers_base_captura.append(ticker)
+            no_realizado += _f(_ug)
+            valor_mercado += _f(_u.get("market_value"))
+            base_viva += _f(_u.get("basis"))
+            por_ticker.append({
+                "ticker": ticker,
+                "estado": "parcial",
+                "motivo": cg.get("motivo"),
+                "realizado": None,
+                "no_realizado": round(_f(_ug), 2),
+                # La captura no trae fecha de compra: sin tramo, a proposito.
+                "tramo": None,
+                "basis_source": cg.get("basis_source"),
+            })
             continue
 
         hay_dato = True
@@ -473,6 +519,7 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
         u_gain = u.get("gain")
         u_val = u.get("market_value")
         if u_gain is not None:
+            n_ok_latente += 1
             no_realizado += _f(u_gain)
             valor_mercado += _f(u_val)
             base_viva += _f(u.get("basis"))
@@ -508,20 +555,32 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
         return None
 
     return {
-        "estado": ("ok" if hay_dato and not indeterminados else
+        "estado": ("ok" if hay_dato and not indeterminados and not n_parcial else
                    ("parcial" if hay_dato else "indeterminado")),
         "method": "costo_promedio_ponderado",
         # Cuántos fondos cubren las cifras de abajo, y sobre cuántos. Sin esto un total
         # PARCIAL se lee como el total de la cartera — que es la mentira más fácil de contar
         # aquí: medido en `?demo=schwab`, la ganancia latente cubre 3 fondos de 8.
+        #
+        # `n_fondos` cuenta SOLO los que tienen las dos piernas medidas desde el CSV, y es el
+        # alcance de la cifra REALIZADA. La latente cubre más —los de base de captura también
+        # aportan— y por eso lleva su propio contador: las dos cajas del peldaño ya no
+        # comparten alcance, y darles uno solo sobre-declararía el realizado.
         "n_fondos": n_ok,
-        "n_fondos_total": n_ok + len(indeterminados),
-        "realizado": ({"monto": round(realizado, 2), "n_ventas": n_ventas}
+        "n_fondos_no_realizado": n_ok_latente + n_parcial,
+        "n_fondos_total": n_ok + n_parcial + len(indeterminados),
+        "realizado": ({"monto": round(realizado, 2), "n_ventas": n_ventas,
+                       "n_fondos": n_ok}
                       if hay_dato and n_ventas else None),
         "no_realizado": ({"monto": round(no_realizado, 2),
                           "valor_mercado": round(valor_mercado, 2),
-                          "base": round(base_viva, 2)}
+                          "base": round(base_viva, 2),
+                          "n_fondos": n_ok_latente + n_parcial}
                          if hay_dato and valor_mercado > 0.005 else None),
+        # Fondos cuya base salió de la captura del bróker: aportan a la latente y a NADA más.
+        "tickers_base_captura": tickers_base_captura,
+        # Fondos con costo en la captura que aun así quedan fuera (publican avisos 19a).
+        "tickers_captura_no_usada": tickers_captura_no_usada,
         # El mensaje del peldaño, y el contraste con el de dividendos: para un no residente
         # sin presencia sustancial en EE.UU., la ganancia de capital de un ETF o acción normal
         # NO es renta de fuente estadounidense gravable. Mismo fondo que el peldaño 4,

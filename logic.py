@@ -2334,6 +2334,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 history_incomplete=history_incomplete,
                 roc_events=_roc_events,
                 roc_source=_roc_source,
+                # La captura del broker es la MISMA que ya alimenta la reconciliacion de
+                # arriba (`_ov`), no una segunda lectura: si divergieran, la app mostraria
+                # dos posiciones distintas para el mismo ticker.
+                broker_position=_ov,
+                roc_19a_published=str(ticker).upper() in load_roc_19a(),
             ),
             # ROC
             "ib_cost_basis":       _ib_basis,
@@ -4276,7 +4281,8 @@ CAPITAL_GAINS_TRAMO_DIAS = 730  # 2 años — el corte que la Fase 4 usará para
 def build_capital_gains(ticker_df, ticker: str = None, market_price: float = None,
                         today=None, splits=None,
                         history_incomplete: bool = False,
-                        roc_events=None, roc_source: str = None) -> dict:
+                        roc_events=None, roc_source: str = None,
+                        broker_position=None, roc_19a_published: bool = False) -> dict:
     """Objeto único de GANANCIA DE CAPITAL por ticker — realizada y no realizada.
 
     Es un eje NUEVO, no una vista de uno existente. Antes de esta función no había ninguna
@@ -4331,6 +4337,36 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
 
     `holding_days_ponderado` del no realizado se pondera por acciones: con compras escalonadas
     es una aproximación, no una fecha de adquisición real.
+
+    ── La base tomada de la CAPTURA del bróker (`broker_position`) ────────────────────────
+    Cuando el recorrido termina en `indeterminado`, la captura del bróker
+    (`{shares, cost_basis}`) puede rescatar **la pierna no realizada y solo esa**. El estado
+    resultante es `'parcial'`, nunca `'ok'`, y `basis_source='captura_broker'` lo declara.
+
+    Tres límites que NO son conservadurismo, son lo que la captura de verdad sabe:
+
+    1. **El realizado sigue indeterminado, aunque el CSV no muestre ninguna venta.** La captura
+       describe las acciones de HOY; de la base de lo ya vendido no dice nada. Y en un CSV cuyo
+       historial sabemos incompleto —es la razón por la que llegamos aquí— «no veo ventas» no
+       es «no hubo ventas»: medido en XLK de `schwab_1`, el CSV cubre el 15% de la posición.
+       Publicar `realized_total = 0.0` ahí sería el cero falso que la trampa 3 evita.
+    2. **`holding_days_ponderado` y `tramo` salen `None`.** La captura no trae fecha de compra,
+       y el `tramo` (≥/< 2 años) es lo que gobierna la tarifa en la capa de país: en Colombia
+       decide entre ganancia ocasional y renta ordinaria. Ponerle un valor por defecto sería
+       fabricar un hecho fiscal, no estimarlo.
+    3. **Los fondos que publican avisos 19a quedan FUERA** (`roc_19a_published`). El costo que
+       reporta el bróker ya viene reducido por el ROC, y el motor le aplicaría encima la serie
+       19a fechada — el ROC restado dos veces. Es la misma razón por la que `_prefer_19a_roc`
+       se niega a pisar `pocket_investment` con esa cifra. Medido en `schwab_1`: TSLY llega
+       aquí con `roc_source='19a'` y ROC del 60.33% vivo, y la escala del doble conteo la da
+       su hermana MSTY, que aplica $2,709.20. Por eso `roc_basis_adjustment_applied` es
+       siempre `False` en esta ruta: sobre una base de captura no se ajusta nada.
+
+    Consecuencia de las tres: esta ruta produce una ganancia **latente** y nada más. Medido
+    sobre los demos, cierra 4 de las 9 posiciones indeterminadas (XLK y SCHB de `schwab_1` y
+    de `schwab_daniel`) y añade **+$2,918.94** de latente en `?demo=schwab`, que hoy la app
+    declara como no medible. Las otras cinco no las cierra: QYLD, SVOL y las de `schwab_2` no
+    traen costo en la captura, y TSLY es 19a.
     """
     vacio = {
         'ticker': ticker,
@@ -4349,6 +4385,17 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         'roc_basis_applied_total': None,
         'roc_basis_excess': None,
         'moment_basis_roc_adjusted': 'tras_reclasificacion_anual',
+        # Procedencia de la base de costo: del CSV (el recorrido de esta funcion) o de la
+        # captura del broker. Se publica SIEMPRE, tambien en la ruta 'ok', para que ninguna
+        # vista tenga que deducirla del estado.
+        'basis_source': None,
+        # Por que el realizado no se pudo medir. En la ruta de la captura sobrevive aunque la
+        # latente si salga: son dos piernas con dos suertes distintas.
+        'motivo_realizado': None,
+        # Por que HABIENDO captura utilizable no se uso. Sin esto, un fondo con costo en la
+        # captura y aun asi indeterminado se lee como si el dato no existiera, y la vista
+        # invita al cliente a aportar algo que ya aporto.
+        'captura_no_usada': None,
         'is_estimate': True,
     }
     if ticker_df is None or len(ticker_df) == 0:
@@ -4561,6 +4608,40 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
     if indeterminado:
         salida = dict(vacio)
         salida['motivo'] = motivo or 'indeterminado'
+        salida['motivo_realizado'] = salida['motivo']
+        # ── Rescate de la pierna latente desde la captura del broker ──────────────────
+        # Ver el bloque del docstring: la captura solo sabe de las acciones de HOY, asi que
+        # de aqui sale una ganancia LATENTE y nada mas. El realizado se queda como estaba
+        # (`realized_total = None`, que es «no lo se», distinto de $0).
+        _bp = broker_position or {}
+        try:
+            _bp_sh = float(_bp.get('shares') or 0)
+            _bp_co = float(_bp.get('cost_basis') or 0)
+        except (TypeError, ValueError):
+            _bp_sh = _bp_co = 0.0
+        if _bp_sh > 0 and _bp_co > 0 and roc_19a_published:
+            # Habia con que, y se descarto a proposito (limite 3 del docstring).
+            salida['captura_no_usada'] = 'fondo_19a'
+        if (_bp_sh > 0 and _bp_co > 0 and market_price is not None
+                and not roc_19a_published):
+            _valor = _bp_sh * market_price
+            salida['estado'] = 'parcial'
+            salida['basis_source'] = 'captura_broker'
+            salida['unrealized'] = {
+                'shares': _bp_sh,
+                'basis': _bp_co,
+                'market_value': _valor,
+                'gain': _valor - _bp_co,
+                # Sobre una base de captura no se ajusta ROC: ya viene reducida por el del
+                # broker y la serie 19a caeria encima (limite 3 del docstring).
+                'basis_roc_adjusted': None,
+                'gain_roc_adjusted': None,
+                # La captura no trae fecha de compra. `None` es el dato honesto: el `tramo`
+                # gobierna la tarifa en la capa de pais y no se inventa (limite 2).
+                'holding_days_ponderado': None,
+                'tramo': None,
+                'basis_source': 'captura_broker',
+            }
         return salida
 
     unrealized = None
@@ -4586,6 +4667,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             'holding_days_ponderado': dias_tenencia,
             'tramo': (None if dias_tenencia is None else
                       ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
+            'basis_source': 'csv',
         }
 
     return {
@@ -4593,6 +4675,9 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         'method': 'costo_promedio_ponderado',
         'estado': 'ok',
         'motivo': None,
+        'motivo_realizado': None,
+        'captura_no_usada': None,
+        'basis_source': 'csv',
         'realized': realized,
         'realized_total': sum(r['gain'] for r in realized) if realized else 0.0,
         'unrealized': unrealized,
