@@ -70,3 +70,18 @@ MSTR:
   start: '2022-11-23'
   end: '2026-08-21'
   rows: 938
+PLTY:
+  generated_at: '2026-09-01'
+  start: '2024-10-08'
+  end: '2026-08-31'
+  rows: 475
+QYLD:
+  generated_at: '2026-09-01'
+  start: '2022-11-23'
+  end: '2026-08-31'
+  rows: 944
+SVOL:
+  generated_at: '2026-09-01'
+  start: '2022-11-23'
+  end: '2026-08-31'
+  rows: 944
