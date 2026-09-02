@@ -292,7 +292,7 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
 
 
 def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
-                            resultados: dict) -> dict | None:
+                            resultados: dict, ruta_a: dict | None = None) -> dict | None:
     """Sexto peldaño (Fase 4): qué te toca DECLARAR en tu país por esta renta extranjera.
 
     **Publica la base y el crédito. NO publica la tarifa, y eso es la decisión de diseño,
@@ -340,6 +340,13 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
     for _k in tramos:
         tramos[_k]["monto"] = round(tramos[_k]["monto"], 2)
 
+    # Porción de lo retenido que el bróker devuelve al reclasificar el ROC (casilla 9 del
+    # 1042-S). El objeto del #102 la publica aunque falte el país; `_vuelve_medido` distingue
+    # «medí cero» de «no pude medirlo», que no son lo mismo delante de una cifra de dinero.
+    _c9 = (ruta_a or {}).get("casilla9_esperada")
+    _vuelve_medido = _c9 is not None
+    _vuelve = _f(_c9) if _vuelve_medido else 0.0
+
     no_realizado = None
     if ganancias and (ganancias.get("no_realizado") or {}).get("monto") is not None:
         no_realizado = round(_f(ganancias["no_realizado"]["monto"]), 2)
@@ -359,13 +366,32 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
             "base": "bruto",
             "momento": "al_cobro",
         },
-        # Impuesto ya pagado en EE.UU. La mayoría de los países lo deja descontar del suyo
-        # (descuento por impuestos pagados en el exterior). Es el dato que más se pierde el
-        # cliente: sin él, declara la renta y paga dos veces.
+        # Impuesto pagado en EE.UU., partido en DOS MOMENTOS — y esa partición es el punto.
+        #
+        # Lo retenido al cobro NO es todo acreditable: la porción que el bróker devuelve al
+        # reclasificar el ROC nunca llegó a ser impuesto, y lo que no se pagó no se puede
+        # descontar en el país de residencia. Publicar el total como «crédito» lo infla — en
+        # el CSV sintético de Schwab, $41.29 de $60.75 (68%) vuelven, así que el crédito real
+        # es $19.46. Es la Regla 2 aplicada al crédito: `retenido` es *al cobro* y un crédito
+        # fiscal vive *tras la reclasificación anual*; presentarlos como el mismo número
+        # mezcla dos momentos.
+        #
+        # `vuelve_por_roc` sale de `ruta_a.casilla9_esperada` (el objeto del #102, que ya la
+        # publica SIN país declarado); aquí no se recalcula nada (Regla 3).
         "credito_eeuu": {
+            # Bruto del crédito: lo descontado al cobro. Se conserva porque es lo que dice el
+            # CSV y lo que el cliente ve en su extracto.
             "monto": round(retenido, 2),
             "base": "bruto",
             "momento": "al_cobro",
+            # Lo que vuelve solo y por tanto NO es crédito.
+            "vuelve_por_roc": round(_vuelve, 2),
+            # El crédito que de verdad puede descontar. `None` cuando no hay con qué medir la
+            # devolución: sin ese dato, restar 0 afirmaría que no vuelve nada — un cero que no
+            # se midió, justo lo que el #101 y el #102 corrigieron en los otros peldaños.
+            "definitivo": (round(retenido - _vuelve, 2) if _vuelve_medido else None),
+            "definitivo_momento": "tras_reclasificacion_anual",
+            "definitivo_motivo": (None if _vuelve_medido else "sin_dato_de_roc_recuperable"),
         },
         "realizado_por_tramo": tramos,
         "corte_tramo_dias": logic.CAPITAL_GAINS_TRAMO_DIAS,
@@ -802,7 +828,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # Peldaño 6 (Fase 4). Llena el slot que la Fase 2 dejó rotulado «PRÓXIMAMENTE» — no
         # se crea uno nuevo ni se mueven los de arriba. Publica BASE y CRÉDITO; la tarifa se
         # omite a propósito y el objeto lo dice en `tarifa_motivo` (ver el docstring).
-        "impuesto_local": _impuesto_local_cartera(peldanos, _gc_cartera, resultados),
+        "impuesto_local": _impuesto_local_cartera(peldanos, _gc_cartera, resultados, ruta_a),
         # Ya no queda ninguna fase con slot reservado en esta vista. Se conserva la lista
         # (vacía) porque el componente la lee para pintar los «PRÓXIMAMENTE»: quitarla
         # obligaría a tocar el render sin necesidad.

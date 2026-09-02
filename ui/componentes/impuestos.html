@@ -463,11 +463,30 @@
         + '<span class="imp-bucket-money">' + money(L.dividendos.bruto) + '</span>'
         + '<p class="imp-bucket-note">Lo repartido ANTES de la retención — es el bruto el que '
         + 'viaja a la declaración, no lo que entró a tu cuenta.</p></div>'
-      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Ya pagado a EE.UU.</p>'
-        + '<span class="imp-bucket-money">' + money(L.credito_eeuu.monto) + '</span>'
+      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Crédito por lo pagado a EE.UU.</p>'
+        + '<span class="imp-bucket-money">'
+        + money(L.credito_eeuu.definitivo != null ? L.credito_eeuu.definitivo
+                                                  : L.credito_eeuu.monto) + '</span>'
         + '<p class="imp-bucket-note">Casi todos los países lo dejan descontar del impuesto '
         + 'propio. Es el dato que más se pierde el contribuyente: sin él, paga dos veces.</p></div>'
       + '</div>';
+
+    // El crédito NO es todo lo retenido: lo que vuelve por ROC nunca llegó a ser impuesto, y
+    // lo que no se pagó no se descuenta. Sin esta línea la cifra se infla — en el CSV de
+    // Schwab, $41.29 de $60.75. Se explica siempre que haya devolución medida.
+    if (L.credito_eeuu.definitivo != null && L.credito_eeuu.vuelve_por_roc > 0.005) {
+      lBody += '<div class="imp-conc" style="border-left-color:var(--ambar)">'
+        + 'Tu bróker te retuvo <b>' + money(L.credito_eeuu.monto) + '</b> al cobro, pero '
+        + '<b>' + money(L.credito_eeuu.vuelve_por_roc) + '</b> vuelven solos al reclasificar el '
+        + 'ROC. <b>Eso no es crédito</b>: lo que te devuelven nunca llegaste a pagarlo. El que '
+        + 'puedes descontar es <b>' + money(L.credito_eeuu.definitivo) + '</b>. '
+        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.</div>';
+    } else if (L.credito_eeuu.definitivo == null) {
+      lBody += '<div class="imp-conc">No podemos medir cuánto de esa retención vuelve por ROC, '
+        + 'así que <b>' + money(L.credito_eeuu.monto) + '</b> es el <b>techo</b> del crédito, no '
+        + 'la cifra final: si tu bróker reclasifica ROC, parte volverá y esa parte no se '
+        + 'descuenta.</div>';
+    }
 
     // El ROC se nombra sin decidir por el contribuyente: que su país reconozca el retorno de
     // capital de un ETF estadounidense lo decide SU ley, no la de EE.UU.
