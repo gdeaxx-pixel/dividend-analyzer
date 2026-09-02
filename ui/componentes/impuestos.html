@@ -190,12 +190,37 @@
   var P = D.peldanos || {};
   var tasaTxt = D.declarado ? (D.tasa_pct + "% " + (D.tiene_tratado ? "por el tratado con EE.UU." : "sin tratado")) : null;
 
+  // La SEGUNDA vía para declarar el país. Hasta ahora los CTA solo nombraban el Paso 2 y
+  // callaban que el 1042-S ya trae la residencia en la casilla 13b: el cliente que subió el
+  // formulario tiene el dato delante y no lo sabe. Tres estados, porque prometer un atajo que
+  // no existe es peor que no ofrecerlo:
+  //   - hay código y lo sabemos traducir -> es un clic en el Paso 2
+  //   - hay código y NO está en la tabla -> hay que elegirlo a mano, se dice
+  //   - no hay 1042-S                    -> subirlo es la alternativa
+  // El país nunca se deduce de la tasa retenida (30% -> 5 países o W-8BEN ausente): eso lo
+  // decide `logic.pais_desde_codigo_1042s` sobre la casilla 13b, en el adapter.
+  var R1042 = D.residencia_1042s || {};
+  function viaPais() {
+    if (R1042.pais_detectado) {
+      // Sin repetir «Paso 2»: los tres sitios que llaman a viaPais() ya lo nombran justo
+      // antes, y decirlo dos veces en una frase se lee como un error.
+      return " Ya lo sabemos por tu 1042-S, que declara <b>" + esc(R1042.pais_detectado)
+           + "</b> (casilla 13b): basta con que lo confirmes.";
+    }
+    if (R1042.codigo) {
+      return " Tu 1042-S trae el código <b>" + esc(R1042.codigo) + "</b> (casilla 13b), que no "
+           + "está en nuestra tabla de tasas: elígelo a mano.";
+    }
+    return " Si tienes tu <b>1042-S</b>, subirlo también sirve: la casilla 13b trae tu residencia.";
+  }
+
   set("impLede",
     D.declarado
       ? "Vives en <b>" + esc(D.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
         + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
       : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
-        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto.");
+        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
+        + viaPais());
 
   // ---- peldaños ----
   function stepRow(n, q, val, pctVal, sub, cls) {
@@ -252,7 +277,7 @@
   } else {
     pasos.push(stepRow("Peldaño 3", "¿Cuánto te corresponde pagar?",
       null, null,
-      '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Declara tu país en el Paso 2.</b></div>',
+      '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Declara tu país en el Paso 2.</b>' + viaPais() + '</div>',
       "activo"));
   }
 
@@ -281,7 +306,7 @@
       + '<b>' + esc(sin) + '</b> el CSV de tu bróker mezcla los reversos del split inverso de dic-2025 con las filas de impuesto, '
       + 'y la retención «al cobro» de esos fondos no es una cifra fiable. Mostramos lo retenido neto por fondo en la tabla, sin el desglose.</div>';
   } else {
-    buckets = '<div class="imp-cta">Declara tu país para separar lo retenido en lo que es permanente, lo que vuelve solo por ROC y el gap de tratado. Son tres cifras con tres remedios distintos — sumarlas en una sola es el error que este diseño evita.</div>';
+    buckets = '<div class="imp-cta">Declara tu país para separar lo retenido en lo que es permanente, lo que vuelve solo por ROC y el gap de tratado. Son tres cifras con tres remedios distintos — sumarlas en una sola es el error que este diseño evita.' + viaPais() + '</div>';
   }
 
   // Reembolso YA acreditado — movimiento aparte, NO entra en la descomposición de los tres
