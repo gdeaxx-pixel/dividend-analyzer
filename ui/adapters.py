@@ -291,6 +291,96 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     }
 
 
+def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
+                            resultados: dict) -> dict | None:
+    """Sexto peldaño (Fase 4): qué te toca DECLARAR en tu país por esta renta extranjera.
+
+    **Publica la base y el crédito. NO publica la tarifa, y eso es la decisión de diseño,
+    no una carencia.** La tarifa del país de residencia es progresiva y se aplica sobre la
+    renta GLOBAL del contribuyente (Colombia por tramos de UVT, México ISR, Perú y Chile
+    igual). La app conoce tus dividendos; no conoce tu sueldo. Publicar «debes $X» exigiría
+    inventar ese dato, que es exactamente lo que `RATE_UNDECLARED` impide un peldaño más
+    arriba: una cifra cuya base no está declarada no se publica (Regla 2 del contrato).
+
+    Esta capa NO calcula fiscalidad (Regla 3): lee los peldaños 1, 2 y 4 ya resueltos y el
+    agregado de `_ganancias_capital_cartera`. Ni una resta nueva sobre `stats`.
+
+    **No hay total, a propósito.** Sumar dividendos con ganancias de capital daría un número
+    que no existe en ninguna declaración: son naturalezas fiscales distintas (renta ordinaria
+    vs. ganancia ocasional en Colombia), con tarifas distintas y casillas distintas, y además
+    momentos distintos —los dividendos son «al cobro», las ganancias «al cierre de la venta»—.
+    La Regla 2 prohíbe esa suma. Cada cifra sale con su rótulo y se quedan separadas.
+    """
+    if not peldanos:
+        return None
+
+    bruto = _f((peldanos.get("bruto") or {}).get("monto"))
+    gravable = _f((peldanos.get("gravable") or {}).get("monto"))
+    retenido = _f((peldanos.get("retenido") or {}).get("monto"))
+
+    # Ganancias REALIZADAS por tramo de tenencia. El corte (`CAPITAL_GAINS_TRAMO_DIAS`, 2
+    # años) lo decide el motor y viene fechado por venta; aquí solo se agrupa. Importa porque
+    # varios países cambian el tratamiento con la antigüedad —en Colombia ≥2 años es ganancia
+    # ocasional, por debajo es renta ordinaria— y presentarlas juntas borraría esa frontera.
+    tramos = {"ge_2y": {"monto": 0.0, "n_ventas": 0},
+              "lt_2y": {"monto": 0.0, "n_ventas": 0},
+              "sin_tramo": {"monto": 0.0, "n_ventas": 0}}
+    for _tk, _st in sorted((resultados or {}).items()):
+        if not _tiene_datos(_st):
+            continue
+        _cg = (_st or {}).get("capital_gains") or {}
+        if _cg.get("estado") != "ok":
+            continue
+        for _v in (_cg.get("realized") or []):
+            _k = _v.get("tramo") or "sin_tramo"
+            if _k not in tramos:
+                _k = "sin_tramo"
+            tramos[_k]["monto"] += _f(_v.get("gain"))
+            tramos[_k]["n_ventas"] += 1
+    for _k in tramos:
+        tramos[_k]["monto"] = round(tramos[_k]["monto"], 2)
+
+    no_realizado = None
+    if ganancias and (ganancias.get("no_realizado") or {}).get("monto") is not None:
+        no_realizado = round(_f(ganancias["no_realizado"]["monto"]), 2)
+
+    return {
+        # Lo que el fondo repartió, en BRUTO: es la cifra que viaja a la declaración, no el
+        # neto que entró a la cuenta. La retención no desaparece — se declara como crédito.
+        "dividendos": {
+            "bruto": round(bruto, 2),
+            # La parte que EE.UU. trató como renta (bruto menos ROC). Se publica junto al
+            # bruto, y NO como «la base»: que tu país reconozca el ROC de un ETF
+            # estadounidense es cuestión de su propia ley, no de la de EE.UU. Si no lo
+            # reconoce, la base es el bruto. Dar una sola cifra aquí sería decidir por el
+            # contribuyente un asunto que decide su jurisdicción.
+            "gravable_eeuu": round(gravable, 2),
+            "roc": round(bruto - gravable, 2),
+            "base": "bruto",
+            "momento": "al_cobro",
+        },
+        # Impuesto ya pagado en EE.UU. La mayoría de los países lo deja descontar del suyo
+        # (descuento por impuestos pagados en el exterior). Es el dato que más se pierde el
+        # cliente: sin él, declara la renta y paga dos veces.
+        "credito_eeuu": {
+            "monto": round(retenido, 2),
+            "base": "bruto",
+            "momento": "al_cobro",
+        },
+        "realizado_por_tramo": tramos,
+        "corte_tramo_dias": logic.CAPITAL_GAINS_TRAMO_DIAS,
+        # Lo NO realizado se nombra para decir que NO entra: una posición que no vendiste no
+        # se declara todavía. Callarlo invita a sumarlo.
+        "no_realizado_excluido": no_realizado,
+        # Explícito, no ausente: quien lea el objeto tiene que ver que la tarifa falta a
+        # propósito y por qué.
+        "tarifa_pct": None,
+        "tarifa_motivo": "progresiva_sobre_renta_global_no_declarada",
+        "total": None,
+        "total_motivo": "naturalezas_y_momentos_distintos_no_se_suman",
+    }
+
+
 def _ganancias_capital_cartera(resultados: dict) -> dict:
     """Agrega `stats['capital_gains']` de todos los tickers para el quinto peldaño.
 
@@ -691,6 +781,8 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         "pais_detectado": logic.pais_desde_codigo_1042s(_cod) if _cod else None,
     }
 
+    _gc_cartera = _ganancias_capital_cartera(resultados)
+
     return {
         "declarado": declarado,
         "pais": pais,
@@ -706,14 +798,15 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # nuevo ni se reordenan los de arriba (Regla de UI de Daniel: nada se mueve entre
         # estados, solo aparece lo nuevo). `None` si no hay ni una posición medible, y
         # entonces el componente vuelve a pintar el «PRÓXIMAMENTE» de siempre.
-        "ganancias_capital": _ganancias_capital_cartera(resultados),
-        # Espacio reservado para la fase siguiente (Fase 4). Sin contenido inventado — va
-        # rotulado «pendiente» y vacío.
-        "slots_pendientes": [
-            {"id": "impuesto_local",
-             "titulo": "Impuesto en tu país de residencia",
-             "nota": "Lo que declares en tu país por esta renta de fuente extranjera."},
-        ],
+        "ganancias_capital": _gc_cartera,
+        # Peldaño 6 (Fase 4). Llena el slot que la Fase 2 dejó rotulado «PRÓXIMAMENTE» — no
+        # se crea uno nuevo ni se mueven los de arriba. Publica BASE y CRÉDITO; la tarifa se
+        # omite a propósito y el objeto lo dice en `tarifa_motivo` (ver el docstring).
+        "impuesto_local": _impuesto_local_cartera(peldanos, _gc_cartera, resultados),
+        # Ya no queda ninguna fase con slot reservado en esta vista. Se conserva la lista
+        # (vacía) porque el componente la lee para pintar los «PRÓXIMAMENTE»: quitarla
+        # obligaría a tocar el render sin necesidad.
+        "slots_pendientes": [],
     }
 
 

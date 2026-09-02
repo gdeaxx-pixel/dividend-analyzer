@@ -515,8 +515,14 @@ def test_la_retencion_de_eeuu_es_cero_por_definicion():
 
 
 def test_el_slot_de_ganancias_ya_no_esta_en_los_pendientes():
-    """La Fase 3 LLENA el slot reservado; no crea uno nuevo ni deja el «PRÓXIMAMENTE». El de
-    la Fase 4 (`impuesto_local`) se queda intacto."""
+    """La Fase 3 LLENA el slot reservado; no crea uno nuevo ni deja el «PRÓXIMAMENTE».
+
+    ACTUALIZADO 2026-09-02 (Fase 4): antes este test asertaba `ids == ["impuesto_local"]`,
+    porque el slot de la Fase 4 seguía pendiente. La Fase 4 lo llenó, así que la lista quedó
+    vacía y el test se puso rojo. **No se relajó para desbloquear nada**: su propósito —que
+    ningún peldaño con cifra publicada quede rotulado «PRÓXIMAMENTE», y que llenar un slot no
+    cree otro— se conserva entero y ahora se comprueba sobre los DOS peldaños.
+    """
     from ui import adapters
 
     demo_mode = _demos()
@@ -527,9 +533,9 @@ def test_el_slot_de_ganancias_ya_no_esta_en_los_pendientes():
     assert datos is not None
 
     ids = [s["id"] for s in datos.get("slots_pendientes", [])]
-    assert ids == ["impuesto_local"], (
-        "el slot de ganancias tiene que quedar LLENO, y el de la Fase 4 intacto")
+    assert ids == [], "no debe quedar ningún peldaño rotulado «PRÓXIMAMENTE»"
     assert datos.get("ganancias_capital"), "el peldaño 5 no trae datos"
+    assert datos.get("impuesto_local"), "el peldaño 6 (Fase 4) no trae datos"
 
 
 # ── El gate cruzado sobre datos REALES ──────────────────────────────────────────────
