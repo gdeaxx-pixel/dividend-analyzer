@@ -507,3 +507,49 @@ def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     assert bundle is not None, alias
     datos = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
     assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(casilla9_esp, abs=0.05)
+
+
+# ── 5. La segunda vía para declarar el país: la casilla 13b del 1042-S ─────────────────
+# Hasta 2026-09-02 los CTA de la escalera solo nombraban el «Paso 2» y callaban que el
+# 1042-S ya trae la residencia (casilla 13b). El cliente que subió el formulario tenía el
+# dato delante sin saberlo. El adapter lo PUBLICA para el CTA; no declara nada — la
+# residencia se sigue confirmando a mano en `ui/carga._render_residencia_detectada`.
+
+def _res_min():
+    return {"MSTY": _stats_sinteticos("MSTY", 100.0, 30.0, 50.0, "19a")}
+
+
+def test_residencia_1042s_codigo_traducible_se_publica():
+    """Código en la tabla: el CTA puede ofrecer el clic de confirmación."""
+    datos = impuestos_data(_res_min(), logic.build_fiscal_profile(), [], "MX")
+    assert datos["residencia_1042s"] == {"codigo": "MX", "pais_detectado": "México"}
+
+
+def test_residencia_1042s_codigo_desconocido_no_inventa_pais():
+    """Código fuera de la tabla: se conserva el código y el país queda en None — el CTA
+    manda a elegirlo a mano en vez de prometer un atajo que no existe."""
+    datos = impuestos_data(_res_min(), logic.build_fiscal_profile(), [], "ZZ")
+    assert datos["residencia_1042s"]["codigo"] == "ZZ"
+    assert datos["residencia_1042s"]["pais_detectado"] is None
+
+
+def test_residencia_1042s_sin_formulario_queda_vacia():
+    """Sin 1042-S (y con la firma vieja de 3 argumentos) no se publica residencia alguna."""
+    for datos in (impuestos_data(_res_min(), logic.build_fiscal_profile(), []),
+                  impuestos_data(_res_min(), logic.build_fiscal_profile(), [], None)):
+        assert datos["residencia_1042s"] == {"codigo": None, "pais_detectado": None}
+
+
+def test_residencia_1042s_normaliza_el_codigo():
+    """El código llega del extractor: minúsculas o con espacios no deben perder el país."""
+    datos = impuestos_data(_res_min(), logic.build_fiscal_profile(), [], " mx ")
+    assert datos["residencia_1042s"]["pais_detectado"] == "México"
+
+
+def test_residencia_1042s_no_declara_el_pais_por_su_cuenta():
+    """LA INVARIANTE. Publicar la casilla 13b NO puede mover el peldaño 3: sin que el
+    cliente confirme, la escalera sigue sin residencia declarada y sin cifra."""
+    datos = impuestos_data(_res_min(), logic.build_fiscal_profile(), [], "MX")
+    assert datos["declarado"] is False
+    assert datos["pais"] is None
+    assert datos["peldanos"]["corresponde"] is None

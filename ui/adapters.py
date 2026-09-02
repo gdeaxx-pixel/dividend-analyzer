@@ -443,7 +443,8 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
     }
 
 
-def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | None:
+def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
+                   codigo_pais_1042s: str | None = None) -> dict | None:
     """La escalera de Impuestos, de CARTERA (Fase 2 de la vista fiscal).
 
     Cuatro peldaños, cada uno leído de un objeto fiscal que ya existe — esta capa NO
@@ -473,6 +474,14 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
     `perfil` es `ui.estado.perfil_fiscal()`; `forms_1042s` es
     `(session_state['_wizard_1042s'] or {})['forms']`. Devuelve `None` si no hay resultados
     utilizables.
+
+    `codigo_pais_1042s` es la casilla 13b del formulario
+    (`session_state['_wizard_1042s']['recipient_country_code']`) y se publica en
+    `residencia_1042s` SOLO para que los CTA sepan qué segunda vía ofrecerle al cliente. No
+    declara nada: la residencia se sigue confirmando a mano en el Paso 2
+    (`ui/carga._render_residencia_detectada`). El país sale de
+    `logic.pais_desde_codigo_1042s` — el mismo mapeo del Paso 2, no uno nuevo — y **nunca de
+    la tasa retenida**, que es ambigua (30% -> 5 países o W-8BEN ausente; 15% -> 3 países).
     """
     if not resultados:
         return None
@@ -672,10 +681,21 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list) -> dict | 
         "sin_retencion": retenido_1042s <= 0.01,
     }
 
+    # Qué sabe el 1042-S sobre la residencia. Tres estados, y los tres importan para el CTA:
+    # sin formulario (ofrecer subirlo), con formulario y código traducible (ofrecer el clic de
+    # confirmación del Paso 2), y con formulario cuyo código no está en la tabla (mandar a
+    # elegirlo a mano, sin prometer un atajo que no existe).
+    _cod = (str(codigo_pais_1042s).strip().upper()[:2] or None) if codigo_pais_1042s else None
+    residencia_1042s = {
+        "codigo": _cod,
+        "pais_detectado": logic.pais_desde_codigo_1042s(_cod) if _cod else None,
+    }
+
     return {
         "declarado": declarado,
         "pais": pais,
         "tasa_pct": tasa_pct,
+        "residencia_1042s": residencia_1042s,
         "tiene_tratado": bool(perfil.get("has_treaty")),
         "bruto_inicial": round(bruto_total, 2),
         "peldanos": peldanos,

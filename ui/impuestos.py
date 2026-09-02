@@ -50,9 +50,13 @@ def render_vista(vista: str, ruta) -> None:
         return
 
     perfil = estado.perfil_fiscal()
-    forms_1042s = (st.session_state.get("_wizard_1042s") or {}).get("forms") or []
+    _w1042s = st.session_state.get("_wizard_1042s") or {}
+    forms_1042s = _w1042s.get("forms") or []
+    # Casilla 13b: solo para que los CTA ofrezcan la segunda vía de declarar el país. No
+    # declara residencia — eso sigue pidiendo el clic del cliente en el Paso 2.
+    codigo_pais_1042s = _w1042s.get("recipient_country_code")
 
-    datos = adapters.impuestos_data(resultados, perfil, forms_1042s)
+    datos = adapters.impuestos_data(resultados, perfil, forms_1042s, codigo_pais_1042s)
     if datos is None or not datos.get("fondos"):
         st.markdown('<span class="vd-badge">Impuestos</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">Sin dividendos que declarar</h2>',
