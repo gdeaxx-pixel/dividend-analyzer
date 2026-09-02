@@ -78,7 +78,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **810 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **815 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/umbral-roc-tolerancia`, base `main` = `691cfdc`. El umbral que decide la ruta del ROC
+(`_prefer_19a_roc`) comparaba con `<` ESTRICTO mientras la rama `elif` de al lado, sobre las
+MISMAS dos cifras, ya usaba `max(2%, $0.50)`. Por esa asimetría PLTY quedaba fuera de la
+cobertura fiscal por **72 centavos** (costo de bróker $535.32 contra $534.60 aportados,
+0.13% — comisiones): caía a la ruta 'broker', su ROC salía −$0.72, el #101 lo rotulaba «sin
+dato» y el fondo tributaba sobre el 100% del bruto teniendo un ROC oficial 19a del 66.48%.
+Efecto medido: PLTY −0.78→66.48, cobertura 5/9→6/9, gravable $6,200.66→$6,113.61; SCHB, SMH
+y XLK **no se mueven** porque no publican 19a y el gate los sigue frenando.
+**Y hace converger las dos rutas de carga**: la casilla 9 de `ib_1` daba $1,340.21 sin
+captura y $1,314.14 con captura — los $26.07 eran PLTY. Ahora las dos dan $1,340.21: subir
+una foto ya no cambia cuánto impuesto te devuelven.
+3 mutantes M4 cazados, dos de ellos SOLO tras añadir los tests de límite —«tolerancia
+infinita» y «sin gate de 19a» sobrevivían a la primera tanda.)
+
+Antes: **810 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `fiscal/credito-eeuu-momento`, base `main` = `cc7bd8a`, tras partir el CRÉDITO del peldaño 6
 en sus dos momentos: lo retenido al cobro NO es todo acreditable, porque la parte que vuelve
 al reclasificar el ROC nunca llegó a ser impuesto. Medido en `schwab_synth_1`: de $60.75

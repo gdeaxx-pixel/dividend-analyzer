@@ -494,7 +494,12 @@ def test_casilla9_respeta_el_guard_implausible(monkeypatch):
     ("schwab_1", 0.00),
     ("schwab_2", 77.95),
     ("schwab_daniel", 81.22),
-    ("ib_1", 1314.14),  # el traspaso decía 1340.21; `main` ya corría 1314.14 (cifra stale)
+    # ACTUALIZADO 2026-09-02 (tolerancia del umbral del ROC): 1314.14 -> 1340.21. La
+    # diferencia son los $26.07 de PLTY, que con captura caía a la ruta 'broker' por 72
+    # centavos y quedaba «sin dato». Ese 1314.14 NO era la cifra buena: era la del cliente
+    # que subía la foto del bróker, mientras el que no la subía veía 1340.21. El nuevo
+    # valor es el de AMBAS rutas — ver `test_casilla9_converge_con_y_sin_captura`.
+    ("ib_1", 1340.21),
 ])
 def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     """No-regresión: los 4 casos reales con Colombia declarada dan la misma casilla 9 que
@@ -745,3 +750,120 @@ def test_credito_definitivo_no_depende_del_pais(monkeypatch):
     con = _datos_f4("schwab_synth_1", monkeypatch, pais="México")["impuesto_local"]["credito_eeuu"]
     assert sin["definitivo"] == con["definitivo"]
     assert sin["vuelve_por_roc"] == con["vuelve_por_roc"]
+
+
+def test_casilla9_converge_con_y_sin_captura():
+    """LA PRUEBA DEL ARREGLO, y vale más que el número pineado de arriba.
+
+    Hasta 2026-09-02 la misma cartera daba DOS casillas 9 según el cliente hubiera subido o no
+    la captura de posiciones: $1340.21 sin ella, $1314.14 con ella. Los $26.07 de diferencia
+    eran PLTY, cuyo costo de bróker ($535.32) superaba lo aportado ($534.60) por **72 centavos**
+    — 0.13%, ruido de comisiones. Ese ruido lo mandaba a la ruta 'broker', su ROC salía negativo
+    y el fondo quedaba fuera de la cobertura fiscal pese a publicar avisos 19a con un ROC del
+    66.48%.
+
+    Subir una foto no puede cambiar cuánto impuesto te devuelven. Este test falla si vuelven a
+    divergir, sin depender de que el número siga siendo 1340.21.
+    """
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    bundle = demo_mode.load_demo_case("ib")          # CON captura: inyecta cost_basis
+    con = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
+
+    import glob
+    import os as _os
+    ruta = sorted(glob.glob(_os.path.join(
+        "real_examples", "interactive_brokers_data", "*", "*.csv")))
+    if not ruta:
+        pytest.skip("CSV real de IB no disponible")
+    with open(ruta[0], "rb") as fh:
+        df, _ = logic.load_and_detect_csv(_FakeFile(fh.read(), "ib.csv"))
+    sin = impuestos_data(logic.analyze_portfolio(df, version="TEST_CONV"),
+                         logic.build_fiscal_profile("Colombia"), [])
+
+    assert con["ruta_a"]["casilla9_esperada"] == pytest.approx(
+        sin["ruta_a"]["casilla9_esperada"], abs=0.05), (
+        "la casilla 9 no puede depender de si el cliente subió la captura del bróker")
+
+
+def test_el_ruido_de_redondeo_no_saca_un_fondo_con_19a_de_la_cobertura():
+    """PLTY publica avisos 19a, así que su ROC es medible: no puede quedar «sin dato» porque el
+    costo del bróker difiera del aportado en menos que el ruido. El gate `in load_roc_19a()`
+    sigue mandando — SCHB, SMH y XLK salen negativos por la misma resta y SIGUEN fuera, porque
+    no publican avisos."""
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    res = demo_mode.load_demo_case("ib")["_results"]
+    plty = res.get("PLTY") or {}
+    assert plty.get("roc_source") == "19a"
+    assert plty.get("roc_percent", 0) > 0, "PLTY tiene ROC oficial; no puede salir negativo"
+
+    datos = impuestos_data(res, logic.build_fiscal_profile(), [])
+    sin_roc = datos["peldanos"]["gravable"]["sin_roc"]
+    assert "PLTY" not in sin_roc
+    for etf in ("SCHB", "SMH", "XLK"):                 # sin 19a: el gate los deja fuera igual
+        if etf in res:
+            assert etf in sin_roc, f"{etf} no publica 19a y no debe entrar por la tolerancia"
+
+
+# ── Los DOS límites de la tolerancia del umbral del ROC ───────────────────────────────
+# Añadidos tras ver que los mutantes «tolerancia infinita» y «sin gate de 19a» NO mordían:
+# los tests de arriba pasaban por una razón distinta de la que afirmaban (ningún fondo del
+# demo tiene el costo del bróker MUY por encima, así que ampliar la tolerancia no se notaba).
+# Estos dos construyen justo ese caso.
+
+def _analiza_con_captura(ticker, costo_broker, precio=20.0, monkeypatch=None):
+    """Una compra y un dividendo de `ticker`, más una captura que declara `costo_broker`."""
+    csv = ("Date,Action,Symbol,Description,Quantity,Price,Fees & Comm,Amount\n"
+           f'"01/15/2025","Buy","{ticker}","X","40","$25.00","","-$1000.00"\n'
+           f'"03/15/2025","Dividend","{ticker}","X","","","","$100.00"\n')
+    df, _ = logic.load_and_detect_csv(_FakeFile(csv.encode(), "c.csv"))
+    if monkeypatch is not None:
+        monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    return logic.analyze_portfolio(
+        logic.normalize_csv(df), version="TEST_TOL",
+        position_overrides={ticker: {"shares": 40.0, "cost_basis": costo_broker}})
+
+
+def test_tolerancia_no_tapa_una_diferencia_grande_de_costo(monkeypatch):
+    """LÍMITE SUPERIOR. Si el bróker declara MUCHO más costo del que dice el CSV (aquí +50%),
+    eso no es ruido: es una discrepancia real que debe RECONCILIARSE por la rama de al lado,
+    no tomar el atajo del 19a. Con una tolerancia desbocada este test cae."""
+    res = _analiza_con_captura("MSTY", 1500.0, monkeypatch=monkeypatch)   # CSV dice 1000
+    st = res.get("MSTY") or {}
+    assert "cost_basis" in (st.get("reconciled_fields") or []), (
+        "una diferencia del 50% tiene que reconciliarse, no absorberse como ruido")
+
+
+def test_el_gate_de_19a_manda_sobre_la_tolerancia(monkeypatch):
+    """LÍMITE LATERAL. La tolerancia solo alcanza a fondos que PUBLICAN avisos 19a. Un ETF
+    amplio sin avisos (SCHB) no puede tomar la ruta 19a por muy cerca que quede del umbral —
+    no hay dato oficial que preferir. Quitar el gate hace caer este test."""
+    assert "SCHB" not in logic.load_roc_19a(), "premisa: SCHB no publica 19a"
+    res = _analiza_con_captura("SCHB", 999.50, monkeypatch=monkeypatch)   # a 50 centavos
+    st = res.get("SCHB") or {}
+    assert st.get("roc_source") != "19a", "SCHB no publica avisos: no puede resolver por 19a"
+
+
+def test_los_etf_sin_19a_conservan_su_roc_medido():
+    """El gate `in load_roc_19a()` no es decorativo, aunque la cobertura no lo note.
+
+    Sin él, los ETFs amplios (SCHB, SMH, XLK) toman la ruta 19a, no encuentran aviso que
+    aplicar y su `roc_percent` MEDIDO —negativo, por la resta del método bróker— se pierde en
+    `None`. Los dos estados acaban «sin dato» en la cobertura, así que ningún test de cobertura
+    lo ve; pero el #101 decidió CONSERVAR el valor medido y solo rotularlo en el carril fiscal
+    (Regla 4). Perderlo es una regresión silenciosa de esa decisión.
+    """
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    res = demo_mode.load_demo_case("ib")["_results"]
+    for etf in ("SCHB", "SMH", "XLK"):
+        st = res.get(etf)
+        if not isinstance(st, dict):
+            continue
+        assert st.get("roc_percent") is not None, (
+            f"{etf} perdió su ROC medido: el gate de 19a dejó de proteger la ruta del bróker")
+        assert st.get("roc_source") == "broker"
