@@ -867,3 +867,63 @@ def test_los_etf_sin_19a_conservan_su_roc_medido():
         assert st.get("roc_percent") is not None, (
             f"{etf} perdió su ROC medido: el gate de 19a dejó de proteger la ruta del bróker")
         assert st.get("roc_source") == "broker"
+
+
+def test_la_captura_da_base_de_costo_pero_no_cobertura_de_roc():
+    """Las dos mitades de la decisión de `ui/vistas.py::_resultados`, medidas juntas.
+
+    La captura de posiciones (`position_overrides`) SÍ entra: es la única fuente de la base
+    de costo cuando el CSV no llega a la compra original. El costo del bróker como fuente de
+    ROC (`ib_cost_basis_map`) NO entra: alimenta la resta que el contrato descarta (M1 §4,
+    «ROC = casilla 3 del 19a, no la resta») y metería a SMH —un ETF amplio sin avisos 19a—
+    en la cobertura del peldaño 2 con un ROC del 0% que es ruido de comisiones.
+
+    Sin este test las dos mitades se pueden separar sin que nada muerda: pasar los dos mapas
+    «porque van juntos» deja la suite en verde y la escalera diciendo «cubre 4 de 8 fondos»
+    con el monto gravable inmóvil.
+    """
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    b = demo_mode.load_demo_case("schwab")
+    df, ov = b["_wizard_df_clean"], b["_wizard_overrides"]
+    perfil = logic.build_fiscal_profile("Colombia")
+
+    sin = impuestos_data(logic.analyze_portfolio(df, version="T_SIN"), perfil, [])
+    con = impuestos_data(
+        logic.analyze_portfolio(df, version="T_CON", position_overrides=ov), perfil, [])
+
+    # 1. La captura da base de costo: fondos que sin ella no se pueden medir.
+    assert con["ganancias_capital"]["tickers_base_captura"] == ["SCHB", "XLK"]
+    assert (con["ganancias_capital"]["no_realizado"]["n_fondos"]
+            > sin["ganancias_capital"]["no_realizado"]["n_fondos"])
+
+    # 2. Y NO da cobertura de ROC: el peldaño 2 no se mueve ni en alcance ni en monto.
+    g_con, g_sin = con["peldanos"]["gravable"], sin["peldanos"]["gravable"]
+    assert g_con["cubiertos"] == g_sin["cubiertos"], (
+        "la captura no puede ampliar la cobertura del ROC: eso sale de los avisos 19a")
+    assert sorted(g_con["sin_roc"]) == sorted(g_sin["sin_roc"])
+    assert g_con["monto"] == pytest.approx(g_sin["monto"], abs=0.01)
+
+    # 3. El invariante protegido sigue en pie: subir la foto no cambia lo que te devuelven.
+    assert con["ruta_a"]["casilla9_esperada"] == pytest.approx(
+        sin["ruta_a"]["casilla9_esperada"], abs=0.05)
+
+
+def test_editar_el_csv_invalida_el_cache_de_resultados():
+    """Sin esto, subir un CSV nuevo muestra las cifras del anterior.
+
+    `ui/vistas.py::_resultados` solo recalcula cuando `_vd_resultados` es `None`, así que el
+    handler que borra `_wizard_df_clean` tiene que borrarlo también. Con la captura dentro del
+    cálculo el síntoma empeora: arrastraría las posiciones de un portafolio al siguiente.
+    """
+    import re
+    fuente = open("ui/carga.py", encoding="utf-8").read()
+    # El bloque de claves del handler de «editar» CSV.
+    bloque = re.search(r'for clave in \(([^)]*)\):', fuente, re.S)
+    assert bloque, "no se encontró el handler que limpia la carga"
+    assert '"_vd_resultados"' in bloque.group(1), (
+        "el handler de editar-CSV tiene que invalidar el caché de analyze_portfolio")
+    # Y el de confirmar posiciones, que cambia la captura que alimenta ese mismo cálculo.
+    assert 'pop("_vd_resultados", None)' in fuente, (
+        "confirmar posiciones tiene que invalidar el caché: la captura entra al cálculo")

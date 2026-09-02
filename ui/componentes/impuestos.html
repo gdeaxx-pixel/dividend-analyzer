@@ -378,20 +378,44 @@
         + '<p class="imp-bucket-note">Cerrada al precio al que vendiste. Ya no cambia.</p></div>';
     }
     var gFaltan = (G.tickers_indeterminados || []).length;
+    var gCaptura = G.tickers_base_captura || [];
+    // Las dos cajas ya NO comparten alcance: los fondos cuya base sale de la captura del
+    // bróker aportan a la latente y a nada más, así que la realizada cubre menos. Un solo
+    // número para las dos sobre-declararía la realizada.
+    var gNLat = (G.no_realizado && G.no_realizado.n_fondos) || 0;
+    var gNReal = (G.realizado && G.realizado.n_fondos) || 0;
 
     if (gCajas) {
       // Un total PARCIAL no puede presentarse como el de la cartera: se declara el alcance
-      // ANTES de las cifras, no en una nota debajo.
-      if (gFaltan) {
-        gBody += '<p class="imp-step-sub"><b>Solo ' + G.n_fondos + ' de tus '
-          + G.n_fondos_total + ' fondos.</b> Las cifras de abajo NO son las de tu cartera '
-          + 'completa — de los otros ' + gFaltan + ' no se puede saber la base de costo.</p>';
+      // ANTES de las cifras, no en una nota debajo. Y cuando los dos alcances difieren, cada
+      // cifra declara el suyo — que es el caso en cuanto hay una base de captura.
+      if (gFaltan || (G.realizado && gNReal !== gNLat)) {
+        gBody += '<p class="imp-step-sub"><b>Estas cifras no cubren tu cartera completa.</b> '
+          + 'La ganancia latente sale de <b>' + gNLat + ' de tus ' + G.n_fondos_total
+          + ' fondos</b>'
+          + (G.realizado ? ', y la ya realizada de <b>' + gNReal + '</b>' : '')
+          + (gFaltan ? '. De ' + gFaltan + (gFaltan === 1 ? ' no se puede' : ' no se pueden')
+              + ' saber la base de costo' : '')
+          + '.</p>';
       }
       gBody += '<div class="imp-buckets dos">' + gCajas + '</div>'
         + '<p class="imp-step-sub">'
         + (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
         + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
-        + 'que costaron.</p>';
+        + 'que costaron'
+        + (gCaptura.length ? ' — salvo los fondos cuya base viene de tu captura, donde el '
+            + 'método de lotes lo eligió tu bróker' : '')
+        + '.</p>';
+      // Procedencia de la base cuando no sale del CSV. Va junto a las cifras, no al pie: es
+      // parte de qué son, no una aclaración opcional.
+      if (gCaptura.length) {
+        gBody += '<p class="imp-step-sub">En <b>' + esc(gCaptura.join(", ")) + '</b> la base de '
+          + 'costo no sale de tu CSV sino de <b>la captura de tu bróker</b> — el archivo no '
+          + 'llega hasta la compra original. Por eso de esos fondos aparece la ganancia '
+          + '<b>latente y nada más</b>: la captura describe lo que tienes hoy, no lo que '
+          + 'vendiste. Y como no trae fecha de compra, esas posiciones <b>no tienen '
+          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en el peldaño siguiente.</p>';
+      }
     }
     // ── Base fiscal tras el ROC ────────────────────────────────────────────────
     // Va DESPUÉS de las cajas y en panel aparte: es la misma posición en otro momento
@@ -436,12 +460,31 @@
     }
 
     if (gFaltan) {
-      gBody += '<div class="imp-cta">Sin base de costo para <b>'
-        + esc(G.tickers_indeterminados.join(", "))
-        + '</b>: en tu CSV esas acciones llegaron por traspaso o el historial no alcanza hasta '
-        + 'la compra original, así que <b>el archivo no dice qué costaron</b>. '
-        + '<b>No las contamos como costo cero</b> — eso las haría parecer ganancia pura. Para '
-        + 'verlas aquí necesitas el historial completo desde que abriste la posición.</div>';
+      // Dos remedios distintos, y por eso dos listas. A los 19a no les FALTA ningún dato:
+      // su costo está en la captura y se descarta a propósito, porque el bróker ya se lo
+      // redujo por el ROC y encima le caería la serie 19a. Meterlos en el mismo saco
+      // invitaría al cliente a aportar algo que ya aportó.
+      var gNo19a = (G.tickers_captura_no_usada || []);
+      var gSinDato = G.tickers_indeterminados.filter(function (t) {
+        return gNo19a.indexOf(t) === -1;
+      });
+      if (gSinDato.length) {
+        gBody += '<div class="imp-cta">Sin base de costo para <b>'
+          + esc(gSinDato.join(", "))
+          + '</b>: en tu CSV esas acciones llegaron por traspaso o el historial no alcanza hasta '
+          + 'la compra original, y <b>tu captura tampoco trae su costo</b>. '
+          + '<b>No las contamos como costo cero</b> — eso las haría parecer ganancia pura. Para '
+          + 'verlas aquí necesitas el historial completo desde que abriste la posición, o el '
+          + 'costo de esas posiciones en la captura de tu bróker.</div>';
+      }
+      if (gNo19a.length) {
+        gBody += '<div class="imp-cta"><b>' + esc(gNo19a.join(", ")) + '</b> sí tiene costo en '
+          + 'tu captura, y aun así no aparece arriba — <b>no te falta ningún dato</b>. Ese '
+          + 'fondo reparte <b>retorno de capital</b>, y el costo que reporta tu bróker ya viene '
+          + 'rebajado por el ROC que él mismo reclasificó. Usarlo aquí restaría ese ROC <b>dos '
+          + 'veces</b> y te mostraría una ganancia inflada. Preferimos no darte la cifra a '
+          + 'darte una mal medida.</div>';
+      }
     }
     pasos.push(stepRow("Peldaño 5", "¿Y cuando vendas?", G.retencion_eeuu, null,
       gBody, "activo"));

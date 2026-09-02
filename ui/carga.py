@@ -154,9 +154,14 @@ def render_bloque_transacciones() -> bool:
         with col:
             if st.button("editar", key="_vd_edit_csv", type="tertiary",
                          use_container_width=True):
+                # `_vd_resultados` va en la lista: es el caché de `analyze_portfolio`, y sin
+                # borrarlo `ui/vistas.py::_resultados` lo devuelve tal cual —solo recalcula
+                # cuando es `None`—, así que el CSV nuevo se mostraría con las cifras del
+                # anterior. Con la captura dentro del cálculo, además arrastraría posiciones
+                # de un portafolio a otro.
                 for clave in ("_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker",
                               "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary",
-                              "_wizard_income_df", "_wizard_income_multi",
+                              "_wizard_income_df", "_wizard_income_multi", "_vd_resultados",
                               "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error"):
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
@@ -345,6 +350,10 @@ def render_bloque_posiciones() -> bool:
     if st.button("Confirmar posiciones", key="_vd_confirm_pos", type="primary"):
         st.session_state["_wizard_positions"] = posiciones
         st.session_state["_wizard_pos_confirmed"] = True
+        # La captura entra a `analyze_portfolio` como base de costo (ver `ui/vistas.py`
+        # :_resultados), así que unos resultados calculados ANTES de confirmarla se quedarían
+        # sin ella y el peldaño 5 declararía indeterminado un costo que el cliente ya dio.
+        st.session_state.pop("_vd_resultados", None)
         st.rerun()
     return False
 

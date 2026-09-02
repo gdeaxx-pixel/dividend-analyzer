@@ -819,3 +819,302 @@ def test_un_fondo_con_19a_pero_sin_ajuste_se_nombra_en_vez_de_desaparecer():
     assert not olvidados, (
         f"fondos que publican 19a y no se nombran ni como ajustados ni como pendientes: "
         f"{olvidados} — el lector los leería como fondos sin ROC")
+
+
+# ── La base tomada de la CAPTURA del bróker ────────────────────────────────────────
+#
+# Cuando el recorrido termina en 'indeterminado', la captura del bróker puede rescatar la
+# pierna LATENTE y solo esa. Los tres límites que estos tests fijan no son conservadurismo:
+# son lo que la captura de verdad sabe. Medido en los demos, esta ruta cierra 4 de las 9
+# posiciones indeterminadas y añade +$2,918.94 de latente en `?demo=schwab`.
+
+def _df_historial_roto():
+    """Posición cuyas acciones ENTRAN por traspaso sin importe: el CSV no dice qué costaron.
+
+    Es la trampa 3 en su forma parcial — no deja la base en cero, la DILUYE. El caso real
+    que la destapó fue XLK de `?demo=schwab`, con el CSV cubriendo el 15% de la posición.
+    """
+    return _df([
+        ('2024-01-10', 'Buy',               'XLK',  3.0, 100.00, -300.00),
+        ('2024-05-13', 'Internal Transfer', 'XLK', 17.0,   0.00,    0.00),
+    ])
+
+
+def test_la_captura_rescata_la_pierna_latente_y_la_declara():
+    """Con captura, la posición pasa de 'indeterminado' a 'parcial' con la base del bróker."""
+    cg = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00,
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+
+    assert cg['estado'] == 'parcial'
+    assert cg['basis_source'] == 'captura_broker'
+    u = cg['unrealized']
+    assert u['shares'] == pytest.approx(20.0)
+    assert u['basis'] == pytest.approx(1200.00)
+    assert u['market_value'] == pytest.approx(3000.00)
+    assert u['gain'] == pytest.approx(1800.00)
+    assert u['basis_source'] == 'captura_broker'
+    # El motivo por el que el CSV falló NO se borra: es lo que explica por qué el realizado
+    # sigue sin medirse.
+    assert cg['motivo'] == 'acciones_sin_costo_registrado'
+    assert cg['motivo_realizado'] == 'acciones_sin_costo_registrado'
+
+
+def test_el_realizado_sigue_sin_medirse_aunque_el_csv_no_muestre_ventas():
+    """El cero falso: en un CSV que sabemos incompleto, «no veo ventas» no es «no hubo ventas».
+
+    Este es el test que separa un hueco declarado de un hecho inventado. Con
+    `realized_total = 0.0` el agregado sumaría cero al total de la cartera y la vista diría
+    que ese fondo no realizó nada — afirmando algo que el archivo no puede sostener, en un
+    CSV que solo cubre parte de la posición.
+    """
+    cg = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00,
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+
+    assert cg['realized'] == []
+    assert cg['realized_total'] is None, "un hueco no es un cero"
+    assert cg['realized_total_roc_adjusted'] is None
+
+
+def test_la_base_de_captura_no_trae_antiguedad_ni_tramo():
+    """La captura no tiene fecha de compra, y el `tramo` gobierna la tarifa en la capa de país.
+
+    En Colombia el corte de 2 años decide entre ganancia ocasional y renta ordinaria.
+    Ponerle un valor por defecto sería fabricar un hecho fiscal, no estimarlo.
+    """
+    cg = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00, today='2026-09-02',
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+
+    assert cg['unrealized']['tramo'] is None
+    assert cg['unrealized']['holding_days_ponderado'] is None
+
+
+def test_sobre_una_base_de_captura_no_se_ajusta_el_roc():
+    """El costo del bróker ya viene reducido por el ROC: encima no se le aplica nada."""
+    cg = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00,
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+
+    assert cg['roc_basis_adjustment_applied'] is False
+    assert cg['unrealized']['basis_roc_adjusted'] is None
+    assert cg['unrealized']['gain_roc_adjusted'] is None
+
+
+def test_un_fondo_con_avisos_19a_no_toma_la_base_de_la_captura():
+    """El límite que evita restar el ROC dos veces.
+
+    El bróker ya redujo ese costo por el ROC que él mismo reclasificó, y el motor le
+    aplicaría encima la serie 19a fechada. Medido en `schwab_1`: TSLY llega aquí con
+    `roc_source='19a'` y ROC del 60.33% vivo; la escala del doble conteo la da su hermana
+    MSTY, que aplica $2,709.20. Es la misma razón por la que `_prefer_19a_roc` se niega a
+    pisar `pocket_investment` con esta cifra.
+    """
+    kw = dict(market_price=150.00, broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+    con_19a = logic.build_capital_gains(_df_historial_roto(), 'TSLY',
+                                        roc_19a_published=True, **kw)
+    sin_19a = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                        roc_19a_published=False, **kw)
+
+    assert con_19a['estado'] == 'indeterminado'
+    assert con_19a['unrealized'] is None
+    assert con_19a['basis_source'] is None
+    # Y se dice POR QUÉ: a ese fondo no le falta ningún dato, se descartó a propósito. Sin
+    # esto la vista invita al cliente a aportar un costo que ya aportó.
+    assert con_19a['captura_no_usada'] == 'fondo_19a'
+    # La rama gemela, con el mismo CSV y la misma captura, sí entra.
+    assert sin_19a['estado'] == 'parcial'
+    assert sin_19a['captura_no_usada'] is None
+
+
+def test_sin_captura_utilizable_la_posicion_se_queda_indeterminada():
+    """Captura a medias (acciones sin costo, o costo sin acciones) no rescata nada.
+
+    Es el caso de QYLD y SVOL en `?demo=schwab`: la captura no trae su costo, así que la
+    posición sigue sin base y NO se inventa una.
+    """
+    kw = dict(market_price=150.00)
+    for captura in ({'shares': 20.0, 'cost_basis': None}, {'shares': None, 'cost_basis': 1200.0},
+                    {'shares': 0.0, 'cost_basis': 0.0}, None):
+        cg = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                       broker_position=captura, **kw)
+        assert cg['estado'] == 'indeterminado', captura
+        assert cg['unrealized'] is None, captura
+        assert cg['captura_no_usada'] is None, captura
+
+
+def test_una_posicion_sana_no_mira_la_captura():
+    """La captura es un rescate, no una fuente que compita con el CSV.
+
+    Si el historial está completo la base sale del recorrido, aunque el bróker reporte otra
+    cifra — si no, dos rutas de carga darían dos bases para la misma posición.
+    """
+    df = _df([('2024-01-10', 'Buy', 'XLK', 10.0, 100.00, -1000.00)])
+    cg = logic.build_capital_gains(
+        df, 'XLK', market_price=150.00,
+        broker_position={'shares': 99.0, 'cost_basis': 9999.00})
+
+    assert cg['estado'] == 'ok'
+    assert cg['basis_source'] == 'csv'
+    assert cg['unrealized']['basis'] == pytest.approx(1000.00)
+    assert cg['unrealized']['shares'] == pytest.approx(10.0)
+
+
+# ── El agregado ante una posición 'parcial' ────────────────────────────────────────
+
+def _cg_parcial(gain, valor, base, motivo="acciones_sin_costo_registrado"):
+    """Lo que devuelve el motor cuando la base sale de la captura: latente y nada más."""
+    return {
+        "ticker": None, "method": "costo_reportado_por_el_broker", "estado": "parcial",
+        "motivo": motivo, "motivo_realizado": motivo, "captura_no_usada": None,
+        "realized": [], "realized_total": None, "realized_total_roc_adjusted": None,
+        "unrealized": {"shares": 20, "basis": base, "market_value": valor, "gain": gain,
+                       "basis_roc_adjusted": None, "gain_roc_adjusted": None,
+                       "holding_days_ponderado": None, "tramo": None,
+                       "basis_source": "captura_broker"},
+        "basis": "costo_broker", "basis_source": "captura_broker",
+        "moment_realized": "al_cierre_de_la_venta",
+        "moment_unrealized": "a_precio_de_mercado_hoy",
+        "roc_basis_adjustment_applied": False, "is_estimate": True,
+    }
+
+
+def test_el_agregado_toma_la_latente_de_la_captura_pero_no_su_realizado():
+    """Una posición 'parcial' aporta a la ganancia latente y a NADA más.
+
+    Su `realized_total` es `None` («no lo sé»); sumarlo como cero convertiría un hueco en un
+    hecho, que es el mismo error que el agregado ya evita con los indeterminados.
+    """
+    from ui import adapters
+
+    g = adapters._ganancias_capital_cartera({
+        "AAA": _stats(_cg_ok(realized_total=300.0, n_ventas=2,
+                             gain=500.0, valor=1500.0, base=1000.0)),
+        "XLK": _stats(_cg_parcial(gain=1800.0, valor=3000.0, base=1200.0)),
+    })
+
+    assert g["no_realizado"]["monto"] == pytest.approx(2300.0), "500 del CSV + 1800 de captura"
+    assert g["no_realizado"]["valor_mercado"] == pytest.approx(4500.0)
+    assert g["realizado"]["monto"] == pytest.approx(300.0), (
+        "el parcial no aporta realizado: su realized_total es None, no 0")
+    assert g["realizado"]["n_ventas"] == 2
+    assert g["tickers_base_captura"] == ["XLK"]
+    # No es un indeterminado: su latente SÍ se está midiendo.
+    assert g["tickers_indeterminados"] == []
+
+
+def test_las_dos_cajas_del_peldano_declaran_alcances_distintos():
+    """El parcial ensancha la latente pero no la realizada, así que ya no comparten alcance.
+
+    Un solo `n_fondos` para las dos sobre-declararía la realizada: diría que cubre 2 fondos
+    cuando solo cubre 1. Es la mentira que `n_fondos` existe para evitar, un nivel más abajo.
+    """
+    from ui import adapters
+
+    g = adapters._ganancias_capital_cartera({
+        "AAA": _stats(_cg_ok(realized_total=300.0, n_ventas=1,
+                             gain=500.0, valor=1500.0, base=1000.0)),
+        "XLK": _stats(_cg_parcial(gain=1800.0, valor=3000.0, base=1200.0)),
+    })
+
+    assert g["realizado"]["n_fondos"] == 1
+    assert g["no_realizado"]["n_fondos"] == 2
+    assert g["n_fondos"] == 1, "el alcance de la realizada"
+    assert g["n_fondos_no_realizado"] == 2
+    assert g["n_fondos_total"] == 2
+    assert g["estado"] == "parcial", (
+        "con una base de captura la cartera no está completamente medida, aunque no falte "
+        "ningún fondo")
+
+
+def test_el_agregado_nombra_los_fondos_19a_que_tenian_captura_y_quedaron_fuera():
+    """Su remedio es distinto: a esos NO les falta ningún dato.
+
+    Meterlos en el mismo saco que los que no tienen costo invitaría al cliente a aportar
+    algo que ya aportó.
+    """
+    from ui import adapters
+
+    sin_dato = {"estado": "indeterminado", "motivo": "acciones_sin_costo_registrado",
+                "realized": [], "realized_total": None, "unrealized": None,
+                "captura_no_usada": None}
+    con_captura_19a = dict(sin_dato, captura_no_usada="fondo_19a")
+
+    g = adapters._ganancias_capital_cartera({
+        "AAA":  _stats(_cg_ok(gain=500.0, valor=1500.0, base=1000.0)),
+        "QYLD": _stats(sin_dato),
+        "TSLY": _stats(con_captura_19a),
+    })
+
+    assert sorted(g["tickers_indeterminados"]) == ["QYLD", "TSLY"]
+    assert g["tickers_captura_no_usada"] == ["TSLY"], (
+        "TSLY tiene costo en la captura y se descartó a propósito; QYLD no lo tiene")
+
+
+def test_un_parcial_sin_latente_medible_vuelve_a_ser_indeterminado():
+    """Sin `gain` no hay nada que aportar: no se cuenta como fondo cubierto."""
+    from ui import adapters
+
+    roto = _cg_parcial(gain=None, valor=None, base=None)
+    roto["unrealized"]["gain"] = None
+    g = adapters._ganancias_capital_cartera({
+        "AAA": _stats(_cg_ok(gain=500.0, valor=1500.0, base=1000.0)),
+        "XLK": _stats(roto),
+    })
+
+    assert g["tickers_indeterminados"] == ["XLK"]
+    assert g["tickers_base_captura"] == []
+    assert g["n_fondos_no_realizado"] == 1
+
+
+def test_la_base_de_captura_no_se_atribuye_al_metodo_de_esta_funcion():
+    """`costo_promedio_ponderado` describe el recorrido del CSV, no lo que hizo el bróker.
+
+    Su método de lotes no lo sabemos —FIFO, lote específico o promedio, varía por bróker y
+    por elección del cliente— y con ventas de por medio decide qué base queda viva. Heredar
+    la etiqueta declararía un método que no se aplicó. Caso vivo: SCHB de `schwab_1` llega
+    a esta ruta con una venta hecha.
+    """
+    parcial = logic.build_capital_gains(
+        _df_historial_roto(), 'XLK', market_price=150.00,
+        broker_position={'shares': 20.0, 'cost_basis': 1200.00})
+    csv = logic.build_capital_gains(
+        _df([('2024-01-10', 'Buy', 'XLK', 10.0, 100.00, -1000.00)]), 'XLK',
+        market_price=150.00)
+
+    assert parcial['method'] == 'costo_reportado_por_el_broker'
+    assert parcial['basis'] == 'costo_broker'
+    # La ruta del CSV conserva la suya: no se ha cambiado la etiqueta para todos.
+    assert csv['method'] == 'costo_promedio_ponderado'
+    assert csv['basis'] == 'costo_promedio'
+
+
+def test_un_precio_invalido_no_publica_una_perdida_del_cien_por_ciento():
+    """Sin esta guarda, `gain = 0 − base`: una pérdida total sobre una base recién tomada.
+
+    No es hipotético en este repo. El #95 nació de un `Close = NaN` que el refresco del caché
+    metió en los parquets y dejó `VALOR MER. $0.00` en toda la cartera, con el veredicto del
+    DRIP invertido. `current_price` ya viene de un `dropna()`, pero la función es pública y su
+    contrato no puede depender de que el único llamador de hoy la proteja.
+    """
+    captura = {'shares': 20.0, 'cost_basis': 1200.00}
+    for precio in (0.0, -5.0, float('nan'), float('inf'), None, 'x'):
+        cg = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                       market_price=precio, broker_position=captura)
+        assert cg['estado'] == 'indeterminado', f"precio {precio!r}"
+        assert cg['unrealized'] is None, f"precio {precio!r}"
+
+    # Con un precio válido sí sale, para que el test no pase por no ejercitar nada.
+    ok = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                   market_price=150.00, broker_position=captura)
+    assert ok['estado'] == 'parcial'
+
+
+def test_una_captura_malformada_no_tumba_el_motor():
+    """`broker_position` viene de sesión/OCR: no se asume su forma."""
+    for captura in ('no soy un dict', 42, {'shares': 'x', 'cost_basis': 'y'},
+                    {'shares': None, 'cost_basis': None}):
+        cg = logic.build_capital_gains(_df_historial_roto(), 'XLK',
+                                       market_price=150.00, broker_position=captura)
+        assert cg['estado'] == 'indeterminado', f"captura {captura!r}"
