@@ -78,7 +78,24 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **856 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-mudanza-5-vistas`, base `main` = `bfa9014`, tras el **PR 1 «la mudanza»** de
+la vista «Impuestos»: la escalera de 6 peldaños en un solo iframe se parte en 5 vistas
+del segundo menú —`corte` · `fondos` · `venta` · `pais` · `recuperar` (`ui.impuestos.
+VIEW_ORDER`)—. El JS del componente lee `{{VISTA_ACTIVA}}` y CONSTRUYE solo el trozo de
+esa vista; las secciones que no toca se `.remove()` del DOM para que el auto-alto mida
+`body.scrollHeight` real. Cada vista lleva su propio h2 (afirmación, no etiqueta) y su
+lede; `venta`/`pais` suben la 1ª frase de su cuerpo al lede (misma palabra, un solo
+sitio); `fondos`/`recuperar` van sin lede. `ALTO_IMPUESTOS` pasa de escalar a dict por
+vista, medido a 300–337px. `logic.py`, `ui/adapters.py::impuestos_data` y
+`test_vista_impuestos.py` **sin tocar** — pinean por datos, no por marcado. +19 tests en
+`test_vista_impuestos_render.py`: 13 de despacho + 5 de CONSECUENCIA (se ejecuta el
+`<script>` en Node con un `document` de juguete y se mira el DOM resultante) + 1 gate que
+exige que el mutante `if(true)` en las 6 ramas de vista los ponga rojos. El estado vacío
+«sin CSV» de `ui/impuestos.py` pasa a un lede genérico (ya no enumera los peldaños de
+`corte`); el «sin dividendos» se queda —ya era cierto para las 5 vistas.
+
+Antes: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `perf/benchmark-una-sola-descarga`, base `main` = `37f009f`. `yf.download('VOO',
 start=first_date)` vivía DENTRO del bucle por ticker: de las 19 descargas de una corrida de
 `?demo=schwab`, **8 eran VOO** — el 42% del tráfico para traer ocho veces la misma serie.

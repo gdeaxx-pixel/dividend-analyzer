@@ -82,14 +82,26 @@ ALTO_METODO_REAL = 2600
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # componente corrige su propio alto en cuanto carga. Escrito a mano (esta vista nunca
-# existió en el artifact). Medido en el navegador: `?demo=schwab` sin país declarado
-# (8 fondos, tabla de 10 filas, 6 peldaños, 2 rutas) = `document.body.scrollHeight` 1897px a
-# escritorio y **2711px a 375px de viewport** (ancho FINAL del iframe 337px, no el 300 por
-# defecto); `?demo=ib` sin país = 1972px a escritorio. El estado con país declarado añade la
-# rejilla de 3 buckets + la línea del reembolso (~180px) o, en 'parcial', el aviso de
-# desglose incompleto (~140px). 3000 cubre el peor caso con margen — con `scrolling=False`
-# lo que no cabe es inalcanzable, nunca bajarlo a la medida de escritorio.
-ALTO_IMPUESTOS = 3000
+# existió en el artifact). Desde la «mudanza» de PR 1 la vista se parte en 5 pantallas
+# (`ui/impuestos.VIEW_ORDER`), cada una con su propio alto: el `3000` único
+# sobredimensionaba las cinco.
+# Medido en el navegador, `?demo=ib` SIN país declarado. A 375px de viewport (ancho FINAL
+# del iframe 337px): `body.scrollHeight` corte 1589 · fondos 667 · venta 1138 · pais 1488
+# · recuperar 1020 (medición PR 1). Y en el peor caso de wrapping (iframe a 300px, antes
+# de que Streamlit lo estire): corte 1842 · fondos 531 · venta 1077 · pais 1508 ·
+# recuperar 989 (medición PR 1.1, tras subir los ledes). Cada valor de abajo se fija por
+# encima del peor caso, con margen extra para corte y pais (declarar el país añade los 3
+# buckets del peldaño 4 y las líneas de crédito/tramos del peldaño 6, que el demo no deja
+# medir sin pasar por el wizard). Con `scrolling=False` lo que no cabe es inalcanzable —
+# nunca bajarlos a la medida de escritorio (corte 858 · fondos 578 · venta 933 · pais 704
+# · recuperar 656).
+ALTO_IMPUESTOS = {
+    "corte":     2000,
+    "fondos":     900,
+    "venta":     1400,
+    "pais":      1900,
+    "recuperar": 1300,
+}
 
 
 def _plantilla(nombre: str) -> str:
@@ -242,15 +254,23 @@ def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> 
     components.html(html, height=alto, scrolling=False)
 
 
-def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None:
-    """Dibuja la escalera de Impuestos (categoría «Impuestos», Fase 2). `datos` viene de
-    `ui.adapters.impuestos_data` — objetos fiscales ya resueltos; el componente solo
-    RENDERIZA (Regla 3). Calcado de `render_hoja`: mismo patrón `{{DATA_JSON}}` y el
-    componente vive a mano (nunca existió en el artifact, así que no hay extractor).
+def render_impuestos(datos: dict, tema: str, vista: str = "corte",
+                     alto: int | None = None) -> None:
+    """Dibuja una de las 5 vistas de Impuestos (categoría «Impuestos», Fase 2). `datos`
+    viene de `ui.adapters.impuestos_data` — objetos fiscales ya resueltos; el componente
+    solo RENDERIZA (Regla 3). El componente vive a mano (nunca existió en el artifact, así
+    que no hay extractor).
+
+    `vista` es una clave de `ui.impuestos.VIEW_ORDER`; el JS del componente lee
+    `{{VISTA_ACTIVA}}` y construye solo el trozo de esa vista (mismo patrón que
+    `render_metodo`). `alto` por defecto sale del dict `ALTO_IMPUESTOS` según la vista.
     """
     html = _plantilla("impuestos.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{VISTA_ACTIVA}}", vista)
+    if alto is None:
+        alto = ALTO_IMPUESTOS.get(vista, max(ALTO_IMPUESTOS.values()))
     components.html(html, height=alto, scrolling=False)
 
 

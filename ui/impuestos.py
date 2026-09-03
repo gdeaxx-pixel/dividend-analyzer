@@ -27,26 +27,42 @@ CAT_CLAVE = "impuestos"
 CAT_LABEL = "Impuestos"
 
 VIEWS = {
-    "escalera": "La escalera",
+    "corte":     "El corte",
+    "fondos":    "Fondo por fondo",
+    "venta":     "Cuando vendas",
+    "pais":      "En tu país",
+    "recuperar": "Cómo recuperarlo",
 }
 
-VIEW_ORDER = ("escalera",)
+VIEW_ORDER = ("corte", "fondos", "venta", "pais", "recuperar")
 
 
 def render_vista(vista: str, ruta) -> None:
-    """Despacho de Impuestos — una sola vista (la escalera)."""
+    """Despacho de Impuestos — 5 vistas sobre el mismo objeto fiscal.
+
+    El contenido no cambia entre vistas: cada una RENDERIZA un trozo distinto del JSON
+    que arma `ui/adapters.py::impuestos_data`. El breadcrumb nativo (`ui/chrome.py`) ya
+    despacha la clave; aquí solo se pasa a `render_impuestos`.
+    """
     from ui import adapters, componentes
     from ui.vistas import obtener_resultados
+
+    # Cinturón: `chrome.py` ya cae a `VIEW_ORDER[0]` si la vista en sesión no existe,
+    # pero un llamador directo (tests, `render_placeholder`) podría pasar otra cosa.
+    vista = vista if vista in VIEWS else VIEW_ORDER[0]
 
     resultados = obtener_resultados()
     if not resultados:
         st.markdown('<span class="vd-badge">Impuestos</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">La escalera de tus impuestos</h2>',
                     unsafe_allow_html=True)
+        # Lede GENÉRICO — sin CSV el usuario está en la puerta, no en una sub-vista. No
+        # enumera peldaños (eso dependía de la vista, y prometía en `venta`/`pais` cosas
+        # que esas vistas no tienen).
         st.markdown(
-            '<p class="vd-lede">Carga tu CSV de transacciones para ver cuánto te repartió '
-            'el fondo, cuánto era renta de verdad, cuánto te corresponde pagar y cuánto te '
-            'retuvieron.</p>', unsafe_allow_html=True)
+            '<p class="vd-lede">Carga tu CSV de transacciones —y tu 1042-S si lo tienes— '
+            'para ver qué te retuvo EE.UU. sobre tus dividendos, cuánto de eso puede '
+            'volver, y qué llevas a tu declaración.</p>', unsafe_allow_html=True)
         return
 
     perfil = estado.perfil_fiscal()
@@ -67,4 +83,4 @@ def render_vista(vista: str, ruta) -> None:
             unsafe_allow_html=True)
         return
 
-    componentes.render_impuestos(datos, ruta.tema)
+    componentes.render_impuestos(datos, ruta.tema, vista=vista)
