@@ -56,10 +56,13 @@ def render_vista(vista: str, ruta) -> None:
         st.markdown('<span class="vd-badge">Impuestos</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">La escalera de tus impuestos</h2>',
                     unsafe_allow_html=True)
+        # Lede GENÉRICO — sin CSV el usuario está en la puerta, no en una sub-vista. No
+        # enumera peldaños (eso dependía de la vista, y prometía en `venta`/`pais` cosas
+        # que esas vistas no tienen).
         st.markdown(
-            '<p class="vd-lede">Carga tu CSV de transacciones para ver cuánto te repartió '
-            'el fondo, cuánto era renta de verdad, cuánto te corresponde pagar y cuánto te '
-            'retuvieron.</p>', unsafe_allow_html=True)
+            '<p class="vd-lede">Carga tu CSV de transacciones —y tu 1042-S si lo tienes— '
+            'para ver qué te retuvo EE.UU. sobre tus dividendos, cuánto de eso puede '
+            'volver, y qué llevas a tu declaración.</p>', unsafe_allow_html=True)
         return
 
     perfil = estado.perfil_fiscal()

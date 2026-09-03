@@ -91,10 +91,9 @@ vista, medido a 300–337px. `logic.py`, `ui/adapters.py::impuestos_data` y
 `test_vista_impuestos.py` **sin tocar** — pinean por datos, no por marcado. +19 tests en
 `test_vista_impuestos_render.py`: 13 de despacho + 5 de CONSECUENCIA (se ejecuta el
 `<script>` en Node con un `document` de juguete y se mira el DOM resultante) + 1 gate que
-exige que el mutante `if(true)` en las 6 ramas de vista los ponga rojos.
-**Pendiente:** los dos estados vacíos de `ui/impuestos.py` siguen enumerando los peldaños
-de `corte` en las 5 vistas (mismo bug que el h2, en el archivo de al lado) — a la espera
-del OK de Daniel sobre el lede genérico.
+exige que el mutante `if(true)` en las 6 ramas de vista los ponga rojos. El estado vacío
+«sin CSV» de `ui/impuestos.py` pasa a un lede genérico (ya no enumera los peldaños de
+`corte`); el «sin dividendos» se queda —ya era cierto para las 5 vistas.
 
 Antes: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `perf/benchmark-una-sola-descarga`, base `main` = `37f009f`. `yf.download('VOO',
