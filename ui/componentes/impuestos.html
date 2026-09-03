@@ -154,7 +154,7 @@
 
   <div class="imp-escalera" id="impEscalera"></div>
 
-  <section class="imp-block">
+  <section class="imp-block" id="impBlock">
     <p class="imp-block-lab">Fondo por fondo</p>
     <div class="imp-scroll">
       <table class="imp-tbl" id="impTabla"></table>
@@ -169,6 +169,11 @@
 (function initImpuestos() {
   "use strict";
   var D = {{DATA_JSON}};
+  // PR 1 «la mudanza»: la vista se parte en 5 pantallas (`ui/impuestos.VIEW_ORDER`).
+  // El contenido no cambia — cada rama construye SOLO su trozo y las secciones que no
+  // toca se quitan del DOM, para que el auto-alto mida `body.scrollHeight` real.
+  var VISTA_ACTIVA = "{{VISTA_ACTIVA}}";
+  var VISTAS_ESCALERA = { corte: 1, venta: 1, pais: 1 };
 
   function money(x) {
     var n = (x == null || isNaN(x)) ? 0 : Number(x);
@@ -244,6 +249,7 @@
 
   var pasos = [];
 
+  if (VISTA_ACTIVA === "corte") {
   pasos.push(stepRow("Peldaño 1", "¿Cuánto te repartió el fondo?",
     P.bruto ? P.bruto.monto : 0, P.bruto ? P.bruto.pct : null,
     '<p class="imp-step-sub">El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.</p>',
@@ -343,7 +349,9 @@
       + (R.estado === "ok" ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : '') + '</p>'
       + (yaDev.monto > 0.01 ? devLine : '') + buckets + ftpLine + conc,
     "activo"));
+  }
 
+  if (VISTA_ACTIVA === "venta") {
   // ---- Peldaño 5: ganancias de capital (Fase 3) ----
   // Mismo fondo que el peldaño 4, resultado OPUESTO: aquí EE.UU. no retiene nada. Por eso
   // la cifra grande del peldaño es $0 y las ganancias van en el cuerpo — el peldaño responde
@@ -489,7 +497,9 @@
     pasos.push(stepRow("Peldaño 5", "¿Y cuando vendas?", G.retencion_eeuu, null,
       gBody, "activo"));
   }
+  }
 
+  if (VISTA_ACTIVA === "pais") {
   // ---- Peldaño 6: lo que declaras en tu país (Fase 4) ----
   // Publica BASE y CRÉDITO, nunca una cifra de impuesto local. La tarifa del país de
   // residencia es progresiva sobre la renta GLOBAL del contribuyente, que la app no conoce:
@@ -573,10 +583,17 @@
       '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',
       "pendiente"));
   });
+  }
 
-  set("impEscalera", pasos.join(""));
+  if (VISTAS_ESCALERA[VISTA_ACTIVA]) {
+    set("impEscalera", pasos.join(""));
+  } else {
+    var _elEsc = document.getElementById("impEscalera");
+    if (_elEsc) _elEsc.remove();
+  }
 
   // ---- tabla por fondo ----
+  if (VISTA_ACTIVA === "fondos") {
   var T = P.retenido || {};
   var hayDevuelto = (T.ya_devuelto && T.ya_devuelto.monto > 0.01);
   var conBuckets = D.declarado;                 // columnas Correcta/ROC/W-8BEN
@@ -621,7 +638,12 @@
     + (conBuckets ? totBuckets : '')
     + '</tr>';
   set("impTabla", head + body + tot);
+  } else {
+    var _elBlock = document.getElementById("impBlock");
+    if (_elBlock) _elBlock.remove();
+  }
 
+  if (VISTA_ACTIVA === "recuperar") {
   // ---- Ruta A / Ruta B ----
   var A = D.ruta_a || {};
   var estimadoA = A.tiene_1042s ? '' : '<span class="imp-ruta-est">estimado — sin 1042-S cargado</span> ';
@@ -658,6 +680,12 @@
     "Todas las cifras salen de objetos fiscales ya calculados sobre tu CSV y, si lo cargaste, tu 1042-S. "
     + "El ROC y su fuente vienen del cierre fiscal del fondo cuando existe, y de la estimación 19(a) del gestor mientras el año sigue abierto. "
     + "Esto no es asesoría fiscal: confirma con tu bróker o un asesor.");
+  } else {
+    ["impRutas", "impFoot"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.remove();
+    });
+  }
 })();
 </script>
 <script>

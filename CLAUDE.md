@@ -78,7 +78,19 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+Línea base: **850 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-mudanza-5-vistas`, base `main` = `bfa9014`, tras el **PR 1 «la mudanza»** de
+la vista «Impuestos»: la escalera de 6 peldaños en un solo iframe se parte en 5 vistas
+del segundo menú —`corte` · `fondos` · `venta` · `pais` · `recuperar` (`ui.impuestos.
+VIEW_ORDER`)— **sin cambiar ni una palabra**. El JS del componente lee `{{VISTA_ACTIVA}}`
+y CONSTRUYE solo el trozo de esa vista; las secciones que no toca se quitan del DOM para
+que el auto-alto mida `body.scrollHeight` real. `ALTO_IMPUESTOS` pasa de escalar a dict
+por vista. +13 tests de despacho en `test_vista_impuestos_render.py`; `logic.py`,
+`ui/adapters.py::impuestos_data` y `test_vista_impuestos.py` **sin tocar** — pinean por
+datos, no por marcado. Alturas del dict aún por medir en vivo (respaldo por encima del
+peor caso).
+
+Antes: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
 `perf/benchmark-una-sola-descarga`, base `main` = `37f009f`. `yf.download('VOO',
 start=first_date)` vivía DENTRO del bucle por ticker: de las 19 descargas de una corrida de
 `?demo=schwab`, **8 eran VOO** — el 42% del tráfico para traer ocho veces la misma serie.

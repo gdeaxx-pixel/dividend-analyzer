@@ -27,16 +27,29 @@ CAT_CLAVE = "impuestos"
 CAT_LABEL = "Impuestos"
 
 VIEWS = {
-    "escalera": "La escalera",
+    "corte":     "El corte",
+    "fondos":    "Fondo por fondo",
+    "venta":     "Cuando vendas",
+    "pais":      "En tu país",
+    "recuperar": "Cómo recuperarlo",
 }
 
-VIEW_ORDER = ("escalera",)
+VIEW_ORDER = ("corte", "fondos", "venta", "pais", "recuperar")
 
 
 def render_vista(vista: str, ruta) -> None:
-    """Despacho de Impuestos — una sola vista (la escalera)."""
+    """Despacho de Impuestos — 5 vistas sobre el mismo objeto fiscal.
+
+    El contenido no cambia entre vistas: cada una RENDERIZA un trozo distinto del JSON
+    que arma `ui/adapters.py::impuestos_data`. El breadcrumb nativo (`ui/chrome.py`) ya
+    despacha la clave; aquí solo se pasa a `render_impuestos`.
+    """
     from ui import adapters, componentes
     from ui.vistas import obtener_resultados
+
+    # Cinturón: `chrome.py` ya cae a `VIEW_ORDER[0]` si la vista en sesión no existe,
+    # pero un llamador directo (tests, `render_placeholder`) podría pasar otra cosa.
+    vista = vista if vista in VIEWS else VIEW_ORDER[0]
 
     resultados = obtener_resultados()
     if not resultados:
@@ -67,4 +80,4 @@ def render_vista(vista: str, ruta) -> None:
             unsafe_allow_html=True)
         return
 
-    componentes.render_impuestos(datos, ruta.tema)
+    componentes.render_impuestos(datos, ruta.tema, vista=vista)
