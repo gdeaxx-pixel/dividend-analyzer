@@ -119,9 +119,9 @@ def _primer_script():
         return _SCRIPT_RE.findall(f.read())[0]
 
 
-def _ejecutar(vista, script=None):
+def _ejecutar(vista, script=None, d=None):
     js = _primer_script() if script is None else script
-    js = js.replace("{{DATA_JSON}}", json.dumps(_D, ensure_ascii=False))
+    js = js.replace("{{DATA_JSON}}", json.dumps(_D if d is None else d, ensure_ascii=False))
     js = js.replace("{{VISTA_ACTIVA}}", vista)
     prog = _HARNESS.replace("__SCRIPT__", js)
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as t:
@@ -146,8 +146,9 @@ def _assert_vista(vista, rep):
 
     if vista == "corte":
         assert esc["alive"]
-        for n in ("Peldaño 1", "Peldaño 2", "Peldaño 3", "Peldaño 4"):
-            assert n in esc["html"], f"corte sin {n}"
+        for marca in ('class="imp-verdict"', "De cada dólar que repartieron tus fondos",
+                      "Lo que el bróker se llevó — a la misma escala"):
+            assert marca in esc["html"], f"corte sin {marca!r}"
         for n in ("Peldaño 5", "Peldaño 6"):
             assert n not in esc["html"], f"corte trae {n} — no aisló su sección"
         for gone in ("impBlock", "impRutas", "impFoot"):
@@ -286,3 +287,220 @@ def test_gate_el_mutante_de_las_6_ramas_en_if_true_pone_todo_en_rojo():
     assert cayeron == len(_ORDER), (
         f"el mutante if(true)x6 solo tumbó {cayeron}/{len(_ORDER)} vistas — "
         "los tests de consecuencia no discriminan lo suficiente")
+
+
+# ── PR 2 «El corte»: veredicto derivado + barras a escala compartida ──────────────────
+
+import copy  # noqa: E402
+
+
+def _corte(d=None):
+    return _ejecutar("corte", d=d or _D)["impEscalera"]["html"]
+
+
+def _segs(html, bar):
+    """{data-seg-suffix: width%} de la barra pedida, leídos del HTML renderizado."""
+    out = {}
+    for suf, w in re.findall(r'data-seg="' + str(bar) + r'-(\w+)"[^>]*?width:\s*([\d.]+)%', html):
+        out[suf] = float(w)
+    return out
+
+
+_TOL = 0.05  # puntos porcentuales
+
+
+def _cerca(a, b, msg=""):
+    assert abs(a - b) <= _TOL, f"{msg}: {a:.4f}% vs {b:.4f}% esperado"
+
+
+@_node
+def test_barra_1_normalizada_a_bruto():
+    """Barra 1: base `bruto`, llena el 100%. Cada segmento contra SU propio monto/bruto
+    (no solo la suma — un intercambio de anchos sobrevive a «suman 100»)."""
+    P = _D["peldanos"]
+    bruto, grav = P["bruto"]["monto"], P["gravable"]["monto"]
+    s = _segs(_corte(), 1)
+    _cerca(s["anchor"], (bruto - grav) / bruto * 100, "barra1 anchor = (bruto−gravable)/bruto")
+    _cerca(s["drip"], grav / bruto * 100, "barra1 drip = gravable/bruto")
+    _cerca(s["anchor"] + s["drip"], 100.0, "barra1 llena el 100%")
+
+
+@_node
+def test_barra_2_NO_normalizada_comparte_escala_con_la_1():
+    """El test espejo. Barra 2: MISMA base `bruto`, y los 3 segmentos suman
+    `retenido/bruto` — es decir NO 100%. Si alguien la normaliza a ancho completo, las
+    dos barras dejan de compartir escala y el exceso deja de verse: mutante que la suite
+    entera dejaría pasar sin este assert."""
+    P = _D["peldanos"]
+    bruto = P["bruto"]["monto"]
+    ret = P["retenido"]["monto"]
+    c = P["retenido"]["correcta"]["monto"]
+    rr = P["retenido"]["recuperable_roc"]["monto"]
+    gg = P["retenido"]["gap_w8ben"]["monto"]
+    s = _segs(_corte(), 2)
+    _cerca(s["correcta"], c / bruto * 100, "barra2 correcta/bruto")
+    _cerca(s["roc"], rr / bruto * 100, "barra2 roc/bruto")
+    _cerca(s["gap"], gg / bruto * 100, "barra2 gap/bruto")
+    suma = s["correcta"] + s["roc"] + s["gap"]
+    _cerca(suma, ret / bruto * 100, "barra2: los 3 segmentos suman retenido/bruto")
+    assert suma < 99.0, (
+        f"barra2 sumó {suma:.2f}% — está normalizada a 100, ya no comparte escala con la barra 1")
+    _cerca(s["rest"], 100.0 - suma, "barra2 rest = 100 − lo retenido")
+
+
+@_node
+def test_barra_3_zoom_sobre_retenido_NO_bruto():
+    """§9.1 — el fallo que el auditor busca primero. Barra 3: base = `retenido`, los 3
+    segmentos suman ≈100%. Con el divisor en `bruto` sumarían ≈`retenido/bruto` (aquí
+    ~1.4%) y cada uno mentiría su porción."""
+    P = _D["peldanos"]
+    ret = P["retenido"]["monto"]
+    c = P["retenido"]["correcta"]["monto"]
+    rr = P["retenido"]["recuperable_roc"]["monto"]
+    gg = P["retenido"]["gap_w8ben"]["monto"]
+    s = _segs(_corte(), 3)
+    _cerca(s["correcta"], c / ret * 100, "barra3 correcta/RETENIDO")
+    _cerca(s["roc"], rr / ret * 100, "barra3 roc/RETENIDO")
+    _cerca(s["gap"], gg / ret * 100, "barra3 gap/RETENIDO")
+    _cerca(s["correcta"] + s["roc"] + s["gap"], 100.0, "barra3 zoom llena el 100% de lo retenido")
+
+
+@_node
+def test_mutante_barra_3_divide_entre_bruto_cae():
+    """Prueba viva de que el test de arriba muerde: se reescribe el divisor de la barra 3
+    a `bruto` y se exige que `test_barra_3_*` falle."""
+    script = _primer_script()
+    mut = script.replace(
+        "var zC = clampW(ret > 0 ? mC / ret * 100 : 0);",
+        "var zC = clampW(bruto > 0 ? mC / bruto * 100 : 0);").replace(
+        "var zR = clampW(ret > 0 ? mRR / ret * 100 : 0);",
+        "var zR = clampW(bruto > 0 ? mRR / bruto * 100 : 0);").replace(
+        "var zG = clampW(ret > 0 ? mGG / ret * 100 : 0);",
+        "var zG = clampW(bruto > 0 ? mGG / bruto * 100 : 0);")
+    assert mut != script, "no encontré las líneas del divisor de la barra 3 — ¿se renombraron?"
+    s = _segs(_ejecutar("corte", script=mut)["impEscalera"]["html"], 3)
+    suma = s["correcta"] + s["roc"] + s["gap"]
+    assert abs(suma - 100.0) > 1.0, (
+        f"con el divisor en bruto la barra 3 sumó {suma:.2f}% y el test no lo cazaría")
+
+
+_VER_FIXTURES = {
+    "sin_pais": ("warn", "Falta tu residencia fiscal para saber si te retuvieron de más."),
+    "parcial": ("warn", "no podemos decir cuánto sobra"),
+    "gap": ("coral", "Te retuvieron $80.00 — te tocaban $210.23."),
+    "solo_roc": ("warn", "Todo el exceso vuelve solo."),
+    "justo": ("cash", "justo lo que te tocaba"),
+}
+
+
+def _D_para(rama):
+    d = copy.deepcopy(_D)
+    R = d["peldanos"]["retenido"]
+    if rama == "sin_pais":
+        d["declarado"] = False
+        d["peldanos"]["corresponde"] = None
+        R["estado"] = "sin_pais"
+        R["correcta"] = R["recuperable_roc"] = R["gap_w8ben"] = None
+    elif rama == "parcial":
+        R["estado"] = "parcial"
+        R["fondos_sin_desglose"] = ["CONY", "NFLY"]
+        R["correcta"] = R["recuperable_roc"] = R["gap_w8ben"] = None
+    elif rama == "gap":
+        pass  # _D ya tiene gap_w8ben 18.71 y recuperable_roc 41.29
+    elif rama == "solo_roc":
+        R["gap_w8ben"] = {"monto": 0.0, "pct": 0.0}
+    elif rama == "justo":
+        R["gap_w8ben"] = {"monto": 0.0, "pct": 0.0}
+        R["recuperable_roc"] = {"monto": 0.0, "pct": 0.0}
+    return d
+
+
+@_node
+@pytest.mark.parametrize("rama", list(_VER_FIXTURES))
+def test_veredicto_sale_del_dato_una_fixture_por_rama(rama):
+    """Daniel §3: un test estructural («hay un switch») no ve que el ORDEN de las ramas
+    es la protección — reordenar mete un TypeError sobre null (buckets son null salvo
+    estado 'ok') que mata el script entero. Se pinea el orden como EFECTO: una fixture
+    por rama, se asserta borde + titular resultantes."""
+    borde_esp, frag = _VER_FIXTURES[rama]
+    html = _corte(_D_para(rama))
+    m = re.search(r'class="imp-verdict" data-borde="(\w+)"', html)
+    assert m, f"{rama}: no se renderizó el veredicto"
+    assert m.group(1) == borde_esp, f"{rama}: borde {m.group(1)}, esperaba {borde_esp}"
+    big = re.search(r'imp-verdict-big">(.*?)</p>', html, re.S)
+    assert big and frag in big.group(1), f"{rama}: titular {big and big.group(1)!r} sin {frag!r}"
+    style = re.search(r'imp-verdict"[^>]*style="border-left-color:var\((--\w+)\)', html)
+    assert style and style.group(1) == "--" + borde_esp, "el borde CSS no sigue al data-borde"
+
+
+@_node
+def test_mutante_reordenar_el_veredicto_mata_el_script():
+    """Si `gap`/`roc` se comprueban ANTES de los guards `!declarado`/`parcial`, en esas
+    dos ramas `R.gap_w8ben` es null → TypeError → script muerto. El harness lo caza como
+    returncode != 0."""
+    script = _primer_script()
+    # reorden ingenuo: la rama del gap (que dereferencia `R.gap_w8ben.monto` sin guard,
+    # como haría quien mueve una fila de la tabla) pasa ANTES de `!declarado`
+    mut = script.replace(
+        "    if (!D.declarado) {",
+        "    if (R.gap_w8ben.monto > 0.01) { return { borde: 'coral', "
+        "kick: kick, big: 'x', sub: '' }; }\n    if (!D.declarado) {")
+    assert mut != script
+    d = _D_para("sin_pais")
+    js = mut.replace("{{DATA_JSON}}", json.dumps(d)).replace("{{VISTA_ACTIVA}}", "corte")
+    prog = _HARNESS.replace("__SCRIPT__", js)
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as t:
+        t.write(prog)
+        ruta = t.name
+    try:
+        r = subprocess.run(["node", ruta], capture_output=True, text=True)
+    finally:
+        os.unlink(ruta)
+    assert r.returncode != 0 and "TypeError" in r.stderr, (
+        "reordenar el veredicto debería matar el script con un TypeError sobre null; "
+        f"returncode={r.returncode}")
+
+
+@_node
+@pytest.mark.parametrize("rama,marca", [
+    ("gap", 'data-bar="3"'),                       # ok → barra 3 presente
+    ("parcial", "no es una cifra fiable"),          # parcial → aviso de desglose
+    ("sin_pais", "Declara tu país en el Paso 2"),   # sin_pais → CTA
+])
+def test_los_tres_estados_de_retenido_dibujan_lo_suyo(rama, marca):
+    html = _corte(_D_para(rama))
+    assert marca in html, f"estado {rama}: falta {marca!r}"
+    if rama != "gap":
+        assert 'data-bar="3"' not in html, f"estado {rama} NO debe tener barra 3 (zoom)"
+    if rama == "sin_pais":
+        assert 'data-rule' not in html, "sin_pais: sin regla vertical (no hay país)"
+
+
+def test_todo_token_usado_esta_en_los_cuatro_bloques():
+    """§5.2: el iframe no ve `ui/tokens.py`. Cualquier `var(--x)` que use el componente
+    tiene que estar declarado en los CUATRO bloques (`:root`, `@media dark`,
+    `[data-theme=light]`, `[data-theme=dark]`) o cae al color del navegador. Este guard
+    nace del bug de `--anchor`/`--drip` (PR 2): la barra 1 salió invisible en vivo."""
+    with open(_HTML, encoding="utf-8") as f:
+        src = f.read()
+    style = src[src.index("<style>"):src.index("</style>")]
+    usados = set(re.findall(r"var\((--[\w-]+)\)", src))
+    # los 4 bloques de tokens: cada uno arranca en `{` tras un selector raíz
+    bloques = re.findall(r"(?::root(?:\[data-theme=\"\w+\"\])?|@media[^{]+\{\s*:root)\s*\{([^}]*)\}", style)
+    assert len(bloques) >= 4, f"esperaba ≥4 bloques de tokens, encontré {len(bloques)}"
+    ignora = {"--font-mono", "--font-sans"}   # se declaran una vez, no cambian con el tema
+    for tok in sorted(usados - ignora):
+        faltan = [i for i, b in enumerate(bloques) if (tok + ":") not in b.replace(" ", "")]
+        assert not faltan, f"{tok} usado pero ausente en los bloques de tokens #{faltan}"
+
+
+def test_ambar_no_reaparece_como_token_css():
+    """`var(--ambar)` no existe en el repo (el ámbar es `--warn`). Guard de una línea."""
+    hits = []
+    for base, _, files in os.walk(os.path.join(os.path.dirname(__file__), "ui")):
+        for f in files:
+            if f.endswith((".html", ".py", ".css")):
+                with open(os.path.join(base, f), encoding="utf-8") as fh:
+                    if "var(--ambar)" in fh.read():
+                        hits.append(os.path.join(base, f))
+    assert not hits, f"var(--ambar) — token inexistente — reapareció en: {hits}"

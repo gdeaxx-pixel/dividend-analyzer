@@ -78,7 +78,23 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **856 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+Línea base: **871 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-el-corte`, base `main` = `c10cd7a`, tras el **PR 2 «El corte»** de la vista
+«Impuestos»: la rama `corte` deja de ser 4 peldaños y pasa a **veredicto** (borde y verbo
+derivados del dato, nunca cableados) + **barra 1 y barra 2 a escala compartida** (misma
+base `bruto`, mismo borde izquierdo — el exceso se ve sin leer) + **barra 3** (zoom sobre
+`retenido`, Regla 2 del contrato) + las 3 líneas de contexto literales + las notas de los
+peldaños 1-4 (PR 3 las manda a los ⓘ). `--anchor`/`--drip` entran a los 4 bloques de
+tokens del iframe (§5.2 — sin eso la barra 1 salía invisible; guard nuevo
+`test_todo_token_usado_esta_en_los_cuatro_bloques`). Fix de paso: `var(--ambar)` →
+`var(--warn)` en `pais` (token inexistente). +15 tests: barra 1 normalizada / barra 2 NO
+normalizada (test espejo — si se normaliza, las barras dejan de compartir escala y toda
+la suite lo dejaría pasar) / barra 3 zoom sobre `retenido` no `bruto` (§9.1) con 2
+mutantes vivos; veredicto por dato con 1 fixture por rama + mutante de reorden que mata
+el script (buckets `null` salvo estado `ok`); 3 estados de `retenido`; guard `--ambar`.
+`logic.py` / `impuestos_data` / `test_vista_impuestos.py` **sin tocar**.
+
+Antes: **856 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
 `ui/impuestos-mudanza-5-vistas`, base `main` = `bfa9014`, tras el **PR 1 «la mudanza»** de
 la vista «Impuestos»: la escalera de 6 peldaños en un solo iframe se parte en 5 vistas
 del segundo menú —`corte` · `fondos` · `venta` · `pais` · `recuperar` (`ui.impuestos.
