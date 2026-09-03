@@ -119,7 +119,6 @@
 
   /* tabla por fondo — el desglose va DENTRO del componente, no en la ruta */
   .imp-block { margin-top: 30px; }
-  .imp-block-lab { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 10px; }
   .imp-scroll { overflow-x: auto; padding-bottom: 2px; }
   .imp-tbl { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
   .imp-tbl th, .imp-tbl td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--hair-soft); white-space: nowrap; }
@@ -155,7 +154,6 @@
   <div class="imp-escalera" id="impEscalera"></div>
 
   <section class="imp-block" id="impBlock">
-    <p class="imp-block-lab">Fondo por fondo</p>
     <div class="imp-scroll">
       <table class="imp-tbl" id="impTabla"></table>
     </div>
@@ -219,13 +217,39 @@
     return " Si tienes tu <b>1042-S</b>, subirlo también sirve: la casilla 13b trae tu residencia.";
   }
 
-  set("impLede",
-    D.declarado
-      ? "Vives en <b>" + esc(D.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
-        + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
-      : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
-        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
-        + viaPais());
+  // ---- Título + lede por vista (PR 1.1) ----------------------------------------------
+  // El breadcrumb ya nombra la vista; el h2 lleva la AFIRMACIÓN, no la etiqueta. `corte`
+  // conserva su lede condicional; `venta` y `pais` reciben la 1ª frase de su propio
+  // cuerpo, subida aquí y borrada de abajo (misma palabra, un solo sitio); `fondos` y
+  // `recuperar` no llevan lede — se quita el `<p>` vacío para no dejar alto muerto.
+  (function () {
+    var _lede = document.getElementById("impLede");
+    if (VISTA_ACTIVA === "corte") {
+      set("impTitle", "La escalera de tus impuestos");
+      set("impLede",
+        D.declarado
+          ? "Vives en <b>" + esc(D.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
+            + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
+          : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
+            + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
+            + viaPais());
+    } else if (VISTA_ACTIVA === "fondos") {
+      set("impTitle", "De dónde salió cada dólar de retención");
+      if (_lede) _lede.remove();
+    } else if (VISTA_ACTIVA === "venta") {
+      set("impTitle", "Vender no es cobrar un dividendo");
+      set("impLede", "Para un no residente, la ganancia de capital de un ETF o una acción "
+        + "normal <b>no es renta de fuente estadounidense</b>: EE.UU. no te retiene nada al vender.");
+    } else if (VISTA_ACTIVA === "pais") {
+      set("impTitle", "La base y el crédito");
+      set("impLede", "Esta renta es de <b>fuente extranjera</b> para tu país, así que "
+        + "normalmente se declara allí aunque EE.UU. ya te haya retenido. Lo que sigue es "
+        + "<b>la base</b> y <b>el crédito</b>: las dos cifras que tu declaración necesita.");
+    } else if (VISTA_ACTIVA === "recuperar") {
+      set("impTitle", "Lo que vuelve solo y lo que hay que reclamar");
+      if (_lede) _lede.remove();
+    }
+  })();
 
   // ---- peldaños ----
   function stepRow(n, q, val, pctVal, sub, cls) {
@@ -270,7 +294,7 @@
     P.gravable ? P.gravable.monto : 0, P.gravable ? P.gravable.pct : null,
     '<p class="imp-step-sub">Gravable = bruto × (1 − ROC). El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no paga impuesto hoy'
       + (rocEfectivo != null && rocEfectivo > 0.5
-          ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver tabla por fondo)'
+          ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver «Fondo por fondo»)'
           : '')
       + '.' + cobertura + '</p>',
     "activo"));
@@ -364,9 +388,10 @@
       + 'este CSV.</p>',
       "pendiente"));
   } else {
-    var gBody = '<p class="imp-step-sub">Para un no residente, la ganancia de capital de un ETF '
-      + 'o una acción normal <b>no es renta de fuente estadounidense</b>: EE.UU. no te retiene '
-      + 'nada al vender. Mismo fondo que el peldaño de arriba, resultado opuesto.</p>';
+    // La 1ª frase («no es renta de fuente estadounidense…») subió al lede de esta vista;
+    // la cola («Mismo fondo que el peldaño de arriba…») se fue con la mudanza — el
+    // peldaño 4 vive en «El corte».
+    var gBody = '';
 
     // Las dos ganancias van como cajas hermanas, NO sumadas: son momentos distintos (al
     // cierre de la venta vs. a precio de hoy). Reusa `.imp-bucket` — misma rejilla que el
@@ -422,7 +447,7 @@
           + 'llega hasta la compra original. Por eso de esos fondos aparece la ganancia '
           + '<b>latente y nada más</b>: la captura describe lo que tienes hoy, no lo que '
           + 'vendiste. Y como no trae fecha de compra, esas posiciones <b>no tienen '
-          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en el peldaño siguiente.</p>';
+          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en «En tu país».</p>';
       }
     }
     // ── Base fiscal tras el ROC ────────────────────────────────────────────────
@@ -507,9 +532,9 @@
   // Por eso este peldaño no lleva monto en la cabecera — lleva las dos bases separadas.
   var L = D.impuesto_local;
   if (L) {
-    var lBody = '<p class="imp-step-sub">Esta renta es de <b>fuente extranjera</b> para tu país, '
-      + 'así que normalmente se declara allí aunque EE.UU. ya te haya retenido. Lo que sigue es '
-      + '<b>la base</b> y <b>el crédito</b>: las dos cifras que tu declaración necesita.</p>';
+    // La frase de intro («Esta renta es de fuente extranjera… la base y el crédito»)
+    // subió al lede de esta vista — un solo sitio, misma palabra.
+    var lBody = '';
 
     lBody += '<div class="imp-buckets">'
       + '<div class="imp-bucket gris"><p class="imp-bucket-lab">Dividendos (bruto)</p>'
