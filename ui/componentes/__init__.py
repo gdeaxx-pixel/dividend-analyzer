@@ -85,18 +85,17 @@ ALTO_METODO_REAL = 2600
 # existió en el artifact). Desde la «mudanza» de PR 1 la vista se parte en 5 pantallas
 # (`ui/impuestos.VIEW_ORDER`), cada una con su propio alto: el `3000` único
 # sobredimensionaba las cinco.
-# Medido en el navegador, `?demo=ib` SIN país declarado. A 375px de viewport (ancho FINAL
-# del iframe 337px): `body.scrollHeight` corte 1589 · fondos 667 · venta 1138 · pais 1488
-# · recuperar 1020 (medición PR 1). Y en el peor caso de wrapping (iframe a 300px, antes
-# de que Streamlit lo estire): corte 1842 · fondos 531 · venta 1077 · pais 1508 ·
-# recuperar 989 (medición PR 1.1, tras subir los ledes). Cada valor de abajo se fija por
-# encima del peor caso, con margen extra para corte y pais (declarar el país añade los 3
-# buckets del peldaño 4 y las líneas de crédito/tramos del peldaño 6, que el demo no deja
-# medir sin pasar por el wizard). Con `scrolling=False` lo que no cabe es inalcanzable —
-# nunca bajarlos a la medida de escritorio (corte 858 · fondos 578 · venta 933 · pais 704
-# · recuperar 656).
+# Medido en el navegador a un ancho de contenido de 337px (el del iframe a 375px de
+# viewport). fondos/venta/pais/recuperar: `?demo=ib` sin país — corte 1842 · fondos 531 ·
+# venta 1077 · pais 1508 · recuperar 989 (PR 1.1). corte se rehízo en PR 2 (veredicto +
+# 3 barras + tarjetas + notas): con país declarado y estado 'ok' (todas las barras) el
+# preview standalone mide **1736** (retención baja) / **1715** (retención alta), sin
+# scroll horizontal — el respaldo de 2200 deja margen para la línea de impuesto
+# extranjero y la frase de cobertura del ROC, que ninguna de las dos fixtures activa.
+# Con `scrolling=False` lo que no cabe es inalcanzable — nunca bajarlos a la medida de
+# escritorio (corte ≈1200 · fondos 578 · venta 933 · pais 704 · recuperar 656).
 ALTO_IMPUESTOS = {
-    "corte":     2000,
+    "corte":     2200,
     "fondos":     900,
     "venta":     1400,
     "pais":      1900,
