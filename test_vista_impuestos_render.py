@@ -600,7 +600,20 @@ def _texto_vista(view, script, d):
 # «parte de más» sí está en un `.modal-*`.
 _PERDIDAS_APROBADAS = {
     "corte": set(),
-    "fondos": set(), "venta": set(), "pais": set(), "recuperar": set(),
+    "fondos": set(), "venta": set(), "pais": set(),
+    # PR 4 «ventana de reembolso». ÚNICA pérdida aprobada de todo el rediseño, y no es una
+    # pérdida de información: los meses dejan de ir en prosa y pasan a la franja de
+    # `.imp-vent`, que además resalta SOLO la ventana del bróker del cliente en vez de
+    # recitarle las dos. Aprobada por Daniel al pedir el PR 4.
+    #
+    # Una whitelist que solo tapa el hueco escondería una regresión, así que
+    # `test_la_franja_de_ventanas_conserva_los_meses_que_salieron_de_la_prosa` (abajo)
+    # comprueba que la franja marca de verdad ene-mar para IB y jun-sep para Schwab. Si esa
+    # información se pierde, ese test cae aunque esta línea siga aquí.
+    "recuperar": {
+        "si tu bróker es Interactive Brokers, entre enero y marzo; "
+        "si es Schwab, entre junio y septiembre",
+    },
 }
 
 
@@ -660,3 +673,181 @@ def test_la_tarjeta_vuelve_solo_manda_el_matiz_puede_al_modal():
     modal = re.search(r'id="modal-imp-vuelvesolo".*?</div></div>', html, re.S).group(0)
     assert "Puede volver solo en el cierre anual del bróker" in modal, (
         "el modal de «Vuelve solo» perdió el matiz condicional")
+
+
+# ---------------------------------------------------------------------------------------
+# PR 4 — la ventana de reclasificación por bróker.
+#
+# El bróker NO se deduce de las cifras: llega por parámetro desde `ui/impuestos.py`
+# (`session_state['_wizard_broker']`, lo que leyó `logic.detect_broker`) igual que el país.
+# Estos tests cubren las tres ramas y, sobre todo, sostienen la única entrada de
+# `_PERDIDAS_APROBADAS`: la información que salió de la prosa tiene que seguir en la franja.
+# ---------------------------------------------------------------------------------------
+
+_VENTANAS = [
+    {"broker": "ibkr", "label": "Interactive Brokers", "desde": 1, "hasta": 3},
+    {"broker": "schwab", "label": "Schwab", "desde": 6, "hasta": 9},
+]
+_MESES = ["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
+
+
+def _con_broker(broker):
+    d = json.loads(json.dumps(_D_FULL))
+    d["ruta_a"]["broker"] = broker
+    d["ruta_a"]["ventanas"] = json.loads(json.dumps(_VENTANAS))
+    return d
+
+
+def _filas_franja(html):
+    """[(label, apagada, [índices 1-12 marcados]), ...] leído del HTML de la franja."""
+    filas = []
+    for bloque in re.findall(r'<div class="imp-vent-fila([^"]*)">(.*?)</div></div>', html, re.S):
+        clases, cuerpo = bloque
+        lab = re.search(r'class="imp-vent-lab">(.*?)</p>', cuerpo, re.S)
+        marcados = [i + 1 for i, m in enumerate(
+            re.findall(r'<span class="imp-vent-mes([^"]*)">', cuerpo))
+            if "dentro" in m]
+        filas.append((re.sub(r"<[^>]+>", "", lab.group(1)).strip() if lab else "",
+                      "apagada" in clases, marcados))
+    return filas
+
+
+@_node
+def test_la_franja_de_ventanas_conserva_los_meses_que_salieron_de_la_prosa():
+    """Sostiene la entrada de `_PERDIDAS_APROBADAS['recuperar']`. La frase «IB entre enero
+    y marzo; Schwab entre junio y septiembre» se retiró de la prosa: si la franja no marca
+    esos MISMOS meses, la información se perdió de verdad y la whitelist estaría tapando
+    una regresión."""
+    rep = _ejecutar("recuperar", d=_con_broker(None))
+    filas = _filas_franja(rep["impRutas"]["html"])
+    assert len(filas) == 2, f"esperaba las dos ventanas, encontré {len(filas)}"
+    por_label = {f[0].split()[0]: f[2] for f in filas}
+    assert por_label["Interactive"] == [1, 2, 3], "IB debe marcar ene-mar"
+    assert por_label["Schwab"] == [6, 7, 8, 9], "Schwab debe marcar jun-sep"
+
+
+@_node
+@pytest.mark.parametrize("broker,label_tuyo,apagado", [
+    ("schwab", "Schwab", "Interactive Brokers"),
+    ("ibkr", "Interactive Brokers", "Schwab"),
+])
+def test_con_broker_conocido_solo_se_resalta_el_suyo(broker, label_tuyo, apagado):
+    rep = _ejecutar("recuperar", d=_con_broker(broker))
+    html = rep["impRutas"]["html"]
+    filas = _filas_franja(html)
+    activas = [f[0] for f in filas if not f[1]]
+    apagadas = [f[0] for f in filas if f[1]]
+    assert any(label_tuyo in a for a in activas), f"la fila de {label_tuyo} debe ir activa"
+    assert any(apagado in a for a in apagadas), f"la fila de {apagado} debe ir apagada"
+    assert "tu bróker" in html, "falta la marca «tu bróker» en la fila del cliente"
+    assert label_tuyo in html and "cae en la ventana marcada arriba" in html
+
+
+@_node
+def test_sin_broker_se_muestran_las_dos_sin_apagar_ninguna():
+    """`None` (incluye el 'generic' que el adapter normaliza): mostrar una sola ventana
+    sería inventar cuál es la del cliente."""
+    rep = _ejecutar("recuperar", d=_con_broker(None))
+    html = rep["impRutas"]["html"]
+    assert not any(f[1] for f in _filas_franja(html)), "sin bróker no se apaga ninguna"
+    assert "No pudimos identificar tu bróker" in html
+    assert "tu bróker</span>" not in html, "sin bróker no se marca ninguna como tuya"
+
+
+@_node
+def test_la_frase_del_ano_va_identica_en_las_tres_ramas():
+    """La cola que carga el AÑO es la que el guard de frases compara verbatim contra
+    `main`. Tiene que salir igual con bróker y sin él, y SIN negrita: un `</b>` pegado a la
+    coma cambia el texto normalizado y la frase deja de casar con `main` (pasó al escribir
+    el PR 4; lo cazó `test_ninguna_frase_desaparece_al_moverla_a_un_modal`)."""
+    for b in (None, "schwab", "ibkr"):
+        html = _ejecutar("recuperar", d=_con_broker(b))["impRutas"]["html"]
+        assert "Es el cierre fiscal del año que analizaste, no de este." in html, (
+            f"la cola del año cambió con broker={b!r}")
+
+
+@_node
+def test_la_franja_no_lleva_ano_ni_marca_de_hoy():
+    """Regla 2: la ventana es el cierre fiscal del año ANALIZADO y cae en el año calendario
+    siguiente. Un eje fechado —o un «hoy» sobre él— pondría dos momentos en la misma línea.
+    Este test es el que impide que alguien «mejore» la franja añadiéndoselos."""
+    html = _ejecutar("recuperar", d=_con_broker("schwab"))["impRutas"]["html"]
+    franja = html[html.find('class="imp-vent"'):html.find("</div>", html.find("imp-vent-fila"))]
+    assert not re.search(r"\b20\d{2}\b", franja), "la franja no debe llevar año"
+    assert "hoy" not in franja.lower(), "la franja no debe marcar «hoy»"
+
+
+# --- Capa del ADAPTER (PR 4) -----------------------------------------------------------
+# Los tests de arriba miden el RENDER contra su propio fixture. Eso deja dos huecos que
+# los mutantes destaparon: `'generic'` colándose como bróker, y las ventanas cambiando en
+# `ui/adapters.py` sin que nadie se entere porque el fixture las duplica. Estos leen lo que
+# el adapter publica DE VERDAD.
+
+def _res_minimo():
+    import pandas as pd
+    hist = pd.DataFrame({
+        "Date": pd.to_datetime(["2025-06-15", "2025-06-15"]),
+        "Action": ["Cash Dividend", "NRA Tax Adj"],
+        "Amount": [100.0, -30.0],
+    })
+    return {"MSTY": {
+        "pocket_investment": 1000.0, "market_value": 900.0,
+        "dividends_collected_drip": 0.0, "dividends_collected_cash": 100.0,
+        "total_dividends": 70.0,
+        "dividends_gross_total": 100.0, "dividends_net_total": 70.0,
+        "dividends_gross_by_year": {2025: 100.0}, "withheld_by_year": {2025: 30.0},
+        "withheld_tax_total": 30.0,
+        "roc_percent": 50.0, "roc_source": "19a",
+        "history": hist,
+    }}
+
+
+def _ruta_a(broker):
+    import logic
+    from ui.adapters import impuestos_data
+    return impuestos_data(_res_minimo(), logic.build_fiscal_profile("Colombia"), [],
+                          broker=broker)["ruta_a"]
+
+
+@pytest.mark.parametrize("entrada,esperado", [
+    ("schwab", "schwab"),
+    ("ibkr", "ibkr"),
+    # 'generic' es «no lo reconocí», no un bróker. Publicarlo haría que la vista dijera
+    # «Tu bróker es generic» y resaltara una ventana inventada — el mismo error que
+    # deducir el país de la tasa retenida.
+    ("generic", None),
+    (None, None),
+    ("", None),
+    ("SCHWAB", None),   # sin normalizar mayúsculas: lo que no viene tal cual, no pasa
+])
+def test_el_adapter_solo_publica_broker_reconocido(entrada, esperado):
+    assert _ruta_a(entrada)["broker"] == esperado
+
+
+def test_el_adapter_publica_las_ventanas_reales_de_cada_broker():
+    """Ground truth, no un espejo del código: IB reclasifica ene-mar y Schwab jun-sep.
+    Si alguien mueve esos meses en `ui/adapters.py`, este test cae — el de render no,
+    porque tiene su propio fixture."""
+    vent = {v["broker"]: v for v in _ruta_a("schwab")["ventanas"]}
+    assert set(vent) == {"ibkr", "schwab"}
+    assert (vent["ibkr"]["desde"], vent["ibkr"]["hasta"]) == (1, 3)
+    assert (vent["schwab"]["desde"], vent["schwab"]["hasta"]) == (6, 9)
+    assert vent["ibkr"]["label"] == "Interactive Brokers"
+    assert vent["schwab"]["label"] == "Schwab"
+
+
+def test_el_broker_no_mueve_ni_una_cifra():
+    """`broker` solo gobierna qué ventana se resalta. Si alguna cifra cambia con él, algo
+    lo está usando para calcular — y eso rompe la Regla 3."""
+    import logic
+    from ui.adapters import impuestos_data
+    base = None
+    for b in (None, "schwab", "ibkr", "generic"):
+        d = impuestos_data(_res_minimo(), logic.build_fiscal_profile("Colombia"), [],
+                           broker=b)
+        d["ruta_a"] = {k: v for k, v in d["ruta_a"].items()
+                       if k not in ("broker", "ventanas")}
+        actual = json.dumps(d, sort_keys=True, default=str)
+        if base is None:
+            base = actual
+        assert actual == base, f"broker={b!r} movió una cifra del objeto fiscal"

@@ -78,7 +78,25 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **882 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+Línea base: **896 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+`ui/impuestos-ventana-reembolso`, base `main` = `05a8484`, tras el **PR 4 «la ventana del
+reembolso»**: «Cómo recuperarlo» deja de recitar las dos ventanas de reclasificación y
+resalta la del cliente. El bróker **no se deduce de las cifras** — llega por parámetro
+desde `session_state['_wizard_broker']` (lo que leyó `logic.detect_broker`), mismo patrón
+que `codigo_pais_1042s`; `'generic'` se normaliza a `None` porque «no lo reconocí» no es un
+bróker con ventana conocida. `ruta_a.broker` + `ruta_a.ventanas`, y un test que verifica
+que **ninguna cifra se mueve** con el bróker (Regla 3).
+La franja va sin año y sin marca de «hoy» a propósito: la ventana es el cierre fiscal del
+año ANALIZADO y cae en el calendario siguiente (Regla 2), y hay un test que impide que
+alguien se los añada. Única entrada de `_PERDIDAS_APROBADAS` de todo el rediseño —los meses
+salen de la prosa a la franja—, sostenida por un test que comprueba que la franja marca
+ene-mar y jun-sep de verdad.
+5 mutantes: dos vivían solo en la capa de render y sobrevivieron a la primera tanda
+(`'generic'` colándose como bróker, y las ventanas cambiando en `ui/adapters.py` sin que
+nadie se enterara **porque el fixture del test las duplicaba** — tautología clásica); se
+cerraron con tests que leen lo que el adapter publica de verdad.
+
+Antes: **882 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
 `ui/impuestos-letra-chica`, base `main` = `defbdd0`, tras el **PR 3 «La letra chica»** de
 la vista «Impuestos» — cierra el rediseño. La letra chica de los peldaños deja de competir
 con las cifras: vive a un clic en modales ⓘ (`.imp-modal` + helpers `modalHTML`/`wireModal`,

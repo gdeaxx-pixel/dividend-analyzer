@@ -174,6 +174,36 @@
   .imp-ruta ol li { margin: 0 0 5px; }
   .imp-ruta ol li b { color: var(--ink); }
 
+  /* Ventana de reclasificación (PR 4). Franja de 12 meses SIN año y SIN marca de «hoy»:
+     la ventana es el cierre fiscal del año analizado y cae en el año calendario siguiente
+     — un eje fechado mezclaría los dos momentos (Regla 2). La fila del bróker que NO es el
+     del cliente se apaga en vez de ocultarse: sigue siendo información («la otra existe,
+     no es la tuya») y así la caja no cambia de alto entre los dos estados. */
+  .imp-vent { margin: 10px 0 12px; display: flex; flex-direction: column; gap: 10px; }
+  .imp-vent-fila.apagada { opacity: .45; }
+  .imp-vent-lab { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 5px; }
+  .imp-vent-tuyo { color: var(--cash); letter-spacing: 0.04em; }
+  .imp-vent-meses { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; }
+  .imp-vent-mes {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-align: center;
+    padding: 5px 0; color: var(--ink-mut); background: var(--panel-tint);
+    border-top: 2px solid transparent; min-width: 0; overflow: hidden;
+  }
+  .imp-vent-mes.dentro { color: var(--warn); background: var(--panel); border-top-color: var(--warn); }
+  /* 12 celdas de «ENE» a 10px dan un min-content de ~340px, justo por encima de los 337px
+     que mide el iframe a 375px de viewport. `minmax(0,1fr)` + `min-width: 0` dejan que las
+     celdas encojan en vez de empujar el ancho de la caja, y aquí se les baja tipografía,
+     padding y gap para que «ENE» siga entrando entero.
+
+     OJO con cómo se mide esto: en un render standalone del componente (sin el iframe que
+     fija el ancho) Chrome headless recorta el texto a 337px IGUAL en `main` que aquí — el
+     A/B lo confirmó. Ese recorte es artefacto del harness, no del CSS; la medición que
+     vale es dentro del iframe. */
+  @media (max-width: 560px) {
+    .imp-vent-meses { gap: 1px; }
+    .imp-vent-mes { font-size: 8px; padding: 4px 0; letter-spacing: -0.02em; }
+  }
+
   .imp-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 11px; color: var(--ink-mut); line-height: 1.6; }
 
   /* ── PR 3: modales ⓘ — la letra chica a un clic. Patrón de `cashflow.html` /
@@ -966,11 +996,56 @@
     } else if (A.tiene_1042s && A.veredicto === "devuelto") {
       rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
     }
-    // Cuándo llega — sin gráfico: la app no sabe tu bróker (no hay clave en `impuestos_data`)
-    // y un eje genérico mezclaría el año que analizaste con este. Una frase lo dice mejor.
-    rutaA += '<p class="imp-ruta-p"><b>Cuándo llega:</b> si tu bróker es Interactive Brokers, '
-      + 'entre enero y marzo; si es Schwab, entre junio y septiembre. Es el cierre fiscal del '
-      + 'año que analizaste, no de este.</p>';
+    // ---- Cuándo llega: la franja de meses (PR 4) ----------------------------------
+    // El bróker viene de `logic.detect_broker` vía sesión (`ruta_a.broker`), NUNCA
+    // deducido de las cifras. Con bróker conocido se resalta SU ventana y la otra queda
+    // apagada; sin bróker se muestran las dos igual de fuertes — mostrar una sola sería
+    // inventar cuál es la tuya.
+    //
+    // La franja NO lleva año ni marca de «hoy», a propósito: la ventana es el cierre
+    // fiscal del año ANALIZADO y cae en el año calendario siguiente, así que un eje con
+    // año pondría dos momentos distintos en la misma línea (Regla 2). La frase de abajo
+    // es la que carga el año.
+    // Tres letras, no una: con iniciales («E F M A M J J A S O N D») hay dos M y dos J, y
+    // la ventana de Schwab sale «J J A S» — imposible saber si arranca en junio o julio
+    // sin contar. En una franja que existe para decir CUÁNDO, eso la anula. Medido a 12
+    // columnas: caben de sobra.
+    var MESES = ["ENE","FEB","MAR","ABR","MAY","JUN",
+                 "JUL","AGO","SEP","OCT","NOV","DIC"];
+    var vents = A.ventanas || [];
+    var mio = A.broker || null;
+    var franja = '<div class="imp-vent">';
+    vents.forEach(function (v) {
+      var activa = (mio === null) || (v.broker === mio);
+      franja += '<div class="imp-vent-fila' + (activa ? '' : ' apagada') + '">'
+        + '<p class="imp-vent-lab">' + esc(v.label)
+        + (mio === v.broker ? ' <span class="imp-vent-tuyo">tu bróker</span>' : '') + '</p>'
+        + '<div class="imp-vent-meses">';
+      for (var m = 1; m <= 12; m++) {
+        var dentro = m >= v.desde && m <= v.hasta;
+        franja += '<span class="imp-vent-mes' + (dentro ? ' dentro' : '') + '">'
+          + MESES[m - 1] + '</span>';
+      }
+      franja += '</div></div>';
+    });
+    franja += '</div>';
+
+    var frase;
+    if (mio) {
+      var vMio = vents.filter(function (v) { return v.broker === mio; })[0];
+      frase = 'Tu bróker es <b>' + esc(vMio ? vMio.label : mio) + '</b>, así que la '
+        + 'reclasificación cae en la ventana marcada arriba. ';
+    } else {
+      frase = 'No pudimos identificar tu bróker en el CSV, así que te mostramos las dos '
+        + 'ventanas. ';
+    }
+    // La cola va IDÉNTICA en las dos ramas y como oración propia: es la que carga el año,
+    // y el guard de «ninguna frase desaparece» la compara verbatim contra `main`. SIN
+    // negrita, igual que en `main`: un `</b>` pegado a la coma cambia el texto normalizado
+    // y la frase deja de casar (medido — el guard lo cazó).
+    frase += 'Es el cierre fiscal del año que analizaste, no de este.';
+    rutaA += '<p class="imp-ruta-p"><b>Cuándo llega</b></p>' + franja
+      + '<p class="imp-ruta-p">' + frase + '</p>';
     rutaA += '</div>';
   }
 
