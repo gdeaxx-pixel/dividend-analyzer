@@ -85,12 +85,15 @@ _D = {
 # `document` de juguete: `getElementById` + `.innerHTML` + `.remove()`, lo único que
 # toca el primer <script>. `impTabla` muere con su `impBlock` (contención real).
 _HARNESS = r"""
-var IDS = ["impLede","impTitle","impEscalera","impTabla","impRutas","impFoot","impBlock"];
+var IDS = ["impLede","impTitle","impEscalera","impTabla","impTablaExtra","impRutas","impFoot","impBlock"];
 var store = {};
 IDS.forEach(function (id) {
   store[id] = { id: id, innerHTML: "", removed: false, remove: function () { this.removed = true; } };
 });
-function _muerto(id) { return store[id].removed || (id === "impTabla" && store.impBlock.removed); }
+function _muerto(id) {
+  return store[id].removed
+    || ((id === "impTabla" || id === "impTablaExtra") && store.impBlock.removed);
+}
 globalThis.document = { getElementById: function (id) {
   var el = store[id];
   return (!el || _muerto(id)) ? null : el;
@@ -141,8 +144,8 @@ def _assert_vista(vista, rep):
     esc, blk, tab = rep["impEscalera"], rep["impBlock"], rep["impTabla"]
     rut, foot, lede, tit = rep["impRutas"], rep["impFoot"], rep["impLede"], rep["impTitle"]
 
-    assert tit["alive"] and tit["html"] == _TITULOS[vista], (
-        f"{vista}: h2 = {tit['html']!r}, esperaba {_TITULOS[vista]!r}")
+    assert tit["alive"] and _TITULOS[vista] in tit["html"], (
+        f"{vista}: h2 = {tit['html']!r}, esperaba que contuviera {_TITULOS[vista]!r}")
 
     if vista == "corte":
         assert esc["alive"]
@@ -435,12 +438,16 @@ def test_veredicto_sale_del_dato_una_fixture_por_rama(rama):
 
 @_node
 def test_mutante_reordenar_el_veredicto_mata_el_script():
-    """Si `gap`/`roc` se comprueban ANTES de los guards `!declarado`/`parcial`, en esas
-    dos ramas `R.gap_w8ben` es null → TypeError → script muerto. El harness lo caza como
-    returncode != 0."""
+    """`veredicto()` USA lecturas null-safe (`(R.gap_w8ben && R.gap_w8ben.monto) || 0`).
+    Con ellas un reorden NO da un TypeError ruidoso — da un veredicto silenciosamente
+    falso (una cartera parcial caería a «justo lo que te tocaba»); eso lo cazan las 5
+    fixtures de `test_veredicto_sale_del_dato_una_fixture_por_rama`.
+
+    Este test cubre el OTRO reorden: el ingenuo, que dereferencia `R.gap_w8ben.monto` sin
+    guard —como haría quien mueve una fila de la tabla sin mirar `adapters.py:808-814`—.
+    Ahí sí es TypeError → script muerto → `returncode != 0` (modo de fallo del #84)."""
     script = _primer_script()
-    # reorden ingenuo: la rama del gap (que dereferencia `R.gap_w8ben.monto` sin guard,
-    # como haría quien mueve una fila de la tabla) pasa ANTES de `!declarado`
+    # reorden ingenuo: la rama del gap pasa ANTES de `!declarado`, sin null-guard.
     mut = script.replace(
         "    if (!D.declarado) {",
         "    if (R.gap_w8ben.monto > 0.01) { return { borde: 'coral', "
@@ -504,3 +511,152 @@ def test_ambar_no_reaparece_como_token_css():
                     if "var(--ambar)" in fh.read():
                         hits.append(os.path.join(base, f))
     assert not hits, f"var(--ambar) — token inexistente — reapareció en: {hits}"
+
+
+# ── PR 3 «La letra chica»: la frase que se mueve a un ⓘ no puede evaporarse ────────────
+#
+# El guard que importa (Daniel): comparar el TEXTO RENDERIZADO de cada vista contra `main`
+# —incluido el de los `.modal-*`—. Toda frase que estaba en la vista y ya no está es una
+# regresión, salvo el puñado que aprobamos reescribir en la §4.4. No compara fuente (los
+# literales de JS partidos en varias líneas dan falsos positivos).
+
+# Fixture que dispara TODO el texto condicional de venta y pais (captura, panel fiscal,
+# los dos CTA de gFaltan, aviso de crédito neto, aviso de ROC).
+_D_FULL = json.loads(json.dumps(_D))
+_D_FULL["peldanos"]["gravable"]["sin_roc"] = ["SVOL"]
+_D_FULL["peldanos"]["gravable"]["cubiertos"] = 2
+_D_FULL["ganancias_capital"].update({
+    "tickers_indeterminados": ["ZZZ", "WWW"],
+    "tickers_base_captura": ["SMH"],
+    "tickers_captura_no_usada": ["WWW"],
+    "fiscal_roc": {
+        "n_fondos": 1, "tickers": ["MSTY"], "base_mercado": 11455.72, "base": 10800.0,
+        "no_realizado": 900.0, "no_realizado_mercado": 1212.97,
+        "realizado": 250.0, "realizado_mercado": 300.0,
+        "tickers_19a_sin_ajuste": ["PLTY"], "roc_exceso": 42.0,
+    },
+})
+_D_FULL["impuesto_local"]["credito_eeuu"] = {"monto": 60.75, "definitivo": 19.46,
+                                             "vuelve_por_roc": 41.29}
+
+
+def _script_de(html):
+    return _SCRIPT_RE.findall(html)[0]
+
+
+@pytest.fixture(scope="module")
+def main_script():
+    r = subprocess.run(
+        ["git", "show", "origin/main:ui/componentes/impuestos.html"],
+        cwd=os.path.dirname(__file__), capture_output=True, text=True)
+    if r.returncode != 0 or "<script" not in r.stdout:
+        r = subprocess.run(
+            ["git", "show", "main:ui/componentes/impuestos.html"],
+            cwd=os.path.dirname(__file__), capture_output=True, text=True)
+    assert r.returncode == 0 and "<script" in r.stdout, "no pude leer impuestos.html de main"
+    return _script_de(r.stdout)
+
+
+# Apertura o cierre de un bloque → salto de línea (cada `<p>`, `<div>`, celda… es una
+# unidad de texto distinta; sin esto un rótulo y la nota de al lado se pegan).
+_BLOCK_RE = re.compile(r"</?(?:p|div|li|h\d|section|td|th|tr)(?:\s[^>]*)?>", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
+# Un número: $x, x%, o dígitos sueltos — NUNCA dígitos pegados a letras (para no partir
+# «W-8BEN» ni «1042-S»).
+_NUM_RE = re.compile(r"(?<![A-Za-z0-9-])(?:−?\$[\d.,]+|\d[\d.,]*\s?%?)(?![A-Za-z0-9])")
+_WS_RE = re.compile(r"[^\S\n]+")
+
+
+def _norm(html):
+    """Texto renderizado, normalizado: cierres de bloque → salto, tags fuera, entidades
+    resueltas, números → ·, espacios colapsados."""
+    txt = _BLOCK_RE.sub("\n", html)
+    txt = _TAG_RE.sub(" ", txt)
+    txt = (txt.replace("&minus;", "−").replace("&rarr;", "→").replace("&amp;", "&")
+              .replace("−", "-").replace("×", "x").replace("«", '"').replace("»", '"'))
+    txt = _NUM_RE.sub("·", txt)
+    return _WS_RE.sub(" ", txt).strip()
+
+
+def _frases(html):
+    """Las frases de un texto (para el lado `antes`): se parte en `.`/`:`/`—`/salto."""
+    out = set()
+    for trozo in re.split(r"(?<=[.:])\s+|\s+-\s+|\n+", _norm(html)):
+        t = trozo.strip(" ·.-:;,\"")
+        if len(t) >= 25:
+            out.add(t)
+    return out
+
+
+def _texto_vista(view, script, d):
+    rep = _ejecutar(view, script=script, d=d)
+    return " ".join(v["html"] for v in rep.values() if v.get("html"))
+
+
+# Frases de `main` que pueden NO sobrevivir verbatim (whitelist por vista). Hoy VACÍA en
+# las 5: al mover la letra chica a los modales no se reescribe ni una — las notas de
+# tarjeta que la §4.4 acortó conservan su versión larga dentro del modal correspondiente.
+# Si algo entra aquí, tiene que venir con su justificación y un test que verifique que su
+# «parte de más» sí está en un `.modal-*`.
+_PERDIDAS_APROBADAS = {
+    "corte": set(),
+    "fondos": set(), "venta": set(), "pais": set(), "recuperar": set(),
+}
+
+
+@_node
+@pytest.mark.parametrize("view", _ORDER)
+def test_ninguna_frase_desaparece_al_moverla_a_un_modal(view, main_script):
+    antes = _frases(_texto_vista(view, main_script, _D_FULL))
+    ahora = _norm(_texto_vista(view, _primer_script(), _D_FULL))
+    aprob = _PERDIDAS_APROBADAS[view]
+    perdidas = {f for f in antes
+                if f not in ahora and not any(a in f or f in a for a in aprob)}
+    assert not perdidas, (
+        f"{view}: {len(perdidas)} frase(s) desaparecieron al mover la letra chica — "
+        "deberían estar verbatim en algún .modal-*:\n  - "
+        + "\n  - ".join(sorted(perdidas)))
+
+
+_MODALES_ESPERADOS = {
+    "corte": ["modal-imp-bruto", "modal-imp-roc", "modal-imp-retenido",
+              "modal-imp-correcta", "modal-imp-vuelvesolo", "modal-imp-w8ben"],
+    "fondos": ["modal-imp-tabla"],
+    "venta": ["modal-imp-vender"],
+    "pais": ["modal-imp-pais"],
+    "recuperar": [],
+}
+
+
+@_node
+@pytest.mark.parametrize("view", _ORDER)
+def test_cada_modal_tiene_su_disparador_y_su_cierre(view):
+    """Cableado (importa menos — un modal que no abre se ve enseguida): cada `#modal-*`
+    que la vista construye trae su `#modal-*-close` Y un `[data-tip=...]` que lo dispara,
+    y `wireModal` se llama para él."""
+    rep = _ejecutar(view, d=_D_FULL)
+    blob = " ".join(v["html"] for v in rep.values() if v.get("html"))
+    ids = set(re.findall(r'id="(modal-imp-[\w-]+?)"', blob))
+    ids = {i for i in ids if not i.endswith("-close") and not i.endswith("-title")}
+    assert ids == set(_MODALES_ESPERADOS[view]), (
+        f"{view}: modales {sorted(ids)}, esperaba {_MODALES_ESPERADOS[view]}")
+    src = _primer_script()
+    for mid in ids:
+        tip = mid.replace("modal-", "", 1)
+        assert f'id="{mid}-close"' in blob, f"{view}: {mid} sin botón de cerrar"
+        assert f'data-tip="{tip}"' in blob, f"{view}: {mid} sin disparador [data-tip={tip}]"
+        # cableado: o inline `wireModal("mid"` o en la lista `["mid", "tip"]`
+        assert (f'wireModal("{mid}"' in src) or (f'["{mid}", "{tip}"]' in src), (
+            f"{mid} no se cablea con wireModal")
+
+
+@_node
+def test_la_tarjeta_vuelve_solo_manda_el_matiz_puede_al_modal():
+    """Daniel: la nota corta de §4.4 («En el cierre anual de tu bróker: …») afirma sin
+    reservas lo que la vieja matizaba con «puede». Ese matiz tiene que estar en el modal."""
+    html = _corte(_D_FULL)
+    card = re.search(r'imp-bucket ambar.*?</div>', html, re.S).group(0)
+    assert "puede volver solo" not in card.lower(), "la tarjeta ya no debe llevar el «puede»"
+    modal = re.search(r'id="modal-imp-vuelvesolo".*?</div></div>', html, re.S).group(0)
+    assert "Puede volver solo en el cierre anual del bróker" in modal, (
+        "el modal de «Vuelve solo» perdió el matiz condicional")

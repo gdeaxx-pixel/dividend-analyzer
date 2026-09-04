@@ -78,7 +78,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **871 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+Línea base: **882 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-letra-chica`, base `main` = `defbdd0`, tras el **PR 3 «La letra chica»** de
+la vista «Impuestos» — cierra el rediseño. La letra chica de los peldaños deja de competir
+con las cifras: vive a un clic en modales ⓘ (`.imp-modal` + helpers `modalHTML`/`wireModal`,
+patrón copiado de `cashflow.html`/`metodo.html`). `corte`: `.imp-corte-notas` retirado, sus
+4 frases + las notas largas de las 3 tarjetas de barra 3 → 6 modales; tarjetas a las notas
+cortas de la §4.4. `fondos`: un SOLO ⓘ en el título → modal-leyenda con las 9 columnas +
+qué es `no publ.` y `—`. `venta`: notas de método/captura → modal. `pais`: avisos de crédito
+neto/ROC → modal. `recuperar`: la frase «Cuándo llega» (IB ene–mar, Schwab jun–sep, año
+analizado) sustituye a la línea de tiempo descartada — `impuestos_data` no expone `broker`
+(candidata a PR 4). Ni una frase se reescribe al moverla: guard
+`test_ninguna_frase_desaparece_al_moverla_a_un_modal` compara el texto RENDERIZADO por
+vista (modales incluidos) contra `main`. +11 tests netos. `logic.py` / `impuestos_data` /
+`test_vista_impuestos.py` **sin tocar**.
+
+Antes: **871 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
 `ui/impuestos-el-corte`, base `main` = `c10cd7a`, tras el **PR 2 «El corte»** de la vista
 «Impuestos»: la rama `corte` deja de ser 4 peldaños y pasa a **veredicto** (borde y verbo
 derivados del dato, nunca cableados) + **barra 1 y barra 2 a escala compartida** (misma
