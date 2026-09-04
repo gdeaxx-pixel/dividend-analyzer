@@ -99,7 +99,9 @@ ALTO_IMPUESTOS = {
     "fondos":     900,
     "venta":     1400,
     "pais":      1900,
-    "recuperar": 1300,
+    # +150 sobre los 1150 que medía antes del PR 4: la franja de ventanas de «Cuándo llega»
+    # añade dos filas de meses con su rótulo (~95px) dentro de la caja de Ruta A.
+    "recuperar": 1450,
 }
 
 

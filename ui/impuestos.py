@@ -71,8 +71,14 @@ def render_vista(vista: str, ruta) -> None:
     # Casilla 13b: solo para que los CTA ofrezcan la segunda vía de declarar el país. No
     # declara residencia — eso sigue pidiendo el clic del cliente en el Paso 2.
     codigo_pais_1042s = _w1042s.get("recipient_country_code")
+    # Bróker detectado al leer el CSV (`logic.detect_broker` → `ui/carga.py`): 'schwab' |
+    # 'ibkr' | 'generic'. Se pasa por parámetro, MISMO patrón que `codigo_pais_1042s` — no
+    # se recalcula en el adapter ni se deduce de las cifras. Solo gobierna QUÉ ventana de
+    # reclasificación se muestra en «Cómo recuperarlo»; ninguna cifra depende de él.
+    broker = st.session_state.get("_wizard_broker")
 
-    datos = adapters.impuestos_data(resultados, perfil, forms_1042s, codigo_pais_1042s)
+    datos = adapters.impuestos_data(resultados, perfil, forms_1042s, codigo_pais_1042s,
+                                    broker=broker)
     if datos is None or not datos.get("fondos"):
         st.markdown('<span class="vd-badge">Impuestos</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">Sin dividendos que declarar</h2>',

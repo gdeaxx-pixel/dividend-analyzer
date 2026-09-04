@@ -619,7 +619,8 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
 
 
 def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
-                   codigo_pais_1042s: str | None = None) -> dict | None:
+                   codigo_pais_1042s: str | None = None,
+                   broker: str | None = None) -> dict | None:
     """La escalera de Impuestos, de CARTERA (Fase 2 de la vista fiscal).
 
     Cuatro peldaños, cada uno leído de un objeto fiscal que ya existe — esta capa NO
@@ -657,6 +658,13 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     (`ui/carga._render_residencia_detectada`). El país sale de
     `logic.pais_desde_codigo_1042s` — el mismo mapeo del Paso 2, no uno nuevo — y **nunca de
     la tasa retenida**, que es ambigua (30% -> 5 países o W-8BEN ausente; 15% -> 3 países).
+
+    `broker` es `session_state['_wizard_broker']` — lo que `logic.detect_broker` leyó del
+    CSV ('schwab' | 'ibkr' | 'generic'). Se publica en `ruta_a.broker` SOLO para que «Cómo
+    recuperarlo» resalte la ventana de reclasificación que le toca al cliente en vez de
+    mostrarle las dos. **Ninguna cifra depende de él**, y 'generic' se normaliza a `None`:
+    un bróker que no reconocemos no tiene ventana conocida, y mostrarle una sería inventar
+    el dato. Mismo principio que el país: no se deduce de las cifras.
     """
     if not resultados:
         return None
@@ -854,6 +862,25 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # 'devuelto'. En la UI eso se lee como «el bróker te devolvió» cuando en realidad no
         # hubo retención. Se trata aquí, sin tocar `logic.py`.
         "sin_retencion": retenido_1042s <= 0.01,
+        # Bróker detectado al leer el CSV, pasado por parámetro desde `ui/impuestos.py`
+        # (mismo patrón que `codigo_pais_1042s`). 'schwab' | 'ibkr' | None cuando no se
+        # pudo determinar ('generic' se normaliza a None: «genérico» no es un bróker con
+        # ventana conocida, y prometer una sería inventarla).
+        #
+        # NO gobierna ninguna cifra — solo QUÉ ventana de reclasificación se muestra. Y NO
+        # se deduce de las cifras: una tasa aplicada del 30% o un patrón de filas de
+        # impuesto son compatibles con varios brókers, igual que el país no se deduce de la
+        # tasa retenida (ver el docstring de arriba).
+        "broker": (broker if broker in ("schwab", "ibkr") else None),
+        # Ventanas de reclasificación anual del ROC, por bróker. Se publican SIEMPRE las
+        # dos: el componente resalta la del cliente si se conoce, y las muestra ambas si
+        # no. Meses 1-12; el AÑO no se publica a propósito — la ventana corresponde al
+        # cierre fiscal del año analizado, que cae en el año calendario siguiente, y poner
+        # un eje con año invitaría a leer «hoy» sobre él (Regla 2: dos momentos distintos).
+        "ventanas": [
+            {"broker": "ibkr", "label": "Interactive Brokers", "desde": 1, "hasta": 3},
+            {"broker": "schwab", "label": "Schwab", "desde": 6, "hasta": 9},
+        ],
     }
 
     # Qué sabe el 1042-S sobre la residencia. Tres estados, y los tres importan para el CTA:
