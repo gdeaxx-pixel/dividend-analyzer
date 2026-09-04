@@ -78,7 +78,23 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
-Línea base: **896 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+`ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
+una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
+`gap > 0.01` no lo capturaba, así que decía «Todo el exceso vuelve solo» mientras la
+tercera tarjeta de la barra 3 mostraba «W-8BEN · $0.01». Visto en producción con la cartera
+real de Daniel ($123.88 = $42.65 + $81.22 + $0.01).
+El umbral pasa a un predicado con nombre (`GAP_MATERIAL` / `gapMaterial` / `gapResidual`)
+que gobierna las tres ramas, y el titular dice «prácticamente» y **nombra el resto** en vez
+de callarlo. NO se redondea la tarjeta a $0.00: el centavo existe, y taparlo sería su propia
+mentira.
+El gate que vale es de **regla 3b** (dos vistas del mismo número comparadas entre sí):
+`test_titular_y_tarjeta_de_w8ben_no_se_contradicen` lee la tarjeta coral RENDERIZADA —sin
+fallback, si no la encuentra falla— y exige que el titular no afirme «todo»/«justo» mientras
+esa tarjeta muestre un monto. No conoce el umbral, así que sigue valiendo si alguien lo
+cambia. 5 mutantes, incluido el que revierte al bug original.
+
+Antes: **896 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-ventana-reembolso`, base `main` = `05a8484`, tras el **PR 4 «la ventana del
 reembolso»**: «Cómo recuperarlo» deja de recitar las dos ventanas de reclasificación y
 resalta la del cliente. El bróker **no se deduce de las cifras** — llega por parámetro
