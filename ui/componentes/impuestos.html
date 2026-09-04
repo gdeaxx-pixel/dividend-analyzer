@@ -339,7 +339,27 @@
     var Y = money(Pc ? Pc.monto : 0);
     var roc = (R.recuperable_roc && R.recuperable_roc.monto) || 0;
     var gap = (R.gap_w8ben && R.gap_w8ben.monto) || 0;
-    if (gap > 0.01) {
+
+    // UN solo predicado para «¿hay gap de W-8BEN que importe?». Antes el umbral vivía
+    // suelto en el `if` y la tarjeta de la barra 3 mostraba el monto sin consultarlo, así
+    // que con un gap de EXACTAMENTE $0.01 (`0.01 > 0.01` es falso) el titular decía «Todo
+    // el exceso vuelve solo» mientras la tarjeta de 300px más abajo mostraba
+    // «W-8BEN · $0.01». Visto en producción con la cartera real de Daniel.
+    //
+    // El arreglo NO es redondear la tarjeta a $0.00 — eso sería su propia mentira: el
+    // centavo existe. Es que el titular deje de decir «todo» cuando no es todo.
+    var GAP_MATERIAL = 0.01;
+    var gapMaterial = gap > GAP_MATERIAL;
+    var gapResidual = gap > 0 && !gapMaterial;
+    // Se nombra el residuo en vez de callarlo: es lo único que reconcilia el titular con
+    // la tarjeta. Sin explicar la causa — puede ser redondeo del bróker o un tratado a
+    // medio aplicar, y la app no lo sabe.
+    var subResidual = gapResidual
+      ? '<span class="c-coral">Quedan ' + money(gap)
+        + ' de gap de W-8BEN, que no vuelven solos</span>'
+      : "";
+
+    if (gapMaterial) {
       return { borde: "coral", kick: kick,
         big: "Te retuvieron " + X + " — te tocaban " + Y + ".",
         sub: '<span class="c-warn">' + money(roc) + ' vuelven solos cuando tu bróker '
@@ -348,11 +368,14 @@
     }
     if (roc > 0.01) {
       return { borde: "warn", kick: kick,
-        big: "Te retuvieron " + X + " — te tocaban " + Y + ". Todo el exceso vuelve solo.",
-        sub: "" };
+        big: "Te retuvieron " + X + " — te tocaban " + Y + ". "
+             + (gapResidual ? "Prácticamente todo" : "Todo") + " el exceso vuelve solo.",
+        sub: subResidual };
     }
     return { borde: "cash", kick: kick,
-      big: "Te retuvieron " + X + ", justo lo que te tocaba.", sub: "" };
+      big: "Te retuvieron " + X + ", "
+           + (gapResidual ? "prácticamente" : "justo") + " lo que te tocaba.",
+      sub: subResidual };
   }
 
   // ---- Modales ⓘ (PR 3) -------------------------------------------------------------

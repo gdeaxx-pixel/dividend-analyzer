@@ -851,3 +851,78 @@ def test_el_broker_no_mueve_ni_una_cifra():
         if base is None:
             base = actual
         assert actual == base, f"broker={b!r} movió una cifra del objeto fiscal"
+
+
+# ---------------------------------------------------------------------------------------
+# Gap de W-8BEN residual — el titular no puede decir «todo» si una tarjeta muestra un resto.
+#
+# Visto en producción con la cartera real de Daniel: retenido $123.88 = correcta $42.65 +
+# vuelve solo $81.22 + gap $0.01. El umbral era `gap > 0.01` y `0.01` no es `> 0.01`, así
+# que el veredicto decía «Todo el exceso vuelve solo» mientras la tercera tarjeta de la
+# MISMA pantalla mostraba «W-8BEN · $0.01». Dos sitios decidiendo lo mismo con criterios
+# distintos: la regla 3b del repo (dos vistas del mismo número se comparan entre sí).
+# ---------------------------------------------------------------------------------------
+
+def _D_gap(gap, roc):
+    d = copy.deepcopy(_D)
+    R = d["peldanos"]["retenido"]
+    R["estado"] = "ok"
+    R["gap_w8ben"] = {"monto": gap, "pct": 0.0}
+    R["recuperable_roc"] = {"monto": roc, "pct": 0.7}
+    R["correcta"] = {"monto": round(R["monto"] - gap - roc, 2), "pct": 0.3}
+    return d
+
+
+def _titular_y_sub(html):
+    big = re.search(r'imp-verdict-big">(.*?)</p>', html, re.S)
+    sub = re.search(r'imp-verdict-sub">(.*?)</p>', html, re.S)
+    return (big.group(1) if big else ""), (sub.group(1) if sub else "")
+
+
+@_node
+@pytest.mark.parametrize("gap,roc,frag_esperado,nombra_resto", [
+    # el caso REAL de producción: un centavo exacto, justo en el borde del umbral
+    (0.01, 41.29, "Prácticamente todo el exceso vuelve solo.", True),
+    (0.01, 0.0, "prácticamente lo que te tocaba", True),
+    (0.004, 41.29, "Prácticamente todo el exceso vuelve solo.", True),
+    # sin resto: el lenguaje absoluto sí es correcto
+    (0.0, 41.29, "Todo el exceso vuelve solo.", False),
+    (0.0, 0.0, "justo lo que te tocaba", False),
+])
+def test_el_titular_no_dice_todo_si_queda_un_resto_de_w8ben(gap, roc, frag_esperado,
+                                                            nombra_resto):
+    big, sub = _titular_y_sub(_corte(_D_gap(gap, roc)))
+    assert frag_esperado in big, f"gap={gap} roc={roc}: titular {big!r}"
+    if nombra_resto:
+        assert "gap de W-8BEN, que no vuelven solos" in sub, (
+            f"gap={gap}: el titular se corrigió pero el resto no se nombra — sub={sub!r}")
+        assert money_es(gap) in sub, f"gap={gap}: el sub no dice el monto"
+    else:
+        assert "gap de W-8BEN" not in sub, f"gap={gap}: nombra un resto que no existe"
+
+
+def money_es(x):
+    return ("−$" if x < 0 else "$") + f"{abs(x):.2f}"
+
+
+@_node
+@pytest.mark.parametrize("gap", [0.0, 0.004, 0.01, 5.0, 18.71])
+def test_titular_y_tarjeta_de_w8ben_no_se_contradicen(gap):
+    """El gate de verdad (regla 3b): comparar las DOS vistas del mismo número entre sí.
+    Si la tarjeta de la barra 3 muestra un monto de W-8BEN distinto de cero, el titular no
+    puede afirmar que todo vuelve solo ni que te retuvieron justo lo que tocaba. Este test
+    no conoce el umbral — solo exige que las dos superficies cuenten lo mismo."""
+    html = _corte(_D_gap(gap, 41.29))
+    big, _ = _titular_y_sub(html)
+    # Se lee la tarjeta REAL (la coral es la de W-8BEN), no un valor que calcule el test:
+    # con un fallback, este test compararía el código consigo mismo y pasaría siempre.
+    # Si la tarjeta no está, esto FALLA — que es lo correcto: sin las dos superficies no
+    # hay nada que reconciliar.
+    tarjeta = re.search(r'imp-bucket coral".*?imp-bucket-money">([^<]+)<', html, re.S)
+    assert tarjeta, "no encontré la tarjeta coral de W-8BEN en la barra 3"
+    monto_tarjeta = tarjeta.group(1)
+    muestra_resto = monto_tarjeta != "$0.00"
+    absoluto = ("Todo el exceso vuelve solo" in big) or ("justo lo que te tocaba" in big)
+    assert not (muestra_resto and absoluto), (
+        f"gap={gap}: la tarjeta muestra {monto_tarjeta} y el titular dice {big!r} — "
+        "las dos vistas del mismo número se contradicen")
