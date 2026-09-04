@@ -147,10 +147,6 @@
   .imp-bar-lab .n { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--ink); }
   /* la barra 2 reserva alto extra bajo la pista para el rótulo de la regla vertical */
   .imp-bar-block.has-rule .imp-bar-track { margin-bottom: 26px; }
-  /* la letra chica de los peldaños 1-4 — PR 3 la mueve a los ⓘ */
-  .imp-corte-notas { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--hair); }
-  .imp-corte-notas .imp-step-sub { margin: 0 0 8px; }
-  .imp-corte-notas .imp-step-sub:last-child { margin-bottom: 0; }
 
   /* tabla por fondo — el desglose va DENTRO del componente, no en la ruta */
   .imp-block { margin-top: 30px; }
@@ -179,6 +175,31 @@
   .imp-ruta ol li b { color: var(--ink); }
 
   .imp-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 11px; color: var(--ink-mut); line-height: 1.6; }
+
+  /* ── PR 3: modales ⓘ — la letra chica a un clic. Patrón de `cashflow.html` /
+     `metodo.html` (7 componentes lo usan idéntico), tokens ya presentes en los 4 bloques. */
+  .imp-info { cursor: pointer; }
+  .imp-info::after { content: " ⓘ"; font-size: 10px; vertical-align: super; color: var(--accent); font-family: var(--font-sans); }
+  .imp-info.c-warn::after  { color: var(--warn); }
+  .imp-info.c-coral::after { color: var(--coral); }
+  .imp-info.c-mut::after   { color: var(--ink-mut); }
+  .imp-modal { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.55); align-items: center; justify-content: center; padding: 20px; }
+  .imp-modal.open { display: flex; }
+  .imp-modal-box { background: var(--panel); border: 1px solid var(--hair); max-width: 500px; width: 100%; padding: clamp(20px, 4vw, 30px); position: relative; max-height: 88vh; overflow-y: auto; }
+  .imp-modal-close { position: absolute; top: 10px; right: 12px; font-family: var(--font-mono); font-size: 20px; font-weight: 700; background: none; border: none; color: var(--ink-mut); cursor: pointer; line-height: 1; padding: 4px 8px; }
+  .imp-modal-close:hover { color: var(--ink); }
+  .imp-modal-eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .imp-modal-title { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 12px; letter-spacing: -0.01em; }
+  .imp-modal-p { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin: 0 0 12px; }
+  .imp-modal-p:last-child { margin-bottom: 0; }
+  .imp-modal-p b { color: var(--ink); font-weight: 600; }
+  .imp-modal-formula { background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 12px 14px; margin: 0 0 12px; }
+  .imp-mf-eq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); display: block; line-height: 1.4; }
+  .imp-mf-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .imp-mf-table td { font-family: var(--font-mono); padding: 5px 8px 5px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: baseline; color: var(--ink-mut); }
+  .imp-mf-table td:last-child { color: var(--ink); padding-right: 0; }
+  .imp-mf-table tr:last-child td { border-bottom: none; }
+  @media (prefers-reduced-motion: reduce) { .imp-modal-box { animation: none; } }
 </style>
 <main class="wrap">
   <header class="imp-head">
@@ -192,6 +213,7 @@
     <div class="imp-scroll">
       <table class="imp-tbl" id="impTabla"></table>
     </div>
+    <div id="impTablaExtra"></div>
   </section>
 
   <section class="imp-rutas" id="impRutas"></section>
@@ -303,6 +325,40 @@
       big: "Te retuvieron " + X + ", justo lo que te tocaba.", sub: "" };
   }
 
+  // ---- Modales ⓘ (PR 3) -------------------------------------------------------------
+  // La letra chica que antes vivía en los peldaños vive ahora a un clic. `modalHTML` arma
+  // el marcado de 6 partes; `wireModal` lo cablea (×, backdrop, Escape, foco al abrir).
+  // Copiado del patrón de `cashflow.html`/`metodo.html` — no reinventado. Un solo helper
+  // en vez de N IIFEs: menos superficie para un corte mal balanceado (#84).
+  function modalHTML(id, eyebrow, title, partes) {
+    var cuerpo = "";
+    partes.forEach(function (p) {
+      cuerpo += (p.charAt(0) === "<") ? p : '<p class="imp-modal-p">' + p + '</p>';
+    });
+    return '<div id="' + id + '" class="imp-modal" role="dialog" aria-modal="true" '
+      + 'aria-labelledby="' + id + '-title">'
+      + '<div class="imp-modal-box">'
+      + '<button class="imp-modal-close" id="' + id + '-close" aria-label="Cerrar">×</button>'
+      + '<p class="imp-modal-eyebrow">' + esc(eyebrow) + '</p>'
+      + '<p class="imp-modal-title" id="' + id + '-title">' + esc(title) + '</p>'
+      + cuerpo + '</div></div>';
+  }
+  function wireModal(id, triggerSel) {
+    var modal = document.getElementById(id);
+    var closeBtn = document.getElementById(id + "-close");
+    if (!modal || !closeBtn) return;
+    var trig = (typeof document.querySelectorAll === "function")
+      ? document.querySelectorAll(triggerSel) : [];
+    function abrir() { modal.classList.add("open"); closeBtn.focus(); }
+    function cerrar() { modal.classList.remove("open"); }
+    for (var i = 0; i < trig.length; i++) {
+      trig[i].addEventListener("click", function (e) { e.stopPropagation(); abrir(); });
+    }
+    closeBtn.addEventListener("click", cerrar);
+    modal.addEventListener("click", function (e) { if (e.target === modal) cerrar(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") cerrar(); });
+  }
+
   // ---- Título + lede por vista (PR 1.1) ----------------------------------------------
   // El breadcrumb ya nombra la vista; el h2 lleva la AFIRMACIÓN, no la etiqueta. `corte`
   // conserva su lede condicional; `venta` y `pais` reciben la 1ª frase de su propio
@@ -320,7 +376,10 @@
             + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
             + viaPais());
     } else if (VISTA_ACTIVA === "fondos") {
-      set("impTitle", "De dónde salió cada dólar de retención");
+      // Un solo ⓘ en el título abre la leyenda de las 9 columnas + «no publ.» y «—»:
+      // la tabla se puede aterrizar en frío desde el breadcrumb, sin haber leído un peldaño.
+      set("impTitle", 'De dónde salió cada dólar de retención'
+        + ' <span class="imp-info c-mut" data-tip="imp-tabla"></span>');
       if (_lede) _lede.remove();
     } else if (VISTA_ACTIVA === "venta") {
       set("impTitle", "Vender no es cobrar un dividendo");
@@ -338,14 +397,17 @@
   })();
 
   // ---- peldaños ----
-  function stepRow(n, q, val, pctVal, sub, cls) {
+  function stepRow(n, q, val, pctVal, sub, cls, tip) {
     var right = val == null
       ? '<span class="imp-step-money" style="color:var(--ink-mut)">—</span>'
       : '<span class="imp-step-money">' + money(val) + '</span>'
         + (pctVal == null ? '' : '<span class="imp-step-pct">' + esc(pct(pctVal)) + '</span>');
+    var qHTML = tip
+      ? '<span class="imp-info" data-tip="' + esc(tip) + '">' + esc(q) + '</span>'
+      : esc(q);
     return '<div class="imp-step ' + (cls || 'activo') + '">'
       + '<div class="imp-step-top">'
-      + '<div><span class="imp-step-n">' + esc(n) + '</span><br><span class="imp-step-q">' + esc(q) + '</span></div>'
+      + '<div><span class="imp-step-n">' + esc(n) + '</span><br><span class="imp-step-q">' + qHTML + '</span></div>'
       + '<div class="imp-step-val">' + right + '</div>'
       + '</div>'
       + '<div class="imp-step-body">' + (sub || '') + '</div>'
@@ -386,14 +448,14 @@
   var rocLab  = (rocEfectivo != null && rocEfectivo > 0.05)
     ? ' (ROC ' + rocEfectivo.toFixed(1) + '%)' : '';
   var bar1 = '<div class="imp-bar-block">'
-    + '<p class="imp-bar-h">De cada dólar que repartieron tus fondos</p>'
+    + '<p class="imp-bar-h"><span class="imp-info" data-tip="imp-bruto">De cada dólar que repartieron tus fondos</span></p>'
     + '<div class="imp-bar-track" data-bar="1">'
       + '<div class="imp-bar-seg" data-seg="1-anchor" style="width:' + wAnchor + '%;background:var(--anchor)"></div>'
       + '<div class="imp-bar-seg" data-seg="1-drip" style="width:' + wDrip + '%;background:var(--drip)"></div>'
     + '</div>'
     + '<div class="imp-bar-labs">'
       + '<div class="imp-bar-lab" style="width:' + wAnchor + '%"><span class="n">' + money(bruto - grav)
-        + '</span> · era tuyo' + rocLab + '</div>'
+        + '</span> · <span class="imp-info c-warn" data-tip="imp-roc">era tuyo' + rocLab + '</span></div>'
       + '<div class="imp-bar-lab" style="width:' + wDrip + '%"><span class="n">' + money(grav)
         + '</span> · renta real</div>'
     + '</div>'
@@ -414,7 +476,7 @@
     : '';
 
   var bar2 = '<div class="imp-bar-block' + (Pc ? ' has-rule' : '') + '">'
-    + '<p class="imp-bar-h">Lo que el bróker se llevó — a la misma escala</p>';
+    + '<p class="imp-bar-h"><span class="imp-info" data-tip="imp-retenido">Lo que el bróker se llevó — a la misma escala</span></p>';
   if (okEstado) {
     var wC = clampW(bruto > 0 ? mC / bruto * 100 : 0);
     var wR = clampW(bruto > 0 ? mRR / bruto * 100 : 0);
@@ -462,18 +524,18 @@
         + '<div class="imp-bar-seg" data-seg="3-gap" style="width:' + zG + '%;background:var(--coral)"></div>'
       + '</div>'
       + '<div class="imp-buckets">'
-        + '<div class="imp-bucket gris"><p class="imp-bucket-lab">Correcta</p>'
+        + '<div class="imp-bucket gris"><p class="imp-bucket-lab"><span class="imp-info c-mut" data-tip="imp-correcta">Correcta</span></p>'
           + '<span class="imp-bucket-money">' + money(mC) + '</span> '
           + '<span class="imp-bucket-pct">' + zC.toFixed(1) + '% de lo retenido</span>'
           + '<p class="imp-bucket-note">Permanente. No se recupera.</p></div>'
-        + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Vuelve solo</p>'
+        + '<div class="imp-bucket ambar"><p class="imp-bucket-lab"><span class="imp-info c-warn" data-tip="imp-vuelvesolo">Vuelve solo</span></p>'
           + '<span class="imp-bucket-money">' + money(mRR) + '</span> '
           + '<span class="imp-bucket-pct">' + zR.toFixed(1) + '% de lo retenido</span>'
-          + '<p class="imp-bucket-note">Puede volver solo en el cierre anual del bróker (IB ene–mar, Schwab jun–sep).</p></div>'
-        + '<div class="imp-bucket coral"><p class="imp-bucket-lab">Solo si renuevas el W-8BEN</p>'
+          + '<p class="imp-bucket-note">En el cierre anual de tu bróker: IB ene–mar, Schwab jun–sep.</p></div>'
+        + '<div class="imp-bucket coral"><p class="imp-bucket-lab"><span class="imp-info c-coral" data-tip="imp-w8ben">Solo si renuevas el W-8BEN</span></p>'
           + '<span class="imp-bucket-money">' + money(mGG) + '</span> '
           + '<span class="imp-bucket-pct">' + zG.toFixed(1) + '% de lo retenido</span>'
-          + '<p class="imp-bucket-note">Nunca vuelve solo. Se repite cada año hasta renovar el formulario.</p></div>'
+          + '<p class="imp-bucket-note">Se repite cada año hasta que lo hagas.</p></div>'
       + '</div>'
       + '</div>';
   }
@@ -500,8 +562,9 @@
       + '. La retención NRA se concentra donde se concentra el rendimiento.</div>';
   }
 
-  // ---- 6. Notas explicativas — la letra chica de los peldaños 1-4, LITERAL. PR 3 la
-  //        manda a los ⓘ de las barras y las tarjetas; hasta entonces vive aquí visible. ----
+  // ---- 6. Modales ⓘ — la letra chica de los peldaños 1-4, movida LITERAL. El guard
+  //        `test_ninguna_frase_desaparece_al_moverla_a_un_modal` compara el texto
+  //        renderizado contra `main`: ni una frase se puede reescribir al moverla. ----
   var gCob = Pg;
   var sinRoc = gCob.sin_roc || [];
   var cobertura = sinRoc.length
@@ -512,22 +575,44 @@
             : 'los fondos <b>' + sinRoc.map(esc).join(', ') + '</b> figuran sin dato de ROC y tributan')
         + ' sobre el bruto completo.'
     : '';
-  var notas = '<div class="imp-corte-notas">'
-    + '<p class="imp-step-sub">El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.</p>'
-    + '<p class="imp-step-sub">Gravable = bruto × (1 − ROC). El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no paga impuesto hoy'
+  var modales = modalHTML("modal-imp-bruto", "Qué es", "El dividendo bruto", [
+      "El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. "
+        + "Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.",
+    ])
+    + modalHTML("modal-imp-roc", "Cómo se calcula", "Retorno de capital (ROC)", [
+      '<div class="imp-modal-formula"><span class="imp-mf-eq">Gravable = bruto × (1 − ROC)</span></div>',
+      "El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no "
+        + "paga impuesto hoy"
         + (rocEfectivo != null && rocEfectivo > 0.5
             ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver «Fondo por fondo»)'
             : '')
-        + '.' + cobertura + '</p>'
-    + (D.declarado && Pc
-        ? '<p class="imp-step-sub">Tu tasa de residencia (<b>' + esc(D.tasa_pct + '%') + '</b>) aplicada sobre la parte gravable. Es lo que un bróker debería retenerte si tu W-8BEN está al día.</p>'
-        : '')
-    + '<p class="imp-step-sub">Lo que el bróker descontó <b>al momento del cobro</b> del dividendo, según tu CSV.'
-        + (okEstado ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : '') + '</p>'
-    + '</div>';
+        + '.' + cobertura,
+    ])
+    + modalHTML("modal-imp-retenido", "Qué es", "Lo retenido al cobro", [
+      "Lo que el bróker descontó <b>al momento del cobro</b> del dividendo, según tu CSV."
+        + (okEstado ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : ''),
+    ]);
+  if (okEstado) {
+    modales += modalHTML("modal-imp-correcta", "Qué es esta cifra", "Retención correcta", [
+        "Tu tasa de residencia (<b>" + esc(D.tasa_pct + "%") + "</b>) aplicada sobre la parte "
+          + "gravable. Es lo que un bróker debería retenerte si tu W-8BEN está al día.",
+      ])
+      + modalHTML("modal-imp-vuelvesolo", "Cómo vuelve", "Exceso por ROC", [
+        "Puede volver solo en el cierre anual del bróker (IB ene–mar, Schwab jun–sep).",
+        "Al cerrar el año el fondo reclasifica parte de lo que repartió como retorno de "
+          + "capital. Sobre ese trozo no debía haber retención — y el bróker la corrige sin "
+          + "que tú hagas nada.",
+      ])
+      + modalHTML("modal-imp-w8ben", "Qué es el W-8BEN", "Gap de tratado / W-8BEN", [
+        "Nunca vuelve solo. Se repite cada año hasta renovar el formulario.",
+        "El <b>W-8BEN</b> le dice a tu bróker en qué país resides y qué tasa de tratado te "
+          + "toca. Caduca a los tres años; sin él vigente, el bróker retiene el 30% por "
+          + "defecto y esa diferencia no vuelve sola.",
+      ]);
+  }
 
   pasos.push(vHTML + bar1 + bar2 + bar3
-    + (yaDev.monto > 0.01 ? devLine : '') + ftpLine + conc + notas);
+    + (yaDev.monto > 0.01 ? devLine : '') + ftpLine + conc + modales);
   }
 
   if (VISTA_ACTIVA === "venta") {
@@ -547,6 +632,7 @@
     // la cola («Mismo fondo que el peldaño de arriba…») se fue con la mudanza — el
     // peldaño 4 vive en «El corte».
     var gBody = '';
+    var gVenderPartes = [];   // texto para el modal ⓘ de «¿Y cuando vendas?»
 
     // Las dos ganancias van como cajas hermanas, NO sumadas: son momentos distintos (al
     // cierre de la venta vs. a precio de hoy). Reusa `.imp-bucket` — misma rejilla que el
@@ -586,23 +672,22 @@
               + ' saber la base de costo' : '')
           + '.</p>';
       }
-      gBody += '<div class="imp-buckets dos">' + gCajas + '</div>'
-        + '<p class="imp-step-sub">'
-        + (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
+      gBody += '<div class="imp-buckets dos">' + gCajas + '</div>';
+      // Nota de método y nota de captura — PR 3 las manda al ⓘ de «¿Y cuando vendas?».
+      gVenderPartes.push(
+        (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
         + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
         + 'que costaron'
         + (gCaptura.length ? ' — salvo los fondos cuya base viene de tu captura, donde el '
             + 'método de lotes lo eligió tu bróker' : '')
-        + '.</p>';
-      // Procedencia de la base cuando no sale del CSV. Va junto a las cifras, no al pie: es
-      // parte de qué son, no una aclaración opcional.
+        + '.');
       if (gCaptura.length) {
-        gBody += '<p class="imp-step-sub">En <b>' + esc(gCaptura.join(", ")) + '</b> la base de '
+        gVenderPartes.push('En <b>' + esc(gCaptura.join(", ")) + '</b> la base de '
           + 'costo no sale de tu CSV sino de <b>la captura de tu bróker</b> — el archivo no '
           + 'llega hasta la compra original. Por eso de esos fondos aparece la ganancia '
           + '<b>latente y nada más</b>: la captura describe lo que tienes hoy, no lo que '
           + 'vendiste. Y como no trae fecha de compra, esas posiciones <b>no tienen '
-          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en «En tu país».</p>';
+          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en «En tu país».');
       }
     }
     // ── Base fiscal tras el ROC ────────────────────────────────────────────────
@@ -674,8 +759,12 @@
           + 'darte una mal medida.</div>';
       }
     }
+    if (gVenderPartes.length) {
+      gBody += modalHTML("modal-imp-vender", "Cómo se mide la base",
+        "La base de costo", gVenderPartes);
+    }
     pasos.push(stepRow("Peldaño 5", "¿Y cuando vendas?", G.retencion_eeuu, null,
-      gBody, "activo"));
+      gBody, "activo", gVenderPartes.length ? "imp-vender" : null));
   }
   }
 
@@ -704,31 +793,26 @@
         + 'propio. Es el dato que más se pierde el contribuyente: sin él, paga dos veces.</p></div>'
       + '</div>';
 
-    // El crédito NO es todo lo retenido: lo que vuelve por ROC nunca llegó a ser impuesto, y
-    // lo que no se pagó no se descuenta. Sin esta línea la cifra se infla — en el CSV de
-    // Schwab, $41.29 de $60.75. Se explica siempre que haya devolución medida.
+    // Aviso del crédito neto y aviso del ROC — PR 3 los manda al ⓘ de «¿Y en tu país?».
+    var lPartes = [];
     if (L.credito_eeuu.definitivo != null && L.credito_eeuu.vuelve_por_roc > 0.005) {
-      lBody += '<div class="imp-conc" style="border-left-color:var(--warn)">'
-        + 'Tu bróker te retuvo <b>' + money(L.credito_eeuu.monto) + '</b> al cobro, pero '
+      lPartes.push('Tu bróker te retuvo <b>' + money(L.credito_eeuu.monto) + '</b> al cobro, pero '
         + '<b>' + money(L.credito_eeuu.vuelve_por_roc) + '</b> vuelven solos al reclasificar el '
         + 'ROC. <b>Eso no es crédito</b>: lo que te devuelven nunca llegaste a pagarlo. El que '
         + 'puedes descontar es <b>' + money(L.credito_eeuu.definitivo) + '</b>. '
-        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.</div>';
+        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.');
     } else if (L.credito_eeuu.definitivo == null) {
-      lBody += '<div class="imp-conc">No podemos medir cuánto de esa retención vuelve por ROC, '
+      lPartes.push('No podemos medir cuánto de esa retención vuelve por ROC, '
         + 'así que <b>' + money(L.credito_eeuu.monto) + '</b> es el <b>techo</b> del crédito, no '
         + 'la cifra final: si tu bróker reclasifica ROC, parte volverá y esa parte no se '
-        + 'descuenta.</div>';
+        + 'descuenta.');
     }
-
-    // El ROC se nombra sin decidir por el contribuyente: que su país reconozca el retorno de
-    // capital de un ETF estadounidense lo decide SU ley, no la de EE.UU.
     if (L.dividendos.roc > 0.005) {
-      lBody += '<div class="imp-conc">De ese bruto, EE.UU. trató como renta '
+      lPartes.push('De ese bruto, EE.UU. trató como renta '
         + '<b>' + money(L.dividendos.gravable_eeuu) + '</b>; el resto, '
         + '<b>' + money(L.dividendos.roc) + '</b>, fue retorno de capital. '
         + '<b>Si tu país no reconoce el ROC de un fondo estadounidense, tu base es el bruto.</b> '
-        + 'Eso lo decide la ley de tu país — por eso mostramos las dos cifras y no elegimos una.</div>';
+        + 'Eso lo decide la ley de tu país — por eso mostramos las dos cifras y no elegimos una.');
     }
 
     // Ganancias realizadas, separadas por antigüedad: varios países cambian el tratamiento
@@ -754,7 +838,11 @@
       + 'portafolio. Con la base y el crédito de arriba, tu contador cierra la cuenta en un '
       + 'minuto. Poner un número aquí sería inventarte el dato que falta.</div>';
 
-    pasos.push(stepRow("Peldaño 6", "¿Y en tu país?", null, null, lBody, "activo"));
+    if (lPartes.length) {
+      lBody += modalHTML("modal-imp-pais", "La letra chica", "El crédito, de cerca", lPartes);
+    }
+    pasos.push(stepRow("Peldaño 6", "¿Y en tu país?", null, null, lBody, "activo",
+      lPartes.length ? "imp-pais" : null));
   }
 
   // Peldaños reservados de fases futuras — sin contenido inventado. Hoy la lista va vacía.
@@ -771,6 +859,15 @@
     var _elEsc = document.getElementById("impEscalera");
     if (_elEsc) _elEsc.remove();
   }
+
+  // Cableado de los modales ⓘ — después de `set()`, con los nodos ya en el DOM.
+  // Sin rama por vista: `wireModal` no hace nada si su `#modal-*` no está (cada vista
+  // solo construyó los suyos), y así el gate de las 6 ramas de render no cuenta esto.
+  [["modal-imp-bruto", "imp-bruto"], ["modal-imp-roc", "imp-roc"],
+   ["modal-imp-retenido", "imp-retenido"], ["modal-imp-correcta", "imp-correcta"],
+   ["modal-imp-vuelvesolo", "imp-vuelvesolo"], ["modal-imp-w8ben", "imp-w8ben"],
+   ["modal-imp-vender", "imp-vender"], ["modal-imp-pais", "imp-pais"]
+  ].forEach(function (m) { wireModal(m[0], '[data-tip="' + m[1] + '"]'); });
 
   // ---- tabla por fondo ----
   if (VISTA_ACTIVA === "fondos") {
@@ -818,6 +915,34 @@
     + (conBuckets ? totBuckets : '')
     + '</tr>';
   set("impTabla", head + body + tot);
+
+  // Leyenda de la tabla en un solo modal ⓘ (disparado desde el título de la vista) — una
+  // `.mf-table` con las columnas y, al final, `no publ.` y `—`. El lector recibe el
+  // vocabulario entero de una vez en vez de un ⓘ por cabecera.
+  var filas = [
+    ["Fondo", "El ticker de la posición."],
+    ["Bruto", "El dividendo declarado, antes de cualquier retención."],
+    ["ROC", "Qué parte del reparto fue retorno de capital (tu propio dinero de vuelta)."],
+    ["Gravable", "Lo que sí es renta: bruto menos el ROC."],
+  ];
+  if (D.declarado) filas.push(["Te toca", "Tu tasa de residencia aplicada sobre la parte gravable."]);
+  filas.push(["Al cobro", "Lo que el bróker te descontó al pagar el dividendo."]);
+  if (hayDevuelto) filas.push(["Devuelto", "Lo que el bróker ya te reintegró al reclasificar el ROC."]);
+  if (conBuckets) filas.push(
+    ["Correcta", "De lo retenido, lo que corresponde a tu tasa: permanente."],
+    ["ROC", "De lo retenido, el exceso que vuelve solo cuando el bróker reclasifica el ROC."],
+    ["W-8BEN", "De lo retenido, el gap de tratado: no vuelve sin renovar el W-8BEN."]);
+  filas.push(
+    ["no publ.", "El fondo no publica el dato (o su CSV no permite separarlo con seguridad)."],
+    ["—", "No aplica a esa posición, o no hay dato."]);
+  var leyenda = '<div class="imp-modal-formula"><table class="imp-mf-table">';
+  filas.forEach(function (f) {
+    leyenda += '<tr><td><b>' + esc(f[0]) + '</b></td><td>' + esc(f[1]) + '</td></tr>';
+  });
+  leyenda += '</table></div>';
+  set("impTablaExtra",
+    modalHTML("modal-imp-tabla", "Qué significa cada columna", "Fondo por fondo", [leyenda]));
+  wireModal("modal-imp-tabla", '[data-tip="imp-tabla"]');
   } else {
     var _elBlock = document.getElementById("impBlock");
     if (_elBlock) _elBlock.remove();
@@ -841,6 +966,11 @@
     } else if (A.tiene_1042s && A.veredicto === "devuelto") {
       rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
     }
+    // Cuándo llega — sin gráfico: la app no sabe tu bróker (no hay clave en `impuestos_data`)
+    // y un eje genérico mezclaría el año que analizaste con este. Una frase lo dice mejor.
+    rutaA += '<p class="imp-ruta-p"><b>Cuándo llega:</b> si tu bróker es Interactive Brokers, '
+      + 'entre enero y marzo; si es Schwab, entre junio y septiembre. Es el cierre fiscal del '
+      + 'año que analizaste, no de este.</p>';
     rutaA += '</div>';
   }
 
