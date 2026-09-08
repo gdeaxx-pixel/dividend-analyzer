@@ -78,6 +78,24 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
 > primer sitio donde mirar es la última fila de los parquets.
 
+> **Reincidencia 2026-09-05, y ya no hay que tropezarse con ella.** Volvió a pasar, con otro
+> síntoma: `67365d1` («refresh ROC 19a») recalculó el `weighted_pct` de todos los fondos
+> (MSTY 71.94 → 72.31) y movió unos centavos toda cifra que cae al respaldo de
+> `logic.py:3509` — casilla 9, peldaño 2, crédito EE.UU. **6 tests en rojo sobre `main`
+> durante tres días**, descubiertos de casualidad al mergear el #116, que no tenía nada que
+> ver. Producción llevaba desplegado ese dato desde el sábado. Aquí NO había bug: el cálculo
+> estaba bien y el dato fresco era el correcto; lo roto era la expectativa hardcodeada.
+> Cerrado en el #117 (este): los dos workflows de refresco corren la suite **después** de
+> commitear y avisan por Telegram si queda roja. No bloquean el push a propósito — congelar
+> el refresco de datos por una expectativa hardcodeada sería peor que el problema.
+> Alcance real de esa red, medido: los tests que dependen de `real_examples/` (datos privados,
+> no versionados) **se saltan en CI** — de los 6 que rompieron, allí solo muerde
+> `test_credito_no_cuenta_lo_que_el_broker_devuelve`. Alcanza para el aviso; un verde en CI no
+> sustituye una corrida local.
+>
+> El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
+> **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
+
 Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
 una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
