@@ -55,6 +55,52 @@ jobs:
             git push
           fi
 
+      # ── Red del incidente #95 ────────────────────────────────────────────────────────────
+      # El commit de arriba va DIRECTO a main y Streamlit Cloud lo despliega solo: no pasa por
+      # PR ni por review. Cuando el dato fresco mueve una cifra que algún test lleva
+      # hardcodeada, main se queda rojo y nadie se entera hasta que un humano corre pytest por
+      # otra razón (pasó el 2026-09-05: 6 rojos descubiertos tres días después, al mergear el
+      # #116, que no tenía nada que ver).
+      #
+      # La suite NO bloquea el push a propósito: el cálculo está bien y el dato fresco es el
+      # correcto — congelar el refresco por una expectativa hardcodeada sería peor que el
+      # problema. Se commitea, se corre la suite, y si queda roja avisa por Telegram.
+      #
+      # OJO con el alcance: los tests que dependen de `real_examples/` (datos privados de
+      # broker, no versionados) se SALTAN en CI. Medido el 2026-09-08 sobre el incidente real:
+      # de los 6 tests que rompió el refresh, 5 se saltan aquí y solo muerde
+      # `test_credito_no_cuenta_lo_que_el_broker_devuelve` (usa un fixture sintético
+      # versionado). Alcanza para disparar el aviso, pero un verde en CI NO significa que la
+      # suite completa esté verde — eso sigue pidiendo una corrida local.
+      - name: Correr la suite sobre el dato fresco
+        id: suite
+        if: always()
+        continue-on-error: true    # avisa, no bloquea: el dato fresco ya está commiteado
+        run: |
+          pip install pytest
+          set +e
+          python -m pytest -q > suite.log 2>&1
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          tail -40 suite.log
+          grep -E "^(FAILED|ERROR)" suite.log | head -15 > suite_failures.txt || true
+
+      - name: Avisar por Telegram si la suite quedó roja
+        if: always()
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          RC="${{ steps.suite.outputs.rc }}"
+          if [ -z "$RC" ] || [ "$RC" = "0" ]; then echo "Suite verde (o no corrió)."; exit 0; fi
+          if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Sin secrets de Telegram, omito."; exit 0; fi
+          RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY=$(head -c 1200 suite_failures.txt)
+          MSG=$(printf '🔴 <b>Dividend Analyzer</b>: el refresco automático dejó la suite en rojo sobre <b>main</b> (y main ya está desplegado).\n\n<pre>%s</pre>\nSuele ser una expectativa hardcodeada que el dato fresco movió unos centavos, no un bug — mirá el <code>asof</code> del YAML / la última fila de los parquets. Run: %s' "$BODY" "$RUN")
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d chat_id="${CHAT}" -d parse_mode=HTML --data-urlencode "text=${MSG}" >/dev/null
+
       - name: Avisar por Telegram si el refresco fallo
         if: failure()
         env:

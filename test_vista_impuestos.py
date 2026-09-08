@@ -403,11 +403,19 @@ def _impuestos_demo(alias):
 
 
 def test_cruce_peldano2_schwab2_exacto():
-    """`?demo=schwab2`: MSTY (19a 74.18 %) + SCHB/XLK sin dato. Determinista."""
+    """`?demo=schwab2`: MSTY (19a) + SCHB/XLK sin dato. Determinista.
+
+    El monto gravable se mueve unos centavos con cada refresh de knowledge/roc_19a.yaml: las
+    distribuciones de MSTY sin aviso 19a a ±7 días caen al `weighted_pct` del fondo, que el
+    refresh recalcula cada sábado (71.94 → 72.31 el 2026-09-05). El valor de abajo corresponde
+    al YAML `asof: 2026-09-05`; si vuelve a fallar por centavos, mirá primero ese asof —
+    ver el comentario largo sobre `test_casilla9_no_regresion_con_pais` y
+    dividend-analyzer-app/CLAUDE.md, incidente #95."""
     datos = _impuestos_demo("schwab2")
     g = datos["peldanos"]["gravable"]
     assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
-    assert g["monto"] == pytest.approx(126.02, abs=0.05)
+    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 126.02 -> 125.81
+    assert g["monto"] == pytest.approx(125.81, abs=0.05)
     assert set(g["sin_roc"]) == {"SCHB", "XLK"}
     assert (g["cubiertos"], g["total"]) == (1, 3)
 
@@ -490,16 +498,36 @@ def test_casilla9_respeta_el_guard_implausible(monkeypatch):
         assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(0.0, abs=0.005)
 
 
+# ── Por qué estos 4 números se mueven solos (medido 2026-09-08) ──────────────────────────
+# Salen de `logic._roc_events_from_19a`, que empareja cada distribución con su aviso 19a a
+# ±7 días y, para las que no encuentran aviso en esa ventana, cae al `weighted_pct` del fondo
+# (logic.py:3509). Ese weighted_pct lo RECALCULA el refresh automático de los sábados para
+# TODOS los tickers (MSTY 71.94 → 72.31 el 2026-09-05), así que las cifras derivan unos
+# centavos sin que haya ningún bug. Aislado en los dos sentidos: con el YAML fresco pero el
+# weighted_pct viejo los valores anteriores seguían pasando; con el weighted_pct fresco y sin
+# el aviso nuevo del 2026-09-02, fallaban. El driver es el weighted_pct, no el aviso nuevo.
+# El juego actual corresponde al YAML `asof: 2026-09-05`.
+#
+# Se mantienen HARDCODEADOS a propósito: recalcularlos aquí desde el mismo pipeline que
+# auditan los volvería auto-referenciales (pasarían aunque impuestos_data se rompiera entera).
+# Sí muerden lo que dicen vigilar — mutante `pct = weighted + 5` en el respaldo de
+# logic.py:3509 ⇒ 5 de 6 en rojo. Lo que NO vigilan: `_ticker_roc_fraction` (el promedio de
+# los 12 avisos recientes) puede anularse a 0 y los 6 siguen verdes — ese guard vive en
+# test_logic.py::test_ticker_roc_fraction_*, no aquí.
+# Si fallan por centavos tras un `chore: refresh` → actualizar número y asof; CLAUDE.md, #95.
 @pytest.mark.parametrize("alias,casilla9_esp", [
     ("schwab_1", 0.00),
-    ("schwab_2", 77.95),
-    ("schwab_daniel", 81.22),
+    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 77.95 -> 78.01
+    ("schwab_2", 78.01),
+    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 81.22 -> 81.29
+    ("schwab_daniel", 81.29),
+    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 1340.21 -> 1339.96.
     # ACTUALIZADO 2026-09-02 (tolerancia del umbral del ROC): 1314.14 -> 1340.21. La
     # diferencia son los $26.07 de PLTY, que con captura caía a la ruta 'broker' por 72
     # centavos y quedaba «sin dato». Ese 1314.14 NO era la cifra buena: era la del cliente
     # que subía la foto del bróker, mientras el que no la subía veía 1340.21. El nuevo
     # valor es el de AMBAS rutas — ver `test_casilla9_converge_con_y_sin_captura`.
-    ("ib_1", 1340.21),
+    ("ib_1", 1339.96),
 ])
 def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     """No-regresión: los 4 casos reales con Colombia declarada dan la misma casilla 9 que
@@ -710,15 +738,18 @@ def test_credito_definitivo_mas_lo_que_vuelve_es_lo_retenido(monkeypatch, fixtur
 
 def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
     """GROUND TRUTH de `schwab_synth_1` (el CSV que se subió a producción el 2026-09-02):
-    retenido $60.75, de los que la casilla 9 devuelve $41.29 ⇒ crédito real **$19.46**.
+    retenido $60.75, de los que la casilla 9 devuelve $41.27 ⇒ crédito real **$19.48**.
+    (Los dos últimos se mueven unos centavos con cada refresh de 19a, vía el respaldo al
+    `weighted_pct` de logic.py:3509; valores del YAML `asof: 2026-09-05`.)
 
     Antes de este arreglo la vista presentaba los $60.75 enteros como «ya pagado a EE.UU.»,
     inflando 3.1× la cifra que el cliente llevaría a su contador."""
     d = _datos_f4("schwab_synth_1", monkeypatch)
     c = d["impuesto_local"]["credito_eeuu"]
     assert c["monto"] == pytest.approx(60.75, abs=0.01)
-    assert c["vuelve_por_roc"] == pytest.approx(41.29, abs=0.01)
-    assert c["definitivo"] == pytest.approx(19.46, abs=0.01)
+    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 41.29 -> 41.27 y 19.46 -> 19.48
+    assert c["vuelve_por_roc"] == pytest.approx(41.27, abs=0.01)
+    assert c["definitivo"] == pytest.approx(19.48, abs=0.01)
     assert c["definitivo"] < c["monto"], "el crédito no puede ser todo lo retenido"
 
 

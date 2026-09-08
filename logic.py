@@ -5559,7 +5559,10 @@ def _ticker_roc_fraction(ticker, results=None):
     El histórico ponderado sobreestima el escudo fiscal forward cuando el fondo viene
     reduciendo su ROC recientemente (ej. MSTY: weighted ~72% vs. promedio de los últimos
     12 avisos ~48%, 2026-07-13) — por eso se prefiere el dato reciente para proyectar hacia
-    adelante. El bloque retrospectivo de Salud del NAV NO usa esta función: ahí interesa el %
+    adelante. OJO, esa brecha se cerró: al 2026-09-05 MSTY va weighted 72.31 vs. promedio
+    reciente 68.09 (y el de los 4 últimos avisos, 74.05, ya lo pasó) — el fondo lleva 8 de sus
+    12 avisos recientes al ~97-99% de ROC. La preferencia por el dato reciente sigue siendo
+    correcta; lo que ya no se puede dar por hecho es que sea el MENOR de los dos. El bloque retrospectivo de Salud del NAV NO usa esta función: ahí interesa el %
     de CADA distribución de la ventana, no un promedio forward. (Ese bloque se apoyaba en
     `build_roc_aware_withholding`, retirada el 2026-08-21 al quedarse sin consumidor vivo.)
     """

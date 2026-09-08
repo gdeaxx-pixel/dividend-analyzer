@@ -3098,10 +3098,31 @@ def test_ticker_roc_fraction_msty_recent_average_not_weighted():
     promediar bien (una aserción de rango tipo `frac < weighted` no sirve: pasaría igual con
     0% o 5%, que serían valores rotos).
 
-    Segundo invariante, este sí de negocio: el weighted_pct histórico de MSTY es alto (mucho ROC
-    acumulado desde su lanzamiento) y consistentemente MAYOR que el promedio reciente — la
-    función debe reflejar el dato reciente (forward), no diluirlo con todo el histórico. Si algún
-    día desaparece esa brecha, revisar el perfil del fondo, no relajar el test."""
+    ── 2026-09-08: se retiró el segundo invariante de este test ──────────────────────────────
+    Hasta hoy había aquí una segunda aserción, `frac < weighted_pct - 10`: el weighted_pct
+    histórico de MSTY (ROC acumulado desde su lanzamiento) venía siendo consistentemente MAYOR
+    que el promedio reciente, y se usaba como canario de que la función mira el dato reciente
+    (forward) y no lo diluye con todo el histórico. Su propio docstring decía que si la brecha
+    desaparecía había que revisar el perfil del fondo, no relajar el test. **La brecha
+    desapareció y el perfil del fondo cambió de verdad**, medido sobre el YAML del 2026-09-05:
+
+        weighted_pct .................. 72.31
+        promedio 12 recientes ......... 68.09   (era el que debía quedar por debajo de 62.31)
+        promedio de los 56 avisos ..... 69.67   (histórico completo: ya converge con el reciente)
+        promedio 4 recientes .......... 74.05   (ya POR ENCIMA del weighted_pct)
+
+    Y no es ruido: moviendo la ventana de 12 semana a semana, el promedio reciente va
+    40.3 → 48.0 → 53.2 → 59.9 → 68.1 en las últimas 10 semanas. MSTY imprimió ~97-99% de ROC en
+    8 de los 12 avisos más recientes (0% solo el 19-ago, 1-jul y 10-jun). La brecha no se cerró:
+    se está invirtiendo, así que ampliar el margen a -5 compraba una o dos semanas y volvía a
+    romper. Ojo: `knowledge/roc_health_history.yaml` NO vio este cambio (MSTY lleva
+    'destructive' sin interrupción desde junio) porque sigue el weighted_pct, que apenas se
+    movió — el giro está en la ventana reciente.
+
+    El mutante que esa aserción pretendía cazar («la función devuelve weighted_pct o el promedio
+    del histórico completo en vez de los 12 recientes») ya lo caza con datos sintéticos
+    `test_ticker_roc_fraction_uses_average_of_last_12_notices` (3 avisos viejos al 30%, 12
+    recientes al 60%, weighted_pct 30) — ese sí muerde sin depender de qué haga YieldMax."""
     info = logic.load_roc_19a().get("MSTY")
     if not info or not info.get("per_distribution") or len(info["per_distribution"]) < 3:
         pytest.skip("sin knowledge/roc_19a.yaml con per_distribution para MSTY")
@@ -3120,11 +3141,6 @@ def test_ticker_roc_fraction_msty_recent_average_not_weighted():
     assert frac == pytest.approx(expected, abs=0.01), (
         f"debe ser el promedio de los {len(recent)} avisos 19a más recientes "
         f"({expected:.2f}%), obtenido {frac:.2f}%")
-
-    weighted = info.get("weighted_pct") or 0.0
-    assert frac < weighted - 10, (
-        f"el promedio reciente ({frac:.1f}%) debe quedar bien por debajo del weighted_pct "
-        f"histórico ({weighted:.1f}%) — si ya no es así, el perfil de MSTY cambió de verdad.")
 
 
 # ── 1042-S: extracción del crédito ROC (casilla 10, income code 37) ───────────
