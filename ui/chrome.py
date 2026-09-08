@@ -90,9 +90,9 @@ class Ruta:
 
 
 def _vistas(categoria: str) -> dict:
-    """Vistas de una categoría. Comparación y Método tienen las suyas; las categorías
-    «Largo Plazo» solo trae Cash flow (decisión de Daniel 2026-08-25): Salud NAV y
-    Hoja Excel quedan exclusivas de Dividendos."""
+    """Vistas de una categoría. Comparación y Método tienen las suyas; «Largo Plazo» y
+    «Dividendos» solo traen Cash flow (decisión de Daniel 2026-09-08): Salud NAV y Hoja
+    Excel se retiran de la navegación — se llega directo al ticker desde la categoría."""
     if categoria == "comparacion":
         return dict(nav.CMP_VIEWS)
     if categoria == "metodo":
@@ -101,7 +101,7 @@ def _vistas(categoria: str) -> dict:
         return dict(heredadas.VIEWS)
     if categoria == impuestos.CAT_CLAVE:
         return dict(impuestos.VIEWS)
-    if categoria == "largo":
+    if categoria in ("largo", "dividendos"):
         return {"viaje": nav.SECTIONS["viaje"]}
     return dict(nav.SECTIONS)
 
@@ -135,7 +135,7 @@ def _orden(categoria: str) -> tuple:
         return heredadas.VIEW_ORDER
     if categoria == impuestos.CAT_CLAVE:
         return impuestos.VIEW_ORDER
-    if categoria == "largo":
+    if categoria in ("largo", "dividendos"):
         return ("viaje",)
     return tuple(nav.SECTION_ORDER)
 
