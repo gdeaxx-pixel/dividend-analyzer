@@ -592,3 +592,138 @@ def test_modo_ausente_avisa():
     at.secrets["acceso"] = {"allowlist_pat": "pat-fake", "hmac_key": CLAVE_SECRETS}  # sin "modo"
     at.run()
     assert "modo_invalido" in at.session_state["avisos"]
+
+
+# ============================================================
+# Auditoría 2 (fase2-correcciones-2.md): la puerta nunca cierra
+# por un fallo técnico
+# ============================================================
+
+
+def test_lista_generated_at_sin_zona_invalida():
+    lista_sin_zona = _lista(generated_at="2026-09-13T17:14:48")  # sin offset
+    assert acceso._lista_valida(lista_sin_zona) is False
+
+
+def test_lista_entries_no_dict_invalida():
+    lista_mala = {
+        "version": 1,
+        "generated_at": "2026-09-13T12:00:00+00:00",
+        "product_id": 4903539,
+        "count": 1,
+        "entries": {"x": "vigente"},  # el valor debería ser un dict
+    }
+    assert acceso._lista_valida(lista_mala) is False
+
+    reloj = {"t": _dt("2026-09-13T12:00:00+00:00")}
+    cache = acceso.ListaCache(fetch=lambda: lista_mala, ahora=lambda: reloj["t"])
+    lista, origen = cache.obtener()
+    assert origen == "ninguna"
+    assert lista is None
+
+
+def test_lista_hasta_mal_formado_invalida():
+    h = acceso.hash_correo("cliente@ejemplo.com", CLAVE)
+    lista_mala = _lista({h: {"estado": "gracia", "hasta": "15/09"}})
+    assert acceso._lista_valida(lista_mala) is False
+
+
+def _script_puerta_error_interno():
+    import streamlit as st
+
+    import acceso
+
+    def _usuario_que_falla():
+        raise RuntimeError("boom")
+
+    acceso._usuario_actual = _usuario_que_falla
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_error_interno_abre():
+    at = AppTest.from_function(_script_puerta_error_interno)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert len(at.exception) == 0
+    assert at.session_state["resultado"] is True
+
+
+def test_puerta_toml_invalido_abre(monkeypatch, tmp_path):
+    import streamlit.config as st_config
+    from streamlit.runtime.secrets import Secrets
+
+    archivo_malo = tmp_path / "secrets.toml"
+    archivo_malo.write_text("esto no es TOML valido [[[")
+
+    original_get_option = st_config.get_option
+
+    def _fake_get_option(key):
+        if key == "secrets.files":
+            return [str(archivo_malo)]
+        return original_get_option(key)
+
+    monkeypatch.setattr(st_config, "get_option", _fake_get_option)
+    monkeypatch.setattr(acceso.st, "secrets", Secrets())
+
+    resultado = acceso.puerta()
+    assert resultado is True
+
+
+def _script_puerta_normal():
+    import streamlit as st
+
+    import acceso
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def _script_puerta_doble_stop():
+    import streamlit as st
+
+    import acceso
+
+    def _usuario_que_para():
+        st.stop()
+
+    acceso._usuario_actual = _usuario_que_para
+
+    st.session_state["antes"] = True
+    acceso.puerta()
+    st.session_state["nunca_llega"] = True
+
+
+def test_red_no_traga_rerun():
+    at_login = AppTest.from_function(_script_puerta_normal)
+    at_login.secrets["auth"] = {}
+    at_login.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at_login.run()
+    assert at_login.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+
+    at_stop = AppTest.from_function(_script_puerta_doble_stop)
+    at_stop.secrets["auth"] = {}
+    at_stop.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at_stop.run()
+    assert at_stop.session_state["antes"] is True
+    assert "nunca_llega" not in at_stop.session_state
+
+
+def _script_puerta_error_con_correo():
+    import acceso
+
+    def _usuario_que_falla():
+        raise RuntimeError("fallo con a@ejemplo.com adentro")
+
+    acceso._usuario_actual = _usuario_que_falla
+    acceso.puerta()
+
+
+def test_red_no_imprime_mensaje(capsys):
+    at = AppTest.from_function(_script_puerta_error_con_correo)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    capturado = capsys.readouterr()
+    assert "a@ejemplo.com" not in capturado.out
+    assert "a@ejemplo.com" not in capturado.err
