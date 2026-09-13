@@ -38,7 +38,7 @@ cd "/Users/danielzambrano/Desktop/Habilidades de agentes/dividend-analyzer-app" 
 Esta app **no se embebe** en un iframe: se enlaza en pestaña nueva a
 `https://dividend-analyzer-y32sicu2utt6xgcy3fhrvp.streamlit.app/`. El login (`st.login`) no
 funciona dentro de un iframe y la subida de archivos requiere XSRF activo, que no funciona
-dentro de un iframe de otro origen.
+dentro de un iframe de otro sitio.
 
 ## Puerta de acceso (Fase 2)
 
