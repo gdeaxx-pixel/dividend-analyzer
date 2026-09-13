@@ -16,7 +16,8 @@ import stale_guard
 # Los módulos se importan como tales antes de sacarles nombres sueltos: así el guardián
 # los ve todos ya cargados y puede recargarlos si el disco cambió bajo el proceso
 # (despliegue sin reinicio en Streamlit Cloud). Estos cuatro arrastran el resto de `ui/`.
-import logic  # noqa: F401  — lo vigila el guardián
+import acceso  # noqa: F401  — lo vigila el guardián
+import logic  # noqa: F401  — ídem
 from ui import carga, chrome, pie, vistas  # noqa: F401  — ídem
 
 # Anotar en la 1ª corrida y comparar en las siguientes tiene que pasar DESPUÉS de los
@@ -74,6 +75,9 @@ notificar_progreso(con_datos)
 # primero, el primer pintado de esta corrida saldría sin tokens.
 st.session_state.setdefault("vd_tema", "Claro")
 inyectar_estilos(st.session_state["vd_tema"])
+
+if not acceso.puerta():
+    st.stop()
 
 render_encabezado(con_datos)
 
