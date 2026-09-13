@@ -9,7 +9,7 @@ import hmac
 import json
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Mapping, Optional
 
 import streamlit as st
@@ -52,31 +52,38 @@ def resolver_modo(secrets: Mapping) -> str:
 
 
 def _lista_valida(lista) -> bool:
-    if not isinstance(lista, dict):
-        return False
-    if lista.get("version") != 1:
-        return False
-    if lista.get("product_id") != PRODUCT_ID_ESPERADO:
-        return False
-    entries = lista.get("entries")
-    if not isinstance(entries, dict):
-        return False
-    if lista.get("count") != len(entries):
-        return False
-    for datos in entries.values():
-        estado = datos.get("estado")
-        if estado not in ("vigente", "gracia"):
-            return False
-        if estado == "gracia" and "hasta" not in datos:
-            return False
-    generated_at = lista.get("generated_at")
-    if not isinstance(generated_at, str):
-        return False
     try:
-        datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-    except ValueError:
+        if not isinstance(lista, dict):
+            return False
+        if lista.get("version") != 1:
+            return False
+        if lista.get("product_id") != PRODUCT_ID_ESPERADO:
+            return False
+        entries = lista.get("entries")
+        if not isinstance(entries, dict):
+            return False
+        if lista.get("count") != len(entries):
+            return False
+        for datos in entries.values():
+            if not isinstance(datos, dict):
+                return False
+            estado = datos.get("estado")
+            if estado not in ("vigente", "gracia"):
+                return False
+            if estado == "gracia":
+                hasta = datos.get("hasta")
+                if not isinstance(hasta, str):
+                    return False
+                date.fromisoformat(hasta)
+        generated_at = lista.get("generated_at")
+        if not isinstance(generated_at, str):
+            return False
+        generado = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        if generado.tzinfo is None:
+            return False
+        return True
+    except Exception:
         return False
-    return True
 
 
 def lista_vieja(lista, ahora: datetime) -> bool:
@@ -282,11 +289,16 @@ def _aviso_gracia(gracia_hasta: str) -> None:
 
 def puerta() -> bool:
     try:
-        secrets = st.secrets
-        modo = resolver_modo(secrets)
-        acceso_secrets = secrets.get("acceso", {})
-    except FileNotFoundError:
+        return _puerta()
+    except Exception as e:
+        print(f"acceso: puerta abierta por error {type(e).__name__}")
         return True
+
+
+def _puerta() -> bool:
+    secrets = st.secrets
+    modo = resolver_modo(secrets)
+    acceso_secrets = secrets.get("acceso", {})
 
     clave = acceso_secrets.get("hmac_key", "")
     pat = acceso_secrets.get("allowlist_pat", "")
