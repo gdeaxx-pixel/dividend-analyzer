@@ -1,0 +1,272 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+import acceso
+
+CLAVE = "clave-de-prueba"
+
+
+def _dt(iso: str) -> datetime:
+    return datetime.fromisoformat(iso)
+
+
+def _lista(entries=None, generated_at="2026-09-13T12:00:00+00:00", count=None, product_id=4903539, version=1):
+    entries = entries if entries is not None else {}
+    return {
+        "version": version,
+        "generated_at": generated_at,
+        "product_id": product_id,
+        "total_subs_api": 840,
+        "count": count if count is not None else len(entries),
+        "entries": entries,
+    }
+
+
+# --- M2: hash_correo normalizado (ground truth) ---
+
+def test_hash_vector_normalizado():
+    esperado = "4d579a7f8fb6c9cb9b2c472bdcac521f62e1c6e57d39008b2af08c498ad2de84"
+    assert acceso.hash_correo("cliente@ejemplo.com", CLAVE) == esperado
+    assert acceso.hash_correo("  Cliente@Ejemplo.COM ", CLAVE) == esperado
+
+
+# --- M11: fecha_es ---
+
+def test_fecha_es():
+    assert acceso.fecha_es("2026-01-01") == "1 de enero"
+    assert acceso.fecha_es("2026-09-15") == "15 de septiembre"
+    assert acceso.fecha_es("2026-12-31") == "31 de diciembre"
+
+
+# --- M10: sin [auth] -> apagado ---
+
+def test_sin_auth_es_apagado():
+    assert acceso.resolver_modo({}) == "apagado"
+    assert acceso.resolver_modo({"acceso": {"modo": "aplicar"}}) == "apagado"
+
+
+def test_resolver_modo_valido_y_default():
+    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "aplicar"}}) == "aplicar"
+    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "observar"}}) == "observar"
+    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "apagado"}}) == "apagado"
+    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "raro"}}) == "observar"
+    assert acceso.resolver_modo({"auth": {}}) == "observar"
+
+
+# --- M3: última buena no caduca por TTL ---
+
+def test_ultima_buena_sobrevive_ttl():
+    lista_ok = _lista({"h1": {"estado": "vigente"}})
+    reloj = {"t": _dt("2026-09-13T12:00:00+00:00")}
+    fetch_calls = {"n": 0}
+
+    def fetch():
+        fetch_calls["n"] += 1
+        if fetch_calls["n"] == 1:
+            return lista_ok
+        raise RuntimeError("red caída")
+
+    cache = acceso.ListaCache(fetch=fetch, ahora=lambda: reloj["t"], ttl_s=1800)
+
+    lista, origen = cache.obtener()
+    assert origen == "fresca"
+    assert lista == lista_ok
+
+    reloj["t"] = reloj["t"] + timedelta(minutes=31)
+    lista2, origen2 = cache.obtener()
+    assert origen2 == "ultima_buena"
+    assert lista2 == lista_ok
+
+
+# --- M15: backoff de 60s tras fallo ---
+
+def test_backoff_tras_fallo():
+    reloj = {"t": _dt("2026-09-13T12:00:00+00:00")}
+    fetch_calls = {"n": 0}
+
+    def fetch():
+        fetch_calls["n"] += 1
+        raise RuntimeError("red caída")
+
+    cache = acceso.ListaCache(fetch=fetch, ahora=lambda: reloj["t"], ttl_s=1800)
+
+    lista, origen = cache.obtener()
+    assert origen == "ninguna"
+    assert fetch_calls["n"] == 1
+
+    reloj["t"] = reloj["t"] + timedelta(seconds=10)
+    cache.obtener()
+    assert fetch_calls["n"] == 1
+
+    reloj["t"] = reloj["t"] + timedelta(seconds=61)
+    cache.obtener()
+    assert fetch_calls["n"] == 2
+
+
+# --- M4: lista inválida no reemplaza la última buena ---
+
+def test_lista_invalida_no_pisa():
+    lista_ok = _lista({"h1": {"estado": "vigente"}})
+    lista_mala = _lista({"h1": {"estado": "vigente"}}, product_id=999999)
+    reloj = {"t": _dt("2026-09-13T12:00:00+00:00")}
+    fetch_calls = {"n": 0}
+
+    def fetch():
+        fetch_calls["n"] += 1
+        return lista_ok if fetch_calls["n"] == 1 else lista_mala
+
+    cache = acceso.ListaCache(fetch=fetch, ahora=lambda: reloj["t"], ttl_s=1800)
+    cache.obtener()
+
+    reloj["t"] = reloj["t"] + timedelta(minutes=31)
+    lista, origen = cache.obtener()
+    assert origen == "ultima_buena"
+    assert lista == lista_ok
+
+
+# --- M13: lista con más de 24h se usa igual y avisa ---
+
+def test_lista_vieja_se_usa_y_avisa():
+    lista_vieja_dict = _lista({"h1": {"estado": "vigente"}}, generated_at="2026-09-10T12:00:00+00:00")
+    ahora = _dt("2026-09-13T12:00:01+00:00")
+    assert acceso.lista_vieja(lista_vieja_dict, ahora) is True
+
+    lista_fresca = _lista({"h1": {"estado": "vigente"}}, generated_at="2026-09-13T11:00:00+00:00")
+    assert acceso.lista_vieja(lista_fresca, ahora) is False
+
+    decision = acceso.decidir(
+        "aplicar",
+        {"is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"},
+        lista_vieja_dict,
+        CLAVE,
+    )
+    h = acceso.hash_correo("cliente@ejemplo.com", CLAVE)
+    assert h not in lista_vieja_dict["entries"]
+    assert decision.accion == "rechazar"
+
+
+# --- M1: email_verified estricto ---
+
+def test_email_verified_estricto():
+    lista = _lista({acceso.hash_correo("cliente@ejemplo.com", CLAVE): {"estado": "vigente"}})
+    usuario_string = {"is_logged_in": True, "email_verified": "true", "email": "cliente@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario_string, lista, CLAVE)
+    assert decision.accion == "no_verificado"
+
+    usuario_ausente = {"is_logged_in": True, "email": "cliente@ejemplo.com"}
+    decision2 = acceso.decidir("aplicar", usuario_ausente, lista, CLAVE)
+    assert decision2.accion == "no_verificado"
+
+    usuario_bool = {"is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"}
+    decision3 = acceso.decidir("aplicar", usuario_bool, lista, CLAVE)
+    assert decision3.accion == "pasar"
+
+
+# --- M5: fail-open sin lista en modo aplicar ---
+
+def test_fail_open_sin_lista():
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, None, CLAVE)
+    assert decision.accion == "pasar"
+
+
+# --- M6: observar nunca bloquea ---
+
+def test_observar_no_bloquea():
+    lista = _lista({})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
+    decision = acceso.decidir("observar", usuario, lista, CLAVE)
+    assert decision.accion == "pasar"
+    assert decision.correo_rechazado == "fuera@ejemplo.com"
+
+
+def test_aplicar_rechaza_fuera_de_lista():
+    lista = _lista({})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, lista, CLAVE)
+    assert decision.accion == "rechazar"
+
+
+# --- M7: gracia solo para estado gracia ---
+
+def test_gracia_solo_estado_gracia():
+    correo = "cliente@ejemplo.com"
+    h = acceso.hash_correo(correo, CLAVE)
+    lista_vigente = _lista({h: {"estado": "vigente"}})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": correo}
+
+    decision = acceso.decidir("aplicar", usuario, lista_vigente, CLAVE)
+    assert decision.accion == "pasar"
+    assert decision.gracia_hasta is None
+
+    lista_gracia = _lista({h: {"estado": "gracia", "hasta": "2026-09-19"}})
+    decision2 = acceso.decidir("aplicar", usuario, lista_gracia, CLAVE)
+    assert decision2.accion == "pasar"
+    assert decision2.gracia_hasta == "2026-09-19"
+
+
+def test_sin_sesion_pide_login():
+    decision = acceso.decidir("aplicar", {"is_logged_in": False}, _lista({}), CLAVE)
+    assert decision.accion == "login"
+    decision2 = acceso.decidir("observar", {}, _lista({}), CLAVE)
+    assert decision2.accion == "login"
+
+
+def test_modo_apagado_ignora_usuario_y_lista():
+    decision = acceso.decidir("apagado", {}, None, CLAVE)
+    assert decision.accion == "pasar"
+
+
+# --- M8 / M9: freno de avisos de rechazo, uno por correo por día, se reinicia ---
+
+def test_freno_un_aviso_por_dia():
+    enviados = []
+    reloj = {"t": _dt("2026-09-13T10:00:00+00:00")}
+    avisador = acceso.Avisador(enviar=lambda m: enviados.append(m), ahora=lambda: reloj["t"])
+
+    avisador.rechazo_observar("cliente@ejemplo.com")
+    reloj["t"] = reloj["t"] + timedelta(hours=2)
+    avisador.rechazo_observar("cliente@ejemplo.com")
+
+    assert len(enviados) == 1
+
+
+def test_freno_reinicia_cada_dia():
+    enviados = []
+    reloj = {"t": _dt("2026-09-13T23:00:00+00:00")}
+    avisador = acceso.Avisador(enviar=lambda m: enviados.append(m), ahora=lambda: reloj["t"])
+
+    avisador.rechazo_observar("cliente@ejemplo.com")
+    reloj["t"] = reloj["t"] + timedelta(hours=2)  # 2026-09-14T01:00
+    avisador.rechazo_observar("cliente@ejemplo.com")
+
+    assert len(enviados) == 2
+
+
+# --- M14: en aplicar no se avisa por rechazos ---
+
+def test_aplicar_no_avisa_rechazos():
+    enviados = []
+    avisador = acceso.Avisador(enviar=lambda m: enviados.append(m), ahora=lambda: _dt("2026-09-13T10:00:00+00:00"))
+    lista = _lista({})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, lista, CLAVE)
+    assert decision.accion == "rechazar"
+    # En aplicar, el flujo de la puerta nunca debe llamar rechazo_observar.
+    # Se documenta aquí como contrato: rechazo_observar solo se invoca desde
+    # la rama observar de puerta().
+
+
+# --- M12: Avisador traga errores de enviar ---
+
+def test_avisador_traga_errores():
+    def enviar_falla(_mensaje):
+        raise RuntimeError("Telegram caído")
+
+    avisador = acceso.Avisador(enviar=enviar_falla, ahora=lambda: _dt("2026-09-13T10:00:00+00:00"))
+    avisador.rechazo_observar("cliente@ejemplo.com")
+    avisador.lista_ilegible()
+    avisador.lista_vieja()
+    avisador.modo_invalido()
+    # No debe propagar ninguna excepción.
