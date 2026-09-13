@@ -33,30 +33,19 @@ O si estás en otra carpeta, usa la ruta completa:
 cd "/Users/danielzambrano/Desktop/Habilidades de agentes/dividend-analyzer-app" && python3 -m streamlit run app.py
 ```
 
-## Integración en Sitio Web
+## Acceso desde el sitio web
 
-Para embeber esta aplicación en tu sitio web, usa el siguiente código.
-
-**Nota importante**: Se ha incluido el parámetro `?embed=true` en la URL para ocultar la barra de herramientas de Streamlit y mejorar la visualización.
-
-```html
-<!-- Dividend Analyzer App Embed -->
-<iframe
-  src="https://dividend-analyzer-y32sicu2utt6xgcy3fhrvp.streamlit.app/?embed=true"
-  height="1000"
-  style="width:100%;border:none;border-radius:10px;box-shadow:0 4px 6px rgba(0,0,0,0.1);"
-  title="Dividend Analyzer"
-></iframe>
-```
+Esta app **no se embebe** en un iframe: se enlaza en pestaña nueva a
+`https://dividend-analyzer-y32sicu2utt6xgcy3fhrvp.streamlit.app/`. El login (`st.login`) no
+funciona dentro de un iframe y la subida de archivos requiere XSRF activo, que no funciona
+dentro de un iframe de otro origen.
 
 ## Puerta de acceso (Fase 2)
 
-> **⚠️ No añadir `[auth]` a los secrets de producción hasta retirar el iframe (Fase 3).**
-> Con `[auth]` presente, Streamlit enciende XSRF (`is_xsrf_enabled`, ver
-> `streamlit/web/server/server_util.py:89-94`) y con XSRF la subida de archivos se rompe
-> dentro del iframe de `invierteygana.net/calculadora/`, que sigue vivo hasta la Fase 3.
-> El modo `apagado` no evita esto: el disparador es la sola presencia de `[auth]`, no el
-> modo configurado.
+> El iframe de `invierteygana.net/calculadora/` se retiró el 2026-09-13 (la ruta redirige con
+> 301 a la página de ventas). `[auth]` ya puede ir a los secrets de producción **cuando Daniel
+> lo decida** — con `[auth]` presente, Streamlit enciende XSRF (`is_xsrf_enabled`, ver
+> `streamlit/web/server/server_util.py:89-94`), y ya no hay iframe que lo rompa.
 
 Secrets necesarios (`.streamlit/secrets.toml`), con valores vacíos:
 
