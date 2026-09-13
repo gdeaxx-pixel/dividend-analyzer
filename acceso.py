@@ -69,6 +69,13 @@ def _lista_valida(lista) -> bool:
             return False
         if estado == "gracia" and "hasta" not in datos:
             return False
+    generated_at = lista.get("generated_at")
+    if not isinstance(generated_at, str):
+        return False
+    try:
+        datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
     return True
 
 
@@ -274,16 +281,19 @@ def _aviso_gracia(gracia_hasta: str) -> None:
 
 
 def puerta() -> bool:
-    secrets = st.secrets
-    modo = resolver_modo(secrets)
+    try:
+        secrets = st.secrets
+        modo = resolver_modo(secrets)
+        acceso_secrets = secrets.get("acceso", {})
+    except FileNotFoundError:
+        return True
 
-    acceso_secrets = secrets.get("acceso", {})
     clave = acceso_secrets.get("hmac_key", "")
     pat = acceso_secrets.get("allowlist_pat", "")
     token = acceso_secrets.get("telegram_token", "")
     chat_id = acceso_secrets.get("telegram_chat_id", "")
 
-    if "auth" in secrets and "modo" in acceso_secrets and acceso_secrets.get("modo") not in MODOS_VALIDOS:
+    if "auth" in secrets and acceso_secrets.get("modo") not in MODOS_VALIDOS:
         _avisador_singleton(token, chat_id).modo_invalido()
 
     if modo == "apagado":
@@ -292,7 +302,7 @@ def puerta() -> bool:
     usuario = _usuario_actual()
     lista = None
     origen = "ninguna"
-    if pat:
+    if pat and clave:
         cache = _lista_cache_singleton(pat)
         lista, origen = cache.obtener()
 
