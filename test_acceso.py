@@ -145,6 +145,13 @@ def test_lista_vieja_se_usa_y_avisa():
     assert h not in lista_vieja_dict["entries"]
     assert decision.accion == "rechazar"
 
+    # El cache no debe descartar una lista vieja al leerla: se usa igual.
+    reloj = {"t": ahora}
+    cache = acceso.ListaCache(fetch=lambda: lista_vieja_dict, ahora=lambda: reloj["t"], ttl_s=1800)
+    lista_cacheada, origen = cache.obtener()
+    assert origen == "fresca"
+    assert lista_cacheada == lista_vieja_dict
+
 
 # --- M1: email_verified estricto ---
 
@@ -193,7 +200,7 @@ def test_aplicar_rechaza_fuera_de_lista():
 def test_gracia_solo_estado_gracia():
     correo = "cliente@ejemplo.com"
     h = acceso.hash_correo(correo, CLAVE)
-    lista_vigente = _lista({h: {"estado": "vigente"}})
+    lista_vigente = _lista({h: {"estado": "vigente", "hasta": "2026-09-19"}})
     usuario = {"is_logged_in": True, "email_verified": True, "email": correo}
 
     decision = acceso.decidir("aplicar", usuario, lista_vigente, CLAVE)
@@ -247,15 +254,11 @@ def test_freno_reinicia_cada_dia():
 # --- M14: en aplicar no se avisa por rechazos ---
 
 def test_aplicar_no_avisa_rechazos():
-    enviados = []
-    avisador = acceso.Avisador(enviar=lambda m: enviados.append(m), ahora=lambda: _dt("2026-09-13T10:00:00+00:00"))
-    lista = _lista({})
-    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
-    decision = acceso.decidir("aplicar", usuario, lista, CLAVE)
-    assert decision.accion == "rechazar"
-    # En aplicar, el flujo de la puerta nunca debe llamar rechazo_observar.
-    # Se documenta aquí como contrato: rechazo_observar solo se invoca desde
-    # la rama observar de puerta().
+    # Construida a mano (no vía decidir): aísla la puerta modo=="observar" de
+    # si acaso decidir() alguna vez rellenara correo_rechazado también en aplicar.
+    decision_con_correo = acceso.Decision(accion="rechazar", correo_rechazado="fuera@ejemplo.com")
+    assert acceso._debe_avisar_rechazo("aplicar", decision_con_correo) is False
+    assert acceso._debe_avisar_rechazo("observar", decision_con_correo) is True
 
 
 # --- M12: Avisador traga errores de enviar ---

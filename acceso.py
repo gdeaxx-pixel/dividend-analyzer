@@ -12,6 +12,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Mapping, Optional
 
+import streamlit as st
+
+WHATSAPP_URL = (
+    "https://wa.me/573195994689?text=Hola%2C%20pagu%C3%A9%20Vive%20de%20Dividendos%20y%20no"
+    "%20puedo%20entrar%20a%20la%20Calculadora.%20Mi%20correo%20de%20compra%20es%3A%20"
+)
+ENTRENAMIENTO_URL = "https://invierteygana.net/entrenamiento-vive-de-dividendos/"
+HOTMART_URL = "https://consumer.hotmart.com"
+
 MESES = [
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
@@ -146,6 +155,10 @@ def decidir(modo: str, usuario: dict, lista: Optional[dict], clave: str) -> Deci
     return Decision(accion="pasar")
 
 
+def _debe_avisar_rechazo(modo: str, decision: Decision) -> bool:
+    return modo == "observar" and decision.correo_rechazado is not None
+
+
 class Avisador:
     def __init__(self, enviar: Callable[[str], None], ahora: Callable[[], datetime]):
         self._enviar = enviar
@@ -207,3 +220,105 @@ def _enviar_telegram(token: str, chat_id: str, mensaje: str) -> None:
     )
     with urllib.request.urlopen(request, timeout=5):
         pass
+
+
+@st.cache_resource
+def _lista_cache_singleton(pat: str) -> ListaCache:
+    return ListaCache(fetch=lambda: _fetch_allowlist(pat), ahora=lambda: datetime.now(timezone.utc))
+
+
+@st.cache_resource
+def _avisador_singleton(token: str, chat_id: str) -> Avisador:
+    return Avisador(
+        enviar=lambda mensaje: _enviar_telegram(token, chat_id, mensaje),
+        ahora=lambda: datetime.now(timezone.utc),
+    )
+
+
+def _usuario_actual() -> dict:
+    return st.experimental_user.to_dict()
+
+
+def _pantalla_login() -> None:
+    st.title("Calculadora de Dividendos · acceso para miembros")
+    st.write(
+        "Entra con el correo con el que compraste Vive de Dividendos. "
+        "Te enviaremos un código de 6 dígitos."
+    )
+    if st.button("Recibir código"):
+        st.login("auth0")
+
+
+def _pantalla_rechazo(correo: Optional[str]) -> None:
+    st.error(f"Este correo no tiene acceso activo a la Calculadora: {correo}")
+    st.write("La Calculadora es para miembros de Vive de Dividendos con la suscripción al día.")
+    st.markdown(f"[Conocer Vive de Dividendos]({ENTRENAMIENTO_URL})")
+    st.markdown(f"[¿Pagaste y no puedes entrar? Escríbenos por WhatsApp]({WHATSAPP_URL})")
+    if st.button("Entrar con otro correo"):
+        st.logout()
+
+
+def _pantalla_no_verificado() -> None:
+    st.error("No pudimos verificar tu correo. Vuelve a entrar.")
+    if st.button("Entrar con otro correo"):
+        st.logout()
+
+
+def _aviso_gracia(gracia_hasta: str) -> None:
+    st.warning(
+        f"Tu último pago no se procesó. Actualízalo antes del {fecha_es(gracia_hasta)} "
+        "para no perder el acceso.\n\n"
+        f"[Regularizar mi pago]({HOTMART_URL}) — Mis compras → Vive de Dividendos → "
+        "Regularizar pagos pendientes"
+    )
+
+
+def puerta() -> bool:
+    secrets = st.secrets
+    modo = resolver_modo(secrets)
+
+    acceso_secrets = secrets.get("acceso", {})
+    clave = acceso_secrets.get("hmac_key", "")
+    pat = acceso_secrets.get("allowlist_pat", "")
+    token = acceso_secrets.get("telegram_token", "")
+    chat_id = acceso_secrets.get("telegram_chat_id", "")
+
+    if "auth" in secrets and "modo" in acceso_secrets and acceso_secrets.get("modo") not in MODOS_VALIDOS:
+        _avisador_singleton(token, chat_id).modo_invalido()
+
+    if modo == "apagado":
+        return True
+
+    usuario = _usuario_actual()
+    lista = None
+    origen = "ninguna"
+    if pat:
+        cache = _lista_cache_singleton(pat)
+        lista, origen = cache.obtener()
+
+    avisador = _avisador_singleton(token, chat_id)
+
+    if origen == "ninguna":
+        avisador.lista_ilegible()
+    elif lista is not None and lista_vieja(lista, datetime.now(timezone.utc)):
+        avisador.lista_vieja()
+
+    decision = decidir(modo, usuario, lista, clave)
+
+    if _debe_avisar_rechazo(modo, decision):
+        avisador.rechazo_observar(decision.correo_rechazado)
+
+    if decision.accion == "login":
+        _pantalla_login()
+        return False
+    if decision.accion == "no_verificado":
+        _pantalla_no_verificado()
+        return False
+    if decision.accion == "rechazar":
+        _pantalla_rechazo(usuario.get("email"))
+        return False
+
+    if decision.gracia_hasta is not None:
+        _aviso_gracia(decision.gracia_hasta)
+
+    return True
