@@ -65,16 +65,11 @@ def _lista_valida(lista) -> bool:
         if lista.get("count") != len(entries):
             return False
         for datos in entries.values():
-            if not isinstance(datos, dict):
-                return False
             estado = datos.get("estado")
             if estado not in ("vigente", "gracia"):
                 return False
             if estado == "gracia":
-                hasta = datos.get("hasta")
-                if not isinstance(hasta, str):
-                    return False
-                date.fromisoformat(hasta)
+                date.fromisoformat(datos.get("hasta"))
         generated_at = lista.get("generated_at")
         if not isinstance(generated_at, str):
             return False
