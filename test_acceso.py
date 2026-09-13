@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from streamlit.testing.v1 import AppTest
 
 import acceso
 
@@ -273,3 +274,321 @@ def test_avisador_traga_errores():
     avisador.lista_vieja()
     avisador.modo_invalido()
     # No debe propagar ninguna excepción.
+
+
+# ============================================================
+# Correcciones de la auditoría (fase2-correcciones.md)
+# ============================================================
+
+CLAVE_SECRETS = "clave-de-prueba"
+
+
+@pytest.fixture(autouse=True)
+def _restaurar_internals_acceso():
+    # Los scripts de AppTest.from_function monkeypatchean acceso._usuario_actual,
+    # acceso._lista_cache_singleton y acceso._avisador_singleton sobre el módulo
+    # REAL (no una copia): sin restaurar, un test contamina al siguiente.
+    originales = (
+        acceso._usuario_actual,
+        acceso._lista_cache_singleton,
+        acceso._avisador_singleton,
+    )
+    yield
+    acceso._usuario_actual, acceso._lista_cache_singleton, acceso._avisador_singleton = originales
+
+
+def _script_puerta_no_socio():
+    import streamlit as st
+
+    import acceso
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 0,
+                    "entries": {},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True,
+        "email_verified": True,
+        "email": "nosocio@ejemplo.com",
+    }
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_aplicar_no_socio_ve_rechazo():
+    at = AppTest.from_function(_script_puerta_no_socio)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert at.session_state["resultado"] is False
+    assert any("no tiene acceso activo" in e.value for e in at.error)
+
+
+def _script_puerta_socio_entra():
+    import streamlit as st
+
+    import acceso
+
+    correo = "socio@ejemplo.com"
+    clave = "clave-de-prueba"
+    h = acceso.hash_correo(correo, clave)
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 1,
+                    "entries": {h: {"estado": "vigente"}},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {"is_logged_in": True, "email_verified": True, "email": correo}
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_aplicar_socio_entra():
+    at = AppTest.from_function(_script_puerta_socio_entra)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert at.session_state["resultado"] is True
+    assert len(at.error) == 0
+
+
+def _script_puerta_gracia():
+    import streamlit as st
+
+    import acceso
+
+    correo = "gracia@ejemplo.com"
+    clave = "clave-de-prueba"
+    h = acceso.hash_correo(correo, clave)
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 1,
+                    "entries": {h: {"estado": "gracia", "hasta": "2026-09-15"}},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {"is_logged_in": True, "email_verified": True, "email": correo}
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_gracia_muestra_fecha_es():
+    at = AppTest.from_function(_script_puerta_gracia)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert at.session_state["resultado"] is True
+    assert any("15 de septiembre" in w.value for w in at.warning)
+
+
+def test_freno_normaliza_correo():
+    enviados = []
+    avisador = acceso.Avisador(enviar=lambda m: enviados.append(m), ahora=lambda: _dt("2026-09-13T10:00:00+00:00"))
+    avisador.rechazo_observar("A@ejemplo.com")
+    avisador.rechazo_observar(" a@ejemplo.com ")
+    assert len(enviados) == 1
+
+
+def _script_puerta_sin_hmac_key():
+    import streamlit as st
+
+    import acceso
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 0,
+                    "entries": {},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True,
+        "email_verified": True,
+        "email": "cliente@ejemplo.com",
+    }
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_sin_hmac_key_no_bloquea():
+    at = AppTest.from_function(_script_puerta_sin_hmac_key)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "allowlist_pat": "pat-fake"}  # sin hmac_key
+    at.run()
+    assert at.session_state["resultado"] is True
+    assert len(at.error) == 0
+
+
+def test_lista_sin_generated_at_es_invalida():
+    lista_sin_fecha = {
+        "version": 1,
+        "product_id": 4903539,
+        "count": 0,
+        "entries": {},
+    }
+    assert acceso._lista_valida(lista_sin_fecha) is False
+
+    lista_fecha_mala = dict(lista_sin_fecha, generated_at="no-es-una-fecha")
+    assert acceso._lista_valida(lista_fecha_mala) is False
+
+    lista_ok = dict(lista_sin_fecha, generated_at="2026-09-13T12:00:00+00:00")
+    assert acceso._lista_valida(lista_ok) is True
+
+
+def test_sin_secrets_toml_es_apagado(monkeypatch, tmp_path):
+    import streamlit.config as st_config
+    from streamlit.runtime.secrets import Secrets
+
+    nonexistent = str(tmp_path / "no-existe-secrets.toml")
+    original_get_option = st_config.get_option
+
+    def _fake_get_option(key):
+        if key == "secrets.files":
+            return [nonexistent]
+        return original_get_option(key)
+
+    monkeypatch.setattr(st_config, "get_option", _fake_get_option)
+    monkeypatch.setattr(acceso.st, "secrets", Secrets())
+
+    resultado = acceso.puerta()
+    assert resultado is True
+
+
+def test_app_aplicar_sin_sesion_muestra_login():
+    at = AppTest.from_file("app.py", default_timeout=60)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+    assert len(at.button) >= 1
+    assert at.button[0].label == "Recibir código"
+
+
+def _script_puerta_modo_ausente():
+    import streamlit as st
+
+    import acceso
+
+    avisos = []
+
+    class _ListaDoble:
+        def obtener(self):
+            return None, "ninguna"
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            avisos.append("modo_invalido")
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {"is_logged_in": False}
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    acceso.puerta()
+    st.session_state["avisos"] = list(avisos)
+
+
+def test_modo_ausente_avisa():
+    at = AppTest.from_function(_script_puerta_modo_ausente)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"allowlist_pat": "pat-fake", "hmac_key": CLAVE_SECRETS}  # sin "modo"
+    at.run()
+    assert "modo_invalido" in at.session_state["avisos"]
