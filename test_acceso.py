@@ -727,3 +727,141 @@ def test_red_no_imprime_mensaje(capsys):
     capturado = capsys.readouterr()
     assert "a@ejemplo.com" not in capturado.out
     assert "a@ejemplo.com" not in capturado.err
+
+
+# ============================================================
+# Fase 4: lista de admins (mutantes M1-M8, admins.md 2026-09-14)
+# ============================================================
+
+
+# --- M3 / M7: leer_admins normaliza y nunca lanza ---
+
+def test_leer_admins_tipos_raros_devuelve_vacio():
+    assert acceso.leer_admins({}) == frozenset()
+    assert acceso.leer_admins({"admins": None}) == frozenset()
+    assert acceso.leer_admins({"admins": 5}) == frozenset()
+    assert acceso.leer_admins({"admins": [5, None, ""]}) == frozenset()
+
+
+def test_leer_admins_normaliza_lista():
+    assert acceso.leer_admins({"admins": [" Admin@X.com "]}) == frozenset({"admin@x.com"})
+
+
+def test_leer_admins_string_suelto():
+    assert acceso.leer_admins({"admins": "x@y.com"}) == frozenset({"x@y.com"})
+
+
+# --- M1: la regla de admin va después de email_verified ---
+
+def test_admin_sin_email_verified_no_pasa():
+    admins = frozenset({"admin@x.com"})
+    usuario_ausente = {"is_logged_in": True, "email": "admin@x.com"}
+    decision = acceso.decidir("aplicar", usuario_ausente, None, CLAVE, admins=admins)
+    assert decision.accion == "no_verificado"
+
+    usuario_string = {"is_logged_in": True, "email_verified": "true", "email": "admin@x.com"}
+    decision2 = acceso.decidir("aplicar", usuario_string, None, CLAVE, admins=admins)
+    assert decision2.accion == "no_verificado"
+
+
+# --- M2: el correo del usuario se normaliza antes de comparar con admins ---
+
+def test_admin_correo_usuario_se_normaliza():
+    admins = acceso.leer_admins({"admins": ["gdeaxx@gmail.com"]})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": " GdeAXX@Gmail.com "}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+
+
+# --- M4: un admin fuera de la allowlist entra en modo aplicar ---
+
+def test_admin_fuera_de_lista_entra_en_aplicar():
+    admins = frozenset({"admin@x.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "admin@x.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+
+
+# --- M5: un admin fuera de la allowlist en observar pasa SIN correo_rechazado ---
+
+def test_admin_fuera_de_lista_en_observar_no_genera_alerta():
+    admins = frozenset({"admin@x.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "admin@x.com"}
+    decision = acceso.decidir("observar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+    assert decision.correo_rechazado is None
+
+
+# --- M6: comparación por igualdad exacta, no por subcadena ---
+
+def test_admin_no_es_por_subcadena():
+    admins = frozenset({"a@b.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "ba@b.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "rechazar"
+
+
+# --- Sin admins (default) el comportamiento actual no cambia ---
+
+def test_decidir_sin_admins_default_es_igual_que_antes():
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE)
+    assert decision.accion == "rechazar"
+
+
+# --- M8: _puerta() pasa admins a decidir() ---
+
+def _script_puerta_admin_fuera_de_lista():
+    import streamlit as st
+
+    import acceso
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 0,
+                    "entries": {},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True,
+        "email_verified": True,
+        "email": "admin@x.com",
+    }
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_pasa_admins_a_decidir():
+    at = AppTest.from_function(_script_puerta_admin_fuera_de_lista)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {
+        "modo": "aplicar",
+        "hmac_key": CLAVE_SECRETS,
+        "allowlist_pat": "pat-fake",
+        "admins": ["admin@x.com"],
+    }
+    at.run()
+    assert at.session_state["resultado"] is True
+    assert len(at.error) == 0
