@@ -545,6 +545,83 @@ def test_deep_fix_keeps_real_cash_roc_via_19a(monkeypatch):
     assert s["roc_accumulated"] != pytest.approx(400.0, abs=1.0)
 
 
+_ROC_80 = lambda: {"MSTY": {"weighted_pct": 80.0,
+                            "per_distribution": [{"date": "2024-10-01", "roc_pct": 80.0}]}}
+
+
+def test_roc_19a_no_cambia_por_reinvertir(monkeypatch):
+    """F1 (auditoría 2026-09-17). El % del 19a es de la distribución BRUTA, y reinvertirla no
+    la cambia. La rama DRIP tomaba la compra de acciones (el neto tras la retención) como si
+    fuera la distribución: con bruto $100, retención $30 y 80% de ROC daba $56 en vez de $80,
+    y la base ajustada $1,014 en vez de $990 ($1,070 aportados − $80)."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    compra = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+    efectivo = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+    ])
+    drip = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    s_ef = logic.analyze_portfolio(efectivo)["MSTY"]
+    s_dr = logic.analyze_portfolio(drip)["MSTY"]
+
+    assert s_ef["roc_source"] == s_dr["roc_source"] == "19a"
+    assert s_dr["roc_accumulated"] == pytest.approx(s_ef["roc_accumulated"])
+    assert s_dr["roc_accumulated"] == pytest.approx(80.0)
+    u = s_dr["capital_gains"]["unrealized"]
+    assert u["basis"] == pytest.approx(1070.0)
+    assert u["basis_roc_adjusted"] == pytest.approx(990.0)
+
+
+def test_roc_19a_se_aplica_al_bruto_del_objeto_fiscal_ib(monkeypatch):
+    """F1, convención IB. La base del ROC se reconstruía aparte del objeto fiscal: contaba como
+    distribución todo monto positivo con «dividend» en el Action —también el reverso de una
+    retención— e ignoraba las reversas de dividendo. En el CSV real de IB eso llevó la base de
+    MSTY a $9,778.33 contra $7,224.59 de bruto reconciliado, y el ROC ($7,773.87) por encima
+    del bruto entero. Aquí: un pago que IB revierte un día y re-emite al siguiente (el día de
+    la reversa queda en negativo y tiene que restar), y una retención revertida."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-08", "Dividend", "MSTY", 0, -100.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, 30.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-09", "Dividend", "MSTY", 0, 100.0),
+    ])
+    s = logic.analyze_portfolio(df)["MSTY"]
+
+    assert s["roc_source"] == "19a"
+    assert s["dividends_gross_total"] == pytest.approx(100.0)
+    assert s["roc_accumulated"] == pytest.approx(80.0)
+
+
+def test_roc_19a_nunca_supera_el_bruto_en_el_caso_real_ib():
+    """Ancla externa de F1: el bruto de `ib_1` está reconciliado contra el extracto de IB. El ROC
+    es una parte de la distribución, así que no puede superarlo, y con la ruta 19a es
+    exactamente su % aplicado a ese bruto."""
+    from conftest import frozen_price_cache
+    df = _load_real_ib_1()
+    with frozen_price_cache():
+        res = logic.analyze_portfolio(df)
+    fondos_19a = {t: s for t, s in res.items() if s.get("roc_source") == "19a"}
+    assert {"MSTY", "CONY", "TSLY", "NVDY"} <= set(fondos_19a)
+    for t, s in fondos_19a.items():
+        bruto = s["dividends_gross_total"]
+        assert s["roc_accumulated"] <= bruto + 0.01, t
+        # roc_percent se publica redondeado a 2 decimales: ±0.005 pp sobre el bruto.
+        redondeo = bruto * 0.005 / 100 + 0.01
+        assert s["roc_accumulated"] == pytest.approx(bruto * s["roc_percent"] / 100, abs=redondeo), t
+
+
 def test_roc_none_when_no_basis_provided(monkeypatch):
     """Sin ib_cost_basis_map los campos ROC son None."""
     csv = (
