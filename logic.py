@@ -3560,8 +3560,13 @@ def _roc_events_from_19a(ticker, dist_bruto):
 
     `dist_bruto`: lista de (fecha, monto BRUTO) — la de `_dividend_events`, con signo: una
     reversa de IB resta ROC en vez de sumarlo.
-    Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
-    usa el % ponderado del fondo (`weighted_pct`).
+    Una distribución de un año con **cierre fiscal** (ICI, `roc_pct_by_year`) toma el % del
+    cierre: es el que fija la casilla 3 del 1099 y, por tanto, lo que de verdad baja la base.
+    En un año abierto se empata con el %ROC publicado de esa fecha (±7 días); si no hay
+    empate, el % ponderado del fondo (`weighted_pct`). Hasta el 2026-09-18 el cierre no se
+    leía aquí (auditoría R1): MSTY 2025 bajaba la base al 76% de lo cobrado cuando el cierre
+    —y el 1042-S real— dicen 100%. El nombre conserva el «19a» por sus llamadores y por
+    `roc_source='19a'`, que sigue queriendo decir «% publicado por el fondo, fechado».
 
     Existe porque el ROC **acumulado no sirve para la base fiscal de una venta**: a las
     acciones vendidas solo les corresponde el ROC devengado ANTES de venderlas, así que hay
@@ -3570,13 +3575,18 @@ def _roc_events_from_19a(ticker, dist_bruto):
     posición y mueve la ganancia realizada de −$178.78 a +$32.81 — el signo depende de esto,
     no es un decimal.
 
-    Devuelve `None` —y no una lista parcial— si el fondo no publica 19a o si alguna
-    distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
+    Devuelve `None` —y no una lista parcial— si el fondo no publica ni 19a ni cierre, o si
+    alguna distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
     estimador: un ROC a medias mezclado con distribuciones sin catalogar no es una base
-    fiscal, es un híbrido, y la Regla 2 lo prohíbe.
+    fiscal, es un híbrido, y la Regla 2 lo prohíbe. (Un fondo con cierre y sin 19a solo sale
+    si todas sus distribuciones caen en años cerrados.)
     """
-    info = load_roc_19a().get(str(ticker).upper())
-    if not info or not dist_bruto:
+    tk = str(ticker).upper()
+    roc19a = load_roc_19a()
+    info = roc19a.get(tk) or {}
+    pcts, fuentes = roc_pct_by_year(tk, roc19a, load_roc_ici(), con_fuente=True)
+    cierre = {a: pcts[a] for a, f in fuentes.items() if f == 'cierre'}
+    if (not info and not cierre) or not dist_bruto:
         return None
 
     dated = []
@@ -3591,8 +3601,8 @@ def _roc_events_from_19a(ticker, dist_bruto):
     eventos = []
     for dt, amt in dist_bruto:
         amt = amt or 0
-        pct = None
-        if dated and dt is not None:
+        pct = cierre.get(_row_year(dt))
+        if pct is None and dated and dt is not None:
             best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
             if abs((best[0] - pd.Timestamp(dt).normalize()).days) <= 7:
                 pct = best[1]

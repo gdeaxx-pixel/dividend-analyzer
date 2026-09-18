@@ -270,10 +270,11 @@ def test_regresion_roc_100_todo_recuperable_y_roc_0_nada():
     ($82.81) es toda recuperable y la «correcta» es $0; SCHB 0 % ROC retenido a la tasa
     aplicada ⇒ recuperable $0.
 
-    NOTA: sobre el CSV de transacciones real (`real_examples/charles_schwab_data/
-    daniel_zambrano`) el pipeline estima MSTY con ROC 72.9 % vía avisos 19(a), no 100 %
-    del cierre fiscal — la precedencia cierre-fiscal > 19(a) (Regla 4b) vive en `logic.py`
-    y queda fuera del alcance de esta fase. Este test fija la aritmética de los buckets,
+    NOTA: hasta el 2026-09-18 el pipeline estimaba MSTY sobre el CSV real
+    (`real_examples/charles_schwab_data/daniel_zambrano`) con el 19(a) —72.9 %— y no con el
+    100 % del cierre fiscal. Desde R1 la base del ROC usa el cierre en años cerrados
+    (`logic._roc_events_from_19a` vía `logic.roc_pct_by_year`) y el ROC del holder queda en
+    ~90 % (2025 al 100 %, 2026 aún estimado). Este test fija la aritmética de los buckets,
     que es lo que `impuestos_data` sí decide.
     """
     res = {

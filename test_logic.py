@@ -508,6 +508,8 @@ def test_roc_estimated_from_19a_when_no_basis(monkeypatch):
     # 19a controlado: el pago del 2024-10-01 fue 90% ROC
     monkeypatch.setattr(logic, "load_roc_19a", lambda: {
         "MSTY": {"weighted_pct": 90.0, "per_distribution": [{"date": "2024-10-01", "roc_pct": 90.0}]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     results = logic.analyze_portfolio(df, version="TEST_ROC_19A")  # sin ib_cost_basis_map
     s = results["MSTY"]
     assert s.get("ib_cost_basis") is None
@@ -556,6 +558,8 @@ def test_roc_19a_no_cambia_por_reinvertir(monkeypatch):
     y la base ajustada $1,014 en vez de $990 ($1,070 aportados − $80)."""
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     compra = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
     efectivo = _roc_norm_df([
         compra,
@@ -588,6 +592,8 @@ def test_roc_19a_se_aplica_al_bruto_del_objeto_fiscal_ib(monkeypatch):
     la reversa queda en negativo y tiene que restar), y una retención revertida."""
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     df = _roc_norm_df([
         ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
         ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
@@ -2747,6 +2753,43 @@ def test_tax_summary_devuelto_de_mas_no_da_devolucion_negativa(monkeypatch):
     assert ts["withheld_real"] == pytest.approx(2.0, abs=0.01)
 
 
+def test_roc_de_la_base_usa_el_cierre_en_años_cerrados(monkeypatch):
+    """R1, base fiscal: el ROC en dólares de una distribución de año cerrado sale del cierre
+    (ICI), no del 19(a) del día; en el año abierto, del 19(a). Un 0% de cierre anula el ROC
+    del año aunque el 19(a) dijera 95%. Y la base ajustada baja por lo que dice el cierre."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"weighted_pct": 75.0,
+        "per_distribution": [{"date": "2024-10-01", "roc_pct": 95.0},
+                             {"date": "2025-06-01", "roc_pct": 70.0},
+                             {"date": "2026-06-01", "roc_pct": 60.0}]}})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"MSTY": {
+        2024: {"roc_pct": 0.0}, 2025: {"roc_pct": 100.0}}})
+    s = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2026-06-01", "Dividend", "MSTY", 0, 100.0),
+    ]), version="TEST_R1_BASE")["MSTY"]
+    assert s["roc_source"] == "19a"
+    assert s["roc_accumulated"] == pytest.approx(0.0 + 100.0 + 60.0, abs=0.01)
+    assert s["roc_percent"] == pytest.approx(160.0 / 300.0 * 100.0, abs=0.01)
+    u = s["capital_gains"]["unrealized"]
+    assert u["basis_roc_adjusted"] == pytest.approx(u["basis"] - 160.0, abs=0.01)
+
+
+def test_roc_fondo_solo_con_cierre_es_todo_o_nada(monkeypatch):
+    """Un fondo sin avisos 19(a) pero con cierre fiscal: si todas sus distribuciones caen en
+    años cerrados, su ROC sale del cierre; si una cae en un año abierto (sin % que la
+    catalogue), no hay ROC — un ROC a medias no es una base fiscal (Regla 2)."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"CHPY": {2025: {"roc_pct": 24.47}}})
+    ev = logic._roc_events_from_19a("CHPY", [(pd.Timestamp("2025-05-01"), 100.0),
+                                             (pd.Timestamp("2025-11-01"), 50.0)])
+    assert [r for _, r in ev] == pytest.approx([100.0 * 0.2447, 50.0 * 0.2447])
+    assert logic._roc_events_from_19a("CHPY", [(pd.Timestamp("2025-05-01"), 100.0),
+                                               (pd.Timestamp("2026-02-01"), 50.0)]) is None
+
+
 def _schwab_daniel_df():
     import glob
     rutas = glob.glob(os.path.join(os.path.dirname(__file__), "real_examples",
@@ -2770,6 +2813,24 @@ def test_refund_real_schwab_msty_2025_vuelve_entero_como_dice_el_1042s():
     assert y25["roc_pct_usado"] == pytest.approx(100.0)
     assert y25["refund"] == pytest.approx(82.81, abs=0.01)
     assert ts["withheld_at_payment_by_year"][2025] == pytest.approx(82.81, abs=0.01)
+
+
+def test_roc_real_schwab_msty_2025_baja_la_base_por_todo_el_bruto():
+    """Ground truth del 1042-S 2025 de Daniel: todo MSTY 2025 fue ROC (código 37), así que
+    los $275.97 de ese año bajan la base enteros; con el 19(a) bajaban $210.23. El ROC de
+    MSTY 2024 fue 0% al cierre (el 19(a) decía ~73%): no baja nada."""
+    df = _schwab_daniel_df()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_BASE_R")
+    s = res["MSTY"]
+    ev = logic._roc_events_from_19a(
+        "MSTY", [(d, float(a)) for d, a in logic._dividend_events(s["history"]).items()])
+    por_anio = {}
+    for d, r in ev:
+        por_anio[pd.Timestamp(d).year] = por_anio.get(pd.Timestamp(d).year, 0.0) + r
+    assert por_anio[2025] == pytest.approx(s["dividends_gross_by_year"][2025], abs=0.01)
+    assert por_anio[2025] == pytest.approx(275.97, abs=0.01)
+    assert por_anio[2024] == pytest.approx(0.0, abs=0.01)
+    assert s["roc_accumulated"] == pytest.approx(sum(r for _, r in ev), abs=0.01)
 
 
 def test_refund_real_ib_msty_lo_devuelto_se_resta_una_sola_vez():
