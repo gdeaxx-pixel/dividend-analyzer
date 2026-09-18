@@ -71,6 +71,32 @@ IB_ACTIVITY_STATEMENT = (
     b"Dividends,Data,USD,2024-01-20,MSFT(US123) Cash Dividend USD 0.75 per Share,75.00\n"
 )
 
+# Los mismos eventos por las dos rutas de IB. Las filas "Total" van a propósito: si llegaran
+# a normalize_csv como datos, duplicarían el bruto y la retención.
+IB_AS_CON_RETENCION = (
+    b"Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,"
+    b"Quantity,T. Price,Proceeds,Comm/Fee\n"
+    b'Trades,Data,Order,Stocks,USD,SCHD,"2024-01-02, 09:30:00",10,100.00,-1000.00,-1.0\n'
+    b"Dividends,Header,Currency,Date,Description,Amount\n"
+    b"Dividends,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share (Ordinary Dividend),6.10\n"
+    b"Dividends,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share (Ordinary Dividend),2.50\n"
+    b"Dividends,Data,Total,,,8.60\n"
+    b"Withholding Tax,Header,Currency,Date,Description,Amount,Code\n"
+    b"Withholding Tax,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share - US Tax,-1.83,\n"
+    b"Withholding Tax,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share - US Tax,-0.75,\n"
+    b"Withholding Tax,Data,Total,,,-2.58,\n"
+)
+
+IB_TH_MISMOS_EVENTOS = (
+    b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
+    b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+    b"Transaction History,Data,2024-01-02,U123,SCHD Buy,Buy,SCHD,10,100.00,USD,-1000.00,-1.0,-1001.00\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,6.10,-,6.10\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-1.83,-,-1.83\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,2.50,-,2.50\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-0.75,-,-0.75\n"
+)
+
 
 # ── detect_broker ──────────────────────────────────────────────────────────────
 
@@ -168,6 +194,37 @@ def test_ib_activity_statement_normalizado_conserva_el_dividendo():
     fechas = {a: d.strftime("%Y-%m-%d") for a, d in zip(df["Action"], df["Date"])}
     assert fechas == {"Buy": "2024-01-15", "Dividend": "2024-01-20"}
     assert logic.build_dividend_tax_totals(df)["gross"] == pytest.approx(75.0)
+
+
+def test_ib_activity_statement_lee_la_retencion_como_transaction_history():
+    """I2 (auditoría 2026-09-17). parse_ibkr_csv leía solo Trades y Dividends: la sección
+    Withholding Tax del Activity Statement se ignoraba y la retención salía en $0, con el neto
+    igual al bruto. Los mismos eventos entrando por Transaction History (ruta validada contra el
+    CSV real de IB) tienen que dar el mismo objeto fiscal, por ticker como lo lee
+    analyze_portfolio. La cifra absoluta va aparte: la igualdad sola pasaría si las dos rutas se
+    rompieran igual."""
+    def _fiscal_schd(csv):
+        raw, _ = logic.load_and_detect_csv(FakeFile(csv))
+        df = logic.normalize_csv(raw.copy())
+        schd = df[df["Ticker"] == "SCHD"]
+        return logic.build_dividend_tax_totals(schd), logic.withheld_tax_total(schd), len(df)
+
+    as_tot, as_ret, as_filas = _fiscal_schd(IB_AS_CON_RETENCION)
+    th_tot, th_ret, th_filas = _fiscal_schd(IB_TH_MISMOS_EVENTOS)
+
+    assert as_filas == th_filas == 5
+
+    for k in ("gross", "withheld", "net"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    for k in ("gross_by_year", "withheld_by_year", "net_by_year"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    assert as_ret == pytest.approx(th_ret)
+
+    assert as_tot["gross"] == pytest.approx(8.60)
+    assert as_tot["withheld"] == pytest.approx(2.58)
+    assert as_tot["net"] == pytest.approx(6.02)
+    assert as_tot["withheld_by_year"] == pytest.approx({2024: 1.83, 2025: 0.75})
+    assert as_ret == pytest.approx(2.58)
 
 
 # ── parse_schwab_csv ───────────────────────────────────────────────────────────

@@ -2899,7 +2899,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     """
     Parses an Interactive Brokers Activity Statement CSV.
     IBKR exports are multi-section: each section has a Header row and Data rows.
-    Extracts Trades (Stocks) and Dividends sections and merges into unified format.
+    Extracts Trades (Stocks), Dividends and Withholding Tax sections and merges into unified format.
     """
     for encoding in ['utf-8', 'latin1', 'cp1252']:
         try:
@@ -3057,36 +3057,41 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     except Exception as e:
         print(f"IBKR trades parse error: {e}")
 
-    # --- Extract Dividends section ---
-    try:
-        div_header, div_rows = _ibkr_reader('Dividends')
+    # --- Extract Dividends and Withholding Tax sections ---
+    # Withholding Tax va como fila aparte con signo y el mismo rótulo que Transaction History
+    # ('Dividend - Foreign Tax Withholding'). Sin esta sección la retención salía en $0 y el
+    # neto igual al bruto.
+    for section_name, section_action in (('Dividends', 'Dividend'),
+                                         ('Withholding Tax', 'Dividend - Foreign Tax Withholding')):
+        try:
+            sec_header, sec_rows = _ibkr_reader(section_name)
 
-        if div_header and div_rows:
-            divs_df = pd.DataFrame(div_rows, columns=div_header)
+            if sec_header and sec_rows:
+                sec_df = pd.DataFrame(sec_rows, columns=sec_header)
 
-            # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
-            if 'Description' in divs_df.columns:
-                divs_df['Ticker'] = divs_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
+                # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
+                if 'Description' in sec_df.columns:
+                    sec_df['Ticker'] = sec_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
 
-            col_map = {}
-            for col in divs_df.columns:
-                cl = col.lower()
-                if 'date' in cl:
-                    col_map[col] = 'Date'
-                elif 'amount' in cl:
-                    col_map[col] = 'Amount'
+                col_map = {}
+                for col in sec_df.columns:
+                    cl = col.lower()
+                    if 'date' in cl:
+                        col_map[col] = 'Date'
+                    elif 'amount' in cl:
+                        col_map[col] = 'Amount'
 
-            divs_df = divs_df.rename(columns=col_map)
-            if 'Date' in divs_df.columns:
-                divs_df['Date'] = divs_df['Date'].map(_solo_fecha)
-            divs_df['Action'] = 'Dividend'
-            divs_df['Quantity'] = 0
-            divs_df['Price'] = 0
+                sec_df = sec_df.rename(columns=col_map)
+                if 'Date' in sec_df.columns:
+                    sec_df['Date'] = sec_df['Date'].map(_solo_fecha)
+                sec_df['Action'] = section_action
+                sec_df['Quantity'] = 0
+                sec_df['Price'] = 0
 
-            keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in divs_df.columns]
-            frames.append(divs_df[keep])
-    except Exception as e:
-        print(f"IBKR dividends parse error: {e}")
+                keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in sec_df.columns]
+                frames.append(sec_df[keep])
+        except Exception as e:
+            print(f"IBKR {section_name} parse error: {e}")
 
     if frames:
         return pd.concat(frames, ignore_index=True)
