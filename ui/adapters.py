@@ -248,18 +248,15 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
 
     Regla 4: la destructividad se mide con la TENDENCIA del NAV, nunca con el ROC% —
     `classify_roc_health` ya respeta esto internamente; esta función solo junta sus
-    parámetros, con la misma fórmula que `app_old.py:3590-3611` (verificada, en producción).
+    parámetros. El retorno total es el `roi_percent` del motor, el mismo resultado económico
+    que muestran Portafolios y cashflow: recalcularlo aquí con `dividends_collected_cash`
+    sumaba el efectivo BRUTO en Schwab (bruto $100, retención $30: 10% en vez de 7%).
     """
     roc_pct = logic._roc_pct_for(ticker, stats)
     nav_cagr = stats.get("price_cagr_recent")
     if nav_cagr is None:
         nav_cagr = stats.get("price_cagr")
-    pocket = stats.get("pocket_investment")
-    tr_pct = None
-    if pocket:
-        valor_hoy = stats.get("market_value") or 0
-        cash = stats.get("dividends_collected_cash") or 0
-        tr_pct = (valor_hoy + cash - pocket) / pocket * 100
+    tr_pct = stats.get("roi_percent") if stats.get("pocket_investment") else None
 
     asof_days = None
     r19a = logic.load_roc_19a().get(str(ticker).upper())

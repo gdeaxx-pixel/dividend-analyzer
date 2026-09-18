@@ -1750,9 +1750,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # la convención por fila -> solo restamos la retención cuando NO viene plegada, para
         # no restarla dos veces en IB. `dividends_collected_drip` no se toca: ese dinero ya
         # está dentro de `market_value` (acciones compradas con el neto post-retención).
+        # Por eso tampoco se resta la retención de las distribuciones REINVERTIDAS: ya salió
+        # antes de comprar las acciones. Restarla del efectivo la descontaba dos veces
+        # (bruto $100, retención $30, DRIP $70, efectivo $0: net_profit bajaba $30).
         _tax_totals_early = build_dividend_tax_totals(ticker_df)
+        _retencion_en_efectivo = _tax_totals_early['withheld'] - _withheld_on_reinvested(ticker_df)
         _cash_collected_net = (dividends_collected_cash if _tax_totals_early['netted']
-                                else dividends_collected_cash - _tax_totals_early['withheld'])
+                                else dividends_collected_cash - _retencion_en_efectivo)
 
         gross_value = market_value + _cash_collected_net
         net_profit = gross_value - pocket_investment
@@ -5649,6 +5653,35 @@ def withheld_tax_total(history_df) -> float:
             continue
         signed += float(amt)
     return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
+
+
+def _withheld_on_reinvested(history_df) -> float:
+    """Retención NRA de las distribuciones REINVERTIDAS (≥0): la de las filas de impuesto
+    fechadas el mismo día que una fila fuente 'Reinvest Dividend' del mismo historial.
+
+    La compra DRIP ya es neta de esa retención, así que el efectivo líquido no debe
+    descontarla otra vez. Se atribuye por fecha porque Schwab fecha la 'NRA Tax Adj' el día de
+    su distribución: en los CSV reales ninguna retención cae el mismo día que una distribución
+    en efectivo y otra reinvertida. Una retención sin distribución ese día no se atribuye aquí
+    y se sigue descontando del efectivo. Mismo neteo por signo que `withheld_tax_total`.
+    """
+    if history_df is None or len(history_df) == 0 or not {'Action', 'Date'} <= set(history_df.columns):
+        return 0.0
+    accion = history_df['Action'].astype(str).str.lower()
+    fechas = pd.to_datetime(history_df['Date'], errors='coerce').dt.normalize()
+    es_fuente_drip = (accion.str.contains('reinvest|reinversión|drip')
+                      & accion.str.contains('dividend|dividendo')
+                      & ~accion.map(_is_tax_row_action))
+    dias_drip = set(fechas[es_fuente_drip].dropna())
+    signed = 0.0
+    for (_, row), dia in zip(history_df.iterrows(), fechas):
+        if dia not in dias_drip or not _is_nra_withholding_action(row.get('Action', '')):
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        signed += float(amt)
+    return round(max(0.0, -signed), 2)
 
 
 def withheld_tax_total_by_year(history_df) -> dict:
