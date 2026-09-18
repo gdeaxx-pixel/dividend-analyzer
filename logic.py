@@ -1096,7 +1096,7 @@ def _descargar_benchmark(df, ticker=BENCHMARK_TICKER):
     return data
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
     """
