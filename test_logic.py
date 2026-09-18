@@ -612,6 +612,31 @@ def test_net_profit_resta_solo_la_retencion_de_lo_cobrado_en_efectivo(monkeypatc
     assert s["net_profit"] == pytest.approx(resultado_cashflow)
 
 
+_COMPRA_MSTY = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+
+
+@pytest.mark.parametrize("filas", [
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0)],
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+     ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0)],
+], ids=["efectivo", "drip"])
+def test_salud_nav_publica_el_mismo_retorno_que_roi_y_cashflow(monkeypatch, filas):
+    """F3 (auditoría 2026-09-17). Salud NAV recalculaba el retorno con
+    `dividends_collected_cash`, que en Schwab es BRUTO: bruto $100 y retención $30 daban 10%
+    mientras ROI y cashflow decían 7%. Las tres vistas del mismo retorno tienen que coincidir,
+    cobrado en efectivo o reinvertido."""
+    from ui.adapters import salud_nav_data
+    s, resultado_cashflow = _schwab_np(monkeypatch, filas)
+    tr = salud_nav_data("MSTY", s)["total_return_pct"]
+    assert tr == pytest.approx(7.0)
+    assert tr == pytest.approx(s["roi_percent"])
+    assert tr == pytest.approx(resultado_cashflow / s["pocket_investment"] * 100)
+
+
 # ── Regresión: parsing numérico US vs Europeo (BUG clean_val) ───────────────
 
 def _norm_amounts(values):
