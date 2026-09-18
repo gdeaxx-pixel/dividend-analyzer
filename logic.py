@@ -2922,6 +2922,12 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
         except (ValueError, TypeError):
             return 0.0
 
+    def _solo_fecha(raw) -> str:
+        # Activity Statement: Trades trae "2024-01-15, 09:30:00" y Dividends "2024-01-20".
+        # Con las dos formas en una misma columna, normalize_csv infiere el formato de la
+        # primera fila y descarta el resto como NaT: el dividendo desaparecía sin aviso.
+        return re.split(r'[,;]', str(raw), maxsplit=1)[0].strip()
+
     def _ibkr_reader(section_name: str):
         """Yield (header, [data_rows]) for a named IB section using csv.reader."""
         header = None
@@ -3034,6 +3040,8 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                     col_map[col] = 'Amount'
 
             trades_df = trades_df.rename(columns=col_map)
+            if 'Date' in trades_df.columns:
+                trades_df['Date'] = trades_df['Date'].map(_solo_fecha)
 
             # Derive Action from Quantity sign
             if 'Quantity' in trades_df.columns:
@@ -3069,6 +3077,8 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                     col_map[col] = 'Amount'
 
             divs_df = divs_df.rename(columns=col_map)
+            if 'Date' in divs_df.columns:
+                divs_df['Date'] = divs_df['Date'].map(_solo_fecha)
             divs_df['Action'] = 'Dividend'
             divs_df['Quantity'] = 0
             divs_df['Price'] = 0

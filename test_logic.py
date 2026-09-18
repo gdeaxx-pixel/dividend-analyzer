@@ -154,8 +154,20 @@ def test_ib_activity_statement_parsed():
 
 def test_ib_activity_statement_dividend_present():
     df, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
-    if "Action" in df.columns:
-        assert "Dividend" in df["Action"].values or len(df) > 0
+    assert "Dividend" in df["Action"].values
+
+
+def test_ib_activity_statement_normalizado_conserva_el_dividendo():
+    """I1 (auditoría 2026-09-17). Trades trae «fecha, hora» y Dividends solo la fecha. Con las
+    dos formas en la misma columna, normalize_csv infería el formato de la primera fila y
+    descartaba el dividendo como NaT: los $75 desaparecían del bruto sin error ni aviso.
+    El test de arriba no lo veía porque mira el df crudo, antes de normalizar."""
+    raw, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
+    df = logic.normalize_csv(raw.copy())
+    assert len(df) == len(raw) == 2
+    fechas = {a: d.strftime("%Y-%m-%d") for a, d in zip(df["Action"], df["Date"])}
+    assert fechas == {"Buy": "2024-01-15", "Dividend": "2024-01-20"}
+    assert logic.build_dividend_tax_totals(df)["gross"] == pytest.approx(75.0)
 
 
 # ── parse_schwab_csv ───────────────────────────────────────────────────────────
