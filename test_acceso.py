@@ -637,6 +637,11 @@ def _script_puerta_error_interno():
         raise RuntimeError("boom")
 
     acceso._usuario_actual = _usuario_que_falla
+    class _AvisadorMudo:
+        def __getattr__(self, nombre):
+            return lambda *args: None
+
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorMudo()
 
     st.session_state["resultado"] = acceso.puerta()
 
@@ -716,6 +721,11 @@ def _script_puerta_error_con_correo():
         raise RuntimeError("fallo con a@ejemplo.com adentro")
 
     acceso._usuario_actual = _usuario_que_falla
+    class _AvisadorMudo:
+        def __getattr__(self, nombre):
+            return lambda *args: None
+
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorMudo()
     acceso.puerta()
 
 
@@ -727,3 +737,104 @@ def test_red_no_imprime_mensaje(capsys):
     capturado = capsys.readouterr()
     assert "a@ejemplo.com" not in capturado.out
     assert "a@ejemplo.com" not in capturado.err
+
+
+# ============================================================
+# Auditoría de privacidad 2026-09-17, S3: el login roto no abre la puerta
+# ============================================================
+
+class _AvisadorEspia:
+    """Registra cada aviso. Con `lanza_en`, ese aviso falla después de registrarse."""
+
+    def __init__(self, lanza_en=None):
+        self.avisos = []
+        self._lanza_en = lanza_en
+
+    def __getattr__(self, nombre):
+        def _registrar(*args):
+            self.avisos.append((nombre,) + args)
+            if nombre == self._lanza_en:
+                raise RuntimeError("aviso roto")
+        return _registrar
+
+
+class _ListaSinLeer:
+    def obtener(self):
+        return None, "ninguna"
+
+
+@pytest.mark.parametrize("lanza_en", [None, "login_roto"])
+def test_app_login_roto_no_abre_la_app(monkeypatch, lanza_en):
+    """Con Authlib roto (la familia del PR #119) `st.login` lanza StreamlitAuthError. Antes el
+    `except` de `puerta()` lo convertía en acceso: un anónimo pulsaba «Recibir código» y
+    entraba. Ahora la puerta queda cerrada aunque el aviso a Telegram también falle."""
+    import sys
+
+    espia = _AvisadorEspia(lanza_en=lanza_en)
+    monkeypatch.setattr(acceso, "_avisador_singleton", lambda token, chat_id: espia)
+    monkeypatch.setattr(acceso, "_lista_cache_singleton", lambda pat: _ListaSinLeer())
+    monkeypatch.setitem(sys.modules, "authlib", None)
+
+    at = AppTest.from_file("app.py", default_timeout=60)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    at.button[0].click().run()
+
+    assert len(at.get("file_uploader")) == 0, "la app se abrió a un visitante sin sesión"
+    assert any("no está disponible" in e.value for e in at.error)
+    assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+    assert ("login_roto", "StreamlitAuthError") in espia.avisos
+
+
+def _script_puerta_error_avisa(lanza):
+    import streamlit as st
+
+    import acceso
+
+    avisos = []
+
+    class _Avisador:
+        def puerta_abierta_por_error(self, nombre):
+            avisos.append(nombre)
+            if lanza:
+                raise RuntimeError("Telegram caído")
+
+    def _usuario_que_falla():
+        raise RuntimeError("fallo con a@ejemplo.com adentro")
+
+    acceso._usuario_actual = _usuario_que_falla
+    acceso._avisador_singleton = lambda token, chat_id: _Avisador()
+    st.session_state["resultado"] = acceso.puerta()
+    st.session_state["avisos"] = avisos
+
+
+@pytest.mark.parametrize("lanza", [False, True])
+def test_puerta_abierta_por_error_avisa_sin_datos(lanza):
+    """El fail-open del resto de errores se conserva (decisión 3), pero deja de ser mudo: avisa
+    por Telegram con el nombre de la excepción y nada más (el mensaje puede traer un correo)."""
+    at = AppTest.from_function(_script_puerta_error_avisa, args=(lanza,))
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert len(at.exception) == 0
+    assert at.session_state["resultado"] is True
+    assert at.session_state["avisos"] == ["RuntimeError"]
+
+
+def test_avisos_de_puerta_con_freno_6h():
+    enviados = []
+    reloj = {"t": _dt("2026-09-18T10:00:00+00:00")}
+    avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: reloj["t"])
+
+    avisador.login_roto("StreamlitAuthError")
+    avisador.login_roto("StreamlitAuthError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    assert len(enviados) == 2
+
+    reloj["t"] += timedelta(hours=6, seconds=1)
+    avisador.login_roto("StreamlitAuthError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    assert len(enviados) == 4
+    assert all("@" not in mensaje for mensaje in enviados)
