@@ -1462,7 +1462,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Iterate through transactions to build history
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
-        dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
         divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
@@ -1552,7 +1551,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned += _adj_qty
                     shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
-                    dist_dated.append((_tx_date, abs(amount)))
                     _dy = _row_year(_tx_date)
                     if _dy is not None:
                         divs_by_year[_dy] += abs(amount)
@@ -1568,7 +1566,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_drip += _adj_qty
                     if amount < 0:
                         dividends_collected_drip += abs(amount)
-                        dist_dated.append((_tx_date, abs(amount)))
                         _dy = _row_year(_tx_date)
                         if _dy is not None:
                             divs_by_year[_dy] += abs(amount)
@@ -1582,8 +1579,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     if _dy is not None:
                         divs_by_year[_dy] += amount
                     irr_flows_dated.append((_tx_date, amount))
-                    if amount > 0:
-                        dist_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf
@@ -2256,8 +2251,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Respaldo: si no hay costo base del bróker, estimar el ROC con el % que el fondo
         # publica en sus avisos 19a (ver knowledge/roc_19a.yaml). Empate por fecha si hay
         # historial por distribución; si no, % ponderado del fondo.
+        # El % del 19a se aplica a la distribución BRUTA, la misma en efectivo que reinvertida:
+        # la compra DRIP es el neto tras la retención, y tomarla como distribución dejaba el ROC
+        # de una posición reinvertida en el 70% del de la misma posición cobrada en efectivo.
+        _dist_bruto = [(d, float(a)) for d, a in _dividend_events(ticker_df).items()]
         if _roc_accum is None and total_dividends > 0:
-            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, dist_dated)
+            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, _dist_bruto)
             if _est_roc is not None:
                 _roc_accum = round(_est_roc, 2)
                 _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
@@ -2267,7 +2266,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # origen es 19a: el método 'broker' es una resta contra el costo de HOY, no tiene
         # fecha que repartir en el tiempo, y subestima el ROC al reinvertir (M1 §4). Sale del
         # mismo empate por fecha que alimentó `_roc_accum` — no es un segundo cálculo.
-        _roc_events = _roc_events_from_19a(ticker, dist_dated) if _roc_source == '19a' else None
+        _roc_events = _roc_events_from_19a(ticker, _dist_bruto) if _roc_source == '19a' else None
 
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
@@ -3480,10 +3479,11 @@ def latest_health_verdict(ticker):
     return last.get('verdict')
 
 
-def _roc_events_from_19a(ticker, dist_dated):
+def _roc_events_from_19a(ticker, dist_bruto):
     """Serie FECHADA del ROC del holder: `[(fecha, roc_$)]`, una entrada por distribución.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    `dist_bruto`: lista de (fecha, monto BRUTO) — la de `_dividend_events`, con signo: una
+    reversa de IB resta ROC en vez de sumarlo.
     Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
     usa el % ponderado del fondo (`weighted_pct`).
 
@@ -3500,7 +3500,7 @@ def _roc_events_from_19a(ticker, dist_dated):
     fiscal, es un híbrido, y la Regla 2 lo prohíbe.
     """
     info = load_roc_19a().get(str(ticker).upper())
-    if not info or not dist_dated:
+    if not info or not dist_bruto:
         return None
 
     dated = []
@@ -3513,8 +3513,8 @@ def _roc_events_from_19a(ticker, dist_dated):
     weighted = float(weighted) if weighted is not None else None
 
     eventos = []
-    for dt, amt in dist_dated:
-        amt = abs(amt or 0)
+    for dt, amt in dist_bruto:
+        amt = amt or 0
         pct = None
         if dated and dt is not None:
             best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
@@ -3528,10 +3528,10 @@ def _roc_events_from_19a(ticker, dist_dated):
     return eventos
 
 
-def _estimate_roc_from_19a(ticker, dist_dated):
+def _estimate_roc_from_19a(ticker, dist_bruto):
     """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    `dist_bruto`: lista de (fecha, monto BRUTO), la de `_dividend_events`.
     Devuelve (roc_$|None, roc_%|None).
 
     Es la SUMA de `_roc_events_from_19a`, no un segundo empate por fecha: el criterio de
@@ -3539,10 +3539,10 @@ def _estimate_roc_from_19a(ticker, dist_dated):
     un solo sitio. Dos implementaciones del mismo empate es exactamente la divergencia que
     la Regla 3 del contrato prohíbe.
     """
-    total = sum(abs(a or 0) for _, a in dist_dated) if dist_dated else 0.0
+    total = sum((a or 0) for _, a in dist_bruto) if dist_bruto else 0.0
     if total <= 0:
         return None, None
-    eventos = _roc_events_from_19a(ticker, dist_dated)
+    eventos = _roc_events_from_19a(ticker, dist_bruto)
     if eventos is None:
         return None, None
     roc_sum = sum(a for _, a in eventos)
