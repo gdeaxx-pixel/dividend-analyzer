@@ -838,3 +838,38 @@ def test_avisos_de_puerta_con_freno_6h():
     avisador.puerta_abierta_por_error("RuntimeError")
     assert len(enviados) == 4
     assert all("@" not in mensaje for mensaje in enviados)
+
+
+# ============================================================
+# Auditoría de privacidad 2026-09-17, N1: ?clear no corre antes de la puerta
+# ============================================================
+
+def _app_con_espia_de_clear(monkeypatch, secrets):
+    import streamlit as st
+
+    llamadas = []
+    monkeypatch.setattr(st.cache_data, "clear", lambda: llamadas.append("clear"))
+    monkeypatch.setattr(acceso, "_avisador_singleton", lambda token, chat_id: _AvisadorEspia())
+    monkeypatch.setattr(acceso, "_lista_cache_singleton", lambda pat: _ListaSinLeer())
+    at = AppTest.from_file("app.py", default_timeout=60)
+    for clave, valor in secrets.items():
+        at.secrets[clave] = valor
+    at.query_params["clear"] = "1"
+    at.run()
+    return at, llamadas
+
+
+def test_clear_no_vacia_el_cache_con_la_puerta_cerrada(monkeypatch):
+    """`?clear` vaciaba el caché de TODOS los usuarios antes de `acceso.puerta()`: cualquier
+    visitante sin sesión podía forzar recálculos y re-descargas de Yahoo."""
+    at, llamadas = _app_con_espia_de_clear(monkeypatch, {
+        "auth": {},
+        "acceso": {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"},
+    })
+    assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+    assert llamadas == [], "un visitante sin sesión vació el caché global"
+
+
+def test_clear_sigue_funcionando_con_la_puerta_abierta(monkeypatch):
+    _, llamadas = _app_con_espia_de_clear(monkeypatch, {})
+    assert llamadas == ["clear"]
