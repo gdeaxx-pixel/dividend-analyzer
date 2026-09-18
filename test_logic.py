@@ -572,6 +572,46 @@ def test_roc_none_when_no_basis_provided(monkeypatch):
     assert s.get("roc_percent") is None
 
 
+def _schwab_np(monkeypatch, filas):
+    from ui.adapters import cashflow_data
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(_roc_norm_df(filas))["MSTY"]
+    return s, cashflow_data(s, "MSTY")["RESULTADO"]
+
+
+def test_net_profit_no_resta_la_retencion_de_lo_reinvertido(monkeypatch):
+    """F2 (auditoría 2026-09-17). La compra DRIP ya es neta de retención: sus acciones están en
+    `market_value`. Restar esa retención del efectivo (que es $0) la descontaba otra vez:
+    bruto $100, retención $30, DRIP $70 -> net_profit $40 en lugar de $70, mientras cashflow
+    mostraba $70 para la misma posición."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["market_value"] == pytest.approx(1070.0)
+    assert s["net_profit"] == pytest.approx(70.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
+def test_net_profit_resta_solo_la_retencion_de_lo_cobrado_en_efectivo(monkeypatch):
+    """F2, caso mixto: una distribución cobrada en efectivo y otra reinvertida, cada una con su
+    retención. Solo la del efectivo sale del efectivo: 1070 + (100 − 30) − 1000 = 140. Restar
+    las dos da 110; no restar ninguna, 170."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-11-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["withheld_tax_total"] == pytest.approx(60.0)
+    assert s["net_profit"] == pytest.approx(140.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
 # ── Regresión: parsing numérico US vs Europeo (BUG clean_val) ───────────────
 
 def _norm_amounts(values):
