@@ -428,7 +428,8 @@ def _render_1042s_uploader() -> None:
         "Tu broker te lo envía a inicio de año (Schwab: Cuenta → Documentos → Impuestos). "
         "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
         "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
-        "El PDF no se guarda: se lee en memoria y se descarta.")
+        "El PDF no se guarda: se lee en memoria, no se envía a ningún servicio externo y se "
+        "descarta.")
 
     if archivo is None:
         return
@@ -439,7 +440,7 @@ def _render_1042s_uploader() -> None:
     sig = (archivo.name, archivo.size)
     if sig != st.session_state.get("_wizard_1042s_sig"):
         with st.spinner("Leyendo tu 1042-S…"):
-            resultado = logic.extract_1042s(archivo.getvalue(), _clave_gemini())
+            resultado = logic.extract_1042s(archivo.getvalue())
         st.session_state["_wizard_1042s_sig"] = sig
 
         if resultado is None:
@@ -456,9 +457,11 @@ def _render_1042s_uploader() -> None:
 
     error = st.session_state.get("_wizard_1042s_error")
     if error == "ilegible":
-        st.error("No reconocimos este PDF como un Formulario 1042-S.")
-        st.caption("Verifica que sea el documento que te envió tu broker (Schwab: Cuenta → "
-                   "Documentos → Impuestos), en formato PDF y sin escanear.")
+        st.error("No pudimos leer este PDF de forma automática.")
+        st.caption("Verifica que sea el 1042-S que te envió tu broker (Schwab: Cuenta → "
+                   "Documentos → Impuestos). Si es escaneado, pide la versión digital. También "
+                   "puedes saltar este paso: la app funciona sin el 1042-S; solo pierdes la "
+                   "validación contra el documento oficial.")
     elif error == "sin_dividendos":
         st.warning("Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
                    "(código 37) en tus formularios.")
