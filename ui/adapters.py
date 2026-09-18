@@ -1902,80 +1902,14 @@ MET_SERIE_DRIP = ("con", "sin")
 def _roc_pct_by_year(ticker: str, roc19a: dict, roc_ici: dict, con_fuente: bool = False):
     """%ROC (0-100) por año calendario para el reembolso 1042-S de `backtest.run_backtest`.
 
-    **Dos fuentes, y una manda sobre la otra por año** (2026-08-21). Para cada año:
-    el **cierre fiscal** (`roc_ici`, casilla 3 del 1099) si existe; si no, la **estimación**
-    del gestor (`roc19a`, los avisos 19(a)); si no, nada — el piso conservador.
-
-    No hace falta preguntar qué año está "cerrado": el ICI solo existe para años cerrados,
-    así que «el ICI si está» ya es la regla, sin depender del reloj. Cuando YieldMax publique
-    el cierre de 2026, `roc_ici.yaml` lo traerá y ese año dejará de usar la estimación solo.
-
-    Las dos fuentes se piden **explícitas**, sin default que las cargue por dentro: un objeto
-    fiscal que lee estado global por su cuenta es justo como empiezan las divergencias que
-    la Regla 3 del contrato existe para evitar — y haría que un test con datos sintéticos
-    arrastrara en silencio el yaml de producción.
-
-    La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
-    de los avisos 19(a) publicados ESE año — misma convención que
-    `logic.estimate_roc_refund_by_year`, que es quien ya la fijó. Los años sin avisos en la
-    ventana caen al ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos
-    devuelve `{}`: sin escudo que reclamar, la retención plana se queda como está.
-
-    **Los años ANTERIORES a la ventana no se extrapolan** (y eso mueve cifras). El relleno
-    con el ponderado cubre solo los huecos DENTRO del rango de avisos publicados; un año
-    previo al primer aviso no aparece en el dict, así que el motor le aplica 0% de ROC:
-    retiene el 30% completo y no devuelve nada. Es un piso conservador, no una medida — y
-    difiere de lo que hacía `_tasa_efectiva_neta`, que aplicaba el ponderado a TODO el
-    horizonte. Material hoy en dos fondos del universo, cuyos avisos empiezan mucho después
-    de su incepción: TSLY (incep. nov-2022, avisos desde may-2025) y CONY (incep. ago-2023,
-    avisos desde feb-2025). NVDY y MSTY tienen la ventana cubierta desde su primer año.
-
-    Que el alcance sea el mismo en todas las vistas es lo que exige la Regla 3; que ese
-    alcance se DECLARE en el copy es lo que exige la Regla 2. Ampliarlo (extrapolar hacia
-    atrás) es una decisión de producto abierta, no un arreglo: movería también las cifras
-    ya desplegadas de «La matriz».
+    Delegación pura a `logic.roc_pct_by_year`, el objeto único del eje «%ROC por año fiscal»
+    (cierre fiscal ICI por delante de la estimación 19(a), año por año). Vivía aquí, y por
+    eso la precedencia del cierre solo llegaba a las simulaciones: el objeto fiscal de la
+    cartera real (`logic.estimate_roc_refund_by_year`) no podía importarla desde la capa de
+    UI y calculaba su propio promedio sin ICI (auditoría R1, 2026-09-18). La regla, sus
+    casos borde y su porqué están documentados allí.
     """
-    info = roc19a.get(ticker) or {}
-    por_anio: dict[int, list[float]] = {}
-    for p in (info.get("per_distribution") or []):
-        try:
-            por_anio.setdefault(pd.Timestamp(p["date"]).year, []).append(float(p["roc_pct"]))
-        except (KeyError, TypeError, ValueError):
-            continue
-    try:
-        ponderado = float(info.get("weighted_pct"))
-    except (TypeError, ValueError):
-        ponderado = 0.0
-    # Ojo con el orden: aquí había un `return {}` cuando el ticker no tenía avisos 19(a).
-    # Con dos fuentes eso se saltaba el cierre fiscal justo en los fondos que MÁS lo
-    # necesitan —los que nunca publicaron 19(a), como CHPY—, y la vista seguía dando el
-    # número viejo sin que nada fallara. Ninguna salida temprana puede quedar por delante
-    # del merge.
-    anios = list(por_anio)
-    promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
-    # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
-    # un hueco en la publicación no se lea como «ese año no hubo ROC».
-    if anios and ponderado > 0:
-        for a in range(min(anios), max(anios) + 1):
-            promedios.setdefault(a, ponderado)
-
-    # El cierre fiscal PISA la estimación, año por año. Nunca al revés: el 19(a) es un
-    # pronóstico del número que el ICI ya midió, así que sobre un año cerrado no aporta nada.
-    # Un 0.00% del ICI (CONY 2023) es un CERO MEDIDO, no un hueco: entra igual que cualquier
-    # otro valor y pisa lo que dijera el 19(a).
-    fuentes = {a: "estimacion" for a in promedios}
-    for anio, entrada in (roc_ici.get(str(ticker).upper()) or {}).items():
-        try:
-            anio, pct = int(anio), float(entrada["roc_pct"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        promedios[anio] = pct
-        fuentes[anio] = "cierre"
-    # `con_fuente` devuelve la procedencia que decidió ESTE mismo bucle, no una segunda
-    # implementación de la regla: un mapa de procedencia calculado aparte se despega del
-    # dato en cuanto una de las dos ramas cambia (p. ej. una entrada corrupta que el merge
-    # descarta y el mapa seguiría marcando como «cierre»).
-    return (promedios, fuentes) if con_fuente else promedios
+    return logic.roc_pct_by_year(ticker, roc19a, roc_ici, con_fuente=con_fuente)
 
 
 class _PoliticaFiscal(typing.NamedTuple):

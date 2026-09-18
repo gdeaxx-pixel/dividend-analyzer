@@ -2612,6 +2612,8 @@ def test_estimate_roc_refund_by_year_uses_fallback_for_year_without_19a(monkeypa
     holder); el año con aviso usa el promedio de ESE año."""
     monkeypatch.setattr(logic, "load_roc_19a", lambda: {
         "MSTY": {"per_distribution": [{"date": "2025-03-01", "roc_pct": 80.0}]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     gross_by_year = {2024: 500.0, 2025: 500.0}
     withheld_by_year = {2024: 150.0, 2025: 150.0}
     result = logic.estimate_roc_refund_by_year(
@@ -2628,10 +2630,162 @@ def test_estimate_roc_refund_by_year_different_roc_different_refund(monkeypatch)
             {"date": "2024-06-01", "roc_pct": 10.0},
             {"date": "2025-06-01", "roc_pct": 90.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     gross_by_year = {2024: 1000.0, 2025: 1000.0}
     withheld_by_year = {2024: 300.0, 2025: 300.0}
     result = logic.estimate_roc_refund_by_year(gross_by_year, withheld_by_year, "MSTY", base_rate=0.30)
     assert result[2024]["refund"] < result[2025]["refund"]
+
+
+# ── R1 + F6 (auditoría 2026-09-17/18): cierre fiscal por año y una sola resta de lo devuelto ──
+
+def test_refund_por_anio_el_cierre_ici_manda_sobre_el_19a(monkeypatch):
+    """R1: en un año con cierre fiscal (ICI) manda el cierre, no el promedio 19(a); en el año
+    abierto, el 19(a). Un 0% del ICI es un cero MEDIDO y también pisa. Cada año declara su
+    fuente. Forma del caso real: MSTY 2025 con 19(a) 78.4% y cierre 100% (1042-S de Daniel)."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"per_distribution": [
+        {"date": "2024-11-01", "roc_pct": 95.9},
+        {"date": "2025-03-01", "roc_pct": 70.0}, {"date": "2025-09-01", "roc_pct": 86.8},
+        {"date": "2026-03-01", "roc_pct": 60.0}]}})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"MSTY": {
+        2024: {"roc_pct": 0.0}, 2025: {"roc_pct": 100.0}}})
+    r = logic.estimate_roc_refund_by_year(
+        {2024: 100.0, 2025: 1000.0, 2026: 1000.0}, {2024: 30.0, 2025: 300.0, 2026: 300.0},
+        "MSTY", base_rate=0.30, roc_fallback_pct=50.0)
+    assert (r[2025]["roc_pct_usado"], r[2025]["roc_fuente"]) == (100.0, "cierre")
+    assert r[2025]["refund"] == pytest.approx(300.0, abs=0.01)          # todo vuelve
+    assert (r[2024]["roc_pct_usado"], r[2024]["roc_fuente"]) == (0.0, "cierre")
+    assert r[2024]["refund"] == pytest.approx(0.0, abs=0.01)            # nada vuelve
+    assert (r[2026]["roc_pct_usado"], r[2026]["roc_fuente"]) == (60.0, "estimacion")
+    assert r[2026]["refund"] == pytest.approx(300.0 - 0.30 * 1000.0 * 0.40, abs=0.01)
+    assert r["total"]["refund"] == pytest.approx(300.0 + 0.0 + 180.0, abs=0.01)
+
+
+def test_refund_por_anio_sin_cierre_ni_19a_cae_al_respaldo_declarado(monkeypatch):
+    """Un año sin cierre ni avisos usa el %ROC del holder y lo DECLARA como respaldo; sin
+    respaldo, 0% declarado como sin dato — nunca una fuente inventada."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    r = logic.estimate_roc_refund_by_year({2025: 100.0}, {2025: 30.0}, "ZZZY",
+                                          roc_fallback_pct=40.0)
+    assert (r[2025]["roc_pct_usado"], r[2025]["roc_fuente"]) == (40.0, "respaldo")
+    r0 = logic.estimate_roc_refund_by_year({2025: 100.0}, {2025: 30.0}, "ZZZY")
+    assert (r0[2025]["roc_pct_usado"], r0[2025]["roc_fuente"]) == (0.0, "sin_dato")
+
+
+def _f6_summary(monkeypatch, filas, roc19a, roc_ici):
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: roc19a)
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: roc_ici)
+    results = logic.analyze_portfolio(_roc_norm_df(filas), version="TEST_F6")
+    return logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
+
+
+def test_tax_summary_no_resta_dos_veces_lo_ya_devuelto(monkeypatch):
+    """F6, caso del informe: bruto $100, retenido al cobro $30, ya devuelto $10, ROC 80%,
+    tasa 30%. Justa $6 ⇒ devolución TOTAL $24, ADICIONAL $14 (la que falta), saldo $20 y lo
+    que se queda el fisco $6. Antes: `refund_pending` = $4 (restaba los $10 dos veces)."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2025-09-01", "NRA Tax Adj", "MSTY", 0, 10.0),
+    ], {"MSTY": {"weighted_pct": 80.0,
+                 "per_distribution": [{"date": "2025-06-01", "roc_pct": 80.0}]}}, {})
+    assert ts["withheld_at_payment"] == pytest.approx(30.0, abs=0.01)   # inicial
+    assert ts["refund_observed"] == pytest.approx(10.0, abs=0.01)       # ya devuelto
+    assert ts["withheld_real"] == pytest.approx(20.0, abs=0.01)         # saldo
+    assert ts["refund_total_estimated"] == pytest.approx(24.0, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(14.0, abs=0.01)      # adicional
+    assert ts["refund_pending"] == pytest.approx(14.0, abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(6.0, abs=0.01)          # = justa
+    assert ts["net_estimated"] == pytest.approx(ts["fair_withholding"], abs=0.01)
+
+
+def test_tax_summary_el_reembolso_de_un_anio_llega_al_siguiente(monkeypatch):
+    """F6 + R1 con la forma real (IB MSTY): la retención de 2025 se devuelve entera en
+    febrero de 2026 (cierre 100%). Medida contra el SALDO, esa devolución le quitaba a 2026
+    una retención que sí se cobró: 2026 salía sin nada que devolver y el fisco se quedaba en
+    $0. Medida al cobro: total $30 + $15, ya devuelto $30, falta $15, y el fisco se queda la
+    justa de 2026 ($15)."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2026-02-15", "NRA Tax Adj", "MSTY", 0, 30.0),
+        ("2026-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2026-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+    ], {"MSTY": {"weighted_pct": 50.0,
+                 "per_distribution": [{"date": "2026-06-01", "roc_pct": 50.0}]}},
+       {"MSTY": {2025: {"roc_pct": 100.0}}})
+    assert ts["withheld_at_payment_by_year"] == {2025: 30.0, 2026: 30.0}
+    assert ts["refund_by_year"][2025]["roc_fuente"] == "cierre"
+    assert ts["refund_by_year"][2025]["refund"] == pytest.approx(30.0, abs=0.01)
+    assert ts["refund_by_year"][2026]["roc_fuente"] == "estimacion"
+    assert ts["refund_by_year"][2026]["refund"] == pytest.approx(15.0, abs=0.01)
+    assert ts["refund_total_estimated"] == pytest.approx(45.0, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(15.0, abs=0.01)
+    assert ts["withheld_real"] == pytest.approx(30.0, abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(15.0, abs=0.01)
+
+
+def test_tax_summary_devuelto_de_mas_no_da_devolucion_negativa(monkeypatch):
+    """Si el bróker ya devolvió MÁS de lo que estimamos, no falta nada por volver (cero, no
+    negativo) y el fisco se queda el saldo — no una cifra por debajo de él."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2025-09-01", "NRA Tax Adj", "MSTY", 0, 28.0),
+    ], {"MSTY": {"weighted_pct": 80.0,
+                 "per_distribution": [{"date": "2025-06-01", "roc_pct": 80.0}]}}, {})
+    assert ts["refund_total_estimated"] == pytest.approx(24.0, abs=0.01)
+    assert ts["refund_estimated"] == 0.0
+    assert ts["net_estimated"] == pytest.approx(ts["withheld_real"], abs=0.01)
+    assert ts["withheld_real"] == pytest.approx(2.0, abs=0.01)
+
+
+def _schwab_daniel_df():
+    import glob
+    rutas = glob.glob(os.path.join(os.path.dirname(__file__), "real_examples",
+                                   "charles_schwab_data", "daniel_zambrano", "*.csv"))
+    if not rutas:
+        pytest.skip("real_examples no montado (data privada)")
+    with open(rutas[0], "rb") as f:
+        df, _b = logic.load_and_detect_csv(FakeFile(f.read(), os.path.basename(rutas[0])))
+    return logic.normalize_csv(df)
+
+
+def test_refund_real_schwab_msty_2025_vuelve_entero_como_dice_el_1042s():
+    """Ground truth externo: el 1042-S 2025 de Daniel reporta las 21 distribuciones de MSTY
+    ($275.97) bajo el código 37 (ROC, tasa 0%), o sea que TODA la retención de 2025 ($82.81)
+    se devuelve. Con el 19(a) (78.4%) la app devolvía $66.70 de ese año."""
+    df = _schwab_daniel_df()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_SCHWAB")
+    ts = logic.build_tax_summary(res["MSTY"], "MSTY", base_rate_pct=30.0)
+    y25 = ts["refund_by_year"][2025]
+    assert y25["roc_fuente"] == "cierre"
+    assert y25["roc_pct_usado"] == pytest.approx(100.0)
+    assert y25["refund"] == pytest.approx(82.81, abs=0.01)
+    assert ts["withheld_at_payment_by_year"][2025] == pytest.approx(82.81, abs=0.01)
+
+
+def test_refund_real_ib_msty_lo_devuelto_se_resta_una_sola_vez():
+    """IB MSTY real: los $23.25 retenidos en 2025 (cierre 100%) se acreditaron en 2026. Lo
+    que falta por volver es el total menos esos $23.25 UNA vez, y lo que se queda el fisco es
+    exactamente la retención justa (ningún año topa en cero ni en lo retenido)."""
+    df = _load_real_ib_1()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_IB")
+    ts = logic.build_tax_summary(res["MSTY"], "MSTY", base_rate_pct=30.0)
+    assert ts["refund_observed"] == pytest.approx(23.25, abs=0.01)
+    assert ts["refund_by_year"][2025]["roc_fuente"] == "cierre"
+    assert ts["refund_by_year"][2025]["refund"] == pytest.approx(23.25, abs=0.01)
+    assert ts["withheld_at_payment"] == pytest.approx(ts["withheld_real"] + 23.25, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(ts["refund_total_estimated"] - 23.25,
+                                                   abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(ts["fair_withholding"], abs=0.02)
 
 
 # ── Objeto fiscal único `tax_summary` (Regla 3, specs/roc-nra-invariants.md) ────────────────
@@ -2657,6 +2811,8 @@ def _tax_summary_multi_year_setup(monkeypatch):
             {"date": "2024-06-01", "roc_pct": 40.0},
             {"date": "2025-06-01", "roc_pct": 80.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     return logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY")
 
 
@@ -2725,6 +2881,8 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
             {"date": "2024-06-01", "roc_pct": 40.0},
             {"date": "2025-06-01", "roc_pct": 80.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     results = logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY_CAPITAL")
     s = results["MSTY"]
 
