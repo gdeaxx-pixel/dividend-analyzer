@@ -285,7 +285,10 @@ def render_bloque_posiciones() -> bool:
             accept_multiple_files=True, label_visibility="collapsed",
             key="_vd_fotos",
             help="Sube capturas donde se vean «Acciones/Posición» y «Base de coste / Cost "
-                 "Basis» y rellenamos la tabla por ti.")
+                 "Basis» y rellenamos la tabla por ti. Las imágenes se envían a Google "
+                 "Gemini para leerlas; esta app no las guarda.")
+        st.caption("Las capturas se leen con Google Gemini. Antes de subirlas, recorta tu "
+                  "nombre y tu número de cuenta.")
         if fotos:
             firma = tuple((f.name, f.size) for f in fotos)
             if firma != st.session_state.get("_wizard_photo_sig"):
@@ -591,6 +594,12 @@ def render_carga() -> bool:
         '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
         'la lectura.</p>',
         unsafe_allow_html=True)
+
+    with st.expander("Cómo tratamos tus datos"):
+        ruta_privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "PRIVACY.md")
+        with open(ruta_privacy, encoding="utf-8") as f:
+            st.markdown(f.read())
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:
