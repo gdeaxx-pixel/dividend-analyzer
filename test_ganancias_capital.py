@@ -121,34 +121,6 @@ def test_corte_de_dos_anios_por_un_dia_a_cada_lado(fecha_venta, tramo_esperado, 
     assert r['tramo'] == tramo_esperado
 
 
-# ── F5 — una sola fecha de valoración (auditoría 2026-09-18) ───────────────────────
-#
-# `unrealized.market_value` usaba el último cierre CON DATO (`_closes.index[-1]`), pero
-# `holding_days_ponderado` se anclaba al reloj de HOY (`ultimo_dia`/`pd.Timestamp.today()`
-# vía `today=None`) o a la última fila del CSV — dos fechas distintas para el mismo
-# tramo/tenencia. El fix pasa `today` explícito = la fecha del cierre que ya se usa para
-# `market_value`, así que tenencia y valor de mercado miden contra la MISMA fecha.
-
-def test_f5_tenencia_cuenta_hasta_la_fecha_de_valoracion():
-    """Compra el 2024-01-01; con `today=2026-01-10` (740 días desde la compra) el tramo
-    cruza a `ge_2y`. Sin `today` (None), el motor cae a la última fila del CSV
-    (2025-12-01, 700 días) y sigue en `lt_2y` — confirma que `today` es lo que decide,
-    no un reloj interno distinto."""
-    df = _df([
-        ('2024-01-01', 'Buy', 'AAA', 100, 10.00, -1000.00),
-        ('2025-12-01', 'Dividend', 'AAA', 0, 0.0, 1.00),   # última fila del CSV
-    ])
-    con_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today='2026-01-10')
-    u = con_fecha['unrealized']
-    assert u['holding_days_ponderado'] == 740
-    assert u['tramo'] == 'ge_2y'
-
-    sin_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today=None)
-    u2 = sin_fecha['unrealized']
-    assert u2['holding_days_ponderado'] == 700
-    assert u2['tramo'] == 'lt_2y'
-
-
 # ── Trampa 2: DRIP sube la base ─────────────────────────────────────────────────────
 
 def test_drip_sube_la_base_TOTAL_que_es_lo_estructural():

@@ -413,6 +413,36 @@ def test_ib_negative_dividend_corrections_reduce_total(monkeypatch):
 
 
 # ── F5 — una sola fecha de valoración (auditoría 2026-09-18) ───────────────────────
+#
+# `unrealized.market_value` usaba el último cierre CON DATO (`_closes.index[-1]`), pero
+# `holding_days_ponderado` se anclaba al reloj de HOY (`ultimo_dia`/`pd.Timestamp.today()`
+# vía `today=None`) o a la última fila del CSV — dos fechas distintas para el mismo
+# tramo/tenencia. El fix pasa `today` explícito = la fecha del cierre que ya se usa para
+# `market_value`, así que tenencia y valor de mercado miden contra la MISMA fecha.
+
+def test_f5_tenencia_cuenta_hasta_la_fecha_de_valoracion():
+    """Unitario sobre `build_capital_gains` (misma forma de `ticker_df` que
+    `test_ganancias_capital.py::test_corte_de_dos_anios_por_un_dia_a_cada_lado`:
+    Date/Action/Symbol/Quantity/Price/Amount). Compra el 2024-01-01; con
+    `today=2026-01-10` (740 días desde la compra) el tramo cruza a `ge_2y`. Sin
+    `today` (None), el motor cae a la última fila del CSV (2025-12-01, 700 días) y
+    sigue en `lt_2y` — confirma que `today` es lo que decide, no un reloj interno
+    distinto."""
+    df = pd.DataFrame([
+        ('2024-01-01', 'Buy', 'AAA', 100, 10.00, -1000.00),
+        ('2025-12-01', 'Dividend', 'AAA', 0, 0.0, 1.00),   # última fila del CSV
+    ], columns=['Date', 'Action', 'Symbol', 'Quantity', 'Price', 'Amount'])
+
+    con_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today='2026-01-10')
+    u = con_fecha['unrealized']
+    assert u['holding_days_ponderado'] == 740
+    assert u['tramo'] == 'ge_2y'
+
+    sin_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today=None)
+    u2 = sin_fecha['unrealized']
+    assert u2['holding_days_ponderado'] == 700
+    assert u2['tramo'] == 'lt_2y'
+
 
 def test_f5_analyze_portfolio_pasa_la_fecha_del_ultimo_cierre(monkeypatch):
     """`fetch_market_data` trae cierres hasta 2026-01-09 y una barra MÁS RECIENTE
