@@ -412,6 +412,40 @@ def test_ib_negative_dividend_corrections_reduce_total(monkeypatch):
     )
 
 
+# ── F5 — una sola fecha de valoración (auditoría 2026-09-18) ───────────────────────
+
+def test_f5_analyze_portfolio_pasa_la_fecha_del_ultimo_cierre(monkeypatch):
+    """`fetch_market_data` trae cierres hasta 2026-01-09 y una barra MÁS RECIENTE
+    (2026-01-12) sin dato (`Close=NaN`, fin de semana / feed incompleto). `_closes.dropna()`
+    descarta esa barra, así que la fecha de VALORACIÓN real es 2026-01-09 — la misma que ya
+    fija `current_price`/`market_value`. `build_capital_gains` debe recibir exactamente esa
+    fecha por `today`, y el dict del ticker debe publicarla en `valuation_date`."""
+    df = _roc_norm_df([("2024-01-01", "Buy", "MSTY", 100, -1000.0)])
+
+    def mock_fetch(ticker, start_date):
+        idx = pd.DatetimeIndex(["2026-01-09", "2026-01-12"])
+        data = pd.DataFrame(
+            {"Close": [50.0, float("nan")], "Dividends": [0.0, 0.0],
+             "Stock Splits": [0.0, 0.0]}, index=idx)
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+
+    capturado = {}
+    original_bcg = logic.build_capital_gains
+
+    def _spy(*args, **kwargs):
+        capturado["today"] = kwargs.get("today")
+        return original_bcg(*args, **kwargs)
+
+    monkeypatch.setattr(logic, "build_capital_gains", _spy)
+
+    results = logic.analyze_portfolio(df, version="TEST_F5")
+    s = results["MSTY"]
+    assert s["valuation_date"] == "2026-01-09"
+    assert capturado["today"] == pd.Timestamp("2026-01-09")
+
+
 # ── Lógica de negocio existente (CONY ground truth) ───────────────────────────
 
 def test_cony_portfolio_analysis(monkeypatch):

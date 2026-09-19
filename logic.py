@@ -1422,7 +1422,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             results[ticker] = {"error": f"No usable close price: {error_msg or 'serie sin cierres'}"}
             continue
         current_price = _closes.iloc[-1]
-        
+        fecha_valoracion = pd.Timestamp(_closes.index[-1]).normalize()
+        if fecha_valoracion.tzinfo is not None:
+            fecha_valoracion = fecha_valoracion.tz_localize(None)
+
         # --- Split data for per-transaction adjustment ---
         # market_data is fetched with actions=True so it includes Stock Splits column.
         # We build a Series of (split_date → ratio) covering the holding period.
@@ -1683,7 +1686,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # ── Fase 7: IRR anualizado con timing real de flujos ─────────────
         irr_anual = None
         try:
-            _irr_all = list(irr_flows_dated) + [(pd.Timestamp.today(), market_value)]
+            _irr_all = list(irr_flows_dated) + [(fecha_valoracion, market_value)]
             _buckets  = defaultdict(float)
             for _dt, _amt in _irr_all:
                 _ts = pd.Timestamp(_dt)
@@ -2389,6 +2392,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "capital_gains": build_capital_gains(
                 ticker_df, ticker,
                 market_price=current_price,
+                today=fecha_valoracion,
                 splits=_splits_col,
                 history_incomplete=history_incomplete,
                 roc_events=_roc_events,
@@ -2399,6 +2403,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 broker_position=_ov,
                 roc_19a_published=_publica_19a,
             ),
+            # Fecha de VALORACIÓN — la del último cierre usado para `current_price` y
+            # `market_value`, NO el reloj de hoy: determinista con el precio que ya se
+            # muestra. `build_capital_gains` y el flujo terminal del IRR la reciben,
+            # para que tenencia/tramo/IRR midan contra la MISMA fecha que el valor de
+            # mercado (F5, auditoría 2026-09-18). No toca `csv_coverage_pct` (Fase 6):
+            # esa mide otra cosa (vigencia del propio CSV, no del precio de mercado).
+            "valuation_date": str(fecha_valoracion.date()),
             # ROC
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
