@@ -307,25 +307,6 @@ def hay_alertas(resultados: dict) -> bool:
     return nivel != "Alta"
 
 
-def preparar_pdf(resultados: dict) -> tuple[bytes | None, str]:
-    """Genera los bytes del reporte PDF por adelantado: el botón de descarga vive dentro
-    del popover de la ruta (`ui/chrome.py`), que es solo presentación y no calcula nada,
-    así que se prepara aquí antes. Literal de la fila 37 heredada de `ui.pie`/
-    `app_old.py:5271-5282`: `report.py` y `test_report.py` no se tocan. `try/except`
-    porque el original también lo protege — un reporte que falla no debe romper el menú."""
-    try:
-        from datetime import date as _date
-
-        from report import generate_report_pdf
-
-        broker = st.session_state.get("_wizard_broker") or "schwab"
-        pdf_bytes = generate_report_pdf(resultados, broker, version="2.0")
-        filename = f"auditoria-portafolio-{_date.today().isoformat()}.pdf"
-        return pdf_bytes, filename
-    except Exception:
-        return None, ""
-
-
 def render_validacion_datos(resultados: dict) -> None:
     """Punto único de entrada: el panel «Validación datos» completo."""
     if not resultados:
