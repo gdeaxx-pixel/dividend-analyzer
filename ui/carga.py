@@ -285,8 +285,8 @@ def render_bloque_posiciones() -> bool:
             accept_multiple_files=True, label_visibility="collapsed",
             key="_vd_fotos",
             help="Sube capturas donde se vean «Acciones/Posición» y «Base de coste / Cost "
-                 "Basis» y rellenamos la tabla por ti. Las imágenes se envían a Google "
-                 "Gemini para leerlas; esta app no las guarda.")
+                 "Basis» y rellenamos la tabla por ti. "
+                 "Las imágenes se envían a Google Gemini para leerlas; esta app no las guarda.")
         st.caption("Las capturas se leen con Google Gemini. Antes de subirlas, recorta tu "
                   "nombre y tu número de cuenta.")
         if fotos:
