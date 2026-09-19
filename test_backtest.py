@@ -308,6 +308,68 @@ def test_run_backtest_requires_capital_or_shares():
         bt.run_backtest("FAKE", "2024-01-01")
 
 
+# ── C·7/Q1+Q2 — elegibilidad de dividendos (compra al Close del ex-date; reembolso ROC
+# del mismo ex-date no reinvertido antes de calcular el bruto) ──────────────────────
+
+@pytest.mark.parametrize("drip", [False, True])
+def test_q1_compra_inicial_en_ex_date_no_cobra(drip):
+    """Comprar con `initial_capital` (sin posicion previa) al Close del primer dia del
+    historial, que resulta ser tambien un ex-date, NO debe cobrar ese dividendo: la compra
+    ocurre al cierre de ese dia, despues de que el mercado ya descontó la distribucion.
+    Bug: `gross_div = shares * div_rate` contaba la posicion recien comprada como elegible
+    el dia 0 -> bruto 10, final 110. Correcto: bruto 0, final 100."""
+    idx = pd.date_range("2024-01-02", periods=2, freq="D")
+    history = pd.DataFrame({"Close": [10.0, 10.0], "Dividends": [1.0, 0.0]}, index=idx)
+    r = bt.run_backtest("SYNTH", idx[0], initial_capital=100.0, drip=drip, history=history)
+    assert r.gross_dividends_total == pytest.approx(0.0)
+    assert r.final_total_value == pytest.approx(100.0)
+
+
+def test_q1_posicion_preexistente_si_cobra():
+    """Pasar `initial_shares` explicito (posicion que ya se tenia antes del historial, no
+    comprada al Close del dia 0) SI debe cobrar el dividendo del dia 0 si ese dia es ex-date:
+    bruto 10, final 110."""
+    idx = pd.date_range("2024-01-02", periods=2, freq="D")
+    history = pd.DataFrame({"Close": [10.0, 10.0], "Dividends": [1.0, 0.0]}, index=idx)
+    r = bt.run_backtest("SYNTH", idx[0], initial_shares=10.0, drip=True, history=history)
+    assert r.gross_dividends_total == pytest.approx(10.0)
+    assert r.final_total_value == pytest.approx(110.0)
+
+
+def test_q2_refund_del_mismo_ex_date_no_es_elegible():
+    """Q2: el reembolso ROC del 1042-S que llega el mismo dia que un ex-date se reinvierte
+    ANTES de calcular el bruto de ESE dia si no se fija `elegibles` por adelantado. Con
+    NRA 30%, ROC 100%, DRIP: dividendo del 2023-12-29 (10 acciones x $1 = $10 bruto, $7 neto,
+    $3 retenido -> $3 devengado como reembolso). Refund cobrado el 2024-03-01 (mismo mes de
+    refund_month=3), que es TAMBIEN un ex-date. Elegibles ese dia deben ser las acciones del
+    cierre anterior (10.7, tras reinvertir el neto de dic), NO 10.7 + las que compra el
+    reembolso -> bruto 10.70 (no 11.00), final 120.70 (no 121.00)."""
+    idx = pd.date_range("2023-12-28", periods=4, freq="D")
+    # dias: 12-28 (sin div), 12-29 (ex-date, div=1), 12-30 (sin div, placeholder),
+    # 03-01 (ex-date, div=1) -- se arma con fechas explicitas, no un rango continuo.
+    dates = pd.to_datetime(["2023-12-28", "2023-12-29", "2024-03-01", "2024-03-04"])
+    history = pd.DataFrame({"Close": [10.0, 10.0, 10.0, 10.0],
+                             "Dividends": [0.0, 1.0, 1.0, 0.0]}, index=dates)
+    r = bt.run_backtest("SYNTH", dates[0], initial_capital=100.0, drip=True, nra_rate=0.3,
+                         history=history, roc_pct_by_year={2023: 100.0, 2024: 100.0})
+    assert r.daily.loc["2024-03-01", "gross_dividend"] == pytest.approx(10.70)
+    assert r.final_total_value == pytest.approx(120.70)
+
+
+def test_q2_control_sin_choque_no_cambia():
+    """Sin choque refund/ex-date en el mismo dia, el comportamiento no debe moverse:
+    final 110 y nra_withheld == refund + receivable (identidad de conservacion del
+    escudo fiscal)."""
+    dates = pd.to_datetime(["2023-12-28", "2023-12-29", "2024-03-01"])
+    history = pd.DataFrame({"Close": [10.0, 10.0, 10.0], "Dividends": [0.0, 1.0, 0.0]},
+                            index=dates)
+    for drip in (True, False):
+        r = bt.run_backtest("SYNTH", dates[0], initial_capital=100.0, drip=drip, nra_rate=0.3,
+                             history=history, roc_pct_by_year={2023: 100.0})
+        assert r.final_total_value == pytest.approx(110.0)
+        assert r.nra_withheld_total == pytest.approx(r.roc_refund_total + r.roc_receivable_final)
+
+
 # ── Tests de sabotaje: rompen el motor a proposito y confirman que el gate FALLA ─
 
 @contextlib.contextmanager
