@@ -1,87 +1,87 @@
 # Generado por fetch_price_cache.py. Fecha de generacion y rango cubierto por ticker del cache en knowledge/price_cache/*.parquet.
 # Refresco semanal via .github/workflows/refresh-price-cache.yml. No editar a mano.
 NVDY:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2023-05-11'
-  end: '2026-09-11'
-  rows: 837
+  end: '2026-09-18'
+  rows: 842
 TSLY:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 CONY:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2023-08-15'
-  end: '2026-09-11'
-  rows: 772
-MSTY:
-  generated_at: '2026-09-12'
-  start: '2024-02-22'
-  end: '2026-09-11'
-  rows: 641
-CHPY:
-  generated_at: '2026-09-12'
-  start: '2025-04-08'
-  end: '2026-09-11'
-  rows: 359
-SCHB:
-  generated_at: '2026-09-12'
-  start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
-XLK:
-  generated_at: '2026-09-12'
-  start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
-SMH:
-  generated_at: '2026-09-12'
-  start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
-NFLY:
-  generated_at: '2026-09-12'
-  start: '2023-08-08'
-  end: '2026-09-11'
+  end: '2026-09-18'
   rows: 777
+MSTY:
+  generated_at: '2026-09-19'
+  start: '2024-02-22'
+  end: '2026-09-18'
+  rows: 646
+CHPY:
+  generated_at: '2026-09-19'
+  start: '2025-04-08'
+  end: '2026-09-18'
+  rows: 364
+SCHB:
+  generated_at: '2026-09-19'
+  start: '2022-11-23'
+  end: '2026-09-18'
+  rows: 957
+XLK:
+  generated_at: '2026-09-19'
+  start: '2022-11-23'
+  end: '2026-09-18'
+  rows: 957
+SMH:
+  generated_at: '2026-09-19'
+  start: '2022-11-23'
+  end: '2026-09-18'
+  rows: 957
+NFLY:
+  generated_at: '2026-09-19'
+  start: '2023-08-08'
+  end: '2026-09-18'
+  rows: 782
 YMAX:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2024-01-17'
-  end: '2026-09-11'
-  rows: 666
+  end: '2026-09-18'
+  rows: 671
 NVDA:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 TSLA:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 COIN:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 MSTR:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 PLTY:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2024-10-08'
-  end: '2026-09-11'
-  rows: 483
+  end: '2026-09-18'
+  rows: 488
 QYLD:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
 SVOL:
-  generated_at: '2026-09-12'
+  generated_at: '2026-09-19'
   start: '2022-11-23'
-  end: '2026-09-11'
-  rows: 952
+  end: '2026-09-18'
+  rows: 957
