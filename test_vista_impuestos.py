@@ -543,6 +543,46 @@ def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(casilla9_esp, abs=0.05)
 
 
+def test_r2_casilla9_igual_al_objeto_fiscal_ib_real():
+    """R2 sobre el caso real IB (9 fondos, retención al cobro mezclando 2025 con escudo
+    aplicado y 2026 sin escudo): por fondo, `build_withholding_diagnosis(..., None)`
+    (sin país) coincide EXACTO con `build_tax_summary(..., base_rate_pct=30.0)` — mismo
+    helper único (Regla 3) — y la casilla 9 agregada del peldaño 4 da 801.69, la que mide
+    año por año, no los 1466.19 que mezclaba las tasas de 2025 y 2026."""
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    bundle = demo_mode.load_demo_case("ib_1")
+    assert bundle is not None
+    res = bundle["_results"]
+
+    comparados = 0
+    for t, s in sorted(res.items()):
+        if not isinstance(s, dict) or s.get("skipped") or "error" in s:
+            continue
+        dg = logic.applied_withholding_rate(s)
+        wap = float(dg.get("withheld_at_payment") or 0)
+        if dg.get("applied_pct") is None or wap <= 0.01 or dg.get("implausible"):
+            continue
+        if not (dg.get("gross") or 0) > 0:
+            continue
+        ts = logic.build_tax_summary(s, t, base_rate_pct=30.0)
+        netted = float(ts.get("withheld_real") if ts.get("withheld_real") is not None
+                       else s.get("withheld_tax_total") or 0)
+        ya = sum(float(v or 0) for v in (s.get("tax_refund_observed_by_year") or {}).values())
+        if abs(wap - round(netted + ya, 2)) > max(0.02, 0.01 * wap):
+            continue  # no reconcilia: mismo filtro que el oráculo (r2_casilla9_casos.py)
+
+        diag = logic.build_withholding_diagnosis(s, t, None)
+        assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.05), t
+        comparados += 1
+
+    assert comparados >= 8, "muy pocos fondos reconciliaron: revisa el fixture ib_1"
+
+    datos = impuestos_data(res, logic.build_fiscal_profile(), [])
+    assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(801.69, abs=0.05)
+
+
 # ── 5. La segunda vía para declarar el país: la casilla 13b del 1042-S ─────────────────
 # Hasta 2026-09-02 los CTA de la escalera solo nombraban el «Paso 2» y callaban que el
 # 1042-S ya trae la residencia (casilla 13b). El cliente que subió el formulario tenía el
