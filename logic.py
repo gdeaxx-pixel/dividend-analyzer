@@ -1015,7 +1015,20 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
             actual_rename_map[col] = col_map_lower[col_lower]
             
     df = df.rename(columns=actual_rename_map)
-    
+
+    # E3 (spec S5 §3) — "MM/DD/YYYY as of MM/DD/YYYY": Schwab registra la fila con la
+    # fecha de REGISTRO primero y la fecha EFECTIVA después. `pd.to_datetime` no
+    # reconoce ese formato y descarta la fila como NaT en silencio. Paso 1: contar y
+    # avisar, sin tocar todavía las fechas.
+    if 'Date' in df.columns:
+        _mask_asof = df['Date'].astype(str).str.contains(" as of ", na=False)
+        descartadas_as_of = int(_mask_asof.sum())
+        normalize_csv.ultimo_descarte = {
+            "total": descartadas_as_of,
+            "por_accion": (df.loc[_mask_asof, 'Action'].astype(str).value_counts().to_dict()
+                          if descartadas_as_of and 'Action' in df.columns else {}),
+        }
+
     # Ensure Date is datetime
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
