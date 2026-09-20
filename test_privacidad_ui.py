@@ -221,3 +221,62 @@ def test_s1_confirmar_posiciones_conserva_la_captura():
     botones[0].click().run()
     assert at.exception == []
     assert _ss(at, "_wizard_ocr_positions") is not None
+
+
+def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypatch):
+    """Cierra el PARA de S1: M3_firma_nombre_tamano sobrevivía porque
+    test_s1_firma_por_contenido_no_por_nombre_y_tamano mide `_firma_fotos` aislado, no el
+    sitio de llamada real (`ui/carga.py:307`, dentro de render_bloque_posiciones).
+
+    Este test pasa por la pantalla real: la firma de la foto A sale de un primer render
+    (no se precalcula con el helper, para no imitar por construcción lo que el sitio de
+    llamada debe hacer solo), y en un segundo render se sube la foto B — mismo name, mismo
+    size, contenido distinto. Con la firma vieja por (nombre, tamaño) las dos fotos son
+    indistinguibles y el OCR no se vuelve a correr; con la firma por contenido, sí."""
+    import streamlit as st
+
+    class _FakeUpload:
+        def __init__(self, name, content):
+            self.name = name
+            self.size = len(content)
+            self.type = "image/png"
+            self._content = content
+
+        def getvalue(self):
+            return self._content
+
+    contenido_a = b"contenido de la foto A"
+    contenido_b = b"contenido de la foto B"
+    assert len(contenido_a) == len(contenido_b)
+
+    foto_a = _FakeUpload("captura.png", contenido_a)
+    foto_b = _FakeUpload("captura.png", contenido_b)
+    assert (foto_a.name, foto_a.size) == (foto_b.name, foto_b.size)
+
+    ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
+    ocr_b = {"MSTY": {"shares": 5.0, "cost_basis": 120.0}}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "falsa")
+    fotos_actuales = [foto_a]
+    monkeypatch.setattr(st, "file_uploader", lambda *a, **k: fotos_actuales)
+    resultados_ocr = iter([ocr_a, ocr_b])
+    monkeypatch.setattr(logic, "extract_positions_from_images",
+                        lambda *a, **k: next(resultados_ocr))
+
+    at = AppTest.from_string(_SCRIPT)
+    at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
+    at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
+    at.session_state["_wizard_broker"] = "schwab"
+    at.session_state["_wizard_csv_name"] = "cartera_A.csv"
+    at.run()
+    assert at.exception == []
+    sig_a = _ss(at, "_wizard_photo_sig")
+    assert sig_a is not None
+    assert _ss(at, "_wizard_ocr_positions") == ocr_a
+
+    fotos_actuales[:] = [foto_b]
+    at.run()
+    assert at.exception == []
+
+    assert _ss(at, "_wizard_photo_sig") != sig_a
+    assert _ss(at, "_wizard_ocr_positions") == ocr_b
