@@ -59,6 +59,46 @@ def test_f4_expander_privacidad_en_la_carga():
     assert "Yahoo Finance" in contenido
 
 
+def test_f4_expander_oculta_el_anexo_tecnico():
+    with open(_PRIVACY_PATH, encoding="utf-8") as f:
+        texto = f.read()
+    assert "## Anexo" in texto
+    assert "upload_case" in texto
+
+    at = AppTest.from_string(_SCRIPT)
+    at.run()
+    assert at.exception == []
+
+    expanders = [e for e in at.get("expander") if e.label == "Cómo tratamos tus datos"]
+    contenido = "\n".join(m.value for m in expanders[0].get("markdown"))
+    assert "Anexo" not in contenido
+    assert "upload_case" not in contenido
+
+
+def test_f4_expander_sin_titulo_duplicado():
+    with open(_PRIVACY_PATH, encoding="utf-8") as f:
+        texto = f.read()
+    assert texto.startswith("# Aviso de privacidad")
+    assert "Actualizado:" in texto
+
+    at = AppTest.from_string(_SCRIPT)
+    at.run()
+    assert at.exception == []
+
+    expanders = [e for e in at.get("expander") if e.label == "Cómo tratamos tus datos"]
+    contenido = "\n".join(m.value for m in expanders[0].get("markdown"))
+    assert "# Aviso de privacidad" not in contenido
+    assert "Actualizado:" not in contenido
+    assert contenido.startswith("**Tus archivos.**")
+
+
+def test_f4_telegram_dice_para_que_sirve():
+    with open(_PRIVACY_PATH, encoding="utf-8") as f:
+        texto = f.read()
+    assert "Telegram" in texto
+    assert "para verificar manualmente tu acceso" in texto
+
+
 def test_f4_privacy_no_miente_sobre_la_memoria():
     with open(_PRIVACY_PATH, encoding="utf-8") as f:
         texto = f.read()

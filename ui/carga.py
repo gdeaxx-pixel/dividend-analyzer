@@ -582,6 +582,26 @@ def render_bloque_1042s() -> None:
     _render_income_uploader()
 
 
+_ANEXO = "## Anexo"
+
+
+def _privacy_visible(texto: str) -> str:
+    """Lo que ve el cliente en el paso de carga.
+
+    Recorta la VISTA, no el documento: `PRIVACY.md` sigue siendo la fuente única y
+    completa. Fuera quedan el título del documento (el expander ya tiene el suyo),
+    la línea de fecha y el anexo técnico, que describe un mecanismo desactivado.
+    """
+    cuerpo = texto.split(_ANEXO)[0]
+    lineas = []
+    for linea in cuerpo.splitlines():
+        s = linea.strip()
+        if not lineas and (s.startswith("# ") or s.startswith("*Actualizado:") or not s):
+            continue
+        lineas.append(linea)
+    return "\n".join(lineas).strip()
+
+
 def render_carga() -> bool:
     """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
 
@@ -599,7 +619,7 @@ def render_carga() -> bool:
         ruta_privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                     "PRIVACY.md")
         with open(ruta_privacy, encoding="utf-8") as f:
-            st.markdown(f.read())
+            st.markdown(_privacy_visible(f.read()))
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:
