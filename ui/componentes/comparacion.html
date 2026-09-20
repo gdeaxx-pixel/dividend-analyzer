@@ -1443,6 +1443,17 @@
         ((state.mode === "roc" && DATA.roc19a && DATA.roc19a[state.base])
           ? ' En este modo el área incluye además lo que el 1042-S <b>todavía no ha pagado</b>: dinero tuyo que el fisco te debe a la fecha de corte. Los reembolsos de años ya cerrados sí llegaron y están ahí dentro, como efectivo.'
           : ''));
+      // C·2/Q4: si la ventana común arranca DESPUÉS de la incepción real del fondo base
+      // (otro fondo del comparador nació más tarde y recorta el inicio), la línea de
+      // cosecha usa el mismo denominador rebasado (precio[t0]) que las otras dos, pero su
+      // fórmula de unidades-por-mes NO está verificada contra `run_backtest` en ese
+      // escenario recortado (Q4, spec S5 §2) — solo lo está desde la incepción real.
+      if (sin && DATA.idxCosecha[state.mode] && DATA.idxCosecha[state.mode][state.base]
+          && _t0 > F[state.base].incep) {
+        parts.push('<span class="flag">Ventana recortada:</span> la tercera línea (cosecha) '+
+          'arranca después de la incepción real de ' + state.base + ' — su valor en este tramo '+
+          'es aproximado, no está verificado contra el motor de simulación.');
+      }
       // Tercera línea: el mismo efectivo puesto a comprar `DATA.cosechaDestino` en vez de
       // quedarse quieto. Ausente para el propio destino y para fondos sin dividendo — ver
       // `ui.adapters.comparacion_data`.
