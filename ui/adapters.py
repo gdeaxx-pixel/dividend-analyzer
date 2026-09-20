@@ -861,7 +861,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # Nota del auditor de la Fase 1: una fila con 7a==0 y casilla 10==0 cae en veredicto
         # 'devuelto'. En la UI eso se lee como «el bróker te devolvió» cuando en realidad no
         # hubo retención. Se trata aquí, sin tocar `logic.py`.
-        "sin_retencion": retenido_1042s <= 0.01,
+        "sin_retencion": retenido_1042s <= 0.01 and ruta.get("retenido_completo", True),
         # Bróker detectado al leer el CSV, pasado por parámetro desde `ui/impuestos.py`
         # (mismo patrón que `codigo_pais_1042s`). 'schwab' | 'ibkr' | None cuando no se
         # pudo determinar ('generic' se normaliza a None: «genérico» no es un bróker con

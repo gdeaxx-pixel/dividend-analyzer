@@ -263,10 +263,10 @@ def parse_1042s_pdf(pdf_bytes):
             tax_rate = _tasa_3b(code_m.group(3).split("4b")[0])
 
             fed_m = re.search(r"7a Federal tax withheld\s+([\d,]+\.\d{2})", block)
-            federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else 0.0
+            federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else None
 
             cred_m = re.search(r"10 Total withholding credit[^\n]*\n\s*([\d,]+\.\d{2})", block)
-            withholding_credit = float(cred_m.group(1).replace(",", "")) if cred_m else 0.0
+            withholding_credit = float(cred_m.group(1).replace(",", "")) if cred_m else None
 
             row = {
                 "unique_form_id": unique_form_id,
@@ -388,12 +388,6 @@ def diagnose_broker_refund_from_forms(per_form):
     Devuelve {'devuelto': float|None, 'retenido': float, 'pendiente': float|None,
               'veredicto': str, 'per_form': [...]}.
     """
-    def _num(v):
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return 0.0
-
     def _num_or_none(v):
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
@@ -407,20 +401,20 @@ def diagnose_broker_refund_from_forms(per_form):
     for row in per_form or []:
         if not isinstance(row, dict):
             continue
-        fed_7a = _num(row.get("federal_tax_withheld"))
+        fed_7a = _num_or_none(row.get("federal_tax_withheld"))
         wc = _num_or_none(row.get("withholding_credit"))
 
         form_id = row.get("unique_form_id")
         if form_id:
             dedupe_key = ("id", str(form_id))
         else:
-            dedupe_key = ("tuple", row.get("income_code"), _num(row.get("gross_income")),
+            dedupe_key = ("tuple", row.get("income_code"), _num_or_none(row.get("gross_income")),
                           fed_7a, wc)
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
 
-        if wc is None:
+        if wc is None or fed_7a is None:
             veredicto = "indeterminado"
             devuelto = None
         else:
@@ -446,15 +440,18 @@ def diagnose_broker_refund_from_forms(per_form):
             "veredicto": veredicto,
         })
 
-    retenido = sum(f["federal_tax_withheld"] for f in filas)
+    retenido = sum(f["federal_tax_withheld"] or 0.0 for f in filas)
 
     if not filas:
         return {"devuelto": None, "retenido": 0.0, "pendiente": None,
-                "veredicto": "indeterminado", "per_form": []}
+                "veredicto": "indeterminado", "per_form": [], "retenido_completo": True}
+
+    retenido_completo = all(f["federal_tax_withheld"] is not None for f in filas)
 
     if any(f["veredicto"] == "indeterminado" for f in filas):
         return {"devuelto": None, "retenido": retenido, "pendiente": None,
-                "veredicto": "indeterminado", "per_form": filas}
+                "veredicto": "indeterminado", "per_form": filas,
+                "retenido_completo": retenido_completo}
 
     devuelto_total = sum(f["devuelto"] for f in filas)
     pendiente = retenido - devuelto_total
@@ -467,7 +464,7 @@ def diagnose_broker_refund_from_forms(per_form):
         veredicto = "parcial"
 
     return {"devuelto": devuelto_total, "retenido": retenido, "pendiente": pendiente,
-            "veredicto": veredicto, "per_form": filas}
+            "veredicto": veredicto, "per_form": filas, "retenido_completo": retenido_completo}
 
 
 def extract_1042s(pdf_bytes, api_key=None):
