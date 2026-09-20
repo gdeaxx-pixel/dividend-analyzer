@@ -308,8 +308,17 @@ def test_e1_resumen_consolidado_es_la_suma_de_net_profit(monkeypatch):
 
 def test_e1_capital_mas_income_es_el_total(monkeypatch):
     """G2: Capital + Income == Total al centavo, en las dos convenciones de bróker
-    (Schwab y IB) y con DRIP real en el fixture (MSTY trae DRIP)."""
+    (Schwab y IB) y con DRIP real en el fixture (MSTY trae DRIP). Lee los tres números
+    del HTML que `_tarjeta_retorno_total` renderiza de verdad — no los recalcula, si no
+    la aserción se compara consigo misma y pasa siempre."""
+    import re
+
     results, _mixto = _resultados_mixtos(monkeypatch)
+
+    patron = re.compile(
+        r'vd-her-retorno-num[^>]*>\$(-?[\d,]+\.\d\d).*?'
+        r'Capital: <b[^>]*>\$(-?[\d,]+\.\d\d)</b>.*?'
+        r'Income: <b[^>]*>\$(-?[\d,]+\.\d\d)</b>', re.DOTALL)
 
     import ui.heredadas as heredadas_mod
     for ticker in ("MSTY", "SCHB", "NVDY", "CONY", "SMH"):
@@ -318,9 +327,12 @@ def test_e1_capital_mas_income_es_el_total(monkeypatch):
         monkeypatch.setattr(heredadas_mod.st, "markdown", lambda html, **k: capturado.append(html))
         _tarjeta_retorno_total(stats)
 
-        total = stats["net_profit"]
-        inc = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
-               else stats.get("dividends_collected_cash", 0))
-        cap = total - inc
-        assert cap + inc == pytest.approx(total, abs=0.005), (
-            f"{ticker}: Capital + Income != Total")
+        html = capturado[0]
+        m = patron.search(html)
+        assert m, f"{ticker}: no se pudo leer Total/Capital/Income del HTML: {html!r}"
+        total_html, cap_html, inc_html = (float(x.replace(",", "")) for x in m.groups())
+
+        assert total_html == pytest.approx(stats["net_profit"], abs=0.005), (
+            f"{ticker}: el Total renderizado no es net_profit")
+        assert cap_html + inc_html == pytest.approx(total_html, abs=0.005), (
+            f"{ticker}: Capital + Income != Total en el HTML renderizado")
