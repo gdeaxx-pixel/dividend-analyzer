@@ -3576,3 +3576,86 @@ _render_excluidos(obtener_resultados())
 
     texto = "\n".join(m.value for m in at.markdown)
     assert "SMH" in texto and "TSLY" in texto and "ACME" in texto
+
+
+# ── C·4/E4 · el efectivo líquido publicado por el motor, no reconstruido ────────────────
+
+_REAL_EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "real_examples")
+
+
+def _e4_casos_reales():
+    """(res, ticker) de las posiciones reales de real_examples/, vía el mismo patrón que
+    `o2c_e4_oraculo.py` (validate_real_cases.discover_cases + conftest.frozen_price_cache)."""
+    import conftest
+    from validate_real_cases import FakeFile, discover_cases
+
+    out = []
+    for case in discover_cases():
+        d, m = case["dir"], case["manifest"]
+        csvp = None
+        import glob as _glob
+        candidatos = _glob.glob(os.path.join(d, m.get("csv_glob", "*.csv")))
+        inc = _glob.glob(os.path.join(d, m["income_glob"])) if m.get("income_glob") else []
+        candidatos = [c for c in candidatos if os.path.basename(c) not in
+                     {os.path.basename(i) for i in inc}]
+        if not candidatos:
+            continue
+        csvp = candidatos[0]
+        raw, _b = logic.load_and_detect_csv(FakeFile(open(csvp, "rb").read(),
+                                                       os.path.basename(csvp)))
+        df = logic.normalize_csv(raw)
+        with conftest.frozen_price_cache():
+            res = logic.analyze_portfolio(df.copy(), version="TEST_E4")
+        for t, s in sorted(res.items()):
+            if s.get("skipped"):
+                continue
+            out.append((res, t, s))
+    return out
+
+
+@pytest.mark.skipif(not os.path.isdir(_REAL_EXAMPLES_DIR), reason="sin real_examples/ (data privada)")
+def test_e4_cashflow_igual_a_net_profit_en_los_casos_reales():
+    """Las 24 posiciones reales: net_profit == cashflow RESULTADO (abs <= 0.02). Un verde de
+    CI (con skip) no sustituye la corrida local — la corrida local la escribe O3 al auditar."""
+    from ui.adapters import cashflow_data
+
+    casos = _e4_casos_reales()
+    assert casos, "no se encontraron posiciones reales analizables"
+    for _res, t, s in casos:
+        cf = cashflow_data(s, t)
+        assert abs(s["net_profit"] - cf["RESULTADO"]) <= 0.02, (
+            f"{t}: net_profit={s['net_profit']} != RESULTADO={cf['RESULTADO']}")
+
+
+@pytest.mark.skipif(not os.path.isdir(_REAL_EXAMPLES_DIR), reason="sin real_examples/ (data privada)")
+def test_e4_el_efectivo_publicado_nunca_es_negativo():
+    """`dividends_cash_net >= -0.005` en las 24 posiciones reales."""
+    casos = _e4_casos_reales()
+    assert casos, "no se encontraron posiciones reales analizables"
+    for _res, t, s in casos:
+        assert s.get("dividends_cash_net") is not None, f"{t}: falta dividends_cash_net"
+        assert s["dividends_cash_net"] >= -0.005, (
+            f"{t}: dividends_cash_net={s['dividends_cash_net']} es negativo")
+
+
+def test_e4_marca_calidad_cuando_faltan_filas_fuente_del_drip(monkeypatch):
+    """Sintético: 2 `Reinvest Shares` y 1 `Reinvest Dividend` -> drip_sin_fuente True; con
+    2 y 2, False."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+
+    con_gap = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 1.0, -50.0),   # sin su Reinvest Dividend
+    ]))["MSTY"]
+    assert con_gap["drip_sin_fuente"] is True
+
+    sin_gap = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+        ("2024-11-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+    ]))["MSTY"]
+    assert sin_gap["drip_sin_fuente"] is False

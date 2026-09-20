@@ -1762,6 +1762,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _retencion_en_efectivo = _tax_totals_early['withheld'] - _withheld_on_reinvested(ticker_df)
         _cash_collected_net = (dividends_collected_cash if _tax_totals_early['netted']
                                 else dividends_collected_cash - _retencion_en_efectivo)
+        # E4: al export le faltan filas fuente del DRIP cuando hay más `Reinvest Shares` que
+        # `Reinvest Dividend`. No se corrige la cifra (el bruto que falta no está en el CSV):
+        # se declara, para que la vista no presente como exacto un dato incompleto.
+        _acciones = ticker_df['Action'].astype(str).str.lower()
+        _drip_sin_fuente = bool(_acciones.str.contains('reinvest shares', na=False).sum()
+                                > _acciones.str.contains('reinvest dividend', na=False).sum())
 
         gross_value = market_value + _cash_collected_net
         net_profit = gross_value - pocket_investment
@@ -2350,6 +2356,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_collected_drip": dividends_collected_drip,
             "total_dividends": total_dividends,
             "net_profit": net_profit,
+            "dividends_cash_net": _cash_collected_net,
+            "drip_sin_fuente": _drip_sin_fuente,
             "roi_percent": roi,
             "history": ticker_df,
             "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'Invested Capital', 'Market Value', 'User Total Value', 'Drawdown %']],

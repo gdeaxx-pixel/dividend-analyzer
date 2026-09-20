@@ -101,6 +101,25 @@ def test_cashflow_data_bruto_neto_ib_ya_neteado(monkeypatch):
         datos["NETO"] - datos["DRIP"], abs=0.01)
 
 
+def test_e4_cashflow_lee_el_efectivo_del_motor():
+    """Ancla absoluta, sin precio: unos `stats` con dividends_cash_net = 12.34 y
+    neto - drip = -99.0 dan CASH == 12.34; sin el campo (legado) siguen dando -99.0. Este
+    es el test que impide que la identidad se cumpla moviendo los dos lados a la vez."""
+    base_stats = {
+        "pocket_investment": 1000.0, "market_value": 900.0,
+        "dividends_gross_total": 200.0, "dividends_net_total": 1.0,
+        "dividends_collected_drip": 100.0, "dividends_collected_cash": 1.0,
+        "withheld_tax_total": 60.0,
+    }
+    con_campo = dict(base_stats, dividends_cash_net=12.34)
+    datos_con = cashflow_data(con_campo, "ZZZZ")
+    assert datos_con["CASH"] == pytest.approx(12.34, abs=0.001)
+
+    sin_campo = dict(base_stats)
+    datos_sin = cashflow_data(sin_campo, "ZZZZ")
+    assert datos_sin["CASH"] == pytest.approx(-99.0, abs=0.001)
+
+
 def test_cashflow_data_legado_sin_objeto_fiscal_no_rompe():
     """Fixture armado a mano sin `dividends_gross_total`/`dividends_net_total` (no vía
     analyze_portfolio): degrada al supuesto anterior en vez de lanzar KeyError/TypeError."""
