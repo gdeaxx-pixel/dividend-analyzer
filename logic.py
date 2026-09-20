@@ -1533,8 +1533,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # de caja (si no se reinvierten, es efectivo que entró o salió de la cuenta).
             # `Reverse Split` NO entra aquí: suma $0.00 y su terreno (splits) está cerrado
             # sin defectos — moverlo exige evidencia nueva, no esta spec.
-            is_misc_cash = ('cash in lieu' in action or 'special qual div' in action
-                            or 'adr mgmt fee' in action or 'wire received' in action)
+            is_misc_cash = any(k in action for k in
+                              ('cash in lieu', 'special qual div', 'adr mgmt fee', 'wire received'))
 
             # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
             # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
