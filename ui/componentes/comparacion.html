@@ -1129,8 +1129,13 @@
       var cosecha = DATA.idxCosecha && DATA.idxCosecha[mode] && DATA.idxCosecha[mode][tk];
       var base0 = tot[startM], out = {}, priceData = {}, cosechaData = cosecha ? {} : undefined;
       for (var m = startM; m <= LAST; m++){
-        out[m] = tot[m]/base0 - 1; priceData[m] = precio[m]/base0 - 1;
-        if (cosecha) cosechaData[m] = cosecha[m]/base0 - 1;
+        // Opción A (G3, Daniel 2026-09-18): el inicio elegido es una COMPRA NUEVA. El
+        // denominador es el valor de las ACCIONES en t0 (`precio[startM]`), no `tot[startM]`,
+        // que arrastra el efectivo cobrado antes de t0 y escala toda la curva. Verificado
+        // contra `run_backtest` desde t0 en los tres modos (bruto/plano/roc), 6 decimales.
+        out[m] = (tot[m] - base0)/precio[startM] - 0;
+        priceData[m] = (precio[m] - precio[startM])/precio[startM] - 0;
+        if (cosecha) cosechaData[m] = (cosecha[m] - cosecha[startM])/precio[startM] - 0;
       }
       return { tk:tk, startM:startM, late:false, data:out, priceData:priceData, cosechaData:cosechaData };
     }
