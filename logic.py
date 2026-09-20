@@ -3826,10 +3826,11 @@ def build_interpretation(results: dict, ticker: str, mode: str = None) -> dict:
     info = load_instruments().get(str(ticker).upper(), {})
 
     pocket = s.get('pocket_investment', 0) or 0
-    market = s.get('market_value', 0) or 0
-    inc = s.get('dividends_collected_cash', 0) or 0
-    total_ret = market + inc - pocket
-    cap = market - pocket
+    inc = s.get('dividends_net_total')
+    if inc is None:
+        inc = s.get('dividends_collected_cash', 0) or 0
+    total_ret = s['net_profit']
+    cap = total_ret - inc
 
     def _signed(v):
         return f"{'-' if v < 0 else '+'}${abs(v):,.0f}"
