@@ -10,12 +10,22 @@ Ningún color se escribe a mano aquí: se usan las variables CSS que inyecta `ui
 
 from __future__ import annotations
 
+import hashlib
 import os
 
 import streamlit as st
 
 import logic
 from ui import estado
+
+
+CLAVES_CONTEXTO_CARTERA = (
+    "_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker", "_wizard_csv_name",
+    "_wizard_positions", "_wizard_income_summary", "_wizard_income_df", "_wizard_income_multi",
+    "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
+    "_wizard_ocr_positions",
+    "_wizard_photo_sig",
+)
 
 
 def _clave_gemini():
@@ -159,10 +169,7 @@ def render_bloque_transacciones() -> bool:
                 # cuando es `None`—, así que el CSV nuevo se mostraría con las cifras del
                 # anterior. Con la captura dentro del cálculo, además arrastraría posiciones
                 # de un portafolio a otro.
-                for clave in ("_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker",
-                              "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary",
-                              "_wizard_income_df", "_wizard_income_multi", "_vd_resultados",
-                              "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error"):
+                for clave in CLAVES_CONTEXTO_CARTERA:
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
                 st.session_state["_wizard_listo"] = False
@@ -249,6 +256,13 @@ def _render_residencia_fiscal() -> None:
                 unsafe_allow_html=True)
 
 
+def _firma_fotos(fotos) -> tuple:
+    """Firma por CONTENIDO, no por (nombre, tamaño): dos capturas distintas guardadas con el
+    mismo nombre y el mismo tamaño dejaban la firma igual, el OCR no se volvía a correr y la
+    tabla seguía mostrando las posiciones de la foto anterior."""
+    return tuple(hashlib.sha256(f.getvalue()).hexdigest() for f in fotos)
+
+
 def render_bloque_posiciones() -> bool:
     """Bloque 2. Confirma acciones y costo real por ETF."""
     if st.session_state.get("_wizard_pos_confirmed"):
@@ -290,7 +304,7 @@ def render_bloque_posiciones() -> bool:
         st.caption("Las capturas se leen con Google Gemini. Antes de subirlas, recorta tu "
                   "nombre y tu número de cuenta.")
         if fotos:
-            firma = tuple((f.name, f.size) for f in fotos)
+            firma = _firma_fotos(fotos)
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]

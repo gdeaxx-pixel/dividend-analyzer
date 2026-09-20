@@ -134,7 +134,9 @@ def _load_bundle(case_id):
         except Exception:
             strat = None
 
+    from ui.carga import CLAVES_CONTEXTO_CARTERA        # import perezoso: app.py carga demo_mode antes que ui
     return {
+        **{clave: None for clave in CLAVES_CONTEXTO_CARTERA},
         '_wizard_step': 3,
         '_prev_step': 3,
         '_prev_active_pill': 3,
