@@ -3596,3 +3596,18 @@ def test_e1_el_texto_usa_el_mismo_retorno_que_la_tarjeta():
     assert "$1,234" in txt, f"el texto no usa net_profit (1234): {txt!r}"
     assert "$1,000" not in txt, f"el texto todavía publica el bruto (1000): {txt!r}"
 
+
+def test_e1_el_texto_usa_dividends_net_total_no_el_bruto():
+    """C·1/E1: el «Income» del texto sale de `dividends_net_total` (neto), no de
+    `dividends_collected_cash` (bruto en Schwab). Fixture con AMBOS presentes y
+    distintos — si el texto lee el bruto, este test muerde (el anterior no podía:
+    su fixture no traía `dividends_net_total`, así que el fallback daba el mismo
+    valor con o sin el bug)."""
+    stats = {"pocket_investment": 10000, "market_value": 6000,
+             "dividends_net_total": 800, "dividends_collected_cash": 5000,
+             "net_profit": 1234}
+    out = logic.build_interpretation({"MSTY": stats}, "MSTY")
+    txt = " ".join(out["lines"])
+    assert "$800" in txt, f"el texto no usa dividends_net_total (800): {txt!r}"
+    assert "$5,000" not in txt, f"el texto publica el bruto (5000) en vez del neto: {txt!r}"
+
