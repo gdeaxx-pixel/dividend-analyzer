@@ -2327,3 +2327,80 @@ def metodo_real_data(resultados: dict, df, tasa_pct, pais: str | None = None) ->
         "paisDeclarado": pais_declarado,
         "asof": datetime.date.today().isoformat(),
     }
+
+
+# ── Portafolios v3 (vista «Portafolios», componente `ui/componentes/portafolios.html`) ──
+#
+# Toda cifra y toda regla se calculan aquí (Python); el componente solo dibuja. Los
+# agregados por grupo salen de `ui.heredadas._agregados` — el mismo objeto fiscal que ya
+# resuelve la convención bruto/neto por fila (`dividends_net_total`) — y no de
+# `dividends_collected_cash`, que mezclaría bases (Regla 2 del contrato).
+
+def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
+                          invertido: float) -> str | None:
+    """La frase de una línea de cada tarjeta de grupo. `None` = sin frase (el componente
+    deja el párrafo vacío). Ramas, en orden:
+
+    - `invertido <= 0`: sin base sobre la que hablar.
+    - `precio >= 0` y `retorno == 0`: nada que explicar (y evitaría dividir por cero).
+    - `precio >= 0`: qué parte del resultado explica el precio (≥70% = «el precio manda»).
+    - `precio < 0`: si los dividendos cubren la caída, y con cuánto margen
+      (`retorno / invertido < 0.10` = «con poco margen»).
+    """
+    if invertido <= 0:
+        return None
+    if precio >= 0 and retorno == 0:
+        return None
+    if precio >= 0:
+        share = round(precio / retorno * 100)
+        if share >= 70:
+            return (f"El {share}% del resultado viene del precio. "
+                    "Los dividendos son un extra.")
+        return f"El precio aporta el {share}% del resultado; los dividendos, el resto."
+    caida = round(-precio / invertido * 100)
+    if dividendos >= -precio:
+        margen = ", con poco margen" if retorno / invertido < 0.10 else ""
+        return f"El precio cayó {caida}%. Los dividendos cubren esa caída{margen}."
+    return f"El precio cayó {caida}% y los dividendos no alcanzan a cubrirlo."
+
+
+def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
+    """Datos de la vista Portafolios v3: dona agrupada + cascada por grupo.
+
+    Grupos en orden `crec` (mode_b, Crecimiento) y `div` (mode_a, Dividendos); solo los
+    que tengan tickers con datos analizables (`_tiene_datos`). Ninguno → `None` (el
+    componente se oculta). Por grupo, los agregados salen de `_agregados` (import local
+    desde `ui.heredadas` para no crear ciclo) y `precio = mv - inv`. Por fondo,
+    `market_value or 0`; se excluyen los `<= 0`; orden por `mv` descendente. `pct` de
+    grupo y de fondo sobre `total_mv`, sin redondear — el JS redondea al dibujar.
+    """
+    from ui.heredadas import _agregados
+
+    grupos = []
+    for clave, nombre, modo in (("crec", "Crecimiento", "mode_b"),
+                                ("div", "Dividendos", "mode_a")):
+        tickers = sorted(t for t, m in classify_map.items()
+                         if m == modo and _tiene_datos(resultados.get(t)))
+        if not tickers:
+            continue
+        inv, mv, div, tr, pct = _agregados(resultados, tickers)
+        precio = mv - inv
+        fondos = [{"ticker": t, "mv": resultados[t].get("market_value") or 0}
+                  for t in tickers]
+        fondos = [f for f in fondos if f["mv"] > 0]
+        fondos.sort(key=lambda f: f["mv"], reverse=True)
+        grupos.append({
+            "clave": clave, "nombre": nombre,
+            "invertido": inv, "mv": mv, "dividendos": div, "precio": precio,
+            "retorno": tr, "retorno_pct": pct, "pct": 0.0,
+            "veredicto": _veredicto_portafolio(precio, div, tr, inv),
+            "fondos": fondos,
+        })
+    if not grupos:
+        return None
+    total_mv = sum(g["mv"] for g in grupos)
+    for g in grupos:
+        g["pct"] = g["mv"] / total_mv * 100 if total_mv else 0.0
+        for f in g["fondos"]:
+            f["pct"] = f["mv"] / total_mv * 100 if total_mv else 0.0
+    return {"total_mv": total_mv, "grupos": grupos}

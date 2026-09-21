@@ -4029,8 +4029,15 @@ def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
 def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
     """Regresión de raíz: las 4 vistas de Detalle vía `AppTest` (patrón de
     `test_carga_1042s.py`) con un `skipped` en mode_a (TSLY) y otro en mode_b (SMH). El
-    criterio principal es `at.exception == []`; además, las tarjetas deben excluir a los
-    tickers `skipped` en vez de sumarlos con ceros."""
+    criterio principal es `at.exception == []`; además, los tickers `skipped` deben
+    quedar excluidos en vez de sumarse con ceros.
+
+    Adaptado (sep-2026, Portafolios v3): las tarjetas A/B que este test leía en
+    `at.markdown` («1 fondo: SCHB») fueron sustituidas por el componente
+    `ui/componentes/portafolios.html`, que viaja en un iframe (`components.html`). El
+    invariante es el mismo y ahora se verifica en el `srcdoc` del iframe — el JSON de
+    `portafolios_data` debe traer solo los tickers con datos — y en el markdown de las
+    secciones que siguen nativas."""
     results = _resultados_con_skipped(monkeypatch)
 
     script = """
@@ -4048,9 +4055,15 @@ render_portafolios(resultados)
     at.run()
     assert at.exception == [], [e.value for e in at.exception]
 
+    iframes = at.get("iframe")
+    assert len(iframes) == 1, "el componente Portafolios v3 debe dibujarse en un iframe"
+    srcdoc = iframes[0].proto.srcdoc
+    assert '"SCHB"' in srcdoc, "el grupo de crecimiento debe incluir a SCHB"
+    assert '"MSTY"' in srcdoc, "el grupo de dividendos debe incluir a MSTY"
+    assert "SMH" not in srcdoc, "SMH está skipped: no debe llegar al componente"
+    assert "TSLY" not in srcdoc, "TSLY está skipped: no debe llegar al componente"
+
     texto = "\n".join(m.value for m in at.markdown)
-    assert "1 fondo: SCHB" in texto, "la tarjeta de crecimiento debe excluir a SMH (skipped)"
-    assert "1 fondo: MSTY" in texto, "la tarjeta de dividendos debe excluir a TSLY (skipped)"
     assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"
     assert "TSLY" not in texto, "TSLY está skipped: no debe aparecer en ninguna vista de Detalle"
 

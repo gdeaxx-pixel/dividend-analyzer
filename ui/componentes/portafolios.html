@@ -1,0 +1,465 @@
+<!-- Escrito y mantenido A MANO. Vista «Portafolios» (dona agrupada + cascada precio →
+     dividendos → total), diseño aprobado en el artifact «Tus dos portafolios» (propuesta
+     v3, sep-2026). Fuente de diseño: `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v3.html`.
+     Los datos llegan ya calculados desde `ui/adapters.py::portafolios_data`: cifras,
+     porcentajes y veredicto salen de Python; aquí solo se dibuja. La sección va sin título
+     ni etiqueta a propósito (decisión de Daniel, sep-2026: la ruta ya dice Portafolios). El bloque de auto-alto del final es el de
+     `tools/_auto_alto.py`, igual que los demás componentes. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:     #f4f7fa;
+    --panel:      #ffffff;
+    --panel-tint: #eef4f9;
+    --ink:        #021C36;
+    --ink-2:      #33475a;
+    --ink-mut:    #6a7b8a;
+    --hair:       #d5e0ea;
+    --hair-soft:  #e6edf3;
+    --accent:     #006497;
+    --cash:       #1f8a5b;
+    --loss:       #A32D2D;
+    /* barra «Precio» y rampas de color por portafolio: f1→f3 Crecimiento, f4→f5 Dividendos */
+    --bar-price:  #021C36;
+    --f1:         #021C36;
+    --f3:         #9fb3c5;
+    --f4:         #006497;
+    --f5:         #8fc0da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+      --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d;
+      --loss:#e07a7a; --bar-price:#9fb6ca; --f1:#dbe6ef; --f3:#4d677f; --f4:#3ea0d6; --f5:#1d5676;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497; --cash:#1f8a5b;
+    --loss:#A32D2D; --bar-price:#021C36; --f1:#021C36; --f3:#9fb3c5; --f4:#006497; --f5:#8fc0da;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d;
+    --loss:#e07a7a; --bar-price:#9fb6ca; --f1:#dbe6ef; --f3:#4d677f; --f4:#3ea0d6; --f5:#1d5676;
+  }
+
+  * { box-sizing: border-box; border-radius: 0; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--font-sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { display: grid; gap: 20px; padding-bottom: 8px; }
+
+  .panel { background: var(--panel); padding: clamp(20px, 4vw, 40px); }
+
+  /* ── Asignación ── */
+  .alloc-grid {
+    display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 480px);
+    justify-content: start; gap: clamp(28px, 7vw, 96px); align-items: center;
+  }
+  .donut { position: relative; width: 100%; max-width: 300px; aspect-ratio: 1; margin-inline: auto; }
+  .donut svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .seg { cursor: pointer; transition: opacity .2s ease; }
+  .ring-mark { fill: var(--ink); opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+  .center {
+    position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
+    pointer-events: none; grid-template-rows: 20px 44px 20px; gap: 2px;
+  }
+  .c-k { font-size: 13px; color: var(--ink-mut); white-space: nowrap; }
+  .c-v { font-family: var(--font-mono); font-weight: 700; font-size: 34px; line-height: 44px; letter-spacing: -.02em; }
+  .c-s { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+
+  .legend { display: grid; gap: 12px; min-width: 0; }
+  .legend-groups { display: grid; gap: 20px; }
+  .grp { display: grid; }
+  .row {
+    appearance: none; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
+    width: 100%; min-height: 44px; padding: 0 12px; cursor: pointer;
+    display: grid; align-items: center; gap: 12px;
+    transition: opacity .2s ease, background-color .2s ease, box-shadow .2s ease;
+  }
+  .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .row-head { grid-template-columns: minmax(0, 1fr) 5.5rem 3.5rem; border-bottom: 1px solid var(--hair); }
+  .row-fund { grid-template-columns: 10px minmax(0, 1fr) 5.5rem 3.5rem; }
+  .g-name {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-2); display: flex; align-items: center; gap: 10px; min-width: 0;
+  }
+  .g-name i, .sw { width: 10px; height: 10px; flex: none; }
+  .tk { font-weight: 600; font-size: 16px; letter-spacing: .01em; }
+  .r-mv { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; color: var(--ink-2); text-align: right; }
+  .r-pct { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 16px; text-align: right; }
+  .row-head .r-pct { font-weight: 700; }
+  .row.is-on { background: var(--panel-tint); box-shadow: inset 2px 0 0 var(--ink); }
+  .row.is-dim { opacity: .42; }
+
+  .legend-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    min-height: 34px; font-size: 13px; color: var(--ink-mut); padding-inline: 12px;
+  }
+  .reset {
+    appearance: none; border: 0; background: none; font: inherit; cursor: pointer; flex: none;
+    color: var(--accent); text-decoration: underline; text-underline-offset: 4px; padding: 6px 0;
+    visibility: hidden;
+  }
+  .reset.is-visible { visibility: visible; }
+  .reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── Tarjetas ── */
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .cards.single { grid-template-columns: minmax(0, 1fr); }
+  .card { background: var(--panel); padding: clamp(20px, 4vw, 36px); display: grid; align-content: start; transition: opacity .2s ease; }
+  .cards.single .card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); column-gap: clamp(32px, 6vw, 72px); align-items: center;
+  }
+  .card.is-dim { opacity: .5; }
+  .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+  .card-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.015em; }
+  .card-weight { font-size: 13px; color: var(--ink-mut); }
+  .card-weight b { font-family: var(--font-mono); color: var(--ink); font-weight: 700; }
+  .card-funds { margin: 4px 0 12px; color: var(--ink-2); font-size: 15px; }
+  .weight { height: 3px; background: var(--hair-soft); position: relative; margin-bottom: 28px; }
+  .weight i { position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--c); }
+  .cards.single .card-weight, .cards.single .weight { display: none; }
+  .cards.single .card-funds { margin-bottom: 24px; }
+
+  .k { margin: 0; font-size: 13px; color: var(--ink-mut); }
+  .big { margin: 2px 0 8px; display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+  .big .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(38px, 5vw, 48px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .big .pct { font-family: var(--font-mono); font-size: 17px; font-weight: 600; }
+  .pos { color: var(--cash); }
+  .neg { color: var(--loss); }
+  .verdict { margin: 0 0 24px; font-size: 15px; color: var(--ink-2); max-width: 44ch; min-height: 3.1em; text-wrap: pretty; }
+  .cards.single .verdict { margin-bottom: 0; min-height: 0; }
+
+  .wf { display: grid; gap: 16px; border-top: 1px solid var(--hair); padding-top: 18px; }
+  .cards.single .wf { border-top: 0; padding-top: 0; }
+  .wf-row { display: grid; gap: 8px; }
+  .wf-row.total { border-top: 1px solid var(--hair); padding-top: 16px; }
+  .wf-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; }
+  .wf-label { margin: 0; font-size: 14px; line-height: 1.35; }
+  .wf-k { font-weight: 600; color: var(--ink); margin-right: 6px; }
+  .wf-sub { font-size: 13px; color: var(--ink-mut); }
+  .wf-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .wf-row.total .wf-v { font-weight: 700; }
+  .wf-track { position: relative; height: 10px; }
+  .wf-track::before {
+    content: ""; position: absolute; top: -4px; bottom: -4px; left: var(--zero); width: 1px; background: var(--ink-mut); opacity: .55;
+  }
+  .wf-bar { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+  .b-price { background: var(--bar-price); }
+  .b-div { background: var(--accent); }
+  .b-gain { background: var(--cash); }
+  .b-loss { background: var(--loss); }
+
+  .foot { margin: 0; font-size: 13px; color: var(--ink-mut); max-width: 90ch; }
+
+  @media (max-width: 760px) {
+    .alloc-grid { grid-template-columns: minmax(0, 1fr); }
+    .donut { max-width: 260px; }
+    .cards, .cards.single .card { grid-template-columns: minmax(0, 1fr); }
+    .cards.single .verdict { margin-bottom: 24px; }
+    .cards.single .wf { border-top: 1px solid var(--hair); padding-top: 18px; }
+  }
+  @media (max-width: 420px) {
+    .row { padding-inline: 8px; gap: 8px; }
+    .row-head { grid-template-columns: minmax(0, 1fr) 4.75rem 3rem; }
+    .row-fund { grid-template-columns: 10px minmax(0, 1fr) 4.75rem 3rem; }
+    .legend-foot { padding-inline: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .seg, .ring-mark, .row, .card { transition: none; }
+  }
+</style>
+
+<div class="wrap" id="port-root">
+  <section class="panel" aria-label="Dónde está tu dinero hoy">
+    <div class="alloc-grid">
+      <div class="donut">
+        <svg id="donut" viewBox="0 0 280 280" role="img"></svg>
+        <div class="center" aria-live="polite">
+          <span class="c-k" id="c-k"></span>
+          <span class="c-v" id="c-v"></span>
+          <span class="c-s" id="c-s"></span>
+        </div>
+      </div>
+      <div class="legend">
+        <div class="legend-groups" id="legend-groups"></div>
+        <div class="legend-foot">
+          <span>Elige un fondo o un portafolio para aislarlo.</span>
+          <button type="button" class="reset" id="reset">Ver total</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="cards" id="cards"></div>
+
+  <p class="foot">Retorno total = valor de hoy + dividendos − invertido. Resumen redondeado; no es una tasa anual.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const DATA = {{DATA_JSON}};
+  const root = document.getElementById("port-root");
+  if (!DATA || !Array.isArray(DATA.grupos) || !DATA.grupos.length) {
+    root.hidden = true;
+    return;
+  }
+
+  const NS = "http://www.w3.org/2000/svg";
+  const RAMPA = { crec: ["--f1", "--f3"], div: ["--f4", "--f5"] };
+  const FUND_GAP = 1.5, GROUP_GAP = 4.5, MIN_DEG = 1.2;
+  const CX = 140, CY = 140, R0 = 86, R1 = 118, M0 = 123, M1 = 127;
+
+  const $ = (id) => document.getElementById(id);
+  const money = (v) => "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
+  const signed = (v) => (Math.round(v) < 0 ? "−" : "+") + money(v);
+  const signedPct = (v) => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(1) + "%";
+  const pctTxt = (p) => (p > 0 && Math.round(p) === 0 ? "<1%" : Math.round(p) + "%");
+  const plural = (n) => n + (n === 1 ? " fondo" : " fondos");
+  const esc = (s) => String(s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;');
+
+  function colorDe(clave, i, n) {
+    const r = RAMPA[clave] || RAMPA.crec;
+    if (n <= 1) return `var(${r[0]})`;
+    const p = Math.round(100 - i * 100 / (n - 1));
+    return `color-mix(in srgb, var(${r[0]}) ${p}%, var(${r[1]}))`;
+  }
+
+  const grupos = DATA.grupos.map((g) => {
+    const fondos = (g.fondos || []).slice().sort((a, b) => b.mv - a.mv)
+      .map((f, i, arr) => ({ ...f, g: g.clave, color: colorDe(g.clave, i, arr.length) }));
+    return { ...g, fondos, color: colorDe(g.clave, 0, 1), tickers: fondos.map((f) => f.ticker).sort() };
+  });
+  const porClave = Object.fromEntries(grupos.map((g) => [g.clave, g]));
+  const fondos = grupos.flatMap((g) => g.fondos);
+  const single = grupos.length === 1;
+
+  const segEls = {}, markEls = {}, rowEls = [], cardEls = {};
+  let pinned = null, hovered = null;
+
+  function arc(ra, rb, a0, a1) {
+    const rad = (d) => (d - 90) * Math.PI / 180;
+    const A0 = rad(a0), A1 = rad(a1), large = a1 - a0 > 180 ? 1 : 0;
+    const p = (r, a) => (CX + r * Math.cos(a)).toFixed(2) + " " + (CY + r * Math.sin(a)).toFixed(2);
+    return `M${p(rb, A0)} A${rb} ${rb} 0 ${large} 1 ${p(rb, A1)} L${p(ra, A1)} A${ra} ${ra} 0 ${large} 0 ${p(ra, A0)} Z`;
+  }
+
+  /* Un grupo de un solo fondo se selecciona como grupo: su fila de fondo no existe. */
+  const selDeFondo = (f) => (porClave[f.g].fondos.length === 1 ? { type: "group", id: f.g } : { type: "fund", id: f.ticker });
+
+  function buildDonut() {
+    const svg = $("donut");
+    svg.setAttribute("aria-label", "Distribución por fondo: " + fondos.map((f) => `${f.ticker} ${pctTxt(f.pct)}`).join(", "));
+    const total = fondos.reduce((a, f) => a + f.mv, 0) || 1;
+    const gaps = fondos.map((f, i) => (fondos.length > 1 && fondos[(i + 1) % fondos.length].g === f.g ? FUND_GAP : GROUP_GAP));
+    const usable = 360 - (fondos.length > 1 ? gaps.reduce((a, b) => a + b, 0) : 0);
+    const bruto = fondos.map((f) => Math.max(f.mv / total * usable, MIN_DEG));
+    const escala = usable / bruto.reduce((a, b) => a + b, 0);
+    let cursor = fondos.length > 1 ? GROUP_GAP / 2 : 0;
+    fondos.forEach((f, i) => {
+      const deg = Math.min(bruto[i] * escala, 359.99);
+      const a0 = cursor, a1 = cursor + deg;
+      cursor = a1 + gaps[i];
+
+      const mark = document.createElementNS(NS, "path");
+      mark.setAttribute("d", arc(M0, M1, a0, a1));
+      mark.setAttribute("class", "ring-mark");
+      svg.appendChild(mark);
+      markEls[f.ticker] = mark;
+
+      const seg = document.createElementNS(NS, "path");
+      seg.setAttribute("d", arc(R0, R1, a0, a1));
+      seg.setAttribute("class", "seg");
+      seg.style.fill = f.color;
+      const sel = selDeFondo(f);
+      seg.addEventListener("pointerenter", () => preview(sel));
+      seg.addEventListener("pointerleave", () => preview(null));
+      seg.addEventListener("click", () => pin(sel));
+      svg.appendChild(seg);
+      segEls[f.ticker] = seg;
+    });
+  }
+
+  function bindRow(el, sel) {
+    rowEls.push({ el, sel });
+    el.addEventListener("pointerenter", () => preview(sel));
+    el.addEventListener("pointerleave", () => preview(null));
+    el.addEventListener("focus", () => preview(sel));
+    el.addEventListener("blur", () => preview(null));
+    el.addEventListener("click", () => pin(sel));
+  }
+
+  function buildLegend() {
+    const host = $("legend-groups");
+    grupos.forEach((g) => {
+      const wrap = document.createElement("div");
+      wrap.className = "grp";
+      const uno = g.fondos.length === 1;
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "row row-head";
+      const nombre = esc(g.nombre) + (uno ? ' · ' + esc(g.fondos[0].ticker) : '');
+      head.innerHTML = '<span class="g-name"><i style="background:' + g.color + '"></i>' + nombre + '</span>' +
+        '<span class="r-mv">' + money(g.mv) + '</span><span class="r-pct">' + pctTxt(g.pct) + '</span>';
+      bindRow(head, { type: "group", id: g.clave });
+      wrap.appendChild(head);
+      if (!uno) {
+        g.fondos.forEach((f) => {
+          const r = document.createElement("button");
+          r.type = "button";
+          r.className = "row row-fund";
+          r.innerHTML = '<i class="sw" style="background:' + f.color + '"></i><span class="tk">' + esc(f.ticker) + '</span>' +
+            '<span class="r-mv">' + money(f.mv) + '</span><span class="r-pct">' + pctTxt(f.pct) + '</span>';
+          bindRow(r, { type: "fund", id: f.ticker });
+          wrap.appendChild(r);
+        });
+      }
+      host.appendChild(wrap);
+    });
+  }
+
+  function buildCards() {
+    const host = $("cards");
+    host.classList.toggle("single", single);
+    const filas = (g) => [
+      { k: "Precio", sub: `invertiste ${money(g.invertido)} · hoy vale ${money(g.mv)}`, from: 0, to: g.precio, v: g.precio,
+        bar: g.precio >= 0 ? "b-price" : "b-loss", vc: g.precio < 0 ? "neg" : "" },
+      { k: "Dividendos", sub: "lo que cobraste", from: g.precio, to: g.precio + g.dividendos, v: g.dividendos, bar: "b-div", vc: "" },
+      { k: "Retorno total", sub: "precio + dividendos", from: 0, to: g.retorno, v: g.retorno,
+        bar: g.retorno >= 0 ? "b-gain" : "b-loss", vc: g.retorno >= 0 ? "pos" : "neg", total: true }
+    ];
+    const extremos = [0];
+    grupos.forEach((g) => filas(g).forEach((r) => extremos.push(r.from, r.to)));
+    const lo = Math.min(...extremos), hi = Math.max(...extremos);
+    const pos = (x) => (hi === lo ? 0 : (x - lo) / (hi - lo) * 100);
+
+    grupos.forEach((g) => {
+      const tono = g.retorno >= 0 ? "pos" : "neg";
+      const rows = filas(g).map((r) => {
+        const a = pos(Math.min(r.from, r.to)), b = pos(Math.max(r.from, r.to));
+        return '<div class="wf-row' + (r.total ? ' total' : '') + '">' +
+          '<div class="wf-head"><p class="wf-label"><span class="wf-k">' + r.k + '</span><span class="wf-sub">' + r.sub + '</span></p>' +
+          '<span class="wf-v ' + r.vc + '">' + signed(r.v) + '</span></div>' +
+          '<div class="wf-track"><i class="wf-bar ' + r.bar + '" style="left:' + a.toFixed(2) + '%;width:' + (b - a).toFixed(2) + '%"></i></div></div>';
+      }).join("");
+
+      const card = document.createElement("article");
+      card.className = "card";
+      const peso = Math.max(0, Math.min(100, g.pct)).toFixed(2);
+      const etiqueta = 'Precio ' + signed(g.precio) + ', dividendos ' + signed(g.dividendos) + ', retorno total ' + signed(g.retorno);
+      card.innerHTML =
+        '<div class="card-main">' +
+          '<div class="card-top"><h2 class="card-title">' + esc(g.nombre) + '</h2><span class="card-weight"><b>' + pctTxt(g.pct) + '</b> de tu dinero</span></div>' +
+          '<p class="card-funds">' + g.tickers.map(esc).join(' · ') + ' — ' + plural(g.fondos.length) + '</p>' +
+          '<div class="weight" style="--w:' + peso + '%;--c:' + g.color + '"><i></i></div>' +
+          '<p class="k">Retorno total</p>' +
+          '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>' +
+          '<p class="verdict">' + (g.veredicto ? esc(g.veredicto) : '') + '</p>' +
+        '</div>' +
+        '<div class="wf" style="--zero:' + pos(0).toFixed(2) + '%" role="img" aria-label="' + etiqueta + '">' + rows + '</div>';
+      const sel = { type: "group", id: g.clave };
+      card.addEventListener("pointerenter", () => preview(sel));
+      card.addEventListener("pointerleave", () => preview(null));
+      host.appendChild(card);
+      cardEls[g.clave] = card;
+    });
+  }
+
+  const same = (a, b) => !!a && !!b && a.type === b.type && a.id === b.id;
+  const fondoDe = (t) => fondos.find((f) => f.ticker === t);
+  const grupoDe = (sel) => (!sel ? null : sel.type === "group" ? sel.id : fondoDe(sel.id).g);
+  function preview(sel) { hovered = sel; render(); }
+  function pin(sel) { pinned = same(pinned, sel) ? null : sel; render(); }
+
+  function render() {
+    const sel = hovered || pinned;
+    const activos = !sel ? fondos.map((f) => f.ticker)
+      : sel.type === "fund" ? [sel.id]
+      : porClave[sel.id].fondos.map((f) => f.ticker);
+
+    fondos.forEach((f) => {
+      const on = activos.includes(f.ticker);
+      segEls[f.ticker].style.opacity = sel && !on ? 0.2 : 1;
+      markEls[f.ticker].style.opacity = sel && on ? 1 : 0;
+    });
+
+    rowEls.forEach(({ el, sel: rs }) => {
+      const isOn = same(sel, rs);
+      const related = !!sel && (isOn || (grupoDe(rs) === grupoDe(sel) && (sel.type === "group" || rs.type === "group")));
+      el.classList.toggle("is-on", isOn);
+      el.classList.toggle("is-dim", !!sel && !related);
+      el.setAttribute("aria-pressed", same(pinned, rs) ? "true" : "false");
+    });
+
+    const g = grupoDe(sel);
+    Object.entries(cardEls).forEach(([k, el]) => el.classList.toggle("is-dim", !!g && !single && g !== k));
+
+    if (!sel) {
+      $("c-k").textContent = "Valor de mercado";
+      $("c-v").textContent = money(DATA.total_mv);
+      $("c-s").textContent = plural(fondos.length);
+    } else if (sel.type === "fund") {
+      const f = fondoDe(sel.id);
+      $("c-k").textContent = f.ticker;
+      $("c-v").textContent = pctTxt(f.pct);
+      $("c-s").textContent = `${money(f.mv)} · ${porClave[f.g].nombre}`;
+    } else {
+      const gg = porClave[sel.id];
+      $("c-k").textContent = gg.nombre;
+      $("c-v").textContent = pctTxt(gg.pct);
+      $("c-s").textContent = `${money(gg.mv)} · ${gg.fondos.length === 1 ? gg.fondos[0].ticker : plural(gg.fondos.length)}`;
+    }
+    $("reset").classList.toggle("is-visible", !!pinned);
+  }
+
+  $("reset").addEventListener("click", () => pin(null));
+  buildDonut();
+  buildLegend();
+  buildCards();
+  render();
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h || Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>
