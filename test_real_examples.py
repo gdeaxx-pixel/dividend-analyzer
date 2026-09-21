@@ -231,10 +231,20 @@ def test_roc_19a_crosscheck(case_ticker):
             "la resta esconde el ROC cuando reinviertes")
     # 2) Cuando el ROC viene del 19a, su magnitud debe cuadrar con el % oficial del fondo. Tolerancia
     #    amplia para no fallar por el timing de distribuciones; atrapa errores de orden (7% vs 75%).
+    #    El % oficial de un año CERRADO es su cierre fiscal (ICI), no el 19a: desde R1 (2026-09-18)
+    #    el ROC del holder lo usa, y comparar solo contra el 19a ponderado castigaba el dato correcto
+    #    (CONY 2025: cierre 97.02% contra 19a 53.66%). Referencia = % oficial de cada año pesado por
+    #    el bruto de ese año, leído del yaml — no de la función bajo prueba.
     if s.get("roc_source") == "19a":
         wpct = logic.load_roc_19a()[ticker.upper()]["weighted_pct"]
-        assert s["roc_percent"] == pytest.approx(wpct, abs=30), (
-            f"{case} {ticker}: ROC% {s['roc_percent']} lejos del 19a oficial {wpct}%")
+        ici = logic.load_roc_ici().get(ticker.upper()) or {}
+        gby = s.get("dividends_gross_by_year") or {}
+        tot = sum(gby.values())
+        ref = (sum(g * (float(ici[y]["roc_pct"]) if y in ici else wpct) for y, g in gby.items())
+               / tot) if tot > 0 else wpct
+        assert s["roc_percent"] == pytest.approx(ref, abs=30), (
+            f"{case} {ticker}: ROC% {s['roc_percent']} lejos del % oficial {ref:.2f}% "
+            f"(cierre por año donde existe, 19a {wpct}% donde no)")
 
 
 # ── Tier vision: OCR de fotos con Gemini (opt-in: pytest -m vision) ───────────

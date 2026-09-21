@@ -2284,7 +2284,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _dividend_tax_totals = _tax_totals_early
         _withheld = _dividend_tax_totals['withheld']
         _withheld_by_year = _dividend_tax_totals['withheld_by_year']
-        _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)
+        # Una sola pasada del clasificador único: retención AL COBRO y reembolsos genuinos
+        # salen del mismo emparejamiento de reversos (Regla 3). `build_tax_summary` necesita
+        # las dos para no restar dos veces lo ya devuelto (auditoría F6).
+        _tax_rows = _classify_tax_rows(ticker_df)
+        _refund_obs_by_year = _tax_rows['genuine_refund_by_year']
+        _withheld_at_payment_by_year = _tax_rows['withheld_at_payment_by_year']
         _foreign_tax_paid_by_year = foreign_tax_paid_by_year(ticker_df)
         _gross_by_year = _dividend_tax_totals['gross_by_year']
         _cadence_change = detect_cadence_change(ticker_df)
@@ -2427,6 +2432,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_gross_by_year": _gross_by_year,
             "withheld_by_year": dict(_withheld_by_year),
             "tax_refund_observed_by_year": dict(_refund_obs_by_year),
+            "withheld_at_payment_by_year": dict(_withheld_at_payment_by_year),
             # Impuesto extranjero (`Foreign Tax Paid`, p. ej. ZIM/Israel) — fuera del eje NRA,
             # su propia línea en la vista de Impuestos. Ver `foreign_tax_paid_by_year`.
             "foreign_tax_paid_total": round(sum(_foreign_tax_paid_by_year.values()), 2),
@@ -3406,6 +3412,91 @@ def load_roc_ici() -> dict:
     return data
 
 
+def roc_pct_by_year(ticker: str, roc19a: dict, roc_ici: dict, con_fuente: bool = False):
+    """%ROC (0-100) por año calendario — **objeto único del eje «%ROC por año fiscal»**
+    (tabla de la Regla 3b del contrato). Lo leen el objeto fiscal de la cartera real
+    (`estimate_roc_refund_by_year`) y los escenarios simulados (`ui.adapters._politica_fiscal`).
+
+    **Dos fuentes, y una manda sobre la otra por año** (2026-08-21). Para cada año:
+    el **cierre fiscal** (`roc_ici`, casilla 3 del 1099) si existe; si no, la **estimación**
+    del gestor (`roc19a`, los avisos 19(a)); si no, nada — el piso conservador.
+
+    No hace falta preguntar qué año está "cerrado": el ICI solo existe para años cerrados,
+    así que «el ICI si está» ya es la regla, sin depender del reloj. Cuando YieldMax publique
+    el cierre de 2026, `roc_ici.yaml` lo traerá y ese año dejará de usar la estimación solo.
+
+    Las dos fuentes se piden **explícitas**, sin default que las cargue por dentro: un objeto
+    fiscal que lee estado global por su cuenta es justo como empiezan las divergencias que
+    la Regla 3 del contrato existe para evitar — y haría que un test con datos sintéticos
+    arrastrara en silencio el yaml de producción.
+
+    La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
+    de los avisos 19(a) publicados ESE año. Los años sin avisos en la ventana caen al
+    ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos devuelve `{}`: sin
+    escudo que reclamar, la retención plana se queda como está.
+
+    **Los años ANTERIORES a la ventana no se extrapolan** (y eso mueve cifras). El relleno
+    con el ponderado cubre solo los huecos DENTRO del rango de avisos publicados; un año
+    previo al primer aviso no aparece en el dict. Qué hace cada consumidor con ese hueco es
+    decisión suya y está declarada en el consumidor: la simulación le aplica 0% (retiene el
+    30% completo y no devuelve nada, piso conservador); la cartera real cae al %ROC del
+    holder (`roc_fallback_pct` de `estimate_roc_refund_by_year`). Material hoy en dos fondos
+    del universo, cuyos avisos empiezan mucho después de su incepción: TSLY (incep. nov-2022,
+    avisos desde may-2025) y CONY (incep. ago-2023, avisos desde feb-2025).
+
+    Que el alcance sea el mismo en todas las vistas es lo que exige la Regla 3; que ese
+    alcance se DECLARE en el copy es lo que exige la Regla 2. Ampliarlo (extrapolar hacia
+    atrás) es una decisión de producto abierta, no un arreglo: movería también las cifras
+    ya desplegadas de «La matriz».
+
+    Vivió en `ui.adapters._roc_pct_by_year` hasta el 2026-09-18, y por eso la precedencia
+    del cierre fiscal solo llegaba a las simulaciones: el objeto fiscal real
+    (`estimate_roc_refund_by_year`) calculaba su propio promedio 19(a) y nunca leía el ICI
+    (auditoría R1: MSTY 2025 con ICI 100% se estimaba al 78.4% del 19(a)).
+    """
+    info = roc19a.get(ticker) or {}
+    por_anio = {}
+    for p in (info.get("per_distribution") or []):
+        try:
+            por_anio.setdefault(pd.Timestamp(p["date"]).year, []).append(float(p["roc_pct"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    try:
+        ponderado = float(info.get("weighted_pct"))
+    except (TypeError, ValueError):
+        ponderado = 0.0
+    # Ojo con el orden: aquí había un `return {}` cuando el ticker no tenía avisos 19(a).
+    # Con dos fuentes eso se saltaba el cierre fiscal justo en los fondos que MÁS lo
+    # necesitan —los que nunca publicaron 19(a), como CHPY—, y la vista seguía dando el
+    # número viejo sin que nada fallara. Ninguna salida temprana puede quedar por delante
+    # del merge.
+    anios = list(por_anio)
+    promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
+    # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
+    # un hueco en la publicación no se lea como «ese año no hubo ROC».
+    if anios and ponderado > 0:
+        for a in range(min(anios), max(anios) + 1):
+            promedios.setdefault(a, ponderado)
+
+    # El cierre fiscal PISA la estimación, año por año. Nunca al revés: el 19(a) es un
+    # pronóstico del número que el ICI ya midió, así que sobre un año cerrado no aporta nada.
+    # Un 0.00% del ICI (CONY 2023) es un CERO MEDIDO, no un hueco: entra igual que cualquier
+    # otro valor y pisa lo que dijera el 19(a).
+    fuentes = {a: "estimacion" for a in promedios}
+    for anio, entrada in (roc_ici.get(str(ticker).upper()) or {}).items():
+        try:
+            anio, pct = int(anio), float(entrada["roc_pct"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        promedios[anio] = pct
+        fuentes[anio] = "cierre"
+    # `con_fuente` devuelve la procedencia que decidió ESTE mismo bucle, no una segunda
+    # implementación de la regla: un mapa de procedencia calculado aparte se despega del
+    # dato en cuanto una de las dos ramas cambia (p. ej. una entrada corrupta que el merge
+    # descarta y el mapa seguiría marcando como «cierre»).
+    return (promedios, fuentes) if con_fuente else promedios
+
+
 _DISTRATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'distribution_rate.yaml')
 _DISTRATE_CACHE = {}
@@ -3488,8 +3579,13 @@ def _roc_events_from_19a(ticker, dist_bruto):
 
     `dist_bruto`: lista de (fecha, monto BRUTO) — la de `_dividend_events`, con signo: una
     reversa de IB resta ROC en vez de sumarlo.
-    Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
-    usa el % ponderado del fondo (`weighted_pct`).
+    Una distribución de un año con **cierre fiscal** (ICI, `roc_pct_by_year`) toma el % del
+    cierre: es el que fija la casilla 3 del 1099 y, por tanto, lo que de verdad baja la base.
+    En un año abierto se empata con el %ROC publicado de esa fecha (±7 días); si no hay
+    empate, el % ponderado del fondo (`weighted_pct`). Hasta el 2026-09-18 el cierre no se
+    leía aquí (auditoría R1): MSTY 2025 bajaba la base al 76% de lo cobrado cuando el cierre
+    —y el 1042-S real— dicen 100%. El nombre conserva el «19a» por sus llamadores y por
+    `roc_source='19a'`, que sigue queriendo decir «% publicado por el fondo, fechado».
 
     Existe porque el ROC **acumulado no sirve para la base fiscal de una venta**: a las
     acciones vendidas solo les corresponde el ROC devengado ANTES de venderlas, así que hay
@@ -3498,13 +3594,18 @@ def _roc_events_from_19a(ticker, dist_bruto):
     posición y mueve la ganancia realizada de −$178.78 a +$32.81 — el signo depende de esto,
     no es un decimal.
 
-    Devuelve `None` —y no una lista parcial— si el fondo no publica 19a o si alguna
-    distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
+    Devuelve `None` —y no una lista parcial— si el fondo no publica ni 19a ni cierre, o si
+    alguna distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
     estimador: un ROC a medias mezclado con distribuciones sin catalogar no es una base
-    fiscal, es un híbrido, y la Regla 2 lo prohíbe.
+    fiscal, es un híbrido, y la Regla 2 lo prohíbe. (Un fondo con cierre y sin 19a solo sale
+    si todas sus distribuciones caen en años cerrados.)
     """
-    info = load_roc_19a().get(str(ticker).upper())
-    if not info or not dist_bruto:
+    tk = str(ticker).upper()
+    roc19a = load_roc_19a()
+    info = roc19a.get(tk) or {}
+    pcts, fuentes = roc_pct_by_year(tk, roc19a, load_roc_ici(), con_fuente=True)
+    cierre = {a: pcts[a] for a, f in fuentes.items() if f == 'cierre'}
+    if (not info and not cierre) or not dist_bruto:
         return None
 
     dated = []
@@ -3519,8 +3620,8 @@ def _roc_events_from_19a(ticker, dist_bruto):
     eventos = []
     for dt, amt in dist_bruto:
         amt = amt or 0
-        pct = None
-        if dated and dt is not None:
+        pct = cierre.get(_row_year(dt))
+        if pct is None and dated and dt is not None:
             best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
             if abs((best[0] - pd.Timestamp(dt).normalize()).days) <= 7:
                 pct = best[1]
@@ -5325,27 +5426,31 @@ def estimate_roc_refund(gross, withheld, roc_pct, base_rate=0.30):
 def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_rate=0.30,
                                  roc_fallback_pct=None):
     """`estimate_roc_refund` desglosado por año calendario — la reclasificación del broker
-    opera por año fiscal, así que cada año usa el %ROC promedio de los avisos 19a publicados
-    ESE año (no el histórico completo del fondo). Reutiliza `estimate_roc_refund` por año,
-    no duplica la fórmula.
+    opera por año fiscal, así que cada año usa el %ROC de ESE año, no el histórico completo
+    del fondo. Reutiliza `estimate_roc_refund` por año, no duplica la fórmula.
+
+    El %ROC de cada año sale de `roc_pct_by_year`, el objeto único del eje (el mismo que
+    alimenta las simulaciones): el **cierre fiscal** (ICI) del año si existe; si no, la
+    **estimación** 19(a) (promedio de los avisos de ese año, o el ponderado del fondo si el
+    año es un hueco dentro de la ventana de avisos); si no, `roc_fallback_pct`. Antes de
+    2026-09-18 este estimador promediaba el 19(a) por su cuenta y nunca leía el ICI: MSTY
+    2025 se estimaba al 78.4% cuando el cierre —y el 1042-S real— dicen 100% (auditoría R1).
 
     Args:
-        gross_by_year / withheld_by_year: dict {año -> monto}, del mismo ticker (ver
-            `dividends_gross_by_year` / `withheld_by_year` en el dict de resultados).
-        roc_fallback_pct: %ROC a usar en años sin avisos 19a en la ventana (normalmente el
+        gross_by_year / withheld_by_year: dict {año -> monto}, del mismo ticker. Para la
+            devolución TOTAL del año, la retención AL COBRO (`withheld_at_payment_by_year`):
+            con la neteada, un reembolso acreditado en ene–mar resta de la retención del
+            año siguiente y la devolución de ese año sale corta (auditoría F6).
+        roc_fallback_pct: %ROC a usar en años sin cierre ni avisos 19a (normalmente el
             `roc_percent` ya calculado del holder para ese ticker).
 
-    Devuelve dict {año: {'fair_withholding', 'refund', 'refund_pct', 'roc_pct_usado'}} más
-    la clave 'total' con los mismos tres primeros campos agregados sobre todos los años.
+    Devuelve dict {año: {'fair_withholding', 'refund', 'refund_pct', 'roc_pct_usado',
+    'roc_fuente'}} más la clave 'total' con los tres primeros campos agregados sobre todos los
+    años. `roc_fuente` declara de dónde salió el % de ESE año: 'cierre' (ICI), 'estimacion'
+    (19a), 'respaldo' (`roc_fallback_pct`) o 'sin_dato' (0%).
     """
-    info = load_roc_19a().get(str(ticker).upper()) or {}
-    roc_by_year = defaultdict(list)
-    for rowp in (info.get('per_distribution') or []):
-        try:
-            _y = pd.Timestamp(rowp['date']).year
-            roc_by_year[_y].append(float(rowp['roc_pct']))
-        except Exception:
-            continue
+    pcts, fuentes = roc_pct_by_year(str(ticker).upper(), load_roc_19a(), load_roc_ici(),
+                                    con_fuente=True)
 
     years = sorted(set(gross_by_year or {}) | set(withheld_by_year or {}))
     out = {}
@@ -5353,11 +5458,14 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     for y in years:
         gross = (gross_by_year or {}).get(y, 0.0) or 0.0
         withheld = (withheld_by_year or {}).get(y, 0.0) or 0.0
-        vals = roc_by_year.get(y)
-        roc_pct = (sum(vals) / len(vals)) if vals else (roc_fallback_pct if roc_fallback_pct
-                                                          is not None else 0.0)
+        if y in pcts:
+            roc_pct, fuente = pcts[y], fuentes[y]
+        elif roc_fallback_pct is not None:
+            roc_pct, fuente = roc_fallback_pct, 'respaldo'
+        else:
+            roc_pct, fuente = 0.0, 'sin_dato'
         res = estimate_roc_refund(gross, withheld, roc_pct, base_rate=base_rate)
-        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2))
+        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2), roc_fuente=fuente)
         tot_fair += res['fair_withholding']
         tot_refund += res['refund']
         tot_withheld += withheld
@@ -5400,11 +5508,26 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
     cuenta.
 
     Campos: ticker, base_rate_pct, country, roc_pct_used, roc_source, withheld_real,
-    fair_withholding, refund_estimated, refund_pct, net_estimated, refund_observed,
-    refund_pending, by_year, withheld_by_year, refund_observed_by_year, refund_by_year
-    (desglose año a año de `estimate_roc_refund_by_year`, o None), method,
+    withheld_at_payment, fair_withholding, refund_total_estimated, refund_estimated,
+    refund_pct, net_estimated, refund_observed, refund_pending, by_year, withheld_by_year,
+    withheld_at_payment_by_year, refund_observed_by_year, refund_by_year (desglose año a año
+    de `estimate_roc_refund_by_year`, con la fuente del %ROC de cada año, o None), method,
     basis='gross_withheld', moment='annual_reclass_estimate', is_estimate=True, label_short,
     label_long.
+
+    **Cuatro cifras de retención, cada una con su momento** (auditoría F6, 2026-09-18):
+      - `withheld_at_payment` — retención INICIAL, al cobro (lo que descontó el agente).
+      - `refund_observed`     — lo que el bróker YA devolvió (filas positivas genuinas).
+      - `withheld_real`       — SALDO retenido hoy = inicial − ya devuelto.
+      - `refund_total_estimated` — devolución TOTAL que corresponde tras la reclasificación,
+        medida contra la retención al cobro de cada año fiscal.
+    `refund_estimated` es la devolución ADICIONAL —lo que falta por volver—
+    `= max(0, total − ya devuelto)`, y es la que se resta del saldo: `net_estimated =
+    withheld_real − refund_estimated`. `refund_pending` es la misma cifra (se conserva el
+    nombre). Antes el total se estimaba sobre el saldo (que ya descontó lo devuelto) y
+    `refund_pending` volvía a restar lo devuelto: dos veces. Y como el reembolso de un año
+    llega en ene–mar del siguiente, medirlo contra el saldo le quitaba a ese año siguiente
+    una retención que sí se cobró.
     """
     # `RATE_UNDECLARED` no es una tasa: es la ausencia de una. Con él nunca se estima
     # devolución — `withheld_real` (real del CSV) se sigue mostrando, pero la aritmética
@@ -5425,12 +5548,13 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'rate_declared': not _undeclared,
             'roc_pct_used': roc_pct_used, 'roc_source': roc_source,
-            'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
+            'withheld_real': round(withheld_real, 2), 'withheld_at_payment': None,
+            'fair_withholding': 0.0, 'refund_total_estimated': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
             'net_estimated': round(withheld_real, 2),
             'refund_observed': 0.0, 'refund_pending': 0.0,
-            'by_year': False, 'withheld_by_year': {}, 'refund_observed_by_year': {},
-            'refund_by_year': None,
+            'by_year': False, 'withheld_by_year': {}, 'withheld_at_payment_by_year': {},
+            'refund_observed_by_year': {}, 'refund_by_year': None,
             'method': None, 'basis': 'gross_withheld', 'moment': 'annual_reclass_estimate',
             'is_estimate': True, 'label_short': '', 'label_long': label_long,
         }
@@ -5479,16 +5603,27 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         gross = float(_gross_declared) if _gross_declared is not None else (net_div + withheld_real)
         gross_by_year = stats.get('dividends_gross_by_year') or {}
         withheld_by_year = stats.get('withheld_by_year') or {}
-        years_wh = sorted(y for y, v in (withheld_by_year or {}).items() if v > 0.01)
         obs_by_year = stats.get('tax_refund_observed_by_year') or {}
         obs_total = round(sum(obs_by_year.values()), 2)
+        # Retención AL COBRO por año (F6): la devolución total se mide contra ella, no contra el
+        # saldo. `analyze_portfolio` la publica desde el clasificador único; stats armados a
+        # mano caen a la identidad del contrato `al_cobro = neteado + devuelto`.
+        wap_by_year = stats.get('withheld_at_payment_by_year')
+        if wap_by_year is None:
+            wap_by_year = {y: round(float(withheld_by_year.get(y, 0.0) or 0.0)
+                                    + float(obs_by_year.get(y, 0.0) or 0.0), 2)
+                           for y in set(withheld_by_year) | set(obs_by_year)}
+        withheld_at_payment = (round(sum(wap_by_year.values()), 2) if wap_by_year
+                               else round(withheld_real + obs_total, 2))
+        years_wh = sorted(y for y, v in (wap_by_year or {}).items() if v > 0.01)
 
-        refund_info = estimate_roc_refund(gross, withheld_real, roc_pct, base_rate=_rate / 100.0)
+        refund_info = estimate_roc_refund(gross, withheld_at_payment, roc_pct,
+                                          base_rate=_rate / 100.0)
         method = f'ROC {roc_pct:.0f}%'
         by_year = False
         refund_by_year = None
         if len(years_wh) > 1:
-            rby = estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker,
+            rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
                                                base_rate=_rate / 100.0, roc_fallback_pct=roc_pct)
             rby_total = (rby or {}).get('total')
             if rby_total:
@@ -5499,14 +5634,21 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
                 by_year = True
                 refund_by_year = rby
 
-        refund_estimated = refund_info['refund']
+        refund_total = refund_info['refund']
+        # Lo ya devuelto se resta UNA vez, aquí: el total se midió contra la retención al
+        # cobro, que no lo descuenta. El saldo (`withheld_real`) sí lo descontó, por eso lo que
+        # se le resta es la adicional, no el total.
+        refund_estimated = max(0.0, round(refund_total - obs_total, 2))
+        refund_pending = refund_estimated
+        refund_pct = (round(refund_estimated / withheld_real * 100.0, 1)
+                      if withheld_real > 0 else 0.0)
         net_estimated = round(withheld_real - refund_estimated, 2)
-        refund_pending = max(0.0, round(refund_estimated - obs_total, 2))
         label_short = (f'~${refund_estimated:,.0f} est. vuelve (ROC)'
                        if refund_estimated > 0.01 else '')
         label_long = (
-            f'Estimado: ~${refund_estimated:,.2f} ({refund_info["refund_pct"]:.0f}%) de lo '
-            f'retenido podría volver por la reclasificación anual del ROC (19a), con {method}. '
+            f'Estimado: ~${refund_estimated:,.2f} ({refund_pct:.0f}%) de lo retenido podría '
+            f'volver por la reclasificación anual del ROC (cierre fiscal del fondo o avisos '
+            f'19a), con {method}. '
             f'No es efectivo ya recibido — es una proyección; lo definitivo lo fija tu 1042-S.'
             if refund_estimated > 0.01 else
             'Con el % ROC de este fondo, la reclasificación anual no reduce la retención real.'
@@ -5516,14 +5658,19 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             'rate_declared': True,
             'roc_pct_used': roc_pct, 'roc_source': _roc_src,
             'withheld_real': round(withheld_real, 2),
+            'withheld_at_payment': withheld_at_payment,
             'fair_withholding': refund_info['fair_withholding'],
-            'refund_estimated': refund_estimated, 'refund_pct': refund_info['refund_pct'],
+            'refund_total_estimated': refund_total,
+            'refund_estimated': refund_estimated, 'refund_pct': refund_pct,
             'net_estimated': net_estimated,
             'refund_observed': obs_total, 'refund_pending': refund_pending,
             'by_year': by_year, 'withheld_by_year': dict(withheld_by_year),
+            'withheld_at_payment_by_year': dict(wap_by_year),
             'refund_observed_by_year': dict(obs_by_year),
             # Desglose año a año (dict {año: {fair_withholding, refund, refund_pct,
-            # roc_pct_usado}} + 'total'), tal cual lo devuelve estimate_roc_refund_by_year —
+            # roc_pct_usado, roc_fuente}} + 'total'), tal cual lo devuelve
+            # estimate_roc_refund_by_year: `refund` es la devolución TOTAL del año contra su
+            # retención al cobro, y `roc_fuente` dice si su % es cierre fiscal o estimación —
             # None si no hay >1 año con retención. Se guarda para que la tabla anual del paso
             # "Impuesto NRA" LEA este objeto en vez de recalcularlo (Regla 3).
             'refund_by_year': refund_by_year,
