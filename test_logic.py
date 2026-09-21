@@ -3264,6 +3264,73 @@ def test_ninguna_ruta_null_publica_devolucion():
         assert ts["by_year"] is False, kw
 
 
+# ── R2 — la casilla 9 mezcla años con tasas distintas (auditoría 2026-09-18) ────────────
+#
+# `_roc_refund_recuperable` usaba UNA tasa (la aplicada agregada) y UN escudo (el ROC del
+# holder) para todos los años: en un fondo con un año sin escudo (retención plana) y otro
+# con el escudo YA aplicado al cobro (IB reclasificó antes de emitir el CSV), esa mezcla
+# cuenta el escudo dos veces en el año que ya lo tenía. El fix mide la tasa del bróker
+# (`broker_withholding_rate_pct`, la tasa LEGAL más cercana a la máxima aplicada por año) y
+# corre `_refund_total_al_cobro` año por año — la misma función que ya usaba `build_tax_summary`.
+
+def test_r2_casilla9_por_anio_no_mezcla_tasas(monkeypatch):
+    """Caso sintético: 2 años, bruto 1000/1000. 2024 retuvo 4.30 (0.43%, escudo YA aplicado —
+    cierre ICI 100%); 2025 retuvo 300.00 (30%, sin escudo — cierre ICI 40%). ROC del holder
+    60% (no se usa: ambos años tienen cierre ICI). La fórmula vieja (una tasa/escudo para
+    todo) daba 182.62; la correcta, año por año, da 124.30 — exactamente el objeto fiscal
+    al 30%."""
+    hist = _roc_norm_df([
+        ("2024-06-14", "Cash Dividend", "ZZZZ", 0, 1000.0),
+        ("2024-06-14", "NRA Tax Adj", "ZZZZ", 0, -4.30),
+        ("2025-06-13", "Cash Dividend", "ZZZZ", 0, 1000.0),
+        ("2025-06-13", "NRA Tax Adj", "ZZZZ", 0, -300.00),
+    ])
+    s = {
+        "history": hist,
+        "dividends_gross_by_year": {2024: 1000.0, 2025: 1000.0},
+        "dividends_gross_total": 2000.0,
+        "withheld_tax_total": 304.30,
+        "total_dividends": round(2000.0 - 304.30, 2),
+        "withheld_by_year": {2024: 4.30, 2025: 300.00},
+        "tax_refund_observed_by_year": {},
+        "roc_percent": 60.0, "roc_source": "broker",
+    }
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {
+        "ZZZZ": {2024: {"roc_pct": 100.0}, 2025: {"roc_pct": 40.0}}})
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+
+    diag = logic.build_withholding_diagnosis(s, "ZZZZ", entitled_pct=None)
+    assert diag["refund_roc"] == pytest.approx(124.30, abs=0.01)
+    ts = logic.build_tax_summary(s, "ZZZZ", base_rate_pct=30.0)
+    assert ts["refund_total_estimated"] == pytest.approx(124.30, abs=0.01)
+    assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.01)
+
+
+def test_r2_tasa_del_broker_redondea_a_la_legal():
+    """Caso sintético: 1 año, bruto 1000, retenido 302.20 (30.22% aparente por redondeo de
+    centavos), ROC 50%. `broker_withholding_rate_pct` redondea la tasa observada a la legal
+    más cercana (30.0, no 30.22) y la devolución sale 152.20 (= 302.20 − 0.30·1000·0.50)."""
+    hist = _roc_norm_df([
+        ("2025-06-01", "Cash Dividend", "YYYY", 0, 1000.0),
+        ("2025-06-01", "NRA Tax Adj", "YYYY", 0, -302.20),
+    ])
+    s = {
+        "history": hist,
+        "dividends_gross_by_year": {2025: 1000.0},
+        "dividends_gross_total": 1000.0,
+        "withheld_tax_total": 302.20,
+        "total_dividends": round(1000.0 - 302.20, 2),
+        "withheld_by_year": {2025: 302.20},
+        "tax_refund_observed_by_year": {},
+        "roc_percent": 50.0, "roc_source": "broker",
+    }
+    diag = logic.applied_withholding_rate(s)
+    assert logic.broker_withholding_rate_pct(diag) == pytest.approx(30.0)
+
+    out = logic.build_withholding_diagnosis(s, "YYYY", entitled_pct=None)
+    assert out["refund_roc"] == pytest.approx(152.20, abs=0.01)
+
+
 def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
     """El campo `country` debe traer la etiqueta del país cuyo tratado se aplicó (antes quedaba
     siempre en None). Y la reutilización por identidad tiene que mirar el país, no solo la

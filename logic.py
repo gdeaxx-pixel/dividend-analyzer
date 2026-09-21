@@ -5475,6 +5475,47 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     return out
 
 
+def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, rate_pct):
+    """Devolución total estimada por reclasificación ROC, medida contra la retención AL
+    COBRO — extraído de `build_tax_summary` para que `_roc_refund_recuperable` (R2, casilla 9
+    sin país) y el objeto fiscal con país compartan una sola implementación (Regla 3).
+
+    Misma rama que antes: más de un año con retención al cobro (`> 0.01`) usa el %ROC de CADA
+    año (`estimate_roc_refund_by_year`); si no, el agregado (`estimate_roc_refund`) con
+    `roc_pct` único. Devuelve {'fair_withholding', 'refund', 'refund_pct', 'method',
+    'by_year': bool, 'refund_by_year': dict|None}.
+    """
+    wap_by_year = wap_by_year or {}
+    withheld_at_payment = round(sum(wap_by_year.values()), 2) if wap_by_year else 0.0
+    years_wh = sorted(y for y, v in wap_by_year.items() if v > 0.01)
+
+    refund_info = estimate_roc_refund(gross, withheld_at_payment, roc_pct,
+                                      base_rate=rate_pct / 100.0)
+    method = f'ROC {roc_pct:.0f}%'
+    by_year = False
+    refund_by_year = None
+    if len(years_wh) > 1:
+        rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
+                                          base_rate=rate_pct / 100.0, roc_fallback_pct=roc_pct)
+        rby_total = (rby or {}).get('total')
+        if rby_total:
+            # Tarjetas y tabla anual deben sumar igual: el total sale del ROC de cada
+            # año, no del agregado (mismo criterio que el bloque original en app.py).
+            refund_info = rby_total
+            method = 'ROC por año'
+            by_year = True
+            refund_by_year = rby
+
+    return {
+        'fair_withholding': refund_info['fair_withholding'],
+        'refund': refund_info['refund'],
+        'refund_pct': refund_info.get('refund_pct'),
+        'method': method,
+        'by_year': by_year,
+        'refund_by_year': refund_by_year,
+    }
+
+
 def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
                       country: str = None) -> dict:
     """Objeto fiscal único por ticker (Regla 3 del invariante ROC/NRA,
@@ -5615,24 +5656,12 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
                            for y in set(withheld_by_year) | set(obs_by_year)}
         withheld_at_payment = (round(sum(wap_by_year.values()), 2) if wap_by_year
                                else round(withheld_real + obs_total, 2))
-        years_wh = sorted(y for y, v in (wap_by_year or {}).items() if v > 0.01)
 
-        refund_info = estimate_roc_refund(gross, withheld_at_payment, roc_pct,
-                                          base_rate=_rate / 100.0)
-        method = f'ROC {roc_pct:.0f}%'
-        by_year = False
-        refund_by_year = None
-        if len(years_wh) > 1:
-            rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
-                                               base_rate=_rate / 100.0, roc_fallback_pct=roc_pct)
-            rby_total = (rby or {}).get('total')
-            if rby_total:
-                # Tarjetas y tabla anual deben sumar igual: el total sale del ROC de cada
-                # año, no del agregado (mismo criterio que el bloque original en app.py).
-                refund_info = rby_total
-                method = 'ROC por año'
-                by_year = True
-                refund_by_year = rby
+        r = _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, _rate)
+        refund_info = r
+        method = r['method']
+        by_year = r['by_year']
+        refund_by_year = r['refund_by_year']
 
         refund_total = refund_info['refund']
         # Lo ya devuelto se resta UNA vez, aquí: el total se midió contra la retención al
@@ -7055,6 +7084,19 @@ def build_yieldmax_total_return_series(tickers: list, start: str = None) -> pd.D
 TASA_TOLERANCIA_PP = 2.0
 NRA_TECHO_ESTATUTARIO = 30.0   # techo de retención NRA sobre dividendos; una tasa aplicada por encima es imposible
 
+_TASAS_LEGALES_NRA = tuple(sorted({float(r) for r, _ in NRA_COUNTRY_RATES.values()} | {NRA_TECHO_ESTATUTARIO}))
+
+
+def broker_withholding_rate_pct(diag: dict):
+    """Tasa del bróker sin saber el país: la tasa legal más cercana a la MÁXIMA tasa aplicada
+    por año. Un año con el escudo ROC aplicado al cobro (IB 2025) retiene por debajo de su tasa;
+    el año sin escudo la revela. None si no hay años medibles."""
+    por_anio = (diag or {}).get('by_year') or {}
+    if not por_anio:
+        return None
+    maxima = max(por_anio.values())
+    return min(_TASAS_LEGALES_NRA, key=lambda r: abs(r - maxima))
+
 
 def applied_withholding_rate(stats: dict) -> dict:
     """Tasa de retención que el bróker APLICÓ de verdad, medida sobre los números del CSV.
@@ -7130,25 +7172,28 @@ def applied_withholding_rate(stats: dict) -> dict:
     return {'applied_pct': applied, 'gross': gross_total,
             'withheld_at_payment': wh_total, 'by_year': by_year,
             'years': sorted(by_year), 'implausible': implausible,
-            'n_tax_rows': n_tax_rows}
+            'n_tax_rows': n_tax_rows,
+            'withheld_at_payment_by_year': dict(wh_by_year)}
 
 
-def _roc_refund_recuperable(diag: dict, stats: dict) -> dict:
+def _roc_refund_recuperable(diag: dict, stats: dict, ticker=None) -> dict:
     """El ROC recuperable — la parte de lo retenido AL COBRO que vuelve sola cuando el bróker
     reclasifica la distribución como Retorno de Capital — se MIDE sin saber el país.
 
-    La fórmula usa la tasa OBSERVADA en el CSV (`applied`) y el escudo del ROC 19a; `entitled`
-    (la tasa CON DERECHO, dato de tratado) NO aparece. Ese dato solo entra en `gap_w8ben`, que
-    es el otro carril (Regla 4): uno vuelve solo, el otro se reclama con 1040-NR.
+    La tasa que se usa NO es la aplicada por año (mezclaría escudos de años con reclasificación
+    distinta — R2): es `broker_withholding_rate_pct(diag)`, la tasa LEGAL más cercana a la
+    máxima aplicada por año. `entitled` (la tasa CON DERECHO, dato de tratado) NO aparece acá.
+    Ese dato solo entra en `gap_w8ben`, que es el otro carril (Regla 4): uno vuelve solo, el
+    otro se reclama con 1040-NR.
 
     Aplica los MISMOS guards de datos que `build_withholding_diagnosis`, en el mismo orden:
     `applied is None` → nada; `withheld_at_payment <= 0.01` → nada; `implausible` → nada (guard
     del #92/#94: los reversos de split de IB dan tasas imposibles y sin él la casilla 9 saldría
-    inflada); `gross <= 0` → nada.
+    inflada); `gross <= 0` → nada; sin tasa de bróker medible → nada.
 
     Devuelve `{}` cuando no hay nada medible; si no, un dict con `refund_roc`, `roc_pct_usado`,
-    y los internos `justa_a_la_aplicada` / `escudo` / `gross` que el camino con país reutiliza
-    para el `gap_w8ben` — una sola implementación de la fórmula del escudo (Regla 3).
+    y los internos `justa_a_la_aplicada` / `tasa_broker` / `gross` que el camino con país
+    reutiliza para el `gap_w8ben` — una sola implementación de la fórmula (Regla 3).
     """
     applied = diag.get('applied_pct')
     if applied is None:
@@ -7162,18 +7207,25 @@ def _roc_refund_recuperable(diag: dict, stats: dict) -> dict:
     if gross <= 0:
         return {}
 
-    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y deja
-    # de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención. Sin dato de
-    # ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no "desconocido": no hay
-    # reclasificación que esperar.
-    roc_pct = (stats or {}).get('roc_percent')
-    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
-    justa_a_la_aplicada = gross * (applied / 100.0) * escudo
+    R = broker_withholding_rate_pct(diag)
+    if R is None:
+        return {}
+
+    # ROC realizado del holder, saneado igual que `build_tax_summary`: un ROC NEGATIVO no es
+    # un hecho fiscal (síntoma de traspaso con costo base pero sin importe en el CSV), se
+    # rotula «sin dato». Para el cálculo, sin dato cuenta como 0 (escudo completo, como hoy).
+    roc = (stats or {}).get('roc_percent')
+    if roc is not None and roc < 0:
+        roc = None
+
+    r = _refund_total_al_cobro(gross, (stats or {}).get('dividends_gross_by_year') or {},
+                               diag.get('withheld_at_payment_by_year') or {},
+                               roc or 0.0, ticker, R)
     return {
-        'refund_roc': round(max(0.0, wap - justa_a_la_aplicada), 2),
-        'roc_pct_usado': float(roc_pct) if roc_pct is not None else 0.0,
-        'justa_a_la_aplicada': justa_a_la_aplicada,
-        'escudo': escudo,
+        'refund_roc': round(r['refund'], 2),
+        'roc_pct_usado': float(roc) if roc is not None else 0.0,
+        'justa_a_la_aplicada': r['fair_withholding'],
+        'tasa_broker': R,
         'gross': gross,
     }
 
@@ -7220,7 +7272,7 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         # OBSERVADA en el CSV y el escudo del ROC 19a — `entitled` no aparece, así que el gate
         # de país no le aplica. `gap_w8ben` se queda en 0.0 porque ESE sí es dato de tratado y
         # no se puede medir sin residencia (Regla 4: dos carriles, remedios distintos).
-        roc = _roc_refund_recuperable(diag, stats)
+        roc = _roc_refund_recuperable(diag, stats, ticker=ticker)
         if roc:
             out['refund_roc'] = roc['refund_roc']
             out['roc_pct_usado'] = roc['roc_pct_usado']
@@ -7259,14 +7311,15 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
 
     # `refund_roc` sale del helper único (Regla 3), el mismo que alimenta la rama `sin_declarar`.
     # El `gap_w8ben` es el otro carril y sí necesita la tasa CON DERECHO: se calcula aquí
-    # reutilizando el escudo/bruto/`justa_a_la_aplicada` que el helper ya devolvió, sin volver a
-    # implementar la fórmula del escudo. Sin dato de ROC el escudo es 1.0 (todo el exceso sobre
-    # la tasa con derecho es gap de tratado).
-    roc = _roc_refund_recuperable(diag, stats)
+    # reutilizando la `justa_a_la_aplicada` que el helper ya devolvió, sin volver a implementar
+    # la fórmula — la retención justa es LINEAL en la tasa, así que basta reescalar de la tasa
+    # del bróker a la tasa con derecho.
+    roc = _roc_refund_recuperable(diag, stats, ticker=ticker)
     if roc:
         out['refund_roc'] = roc['refund_roc']
         out['roc_pct_usado'] = roc['roc_pct_usado']
-        justa_con_derecho = roc['gross'] * (entitled / 100.0) * roc['escudo']
+        justa_con_derecho = (roc['justa_a_la_aplicada'] * entitled / roc['tasa_broker']
+                             if roc['tasa_broker'] else 0.0)
         out['gap_w8ben'] = round(max(0.0, roc['justa_a_la_aplicada'] - justa_con_derecho), 2)
 
     if abs(exceso) <= holgura:
