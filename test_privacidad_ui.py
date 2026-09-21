@@ -169,12 +169,29 @@ def test_s1_editar_csv_borra_el_contexto_de_captura():
 
 
 def test_s1_demo_no_hereda_capturas_de_la_sesion_previa():
-    """Con `_wizard_ocr_positions` puesto a mano, aplicar
-    demo_mode.load_demo_case("schwab") como hace app.py:54 deja la clave en None."""
+    """El bundle del demo LIMPIA el contexto de captura de la sesión anterior.
+
+    Mide la consecuencia, no la forma: vuelca el bundle sobre una sesión ya contaminada,
+    igual que `app.py:52-55`. La versión anterior afirmaba `bundle.get(clave) is None`,
+    que **no vigila nada**: `.get` devuelve `None` tanto si la clave vale `None` como si
+    falta, así que un bundle que no traiga las claves dejaba la captura vieja intacta y
+    el test seguía verde (medido: mutantes M2 y M4 de `mutar_s4_s1.sh` sobrevivían).
+    """
     import demo_mode
+    from ui.carga import CLAVES_CONTEXTO_CARTERA
+
     bundle = demo_mode.load_demo_case("schwab")
     assert bundle is not None
-    assert bundle.get("_wizard_ocr_positions") is None
+
+    sesion = {"_wizard_ocr_positions": {"MSTY": {"shares": 999.0, "cost": 12345.0}},
+              "_wizard_photo_sig": ("captura_de_otra_cartera.png", 4321)}
+    for _k, _v in bundle.items():          # así lo aplica app.py:52-55
+        sesion[_k] = _v
+
+    for clave in ("_wizard_ocr_positions", "_wizard_photo_sig"):
+        assert clave in CLAVES_CONTEXTO_CARTERA, f"{clave} salió del contrato de reset"
+        assert clave in bundle, f"el bundle del demo no trae {clave}: no puede limpiarla"
+        assert sesion[clave] is None, f"{clave} conserva la captura de la sesión previa"
 
 
 def test_s1_firma_por_contenido_no_por_nombre_y_tamano():
