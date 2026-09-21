@@ -193,3 +193,94 @@ def test_q4_con_drip_bruto_y_plano_no_cambian():
         for m, v in esperado.items():
             assert rep["data"][str(m)] == pytest.approx(v, abs=1e-9), (
                 f"{modo} m={m}: series() cambió — Q4 no debía tocarla")
+
+
+# ── U5 (2026-09-20): `priceData` y `cosechaData` — las otras dos series que el fix de
+# Q4 rebasa y que los 4 tests de arriba NO miraban. Medido por Opus: revertir solo una
+# de las dos a `X[m]/base0 − 1` (mutantes M7/M8) sobrevivía la suite entera — la línea
+# de precio nacía 16.6667 puntos bajo cero sin que nada se pusiera rojo.
+#
+# Mismo patrón del archivo: la función se EXTRAE del HTML y se ejecuta en Node; los
+# esperados son aritmética de mano sobre la fixture (números redondos sintéticos), no
+# una transcripción de la fórmula auditada. La fixture reproduce el caso Q4b: `tot`
+# arrastra efectivo cobrado ANTES de t0, así que tot[t0] ≠ precio[t0] en los tres modos
+# — justo la diferencia que el fix deja de meter en el denominador.
+
+_PRECIO_SIN = {"0": 100.0, "1": 200.0, "2": 250.0}
+_TOT_POR_MODO = {
+    "bruto": {"0": 130.0, "1": 240.0, "2": 300.0},   # efectivo pre-t0: 30 / 40
+    "plano": {"0": 122.0, "1": 230.0, "2": 292.0},   # 22 / 30
+    "roc":   {"0": 126.0, "1": 235.0, "2": 296.0},   # 26 / 35
+}
+_COSECHA_POR_MODO = {
+    "bruto": {"0": 40.0, "1": 100.0, "2": 160.0},
+    "plano": {"0": 35.0, "1": 90.0, "2": 145.0},
+    "roc":   {"0": 38.0, "1": 105.0, "2": 155.0},
+}
+# Esperados de priceData[2] = precio[2]/precio[t0] − 1, a mano:
+#   t0=0 → 250/100 − 1 = 1.5 · t0=1 → 250/200 − 1 = 0.25 (igual en los tres modos:
+#   la línea de precio no depende del modo — el mutante M7 sí, y muere en los tres).
+_PRECIO_ESPERADO = {0: 1.5, 1: 0.25}
+# Esperados de cosechaData[2] = (cosecha[2] − cosecha[t0])/precio[t0], a mano:
+#   t0=0 → bruto (160−40)/100 = 1.2 · plano (145−35)/100 = 1.1 · roc (155−38)/100 = 1.17
+#   t0=1 → bruto (160−100)/200 = 0.3 · plano (145−90)/200 = 0.275 · roc (155−105)/200 = 0.25
+_COSECHA_ESPERADA = {
+    0: {"bruto": 1.2, "plano": 1.1, "roc": 1.17},
+    1: {"bruto": 0.3, "plano": 0.275, "roc": 0.25},
+}
+
+
+@_node
+def test_q4_pricedata_arranca_en_cero_y_rebasa_como_compra_nueva():
+    """La línea de precio (acción sola) nace en 0% en t0 — como la de cartera — y crece
+    contra `precio[t0]`. Con el denominador viejo (`tot[t0]`, que incluye el efectivo
+    pre-t0) arrancaba en −16.6667% en el caso Q4b: dos líneas del mismo gráfico nacían
+    de puntos distintos. En los tres modos y con dos inicios (t0=0 y t0 intermedio)."""
+    fn = _extraer_funcion("seriesSin")
+    for modo in ("bruto", "plano", "roc"):
+        data = {"idxSin": {modo: {"X": _TOT_POR_MODO[modo]}},
+                "precioSin": {"X": _PRECIO_SIN}}
+        for t0 in (0, 1):
+            rep = _correr_js(fn, data, last=2, llamada=f'seriesSin("X", "{modo}", {t0})')
+            # Trampa 4: afirmar también que la clave ESTÁ — `undefined` se pierde en
+            # JSON.stringify y `.get()` no distingue «vale None» de «no existe».
+            assert "priceData" in rep, f"{modo} t0={t0}: la respuesta no trae priceData"
+            serie = rep["priceData"]
+            assert serie is not None, f"{modo} t0={t0}: priceData vino null"
+            assert str(t0) in serie and "2" in serie, (
+                f"{modo} t0={t0}: priceData incompleta — claves {sorted(serie)}")
+            assert serie[str(t0)] == pytest.approx(0.0, abs=1e-12), (
+                f"{modo} t0={t0}: la línea de precio debe arrancar en 0%, di "
+                f"{serie[str(t0)] * 100:.4f}% — con ÷tot[t0] nace bajo cero")
+            assert serie["2"] == pytest.approx(_PRECIO_ESPERADO[t0], abs=1e-9), (
+                f"{modo} t0={t0}: priceData[LAST] = {serie['2'] * 100:.4f}%, esperaba "
+                f"{_PRECIO_ESPERADO[t0] * 100:.4f}% (precio[LAST]/precio[t0] − 1)")
+
+
+@_node
+def test_q4_cosechadata_rebasa_como_compra_nueva():
+    """La línea de cosecha (el efectivo puesto a comprar el destino) se rebasa con el
+    MISMO denominador que las otras dos (`precio[t0]`) y nace en 0% en t0 — «las tres
+    líneas nacen del mismo punto». El mutante M8 (÷`tot[t0]`) la movía entera y nadie
+    lo notaba. En los tres modos y con dos inicios."""
+    fn = _extraer_funcion("seriesSin")
+    for modo in ("bruto", "plano", "roc"):
+        data = {"idxSin": {modo: {"X": _TOT_POR_MODO[modo]}},
+                "precioSin": {"X": _PRECIO_SIN},
+                "idxCosecha": {modo: {"X": _COSECHA_POR_MODO[modo]}}}
+        for t0 in (0, 1):
+            rep = _correr_js(fn, data, last=2, llamada=f'seriesSin("X", "{modo}", {t0})')
+            assert "cosechaData" in rep, (
+                f"{modo} t0={t0}: la respuesta no trae cosechaData — con la fixture "
+                "idxCosecha presente no puede ser undefined")
+            serie = rep["cosechaData"]
+            assert serie is not None, f"{modo} t0={t0}: cosechaData vino null"
+            assert str(t0) in serie and "2" in serie, (
+                f"{modo} t0={t0}: cosechaData incompleta — claves {sorted(serie)}")
+            assert serie[str(t0)] == pytest.approx(0.0, abs=1e-12), (
+                f"{modo} t0={t0}: la línea de cosecha debe arrancar en 0%, di "
+                f"{serie[str(t0)] * 100:.4f}%")
+            esperado = _COSECHA_ESPERADA[t0][modo]
+            assert serie["2"] == pytest.approx(esperado, abs=1e-9), (
+                f"{modo} t0={t0}: cosechaData[LAST] = {serie['2'] * 100:.4f}%, esperaba "
+                f"{esperado * 100:.4f}% ((cosecha[LAST] − cosecha[t0])/precio[t0])")
