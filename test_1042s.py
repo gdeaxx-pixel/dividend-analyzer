@@ -29,14 +29,19 @@ GROUND_TRUTH = [
 ]
 
 
-def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3, country_code="CO"):
+def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3, country_code="CO",
+                                credito_legible=True, fed_legible=True):
     """Genera un 1042-S sintético: cada formulario se repite `copies` veces (copias
     B/C/D), replicando el layout de texto real que exige el parser determinista.
 
     Tasas de la casilla 3b y país de la 13b copiados del 1042-S real de `real_examples`:
     el ROC (código 37) va al 0% y el resto al 30%, y el país del receptor va al FINAL de la
     línea siguiente a su etiqueta, detrás del nombre. Las copias alternan `30..00` y
-    `30.0.0` porque el documento real lo hace — el parser tiene que tolerar ambos."""
+    `30.0.0` porque el documento real lo hace — el parser tiene que tolerar ambos.
+
+    `credito_legible=False` / `fed_legible=False` (C·6/I3): simulan la mancha/escaneo que
+    hace ilegible el importe de la casilla 10 o del 7a — la ETIQUETA se lee, el número no
+    (patrón de `o2c_i3_casilla10.py`)."""
     pdf = FPDF()
     pdf.set_font("Helvetica", size=10)
     for unique_form_id, code, gross, withheld, credit in forms:
@@ -52,10 +57,11 @@ def _build_synthetic_1042s_pdf(forms=GROUND_TRUTH, copies=3, country_code="CO"):
                 f"{code} {gross:.2f} 3b Tax rate {rate} 4b Tax rate 00..00",
                 "5 Withholding allowance 00.00",
                 "6 Net income 00.00",
-                f"7a Federal tax withheld {withheld:.2f}",
+                (f"7a Federal tax withheld {withheld:.2f}" if fed_legible
+                 else "7a Federal tax withheld ####"),
                 "7b Check if federal tax withheld was not deposited with the IRS",
                 "10 Total withholding credit (combine boxes 7a, 8, and 9)",
-                f"{credit:.2f}",
+                (f"{credit:.2f}" if credito_legible else "#######"),
                 "11 Tax paid by withholding agent (amounts not withheld)",
                 "13a Recipient's name 13b Recipient's country code",
                 f"NOMBRE DE PRUEBA {country_code}",
@@ -149,7 +155,7 @@ def test_sum_roc_dedupe_con_identificador(synthetic_1042s_bytes):
     assert result["credit"] == 83.0
 
 
-# ── T2 · extract_1042s (wrapper determinista → Gemini) ──────────────────────────
+# ── T2 · extract_1042s (solo determinista; sin Gemini desde 2026-09-18) ─────────
 
 def test_extract_1042s_camino_determinista_sin_api_key(synthetic_1042s_bytes):
     """Sin GEMINI_API_KEY el Bloque 3 debe seguir funcionando: pdfplumber no la
@@ -163,6 +169,29 @@ def test_extract_1042s_camino_determinista_sin_api_key(synthetic_1042s_bytes):
 def test_extract_1042s_pdf_ajeno_sin_api_key_devuelve_none():
     result = logic.extract_1042s(_build_unrelated_pdf(), api_key=None)
     assert result is None
+
+
+def test_extract_1042s_pdf_ilegible_no_llama_a_gemini(monkeypatch):
+    """S1 (auditoría de privacidad 2026-09-17): el 1042-S trae nombre, TIN, dirección, fecha
+    de nacimiento y número de cuenta. Si pdfplumber no lo lee, el PDF no sale del servidor,
+    haya key o no. El doble registra en vez de lanzar: el camino viejo envolvía
+    `genai.Client(...)` en try/except y un doble que lanzara quedaba tragado."""
+    from google import genai
+    llamadas = []
+
+    class _ClienteEspia:
+        def __init__(self, *args, **kwargs):
+            llamadas.append("Client")
+            self.models = self
+
+        def generate_content(self, *args, **kwargs):
+            llamadas.append("generate_content")
+            raise RuntimeError("el 1042-S no debe llegar aquí")
+
+    monkeypatch.setattr(genai, "Client", _ClienteEspia)
+    resultado = logic.extract_1042s(_build_unrelated_pdf(), "KEY-FALSA")
+    assert llamadas == [], f"el 1042-S intentó salir a Gemini: {llamadas}"
+    assert resultado is None
 
 
 # ── T3 · build_1042s_validation ─────────────────────────────────────────────────
@@ -253,8 +282,9 @@ def test_validation_ignora_tickers_descartados():
 
 
 def test_income_code_str_normaliza_lo_que_devuelve_gemini():
-    """El camino determinista da '37', pero Gemini puede dar 37, '037' o '37 '.
-    Comparar crudo contra '37' haría que un ROC válido contara como cero."""
+    """El camino determinista da '37', pero un lector externo (el de Gemini, retirado el
+    2026-09-18) daba 37, '037' o '37 '. Comparar crudo contra '37' haría que un ROC válido
+    contara como cero; la normalización se conserva como defensa."""
     assert logic.income_code_str("37") == "37"
     assert logic.income_code_str(37) == "37"
     assert logic.income_code_str("037") == "37"
@@ -265,7 +295,8 @@ def test_income_code_str_normaliza_lo_que_devuelve_gemini():
 
 
 def test_validation_acepta_codigos_no_normalizados():
-    """Un 1042-S leído por Gemini con códigos enteros debe dar el mismo bruto y ROC."""
+    """Un 1042-S con códigos enteros (como los devolvía el lector de Gemini, retirado el
+    2026-09-18) debe dar el mismo bruto y ROC."""
     forms = [{"unique_form_id": fid, "income_code": int(code), "gross_income": gross,
               "federal_tax_withheld": wh, "withholding_credit": cr}
              for fid, code, gross, wh, cr in GROUND_TRUTH]
@@ -370,15 +401,12 @@ def test_mapeo_de_codigos_de_pais(codigo, esperado):
     assert logic.pais_desde_codigo_1042s(codigo) == esperado
 
 
-def test_los_dos_caminos_de_gemini_piden_las_dos_casillas():
-    """Estructural: hay tres extractores (pdfplumber + dos de Gemini) y los tres tienen que
-    traer los mismos campos, o el resultado dependería de cuál respondió."""
+def test_ningun_pdf_viaja_a_gemini():
+    """Complemento estructural del guard conductual de S1: `mime_type="application/pdf"` era
+    la firma de los dos emisores de PDFs fiscales a Gemini (`extract_1042s` y
+    `extract_roc_credit_from_pdf`), retirados el 2026-09-18."""
     import inspect
-    fuente = inspect.getsource(logic)
-    assert fuente.count('"tax_rate": types.Schema') == 2, "falta tax_rate en algún schema"
-    assert fuente.count('"recipient_country_code": types.Schema') == 2
-    assert fuente.count("'tax_rate' = Box 3b") == 2, "falta la casilla 3b en algún prompt"
-    assert fuente.count("'recipient_country_code' = Box 13b") == 2
+    assert 'mime_type="application/pdf"' not in inspect.getsource(logic)
 
 
 def test_contra_el_1042s_real():
@@ -478,3 +506,78 @@ def test_refund_no_triplica_copias_bcd():
     assert len(r["per_form"]) == 1
     assert r["retenido"] == pytest.approx(83.0)
     assert r["veredicto"] == "pendiente"
+
+
+# ── C·6/I3 · casilla 10 ilegible no es cero ──────────────────────────────────────
+
+_I3_FORM = [("2025417494", "37", 100.0, 30.0, 30.0)]
+
+
+def test_i3_casilla10_ilegible_no_es_cero():
+    """Caso B: la etiqueta de la casilla 10 se lee, el importe no. No puede convertirse
+    en 0.0 (eso hoy dispara 'devuelto $30' sin haber leído nunca ese número)."""
+    pdf_bytes = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=False,
+                                            fed_legible=True)
+    parsed = logic.parse_1042s_pdf(pdf_bytes)
+    assert parsed is not None
+    forms = parsed["forms"]
+    assert forms[0]["withholding_credit"] is None
+    r = logic.diagnose_broker_refund_from_forms(forms)
+    assert r["veredicto"] == "indeterminado"
+    assert r["devuelto"] is None
+
+
+def test_i3_7a_ilegible_no_es_cero():
+    """Caso C: el 7a ilegible tampoco puede ser 0.0."""
+    pdf_bytes = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=True,
+                                            fed_legible=False)
+    parsed = logic.parse_1042s_pdf(pdf_bytes)
+    assert parsed is not None
+    forms = parsed["forms"]
+    assert forms[0]["federal_tax_withheld"] is None
+    r = logic.diagnose_broker_refund_from_forms(forms)
+    assert r["veredicto"] == "indeterminado"
+
+
+def test_i3_ambas_ilegibles_no_dice_devuelto():
+    """Caso D: hoy dice 'devuelto' $0.00; debe decir 'indeterminado'."""
+    pdf_bytes = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=False,
+                                            fed_legible=False)
+    parsed = logic.parse_1042s_pdf(pdf_bytes)
+    assert parsed is not None
+    r = logic.diagnose_broker_refund_from_forms(parsed["forms"])
+    assert r["veredicto"] == "indeterminado"
+    assert r["devuelto"] is not 0.0
+    assert r["devuelto"] is None
+
+
+def test_i3_pdf_legible_no_cambia():
+    """Control: caso A (todo legible) intacto — 'pendiente', devuelto 0.00, pendiente
+    30.00 — y _sum_roc_credit_from_forms sigue dando 30.0 tanto en A como en B (su
+    respaldo al 7a está declarado en el docstring y no se toca)."""
+    pdf_a = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=True,
+                                        fed_legible=True)
+    parsed_a = logic.parse_1042s_pdf(pdf_a)
+    r_a = logic.diagnose_broker_refund_from_forms(parsed_a["forms"])
+    assert r_a["veredicto"] == "pendiente"
+    assert r_a["devuelto"] == pytest.approx(0.0)
+    assert r_a["pendiente"] == pytest.approx(30.0)
+    assert logic._sum_roc_credit_from_forms(parsed_a["forms"])["credit"] == pytest.approx(30.0)
+
+    pdf_b = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=False,
+                                        fed_legible=True)
+    parsed_b = logic.parse_1042s_pdf(pdf_b)
+    assert logic._sum_roc_credit_from_forms(parsed_b["forms"])["credit"] == pytest.approx(30.0)
+
+
+def test_refund_sin_withholding_credit_es_indeterminado_no_cero_desde_pdf():
+    """Endurece el test de dict a mano: el mismo caso, pero llegando de un PDF real
+    (ningún PDF podía producir withholding_credit=None antes de este fix)."""
+    pdf_bytes = _build_synthetic_1042s_pdf(forms=_I3_FORM, credito_legible=False,
+                                            fed_legible=True)
+    parsed = logic.parse_1042s_pdf(pdf_bytes)
+    r = logic.diagnose_broker_refund_from_forms(parsed["forms"])
+    assert r["veredicto"] == "indeterminado"
+    assert r["devuelto"] is None
+    assert r["devuelto"] != 0.0
+    assert r["pendiente"] is None

@@ -127,6 +127,26 @@ class ListaCache:
         return None, "ninguna"
 
 
+def leer_admins(acceso_secrets) -> frozenset:
+    try:
+        admins = acceso_secrets.get("admins")
+    except Exception:
+        return frozenset()
+
+    if isinstance(admins, str):
+        normalizado = admins.strip().lower()
+        return frozenset({normalizado}) if normalizado else frozenset()
+
+    if isinstance(admins, (list, tuple)):
+        return frozenset(
+            correo.strip().lower()
+            for correo in admins
+            if isinstance(correo, str) and correo.strip()
+        )
+
+    return frozenset()
+
+
 @dataclass
 class Decision:
     accion: str
@@ -134,7 +154,13 @@ class Decision:
     correo_rechazado: Optional[str] = None
 
 
-def decidir(modo: str, usuario: dict, lista: Optional[dict], clave: str) -> Decision:
+def decidir(
+    modo: str,
+    usuario: dict,
+    lista: Optional[dict],
+    clave: str,
+    admins: frozenset = frozenset(),
+) -> Decision:
     if modo == "apagado":
         return Decision(accion="pasar")
 
@@ -145,6 +171,9 @@ def decidir(modo: str, usuario: dict, lista: Optional[dict], clave: str) -> Deci
         if modo == "aplicar":
             return Decision(accion="no_verificado")
         return Decision(accion="pasar", correo_rechazado=usuario.get("email"))
+
+    if usuario.get("email", "").strip().lower() in admins:
+        return Decision(accion="pasar")
 
     if lista is None:
         return Decision(accion="pasar")
@@ -207,6 +236,14 @@ class Avisador:
     def modo_invalido(self) -> None:
         self._con_freno_6h("modo_invalido", "El modo de acceso configurado es inválido.")
 
+    def login_roto(self, nombre_error: str) -> None:
+        self._con_freno_6h(
+            "login_roto",
+            f"El login falló ({nombre_error}): la puerta quedó cerrada para quien no tenía sesión.")
+
+    def puerta_abierta_por_error(self, nombre_error: str) -> None:
+        self._con_freno_6h("puerta_abierta", f"Puerta ABIERTA por error ({nombre_error}).")
+
 
 def _fetch_allowlist(pat: str) -> dict:
     request = urllib.request.Request(
@@ -248,14 +285,22 @@ def _usuario_actual() -> dict:
     return st.experimental_user.to_dict()
 
 
-def _pantalla_login() -> None:
+def _pantalla_login(avisador: Avisador) -> None:
     st.title("Calculadora de Dividendos · acceso para miembros")
     st.write(
         "Entra con el correo con el que compraste Vive de Dividendos. "
         "Te enviaremos un código de 6 dígitos."
     )
     if st.button("Recibir código"):
-        st.login("auth0")
+        try:
+            st.login("auth0")
+        except Exception as e:
+            st.error("El acceso no está disponible en este momento. Escríbenos y te ayudamos.")
+            st.markdown(f"[Escríbenos por WhatsApp]({WHATSAPP_URL})")
+            try:
+                avisador.login_roto(type(e).__name__)
+            except Exception:
+                pass
 
 
 def _pantalla_rechazo(correo: Optional[str]) -> None:
@@ -287,6 +332,14 @@ def puerta() -> bool:
         return _puerta()
     except Exception as e:
         print(f"acceso: puerta abierta por error {type(e).__name__}")
+        try:
+            acceso_secrets = st.secrets.get("acceso", {})
+            _avisador_singleton(
+                acceso_secrets.get("telegram_token", ""),
+                acceso_secrets.get("telegram_chat_id", ""),
+            ).puerta_abierta_por_error(type(e).__name__)
+        except Exception:
+            pass
         return True
 
 
@@ -299,6 +352,7 @@ def _puerta() -> bool:
     pat = acceso_secrets.get("allowlist_pat", "")
     token = acceso_secrets.get("telegram_token", "")
     chat_id = acceso_secrets.get("telegram_chat_id", "")
+    admins = leer_admins(acceso_secrets)
 
     if "auth" in secrets and acceso_secrets.get("modo") not in MODOS_VALIDOS:
         _avisador_singleton(token, chat_id).modo_invalido()
@@ -320,13 +374,13 @@ def _puerta() -> bool:
     elif lista is not None and lista_vieja(lista, datetime.now(timezone.utc)):
         avisador.lista_vieja()
 
-    decision = decidir(modo, usuario, lista, clave)
+    decision = decidir(modo, usuario, lista, clave, admins=admins)
 
     if _debe_avisar_rechazo(modo, decision):
         avisador.rechazo_observar(decision.correo_rechazado)
 
     if decision.accion == "login":
-        _pantalla_login()
+        _pantalla_login(avisador)
         return False
     if decision.accion == "no_verificado":
         _pantalla_no_verificado()

@@ -102,108 +102,33 @@ def _agregados(resultados: dict, tickers: list[str]) -> tuple:
     div = sum(s.get("dividends_net_total") if s.get("dividends_net_total") is not None
               else s.get("dividends_collected_cash", 0)
               for _, s in filas)
-    tr = mv + div - inv
+    tr = sum(s["net_profit"] for _, s in filas)
     pct = tr / inv * 100 if inv > 0 else 0
     return inv, mv, div, tr, pct
 
 
-def _tus_dos_portafolios(resultados: dict, classify_map: dict) -> tuple[list, list]:
-    """Fila 8 — tarjetas A/B + dona de asignación por valor. Literal de
-    `app_old.py:3901-3987` (cascada de agregados, tarjetas, pie chart dividendos/crecimiento)."""
-    from ui.adapters import _tiene_datos
+def _tus_dos_portafolios(resultados: dict, classify_map: dict, tema: str) -> tuple[list, list]:
+    """Fila 8 — Portafolios v3: el componente `ui/componentes/portafolios.html` (dona
+    agrupada + cascada precio → dividendos → total) sustituye a las tarjetas A/B y a la
+    dona Altair de `app_old.py:3901-3987` (rediseño «Propuesta v3», sep-2026). Sin título
+    ni lede: la ruta ya dice Portafolios (decisión de Daniel). Las cifras las calcula
+    `ui.adapters.portafolios_data` en Python; el componente solo dibuja. Devuelve
+    `(mode_a, mode_b)` con los tickers que tienen datos, que siguen usando
+    `_portafolio_dividendos` y `_detalle_por_portafolio`."""
+    from ui import adapters, componentes
 
     mode_a = sorted(t for t, m in classify_map.items()
-                     if m == "mode_a" and _tiene_datos(resultados.get(t)))
+                     if m == "mode_a" and adapters._tiene_datos(resultados.get(t)))
     mode_b = sorted(t for t, m in classify_map.items()
-                     if m == "mode_b" and _tiene_datos(resultados.get(t)))
+                     if m == "mode_b" and adapters._tiene_datos(resultados.get(t)))
     if not (mode_a or mode_b):
         return mode_a, mode_b
 
-    _seccion("Tus dos portafolios",
-             "Tu dinero está jugando dos juegos distintos al mismo tiempo. Cada uno gana "
-             "(y pierde) de una forma diferente — por eso los separamos.")
-
-    def mini(inv, mv, div, tr, pct):
-        color = _color_signo(tr)
-        return (
-            '<div class="vd-her-port-mini">'
-            f'<span><span class="lbl">Invertido</span><span class="val">{_money(inv, 0)}</span></span>'
-            f'<span><span class="lbl">Vale hoy</span><span class="val">{_money(mv, 0)}</span></span>'
-            f'<span><span class="lbl">Dividendos</span><span class="val">{_money(div, 0)}</span></span>'
-            f'<span><span class="lbl">Retorno total</span>'
-            f'<span class="val" style="color:var({color});">{_money(tr, 0)} ({pct:+.1f}%)</span></span>'
-            "</div>")
-
-    tarjetas = []
-    if mode_b:
-        inv, mv, div, tr, pct = _agregados(resultados, mode_b)
-        tarjetas.append(
-            '<div class="vd-her-port-card">'
-            '<p class="vd-her-port-titulo">Portafolio de crecimiento</p>'
-            f'<span class="vd-her-port-chip">{_fondos(mode_b)}: {", ".join(mode_b)}</span>'
-            + mini(inv, mv, div, tr, pct) + "</div>")
-    if mode_a:
-        inv, mv, div, tr, pct = _agregados(resultados, mode_a)
-        tarjetas.append(
-            '<div class="vd-her-port-card vd-her-port-card-navy">'
-            '<p class="vd-her-port-titulo">Portafolio de dividendos</p>'
-            f'<span class="vd-her-port-chip">{_fondos(mode_a)}: {", ".join(mode_a)}</span>'
-            + mini(inv, mv, div, tr, pct) + "</div>")
-    estilo = ' style="grid-template-columns:1fr;"' if len(tarjetas) == 1 else ""
-    st.markdown(f'<div class="vd-her-port-cards"{estilo}>' + "".join(tarjetas) + "</div>",
-                unsafe_allow_html=True)
-
-    if mode_a and mode_b:
-        _dona_asignacion(resultados, mode_a, mode_b)
+    datos = adapters.portafolios_data(resultados, classify_map)
+    if datos is not None:
+        componentes.render_portafolios(datos, tema)
 
     return mode_a, mode_b
-
-
-def _dona_asignacion(resultados: dict, mode_a: list[str], mode_b: list[str]) -> None:
-    """Pie chart de asignación por valor de mercado. Literal de `app_old.py:3946-3985`."""
-    import altair as alt
-    import pandas as pd
-
-    filas = ([{"ETF": t, "Grupo": "Dividendos",
-               "Capital": (resultados[t].get("market_value") or 0)} for t in mode_a]
-             + [{"ETF": t, "Grupo": "Crecimiento",
-                 "Capital": (resultados[t].get("market_value") or 0)} for t in mode_b])
-    df = pd.DataFrame([f for f in filas if f["Capital"] > 0])
-    if df.empty:
-        return
-    total = df["Capital"].sum()
-    df["Pct"] = df["Capital"] / total * 100 if total else 0
-    df["Etiqueta"] = df["ETF"] + "  " + df["Pct"].round(0).astype(int).astype(str) + "%"
-
-    base = alt.Chart(df).encode(
-        theta=alt.Theta("Capital:Q", stack=True),
-        order=alt.Order("Grupo:N"),
-        color=alt.Color("Grupo:N",
-                        scale=alt.Scale(domain=["Dividendos", "Crecimiento"],
-                                        range=["#3ea0d6", "#8f76d4"]),
-                        legend=alt.Legend(title=None, orient="top", labelFontSize=12)),
-        tooltip=[alt.Tooltip("ETF:N", title="ETF"),
-                 alt.Tooltip("Grupo:N", title="Portafolio"),
-                 alt.Tooltip("Capital:Q", format="$,.0f", title="Valor de mercado"),
-                 alt.Tooltip("Pct:Q", format=".1f", title="% del portafolio")])
-    arco = base.mark_arc(innerRadius=68, outerRadius=130, strokeWidth=2)
-    texto = base.mark_text(radius=155, fontSize=11, fontWeight="bold").encode(
-        text=alt.Text("Etiqueta:N"))
-    chart = (arco + texto).properties(height=360)
-    st.altair_chart(chart, use_container_width=True)
-
-    div_mv = sum((resultados[t].get("market_value") or 0) for t in mode_a)
-    crec_mv = sum((resultados[t].get("market_value") or 0) for t in mode_b)
-    comb = div_mv + crec_mv
-    a_share = div_mv / comb * 100 if comb else 0
-    b_share = crec_mv / comb * 100 if comb else 0
-    st.markdown(
-        '<div class="vd-her-leyenda">'
-        f'<span><span class="vd-her-dot" style="background:#3ea0d6;"></span>'
-        f'Dividendos <b>{a_share:.0f}%</b> · {_money(div_mv, 0)}</span>'
-        f'<span><span class="vd-her-dot" style="background:#8f76d4;"></span>'
-        f'Crecimiento <b>{b_share:.0f}%</b> · {_money(crec_mv, 0)}</span>'
-        "</div>", unsafe_allow_html=True)
 
 
 # ── Fila 9 — Portafolio dividendos (erosión del NAV, fondo por fondo) ──────────
@@ -336,10 +261,10 @@ def _tarjeta_retorno_total(stats: dict) -> None:
     """
     inc = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
            else stats.get("dividends_collected_cash", 0))
-    total_ret = stats["market_value"] + inc - stats["pocket_investment"]
+    total_ret = stats["net_profit"]
     total_ret_pct = (total_ret / stats["pocket_investment"] * 100) if stats["pocket_investment"] > 0 else 0
-    cap_comp = stats["market_value"] - stats["pocket_investment"]
     inc_comp = inc
+    cap_comp = total_ret - inc_comp
     color_tr = _color_signo(total_ret)
     color_cap = _color_signo(cap_comp)
     st.markdown(
@@ -514,7 +439,7 @@ def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
     total_div = sum((s.get("dividends_net_total") if s.get("dividends_net_total") is not None
                      else s.get("dividends_collected_cash", 0))
                     for _, s in rows)
-    total_tr = total_mv + total_div - total_inv
+    total_tr = sum(s["net_profit"] for _, s in rows)
     total_tr_pct = (total_tr / total_inv * 100) if total_inv > 0 else 0
     has_roc = any(s.get("ib_cost_basis") is not None for _, s in rows)
     total_ib = sum(s["ib_cost_basis"] for _, s in rows if s.get("ib_cost_basis") is not None)
@@ -573,7 +498,7 @@ def _detalle_por_portafolio(resultados: dict, mode_a: list[str]) -> None:
             st.info("No hay posiciones YieldMax activas en este portafolio.")
 
 
-def render_portafolios(resultados: dict) -> None:
+def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
     if not resultados:
         st.markdown('<span class="vd-badge">Portafolios</span>', unsafe_allow_html=True)
         st.markdown('<h2 class="vd-title">Portafolios</h2>', unsafe_allow_html=True)
@@ -581,7 +506,7 @@ def render_portafolios(resultados: dict) -> None:
                     unsafe_allow_html=True)
         return
     classify_map = logic.classify_tickers(list(resultados.keys()))
-    mode_a, _mode_b = _tus_dos_portafolios(resultados, classify_map)
+    mode_a, _mode_b = _tus_dos_portafolios(resultados, classify_map, tema)
     _portafolio_dividendos(resultados, mode_a)
     _detalle_por_portafolio(resultados, mode_a)
 
@@ -593,7 +518,7 @@ def render_vista(vista: str, ruta) -> None:
     Estrategias, decisión de Daniel 2026-08-25)."""
     from ui.vistas import obtener_resultados
 
-    render_portafolios(obtener_resultados())
+    render_portafolios(obtener_resultados(), tema=ruta.tema)
 
 
 ESTILOS_HEREDADAS = """
@@ -609,32 +534,6 @@ ESTILOS_HEREDADAS = """
         }
         .vd-her-lede { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin: 0 0 12px; }
         .vd-her-nota { font-size: 12px; color: var(--ink-mut); line-height: 1.6; margin: 0 0 10px; }
-
-        .vd-her-port-cards {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 6px 0 14px;
-        }
-        .vd-her-port-card {
-          border: 1px dashed var(--hair); background: var(--panel); padding: 16px 18px;
-        }
-        .vd-her-port-card-navy { background: var(--panel-tint); }
-        .vd-her-port-titulo {
-          font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: .04em; color: var(--ink); margin: 0;
-        }
-        .vd-her-port-chip {
-          display: inline-block; font-size: 11px; color: var(--ink-mut); margin: 4px 0 10px;
-        }
-        .vd-her-port-mini { display: flex; flex-wrap: wrap; gap: 14px 22px; }
-        .vd-her-port-mini .lbl {
-          display: block; font-size: 9.5px; color: var(--ink-mut); text-transform: uppercase;
-          letter-spacing: .06em; margin-bottom: 2px;
-        }
-        .vd-her-port-mini .val {
-          font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink);
-        }
-
-        .vd-her-leyenda { display: flex; justify-content: center; gap: 24px; margin: -4px 0 8px; font-size: 12px; color: var(--ink); }
-        .vd-her-dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: middle; }
 
         .vd-her-card {
           border-left: 3px solid var(--hair); background: var(--panel-tint);

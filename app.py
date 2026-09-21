@@ -28,7 +28,7 @@ stale_guard.asegurar_frescura()
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
 from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
 from ui.pie import render_pie
-from ui.validacion import hay_alertas, preparar_pdf
+from ui.validacion import hay_alertas
 from ui.vistas import obtener_resultados, render_vista
 
 st.set_page_config(
@@ -37,12 +37,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-
-# `?clear` — limpia el cache de `analyze_portfolio` (copiado literal de `app_old.py:61`).
-if st.query_params.get("clear"):
-    st.cache_data.clear()
-    st.query_params.clear()
-    st.rerun()
 
 # Modo demo local (`?demo=ib|schwab|schwab2`): carga un caso de `real_examples/` directo
 # a resultados, sin wizard. Copiado literal de `app_old.py:67-79`; en producción y en este
@@ -79,12 +73,18 @@ inyectar_estilos(st.session_state["vd_tema"])
 if not acceso.puerta():
     st.stop()
 
+# `?clear` — limpia el cache de `analyze_portfolio`. Va DESPUÉS de la puerta: antes cualquier
+# visitante sin sesión vaciaba el caché de todos los usuarios (auditoría de privacidad, N1).
+if st.query_params.get("clear"):
+    st.cache_data.clear()
+    st.query_params.clear()
+    st.rerun()
+
 render_encabezado(con_datos)
 
 if con_datos:
     resultados = obtener_resultados()
-    pdf_bytes, pdf_filename = preparar_pdf(resultados)
-    ruta = render_ruta(hay_alertas(resultados), pdf_bytes, pdf_filename)
+    ruta = render_ruta(hay_alertas(resultados))
     render_vista(ruta)
     render_pie(resultados)
 else:

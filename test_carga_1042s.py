@@ -101,12 +101,13 @@ def test_bloque3_resumen_tras_leer():
 
 
 def test_bloque3_credito_con_codigo_no_normalizado():
-    """El camino de Gemini pasa el `income_code` crudo: puede llegar como entero 37.
-    Comparado contra la cadena "37" el crédito ROC se mostraba como $0."""
+    """Un `income_code` que llega como entero 37 (así lo devolvía el lector de Gemini,
+    retirado el 2026-09-18) no puede dejar el crédito ROC en $0: la normalización se
+    conserva como defensa."""
     at = _at_con_posiciones_confirmadas(broker="schwab")
     at.session_state["_wizard_1042s"] = {
         "tax_year": 2025,
-        "source": "gemini",
+        "source": "pdfplumber",
         "forms": [
             {"unique_form_id": "2025417493", "income_code": 6, "gross_income": 28.0,
              "federal_tax_withheld": 8.0, "withholding_credit": 8.0, "conflict": False},

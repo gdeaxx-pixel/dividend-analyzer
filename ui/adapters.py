@@ -181,7 +181,11 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         # del neto ya declarado una vez descontado lo reinvertido (`drip`, que siempre es
         # neto: el DRIP se compra con el monto post-retención) — no se reconstruye sumando,
         # se deriva del objeto fiscal único que ya trae el neto correcto.
-        cash = round(neto - drip, 2)
+        # E4: el motor ya calcula este residuo con el detalle de filas fuente
+        # (`_cash_collected_net`, logic.py) — reconstruirlo aquí como `neto - drip` sale
+        # negativo cuando al export le faltan filas `Reinvest Dividend` del DRIP. El `_f`
+        # con defecto conserva el camino legado de los `stats` armados a mano.
+        cash = _f(stats.get("dividends_cash_net"), round(neto - drip, 2))
 
     total_trabajando = pocket + drip
     mercado = valor_hoy - total_trabajando
@@ -221,6 +225,10 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         "tasa_declarada": bool(tax.get("rate_declared", False)),
         "tasa_pais": tax.get("country"),
         "tasa_pct": tax.get("base_rate_pct"),
+        # E4: al export le faltan filas fuente del DRIP (más `Reinvest Shares` que
+        # `Reinvest Dividend`) — la vista puede rotular el dato incompleto. Clave de
+        # cashflow_data, no de impuestos_data.
+        "drip_sin_fuente": bool(stats.get("drip_sin_fuente")),
     }
 
 
@@ -248,18 +256,15 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
 
     Regla 4: la destructividad se mide con la TENDENCIA del NAV, nunca con el ROC% —
     `classify_roc_health` ya respeta esto internamente; esta función solo junta sus
-    parámetros, con la misma fórmula que `app_old.py:3590-3611` (verificada, en producción).
+    parámetros. El retorno total es el `roi_percent` del motor, el mismo resultado económico
+    que muestran Portafolios y cashflow: recalcularlo aquí con `dividends_collected_cash`
+    sumaba el efectivo BRUTO en Schwab (bruto $100, retención $30: 10% en vez de 7%).
     """
     roc_pct = logic._roc_pct_for(ticker, stats)
     nav_cagr = stats.get("price_cagr_recent")
     if nav_cagr is None:
         nav_cagr = stats.get("price_cagr")
-    pocket = stats.get("pocket_investment")
-    tr_pct = None
-    if pocket:
-        valor_hoy = stats.get("market_value") or 0
-        cash = stats.get("dividends_collected_cash") or 0
-        tr_pct = (valor_hoy + cash - pocket) / pocket * 100
+    tr_pct = stats.get("roi_percent") if stats.get("pocket_investment") else None
 
     asof_days = None
     r19a = logic.load_roc_19a().get(str(ticker).upper())
@@ -665,6 +670,10 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     mostrarle las dos. **Ninguna cifra depende de él**, y 'generic' se normaliza a `None`:
     un bróker que no reconocemos no tiene ventana conocida, y mostrarle una sería inventar
     el dato. Mismo principio que el país: no se deduce de las cifras.
+
+    `fondos[].grupo` (U2, dona de dos fases): clasificación Dividendos/Crecimiento de
+    `logic.classify_tickers` — mismo criterio que `ui/heredadas.py:115-118`. Es el único
+    campo añadido por U2; el componente agrupa la leyenda con él y ninguna cifra lo usa.
     """
     if not resultados:
         return None
@@ -678,6 +687,13 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     # SIEMPRE con ambos kwargs — `build_tax_summaries(resultados)` a secas significaría
     # «sin declarar» aunque el cliente sí lo haya hecho (ver `test_perfil_fiscal.py`).
     resumenes = logic.build_tax_summaries(resultados, base_rate_pct=_tasa_arg, country=pais)
+
+    # Grupo Dividendos/Crecimiento de cada fondo (U2 §6›9 E): `logic.classify_tickers`,
+    # MISMO criterio que `ui/heredadas.py::_tus_dos_portafolios` (mode_a = dividendos,
+    # mode_b = crecimiento, mode_skip = ninguno de los dos). Se publica el valor crudo del
+    # clasificador — la etiqueta la pone el componente. Es el único campo nuevo de este
+    # adapter en U2: ninguna cifra depende de él.
+    clasificacion = logic.classify_tickers(list((resultados or {}).keys()))
 
     fondos: list[dict] = []
     bruto_total = gravable_total = corresponde_total = 0.0
@@ -747,6 +763,11 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
 
         fondos.append({
             "ticker": ticker,
+            # Grupo Dividendos/Crecimiento (U2): valor crudo de `logic.classify_tickers`
+            # ('mode_a' | 'mode_b' | 'mode_skip'), MISMO criterio que
+            # `ui/heredadas.py:115-118`. `None` solo si el ticker no viene en la
+            # clasificación (no debería pasar: se clasifica la misma lista de resultados).
+            "grupo": clasificacion.get(str(ticker).upper().strip()),
             "bruto": round(bruto, 2),
             "bruto_fuente": fuente_bruto,
             "roc_pct": roc_pct,
@@ -861,7 +882,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # Nota del auditor de la Fase 1: una fila con 7a==0 y casilla 10==0 cae en veredicto
         # 'devuelto'. En la UI eso se lee como «el bróker te devolvió» cuando en realidad no
         # hubo retención. Se trata aquí, sin tocar `logic.py`.
-        "sin_retencion": retenido_1042s <= 0.01,
+        "sin_retencion": retenido_1042s <= 0.01 and ruta.get("retenido_completo", True),
         # Bróker detectado al leer el CSV, pasado por parámetro desde `ui/impuestos.py`
         # (mismo patrón que `codigo_pais_1042s`). 'schwab' | 'ibkr' | None cuando no se
         # pudo determinar ('generic' se normaliza a None: «genérico» no es un bróker con
@@ -1902,80 +1923,14 @@ MET_SERIE_DRIP = ("con", "sin")
 def _roc_pct_by_year(ticker: str, roc19a: dict, roc_ici: dict, con_fuente: bool = False):
     """%ROC (0-100) por año calendario para el reembolso 1042-S de `backtest.run_backtest`.
 
-    **Dos fuentes, y una manda sobre la otra por año** (2026-08-21). Para cada año:
-    el **cierre fiscal** (`roc_ici`, casilla 3 del 1099) si existe; si no, la **estimación**
-    del gestor (`roc19a`, los avisos 19(a)); si no, nada — el piso conservador.
-
-    No hace falta preguntar qué año está "cerrado": el ICI solo existe para años cerrados,
-    así que «el ICI si está» ya es la regla, sin depender del reloj. Cuando YieldMax publique
-    el cierre de 2026, `roc_ici.yaml` lo traerá y ese año dejará de usar la estimación solo.
-
-    Las dos fuentes se piden **explícitas**, sin default que las cargue por dentro: un objeto
-    fiscal que lee estado global por su cuenta es justo como empiezan las divergencias que
-    la Regla 3 del contrato existe para evitar — y haría que un test con datos sintéticos
-    arrastrara en silencio el yaml de producción.
-
-    La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
-    de los avisos 19(a) publicados ESE año — misma convención que
-    `logic.estimate_roc_refund_by_year`, que es quien ya la fijó. Los años sin avisos en la
-    ventana caen al ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos
-    devuelve `{}`: sin escudo que reclamar, la retención plana se queda como está.
-
-    **Los años ANTERIORES a la ventana no se extrapolan** (y eso mueve cifras). El relleno
-    con el ponderado cubre solo los huecos DENTRO del rango de avisos publicados; un año
-    previo al primer aviso no aparece en el dict, así que el motor le aplica 0% de ROC:
-    retiene el 30% completo y no devuelve nada. Es un piso conservador, no una medida — y
-    difiere de lo que hacía `_tasa_efectiva_neta`, que aplicaba el ponderado a TODO el
-    horizonte. Material hoy en dos fondos del universo, cuyos avisos empiezan mucho después
-    de su incepción: TSLY (incep. nov-2022, avisos desde may-2025) y CONY (incep. ago-2023,
-    avisos desde feb-2025). NVDY y MSTY tienen la ventana cubierta desde su primer año.
-
-    Que el alcance sea el mismo en todas las vistas es lo que exige la Regla 3; que ese
-    alcance se DECLARE en el copy es lo que exige la Regla 2. Ampliarlo (extrapolar hacia
-    atrás) es una decisión de producto abierta, no un arreglo: movería también las cifras
-    ya desplegadas de «La matriz».
+    Delegación pura a `logic.roc_pct_by_year`, el objeto único del eje «%ROC por año fiscal»
+    (cierre fiscal ICI por delante de la estimación 19(a), año por año). Vivía aquí, y por
+    eso la precedencia del cierre solo llegaba a las simulaciones: el objeto fiscal de la
+    cartera real (`logic.estimate_roc_refund_by_year`) no podía importarla desde la capa de
+    UI y calculaba su propio promedio sin ICI (auditoría R1, 2026-09-18). La regla, sus
+    casos borde y su porqué están documentados allí.
     """
-    info = roc19a.get(ticker) or {}
-    por_anio: dict[int, list[float]] = {}
-    for p in (info.get("per_distribution") or []):
-        try:
-            por_anio.setdefault(pd.Timestamp(p["date"]).year, []).append(float(p["roc_pct"]))
-        except (KeyError, TypeError, ValueError):
-            continue
-    try:
-        ponderado = float(info.get("weighted_pct"))
-    except (TypeError, ValueError):
-        ponderado = 0.0
-    # Ojo con el orden: aquí había un `return {}` cuando el ticker no tenía avisos 19(a).
-    # Con dos fuentes eso se saltaba el cierre fiscal justo en los fondos que MÁS lo
-    # necesitan —los que nunca publicaron 19(a), como CHPY—, y la vista seguía dando el
-    # número viejo sin que nada fallara. Ninguna salida temprana puede quedar por delante
-    # del merge.
-    anios = list(por_anio)
-    promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
-    # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
-    # un hueco en la publicación no se lea como «ese año no hubo ROC».
-    if anios and ponderado > 0:
-        for a in range(min(anios), max(anios) + 1):
-            promedios.setdefault(a, ponderado)
-
-    # El cierre fiscal PISA la estimación, año por año. Nunca al revés: el 19(a) es un
-    # pronóstico del número que el ICI ya midió, así que sobre un año cerrado no aporta nada.
-    # Un 0.00% del ICI (CONY 2023) es un CERO MEDIDO, no un hueco: entra igual que cualquier
-    # otro valor y pisa lo que dijera el 19(a).
-    fuentes = {a: "estimacion" for a in promedios}
-    for anio, entrada in (roc_ici.get(str(ticker).upper()) or {}).items():
-        try:
-            anio, pct = int(anio), float(entrada["roc_pct"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        promedios[anio] = pct
-        fuentes[anio] = "cierre"
-    # `con_fuente` devuelve la procedencia que decidió ESTE mismo bucle, no una segunda
-    # implementación de la regla: un mapa de procedencia calculado aparte se despega del
-    # dato en cuanto una de las dos ramas cambia (p. ej. una entrada corrupta que el merge
-    # descarta y el mapa seguiría marcando como «cierre»).
-    return (promedios, fuentes) if con_fuente else promedios
+    return logic.roc_pct_by_year(ticker, roc19a, roc_ici, con_fuente=con_fuente)
 
 
 class _PoliticaFiscal(typing.NamedTuple):
@@ -2388,3 +2343,80 @@ def metodo_real_data(resultados: dict, df, tasa_pct, pais: str | None = None) ->
         "paisDeclarado": pais_declarado,
         "asof": datetime.date.today().isoformat(),
     }
+
+
+# ── Portafolios v3 (vista «Portafolios», componente `ui/componentes/portafolios.html`) ──
+#
+# Toda cifra y toda regla se calculan aquí (Python); el componente solo dibuja. Los
+# agregados por grupo salen de `ui.heredadas._agregados` — el mismo objeto fiscal que ya
+# resuelve la convención bruto/neto por fila (`dividends_net_total`) — y no de
+# `dividends_collected_cash`, que mezclaría bases (Regla 2 del contrato).
+
+def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
+                          invertido: float) -> str | None:
+    """La frase de una línea de cada tarjeta de grupo. `None` = sin frase (el componente
+    deja el párrafo vacío). Ramas, en orden:
+
+    - `invertido <= 0`: sin base sobre la que hablar.
+    - `precio >= 0` y `retorno == 0`: nada que explicar (y evitaría dividir por cero).
+    - `precio >= 0`: qué parte del resultado explica el precio (≥70% = «el precio manda»).
+    - `precio < 0`: si los dividendos cubren la caída, y con cuánto margen
+      (`retorno / invertido < 0.10` = «con poco margen»).
+    """
+    if invertido <= 0:
+        return None
+    if precio >= 0 and retorno == 0:
+        return None
+    if precio >= 0:
+        share = round(precio / retorno * 100)
+        if share >= 70:
+            return (f"El {share}% del resultado viene del precio. "
+                    "Los dividendos son un extra.")
+        return f"El precio aporta el {share}% del resultado; los dividendos, el resto."
+    caida = round(-precio / invertido * 100)
+    if dividendos >= -precio:
+        margen = ", con poco margen" if retorno / invertido < 0.10 else ""
+        return f"El precio cayó {caida}%. Los dividendos cubren esa caída{margen}."
+    return f"El precio cayó {caida}% y los dividendos no alcanzan a cubrirlo."
+
+
+def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
+    """Datos de la vista Portafolios v3: dona agrupada + cascada por grupo.
+
+    Grupos en orden `crec` (mode_b, Crecimiento) y `div` (mode_a, Dividendos); solo los
+    que tengan tickers con datos analizables (`_tiene_datos`). Ninguno → `None` (el
+    componente se oculta). Por grupo, los agregados salen de `_agregados` (import local
+    desde `ui.heredadas` para no crear ciclo) y `precio = mv - inv`. Por fondo,
+    `market_value or 0`; se excluyen los `<= 0`; orden por `mv` descendente. `pct` de
+    grupo y de fondo sobre `total_mv`, sin redondear — el JS redondea al dibujar.
+    """
+    from ui.heredadas import _agregados
+
+    grupos = []
+    for clave, nombre, modo in (("crec", "Crecimiento", "mode_b"),
+                                ("div", "Dividendos", "mode_a")):
+        tickers = sorted(t for t, m in classify_map.items()
+                         if m == modo and _tiene_datos(resultados.get(t)))
+        if not tickers:
+            continue
+        inv, mv, div, tr, pct = _agregados(resultados, tickers)
+        precio = mv - inv
+        fondos = [{"ticker": t, "mv": resultados[t].get("market_value") or 0}
+                  for t in tickers]
+        fondos = [f for f in fondos if f["mv"] > 0]
+        fondos.sort(key=lambda f: f["mv"], reverse=True)
+        grupos.append({
+            "clave": clave, "nombre": nombre,
+            "invertido": inv, "mv": mv, "dividendos": div, "precio": precio,
+            "retorno": tr, "retorno_pct": pct, "pct": 0.0,
+            "veredicto": _veredicto_portafolio(precio, div, tr, inv),
+            "fondos": fondos,
+        })
+    if not grupos:
+        return None
+    total_mv = sum(g["mv"] for g in grupos)
+    for g in grupos:
+        g["pct"] = g["mv"] / total_mv * 100 if total_mv else 0.0
+        for f in g["fondos"]:
+            f["pct"] = f["mv"] / total_mv * 100 if total_mv else 0.0
+    return {"total_mv": total_mv, "grupos": grupos}

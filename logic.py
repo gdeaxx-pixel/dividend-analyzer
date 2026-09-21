@@ -263,10 +263,10 @@ def parse_1042s_pdf(pdf_bytes):
             tax_rate = _tasa_3b(code_m.group(3).split("4b")[0])
 
             fed_m = re.search(r"7a Federal tax withheld\s+([\d,]+\.\d{2})", block)
-            federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else 0.0
+            federal_tax_withheld = float(fed_m.group(1).replace(",", "")) if fed_m else None
 
             cred_m = re.search(r"10 Total withholding credit[^\n]*\n\s*([\d,]+\.\d{2})", block)
-            withholding_credit = float(cred_m.group(1).replace(",", "")) if cred_m else 0.0
+            withholding_credit = float(cred_m.group(1).replace(",", "")) if cred_m else None
 
             row = {
                 "unique_form_id": unique_form_id,
@@ -388,12 +388,6 @@ def diagnose_broker_refund_from_forms(per_form):
     Devuelve {'devuelto': float|None, 'retenido': float, 'pendiente': float|None,
               'veredicto': str, 'per_form': [...]}.
     """
-    def _num(v):
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return 0.0
-
     def _num_or_none(v):
         if v is None or (isinstance(v, str) and not v.strip()):
             return None
@@ -407,20 +401,20 @@ def diagnose_broker_refund_from_forms(per_form):
     for row in per_form or []:
         if not isinstance(row, dict):
             continue
-        fed_7a = _num(row.get("federal_tax_withheld"))
+        fed_7a = _num_or_none(row.get("federal_tax_withheld"))
         wc = _num_or_none(row.get("withholding_credit"))
 
         form_id = row.get("unique_form_id")
         if form_id:
             dedupe_key = ("id", str(form_id))
         else:
-            dedupe_key = ("tuple", row.get("income_code"), _num(row.get("gross_income")),
+            dedupe_key = ("tuple", row.get("income_code"), _num_or_none(row.get("gross_income")),
                           fed_7a, wc)
         if dedupe_key in seen_keys:
             continue
         seen_keys.add(dedupe_key)
 
-        if wc is None:
+        if wc is None or fed_7a is None:
             veredicto = "indeterminado"
             devuelto = None
         else:
@@ -446,15 +440,18 @@ def diagnose_broker_refund_from_forms(per_form):
             "veredicto": veredicto,
         })
 
-    retenido = sum(f["federal_tax_withheld"] for f in filas)
+    retenido = sum(f["federal_tax_withheld"] or 0.0 for f in filas)
 
     if not filas:
         return {"devuelto": None, "retenido": 0.0, "pendiente": None,
-                "veredicto": "indeterminado", "per_form": []}
+                "veredicto": "indeterminado", "per_form": [], "retenido_completo": True}
+
+    retenido_completo = all(f["federal_tax_withheld"] is not None for f in filas)
 
     if any(f["veredicto"] == "indeterminado" for f in filas):
         return {"devuelto": None, "retenido": retenido, "pendiente": None,
-                "veredicto": "indeterminado", "per_form": filas}
+                "veredicto": "indeterminado", "per_form": filas,
+                "retenido_completo": retenido_completo}
 
     devuelto_total = sum(f["devuelto"] for f in filas)
     pendiente = retenido - devuelto_total
@@ -467,250 +464,18 @@ def diagnose_broker_refund_from_forms(per_form):
         veredicto = "parcial"
 
     return {"devuelto": devuelto_total, "retenido": retenido, "pendiente": pendiente,
-            "veredicto": veredicto, "per_form": filas}
+            "veredicto": veredicto, "per_form": filas, "retenido_completo": retenido_completo}
 
 
-def extract_roc_credit_from_pdf(pdf_bytes, api_key):
-    """Lee un 1042-S en PDF con Gemini y devuelve el credito ROC (income code 37, casilla 10).
+def extract_1042s(pdf_bytes, api_key=None):
+    """Punto de entrada unico del Bloque 3: lee el 1042-S con el parser determinista
+    (pdfplumber, sin red). Devuelve el dict de parse_1042s_pdf (source='pdfplumber') o None.
 
-    Devuelve {'credit': float, 'roc_gross': float, 'per_form': [...]} o None ante cualquier
-    fallo (sin SDK/red/cuota/JSON invalido). El PDF nunca se guarda; se procesa en memoria.
+    `api_key` se ignora desde el 2026-09-18 (auditoria de privacidad, S1): el 1042-S trae
+    nombre, TIN, direccion, fecha de nacimiento y numero de cuenta, y el fallback a Gemini
+    mandaba el PDF completo a Google. El parametro sigue porque `app_old.py` pasa dos argumentos.
     """
-    if not pdf_bytes or not api_key:
-        return None
-    try:
-        from google import genai
-        from google.genai import types
-        import json as _json
-        import time as _time
-    except Exception:
-        return None
-
-    prompt = (
-        "Este es un formulario fiscal IRS 1042-S (puede contener varios formularios o paginas, "
-        "uno por cada income code). Por cada formulario que encuentres, extrae: "
-        "1) 'income_code' = Box 1 (Income code); "
-        "2) 'gross_income' = Box 2 (Gross income); "
-        "3) 'federal_tax_withheld' = Box 7a (Federal tax withheld); "
-        "4) 'withholding_credit' = Box 10 (Total withholding credit); "
-        "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
-        "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
-        "no deben contarse dos veces; "
-        "6) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
-        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
-        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
-        "Ademas, una sola vez para todo el documento (no por formulario): "
-        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
-        "letras del pais de residencia del receptor. "
-        "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
-        "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
-        "el filtrado lo hace otro sistema."
-    )
-
-    schema = types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "forms": types.Schema(
-                type=types.Type.ARRAY,
-                items=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "income_code": types.Schema(type=types.Type.STRING),
-                        "gross_income": types.Schema(type=types.Type.NUMBER),
-                        "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
-                        "withholding_credit": types.Schema(type=types.Type.NUMBER),
-                        "unique_form_id": types.Schema(type=types.Type.STRING),
-                        "tax_rate": types.Schema(type=types.Type.NUMBER),
-                    },
-                    required=["income_code"],
-                ),
-            ),
-            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
-            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
-            "recipient_country_code": types.Schema(type=types.Type.STRING),
-        },
-        required=["forms"],
-    )
-
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception:
-        return None
-
-    contents = [types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"), prompt]
-    cfg = types.GenerateContentConfig(
-        temperature=0,
-        response_mime_type="application/json",
-        response_schema=schema,
-    )
-    for _model in [GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS:
-        for _attempt in range(2):
-            try:
-                resp = client.models.generate_content(model=_model, contents=contents, config=cfg)
-                data = _json.loads(resp.text)
-                return _sum_roc_credit_from_forms(data.get("forms", []))
-            except Exception as _e:
-                _msg = str(_e)
-                _transient = any(s in _msg for s in (
-                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
-                if _transient and _attempt == 0:
-                    try:
-                        _time.sleep(2)
-                    except Exception:
-                        pass
-                    continue
-                break
-
-    return None
-
-
-def extract_1042s(pdf_bytes, api_key):
-    """Punto de entrada unico del Bloque 3: intenta primero el camino determinista
-    (pdfplumber, sin red) y solo cae a Gemini si ese falla y hay api_key.
-
-    Devuelve el dict de parse_1042s_pdf (source='pdfplumber') o, si Gemini resuelve,
-    {'tax_year': None, 'forms': [...], 'source': 'gemini'} construido a partir de
-    _sum_roc_credit_from_forms. None si ambos caminos fallan.
-    """
-    result = parse_1042s_pdf(pdf_bytes)
-    if result is not None:
-        return result
-
-    if not api_key:
-        return None
-
-    try:
-        from google import genai
-        from google.genai import types
-        import json as _json
-    except Exception:
-        return None
-
-    if not pdf_bytes:
-        return None
-
-    prompt = (
-        "Este es un formulario fiscal IRS 1042-S (puede contener varios formularios o paginas, "
-        "uno por cada income code). Por cada formulario que encuentres, extrae: "
-        "1) 'income_code' = Box 1 (Income code); "
-        "2) 'gross_income' = Box 2 (Gross income); "
-        "3) 'federal_tax_withheld' = Box 7a (Federal tax withheld); "
-        "4) 'withholding_credit' = Box 10 (Total withholding credit); "
-        "5) 'unique_form_id' = el identificador unico del formulario, arriba a la izquierda, "
-        "sin espacios; las copias B, C y D del mismo formulario comparten identificador y "
-        "no deben contarse dos veces; "
-        "6) 'tax_year' = los 4 primeros digitos del identificador unico del formulario; "
-        "7) 'tax_rate' = Box 3b (Tax rate), la tasa de retencion APLICADA a ese income code, "
-        "como numero (30.00 para 30%, 0.00 para exento). En el formulario suele venir con "
-        "puntos decorativos, por ejemplo '30..00' o '00.0.0': interpretalo como NN.NN. "
-        "Ademas, una sola vez para todo el documento (no por formulario): "
-        "'recipient_country_code' = Box 13b (Recipient's country code), el codigo de dos "
-        "letras del pais de residencia del receptor. "
-        "Devuelve SIEMPRE numeros con punto decimal y sin simbolos ni separadores de miles. "
-        "Incluye TODOS los formularios que encuentres, sin filtrar por income code; "
-        "el filtrado lo hace otro sistema."
-    )
-
-    schema = types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "forms": types.Schema(
-                type=types.Type.ARRAY,
-                items=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "income_code": types.Schema(type=types.Type.STRING),
-                        "gross_income": types.Schema(type=types.Type.NUMBER),
-                        "federal_tax_withheld": types.Schema(type=types.Type.NUMBER),
-                        "withholding_credit": types.Schema(type=types.Type.NUMBER),
-                        "unique_form_id": types.Schema(type=types.Type.STRING),
-                        "tax_year": types.Schema(type=types.Type.INTEGER),
-                        "tax_rate": types.Schema(type=types.Type.NUMBER),
-                    },
-                    required=["income_code"],
-                ),
-            ),
-            # Nivel documento, no por formulario: un 1042-S trae varios income codes pero
-            # un solo receptor. Es el pais que el agente de retencion tiene en archivo.
-            "recipient_country_code": types.Schema(type=types.Type.STRING),
-        },
-        required=["forms"],
-    )
-
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception:
-        return None
-
-    contents = [types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"), prompt]
-    cfg = types.GenerateContentConfig(
-        temperature=0,
-        response_mime_type="application/json",
-        response_schema=schema,
-    )
-    for _model in [GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS:
-        for _attempt in range(2):
-            try:
-                resp = client.models.generate_content(model=_model, contents=contents, config=cfg)
-                data = _json.loads(resp.text)
-                raw_forms = data.get("forms", [])
-                if not raw_forms:
-                    return None
-                forms = []
-                seen_keys = set()
-                tax_year = None
-                for row in raw_forms:
-                    if not isinstance(row, dict):
-                        continue
-                    # Dedupe por identificador si Gemini lo entrega; si no, por la tupla de
-                    # valores. Sin este segundo camino las copias B/C/D del mismo formulario
-                    # entran 3 veces y todo consumidor que sume `gross_income` triplica el
-                    # bruto (304 -> 912). _sum_roc_credit_from_forms ya se protege sola, pero
-                    # el resto de la app consume esta lista directamente.
-                    fid = row.get("unique_form_id")
-                    if fid:
-                        dedupe_key = ("id", str(fid))
-                    else:
-                        dedupe_key = ("tuple", row.get("income_code"), row.get("gross_income"),
-                                      row.get("federal_tax_withheld"), row.get("withholding_credit"))
-                    if dedupe_key in seen_keys:
-                        continue
-                    seen_keys.add(dedupe_key)
-                    ty = row.get("tax_year")
-                    if ty and tax_year is None:
-                        try:
-                            tax_year = int(ty)
-                        except (TypeError, ValueError):
-                            pass
-                    forms.append({
-                        "unique_form_id": fid,
-                        "income_code": row.get("income_code"),
-                        "gross_income": row.get("gross_income"),
-                        "federal_tax_withheld": row.get("federal_tax_withheld"),
-                        "withholding_credit": row.get("withholding_credit"),
-                        "tax_rate": row.get("tax_rate"),
-                        "conflict": False,
-                    })
-                if not forms:
-                    return None
-                _cc = data.get("recipient_country_code")
-                return {"tax_year": tax_year, "forms": forms, "source": "gemini",
-                        "recipient_country_code": (str(_cc).strip().upper()[:2]
-                                                   if _cc else None)}
-            except Exception as _e:
-                _msg = str(_e)
-                _transient = any(s in _msg for s in (
-                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
-                if _transient and _attempt == 0:
-                    try:
-                        import time as _time
-                        _time.sleep(2)
-                    except Exception:
-                        pass
-                    continue
-                break
-
-    return None
+    return parse_1042s_pdf(pdf_bytes)
 
 
 def build_1042s_validation(results: dict, parsed: dict):
@@ -915,6 +680,19 @@ def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20):
     return r.clip(lo, hi)
 
 
+def _drawdown_twr(daily_returns_q):
+    """Drawdown máximo sobre la riqueza unitizada (TWR) que arranca en 1.0: una venta o un aporte
+    no mueven la riqueza por unidad, solo el precio y las distribuciones. Recibe los retornos
+    diarios ya winsorizados (los mismos que usa Calmar). Devuelve (mínimo en %, serie en % con el
+    índice de los retornos) o (None, serie vacía) con menos de 2 retornos."""
+    r = pd.Series(daily_returns_q, dtype=float).dropna()
+    if len(r) < 2:
+        return None, pd.Series(dtype=float)
+    riqueza = pd.concat([pd.Series([1.0]), (1.0 + r.reset_index(drop=True)).cumprod()], ignore_index=True)
+    dd = (riqueza / riqueza.cummax() - 1.0) * 100.0
+    return float(dd.min()), pd.Series(dd.iloc[1:].values, index=r.index)
+
+
 def _sortino_ratio(daily_returns, rf_daily, periods: int = 252):
     """Sortino anualizado con downside deviation estándar (CFA/GIPS).
 
@@ -1015,7 +793,39 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
             actual_rename_map[col] = col_map_lower[col_lower]
             
     df = df.rename(columns=actual_rename_map)
-    
+
+    # E3 (spec S5 §3) — "MM/DD/YYYY as of MM/DD/YYYY": Schwab registra la fila con la
+    # fecha de REGISTRO primero y la fecha EFECTIVA después. `pd.to_datetime` no
+    # reconoce ese formato y descarta la fila como NaT en silencio. Paso 1: contar y
+    # avisar, sin tocar todavía las fechas.
+    _ASOF_RE = re.compile(r"^\s*(\d{1,2}/\d{1,2}/\d{4})\s+as of\s+(\d{1,2}/\d{1,2}/\d{4})\s*$")
+    _ACCIONES_ASOF_EXCLUIDAS = ("stock split", "reverse split")
+
+    if 'Date' in df.columns:
+        _mask_asof = df['Date'].astype(str).str.contains(" as of ", na=False)
+        descartadas_as_of = int(_mask_asof.sum())
+        normalize_csv.ultimo_descarte = {
+            "total": descartadas_as_of,
+            "por_accion": (df.loc[_mask_asof, 'Action'].astype(str).value_counts().to_dict()
+                          if descartadas_as_of and 'Action' in df.columns else {}),
+        }
+
+        # Paso 2: la fecha EFECTIVA (la segunda) manda (G4, Daniel 2026-09-18) — salvo
+        # en Stock Split / Reverse Split, que traen `Quantity` y NO se restauran: ese
+        # campo activaría `if 'split' in action: shares_owned = qty` ENCIMA del factor
+        # de yfinance, que ya es el manejador autoritativo (double-count documentado).
+        # Esas siguen descartándose, y siguen contando en `ultimo_descarte`.
+        if descartadas_as_of and 'Action' in df.columns:
+            def _fecha_efectiva(s):
+                """G4: en «MM/DD/YYYY as of MM/DD/YYYY» manda la SEGUNDA — la efectiva.
+                La primera es la de registro del bróker."""
+                return _ASOF_RE.sub(r"\2", s)
+
+            _accion_excluida = df['Action'].astype(str).str.lower().str.strip().isin(
+                _ACCIONES_ASOF_EXCLUIDAS)
+            _aplicar = _mask_asof & ~_accion_excluida
+            df.loc[_aplicar, 'Date'] = df.loc[_aplicar, 'Date'].astype(str).apply(_fecha_efectiva)
+
     # Ensure Date is datetime
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -1328,7 +1138,7 @@ def _descargar_benchmark(df, ticker=BENCHMARK_TICKER):
     return data
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
     """
@@ -1422,7 +1232,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             results[ticker] = {"error": f"No usable close price: {error_msg or 'serie sin cierres'}"}
             continue
         current_price = _closes.iloc[-1]
-        
+        fecha_valoracion = pd.Timestamp(_closes.index[-1]).normalize()
+        if fecha_valoracion.tzinfo is not None:
+            fecha_valoracion = fecha_valoracion.tz_localize(None)
+
         # --- Split data for per-transaction adjustment ---
         # market_data is fetched with actions=True so it includes Stock Splits column.
         # We build a Series of (split_date → ratio) covering the holding period.
@@ -1462,7 +1275,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Iterate through transactions to build history
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
-        dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
         divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
@@ -1492,6 +1304,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # 6. Dividend Payout (Pago de Dividendo en Efectivo)
             # Keywords: dividend, payout, yield, interest (excluding reinvestment)
             is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
+
+            # I5 (spec S5 §3): 'Cash In Lieu', 'Special Qual Div', 'ADR Mgmt Fee' y 'Wire
+            # Received' no traen ninguna de las palabras de arriba, así que caían SIN
+            # RAMA — dinero real que no movía ni pocket_investment ni el efectivo
+            # cobrado, ni el cronograma de IRR. Rama propia, no `is_div_payout`, para no
+            # mezclar su semántica fiscal (no son dividendos) con el mismo tratamiento
+            # de caja (si no se reinvierten, es efectivo que entró o salió de la cuenta).
+            # `Reverse Split` NO entra aquí: suma $0.00 y su terreno (splits) está cerrado
+            # sin defectos — moverlo exige evidencia nueva, no esta spec.
+            is_misc_cash = any(k in action for k in
+                              ('cash in lieu', 'special qual div', 'adr mgmt fee', 'wire received'))
 
             # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
             # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
@@ -1552,7 +1375,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned += _adj_qty
                     shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
-                    dist_dated.append((_tx_date, abs(amount)))
                     _dy = _row_year(_tx_date)
                     if _dy is not None:
                         divs_by_year[_dy] += abs(amount)
@@ -1568,7 +1390,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_drip += _adj_qty
                     if amount < 0:
                         dividends_collected_drip += abs(amount)
-                        dist_dated.append((_tx_date, abs(amount)))
                         _dy = _row_year(_tx_date)
                         if _dy is not None:
                             divs_by_year[_dy] += abs(amount)
@@ -1582,8 +1403,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     if _dy is not None:
                         divs_by_year[_dy] += amount
                     irr_flows_dated.append((_tx_date, amount))
-                    if amount > 0:
-                        dist_dated.append((_tx_date, amount))
+
+            elif is_misc_cash:
+                # I5: mismo tratamiento de CAJA que is_div_payout (signed amount: un
+                # cargo como 'ADR Mgmt Fee' es negativo y resta) pero sin pasar por
+                # `dividends_gross_by_year`/objeto fiscal — no son distribuciones.
+                dividends_collected_cash += amount
+                irr_flows_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf
@@ -1683,7 +1509,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # ── Fase 7: IRR anualizado con timing real de flujos ─────────────
         irr_anual = None
         try:
-            _irr_all = list(irr_flows_dated) + [(pd.Timestamp.today(), market_value)]
+            _irr_all = list(irr_flows_dated) + [(fecha_valoracion, market_value)]
             _buckets  = defaultdict(float)
             for _dt, _amt in _irr_all:
                 _ts = pd.Timestamp(_dt)
@@ -1755,9 +1581,19 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # la convención por fila -> solo restamos la retención cuando NO viene plegada, para
         # no restarla dos veces en IB. `dividends_collected_drip` no se toca: ese dinero ya
         # está dentro de `market_value` (acciones compradas con el neto post-retención).
+        # Por eso tampoco se resta la retención de las distribuciones REINVERTIDAS: ya salió
+        # antes de comprar las acciones. Restarla del efectivo la descontaba dos veces
+        # (bruto $100, retención $30, DRIP $70, efectivo $0: net_profit bajaba $30).
         _tax_totals_early = build_dividend_tax_totals(ticker_df)
+        _retencion_en_efectivo = _tax_totals_early['withheld'] - _withheld_on_reinvested(ticker_df)
         _cash_collected_net = (dividends_collected_cash if _tax_totals_early['netted']
-                                else dividends_collected_cash - _tax_totals_early['withheld'])
+                                else dividends_collected_cash - _retencion_en_efectivo)
+        # E4: al export le faltan filas fuente del DRIP cuando hay más `Reinvest Shares` que
+        # `Reinvest Dividend`. No se corrige la cifra (el bruto que falta no está en el CSV):
+        # se declara, para que la vista no presente como exacto un dato incompleto.
+        _acciones = ticker_df['Action'].astype(str).str.lower()
+        _drip_sin_fuente = bool(_acciones.str.contains('reinvest shares', na=False).sum()
+                                > _acciones.str.contains('reinvest dividend', na=False).sum())
 
         gross_value = market_value + _cash_collected_net
         net_profit = gross_value - pocket_investment
@@ -2094,16 +1930,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # 4. Sortino Ratio — downside deviation estándar (no std de solo los negativos)
         sortino_ratio = _sortino_ratio(daily_returns_q, rf_diario)
 
-        # 5. Maximum Drawdown
-        valor_port = daily_history['User Total Value'].replace(0, np.nan).dropna()
-        if len(valor_port) >= 2:
-            peak_acum = valor_port.cummax()
-            drawdown_serie = (valor_port - peak_acum) / peak_acum * 100
-            max_drawdown = float(drawdown_serie.min())
-            daily_history['Drawdown %'] = drawdown_serie.reindex(daily_history.index).fillna(np.nan)
-        else:
-            max_drawdown = None
-            daily_history['Drawdown %'] = np.nan
+        # 5. Maximum Drawdown sobre la riqueza unitizada (TWR), no sobre el valor absoluto de la
+        # cartera: una venta a precio constante o un aporte no deben leerse como caída/recuperación.
+        max_drawdown, _dd_serie = _drawdown_twr(daily_returns_q)
+        daily_history['Drawdown %'] = _dd_serie.reindex(daily_history.index) if len(_dd_serie) else np.nan
 
         # 6. Calmar Ratio — CAGR compuesto desde los retornos diarios YA winsorizados (no desde el
         # TWR acumulado crudo, que puede estar corrupto por transferencias / costo incompleto).
@@ -2256,8 +2086,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Respaldo: si no hay costo base del bróker, estimar el ROC con el % que el fondo
         # publica en sus avisos 19a (ver knowledge/roc_19a.yaml). Empate por fecha si hay
         # historial por distribución; si no, % ponderado del fondo.
+        # El % del 19a se aplica a la distribución BRUTA, la misma en efectivo que reinvertida:
+        # la compra DRIP es el neto tras la retención, y tomarla como distribución dejaba el ROC
+        # de una posición reinvertida en el 70% del de la misma posición cobrada en efectivo.
+        _dist_bruto = [(d, float(a)) for d, a in _dividend_events(ticker_df).items()]
         if _roc_accum is None and total_dividends > 0:
-            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, dist_dated)
+            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, _dist_bruto)
             if _est_roc is not None:
                 _roc_accum = round(_est_roc, 2)
                 _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
@@ -2267,7 +2101,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # origen es 19a: el método 'broker' es una resta contra el costo de HOY, no tiene
         # fecha que repartir en el tiempo, y subestima el ROC al reinvertir (M1 §4). Sale del
         # mismo empate por fecha que alimentó `_roc_accum` — no es un segundo cálculo.
-        _roc_events = _roc_events_from_19a(ticker, dist_dated) if _roc_source == '19a' else None
+        _roc_events = _roc_events_from_19a(ticker, _dist_bruto) if _roc_source == '19a' else None
 
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
@@ -2281,7 +2115,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _dividend_tax_totals = _tax_totals_early
         _withheld = _dividend_tax_totals['withheld']
         _withheld_by_year = _dividend_tax_totals['withheld_by_year']
-        _refund_obs_by_year = observed_tax_refund_by_year(ticker_df)
+        # Una sola pasada del clasificador único: retención AL COBRO y reembolsos genuinos
+        # salen del mismo emparejamiento de reversos (Regla 3). `build_tax_summary` necesita
+        # las dos para no restar dos veces lo ya devuelto (auditoría F6).
+        _tax_rows = _classify_tax_rows(ticker_df)
+        _refund_obs_by_year = _tax_rows['genuine_refund_by_year']
+        _withheld_at_payment_by_year = _tax_rows['withheld_at_payment_by_year']
         _foreign_tax_paid_by_year = foreign_tax_paid_by_year(ticker_df)
         _gross_by_year = _dividend_tax_totals['gross_by_year']
         _cadence_change = detect_cadence_change(ticker_df)
@@ -2346,6 +2185,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_collected_drip": dividends_collected_drip,
             "total_dividends": total_dividends,
             "net_profit": net_profit,
+            "dividends_cash_net": _cash_collected_net,
+            "drip_sin_fuente": _drip_sin_fuente,
             "roi_percent": roi,
             "history": ticker_df,
             "daily_trend": daily_history[['User Profit', 'SPY Profit', 'User Return %', 'Invested Capital', 'Market Value', 'User Total Value', 'Drawdown %']],
@@ -2389,6 +2230,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "capital_gains": build_capital_gains(
                 ticker_df, ticker,
                 market_price=current_price,
+                today=fecha_valoracion,
                 splits=_splits_col,
                 history_incomplete=history_incomplete,
                 roc_events=_roc_events,
@@ -2399,6 +2241,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 broker_position=_ov,
                 roc_19a_published=_publica_19a,
             ),
+            # Fecha de VALORACIÓN — la del último cierre usado para `current_price` y
+            # `market_value`, NO el reloj de hoy: determinista con el precio que ya se
+            # muestra. `build_capital_gains` y el flujo terminal del IRR la reciben,
+            # para que tenencia/tramo/IRR midan contra la MISMA fecha que el valor de
+            # mercado (F5, auditoría 2026-09-18). No toca `csv_coverage_pct` (Fase 6):
+            # esa mide otra cosa (vigencia del propio CSV, no del precio de mercado).
+            "valuation_date": str(fecha_valoracion.date()),
             # ROC
             "ib_cost_basis":       _ib_basis,
             "roc_accumulated":     _roc_accum,
@@ -2424,6 +2273,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "dividends_gross_by_year": _gross_by_year,
             "withheld_by_year": dict(_withheld_by_year),
             "tax_refund_observed_by_year": dict(_refund_obs_by_year),
+            "withheld_at_payment_by_year": dict(_withheld_at_payment_by_year),
             # Impuesto extranjero (`Foreign Tax Paid`, p. ej. ZIM/Israel) — fuera del eje NRA,
             # su propia línea en la vista de Impuestos. Ver `foreign_tax_paid_by_year`.
             "foreign_tax_paid_total": round(sum(_foreign_tax_paid_by_year.values()), 2),
@@ -2899,7 +2749,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     """
     Parses an Interactive Brokers Activity Statement CSV.
     IBKR exports are multi-section: each section has a Header row and Data rows.
-    Extracts Trades (Stocks) and Dividends sections and merges into unified format.
+    Extracts Trades (Stocks), Dividends and Withholding Tax sections and merges into unified format.
     """
     for encoding in ['utf-8', 'latin1', 'cp1252']:
         try:
@@ -2921,6 +2771,12 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             return float(s)
         except (ValueError, TypeError):
             return 0.0
+
+    def _solo_fecha(raw) -> str:
+        # Activity Statement: Trades trae "2024-01-15, 09:30:00" y Dividends "2024-01-20".
+        # Con las dos formas en una misma columna, normalize_csv infiere el formato de la
+        # primera fila y descarta el resto como NaT: el dividendo desaparecía sin aviso.
+        return re.split(r'[,;]', str(raw), maxsplit=1)[0].strip()
 
     def _ibkr_reader(section_name: str):
         """Yield (header, [data_rows]) for a named IB section using csv.reader."""
@@ -3034,6 +2890,8 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                     col_map[col] = 'Amount'
 
             trades_df = trades_df.rename(columns=col_map)
+            if 'Date' in trades_df.columns:
+                trades_df['Date'] = trades_df['Date'].map(_solo_fecha)
 
             # Derive Action from Quantity sign
             if 'Quantity' in trades_df.columns:
@@ -3049,34 +2907,41 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     except Exception as e:
         print(f"IBKR trades parse error: {e}")
 
-    # --- Extract Dividends section ---
-    try:
-        div_header, div_rows = _ibkr_reader('Dividends')
+    # --- Extract Dividends and Withholding Tax sections ---
+    # Withholding Tax va como fila aparte con signo y el mismo rótulo que Transaction History
+    # ('Dividend - Foreign Tax Withholding'). Sin esta sección la retención salía en $0 y el
+    # neto igual al bruto.
+    for section_name, section_action in (('Dividends', 'Dividend'),
+                                         ('Withholding Tax', 'Dividend - Foreign Tax Withholding')):
+        try:
+            sec_header, sec_rows = _ibkr_reader(section_name)
 
-        if div_header and div_rows:
-            divs_df = pd.DataFrame(div_rows, columns=div_header)
+            if sec_header and sec_rows:
+                sec_df = pd.DataFrame(sec_rows, columns=sec_header)
 
-            # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
-            if 'Description' in divs_df.columns:
-                divs_df['Ticker'] = divs_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
+                # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
+                if 'Description' in sec_df.columns:
+                    sec_df['Ticker'] = sec_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
 
-            col_map = {}
-            for col in divs_df.columns:
-                cl = col.lower()
-                if 'date' in cl:
-                    col_map[col] = 'Date'
-                elif 'amount' in cl:
-                    col_map[col] = 'Amount'
+                col_map = {}
+                for col in sec_df.columns:
+                    cl = col.lower()
+                    if 'date' in cl:
+                        col_map[col] = 'Date'
+                    elif 'amount' in cl:
+                        col_map[col] = 'Amount'
 
-            divs_df = divs_df.rename(columns=col_map)
-            divs_df['Action'] = 'Dividend'
-            divs_df['Quantity'] = 0
-            divs_df['Price'] = 0
+                sec_df = sec_df.rename(columns=col_map)
+                if 'Date' in sec_df.columns:
+                    sec_df['Date'] = sec_df['Date'].map(_solo_fecha)
+                sec_df['Action'] = section_action
+                sec_df['Quantity'] = 0
+                sec_df['Price'] = 0
 
-            keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in divs_df.columns]
-            frames.append(divs_df[keep])
-    except Exception as e:
-        print(f"IBKR dividends parse error: {e}")
+                keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in sec_df.columns]
+                frames.append(sec_df[keep])
+        except Exception as e:
+            print(f"IBKR {section_name} parse error: {e}")
 
     if frames:
         return pd.concat(frames, ignore_index=True)
@@ -3388,6 +3253,91 @@ def load_roc_ici() -> dict:
     return data
 
 
+def roc_pct_by_year(ticker: str, roc19a: dict, roc_ici: dict, con_fuente: bool = False):
+    """%ROC (0-100) por año calendario — **objeto único del eje «%ROC por año fiscal»**
+    (tabla de la Regla 3b del contrato). Lo leen el objeto fiscal de la cartera real
+    (`estimate_roc_refund_by_year`) y los escenarios simulados (`ui.adapters._politica_fiscal`).
+
+    **Dos fuentes, y una manda sobre la otra por año** (2026-08-21). Para cada año:
+    el **cierre fiscal** (`roc_ici`, casilla 3 del 1099) si existe; si no, la **estimación**
+    del gestor (`roc19a`, los avisos 19(a)); si no, nada — el piso conservador.
+
+    No hace falta preguntar qué año está "cerrado": el ICI solo existe para años cerrados,
+    así que «el ICI si está» ya es la regla, sin depender del reloj. Cuando YieldMax publique
+    el cierre de 2026, `roc_ici.yaml` lo traerá y ese año dejará de usar la estimación solo.
+
+    Las dos fuentes se piden **explícitas**, sin default que las cargue por dentro: un objeto
+    fiscal que lee estado global por su cuenta es justo como empiezan las divergencias que
+    la Regla 3 del contrato existe para evitar — y haría que un test con datos sintéticos
+    arrastrara en silencio el yaml de producción.
+
+    La reclasificación del bróker opera por AÑO FISCAL, así que cada año usa el promedio
+    de los avisos 19(a) publicados ESE año. Los años sin avisos en la ventana caen al
+    ponderado del fondo (`weighted_pct`), y un ticker sin avisos ningunos devuelve `{}`: sin
+    escudo que reclamar, la retención plana se queda como está.
+
+    **Los años ANTERIORES a la ventana no se extrapolan** (y eso mueve cifras). El relleno
+    con el ponderado cubre solo los huecos DENTRO del rango de avisos publicados; un año
+    previo al primer aviso no aparece en el dict. Qué hace cada consumidor con ese hueco es
+    decisión suya y está declarada en el consumidor: la simulación le aplica 0% (retiene el
+    30% completo y no devuelve nada, piso conservador); la cartera real cae al %ROC del
+    holder (`roc_fallback_pct` de `estimate_roc_refund_by_year`). Material hoy en dos fondos
+    del universo, cuyos avisos empiezan mucho después de su incepción: TSLY (incep. nov-2022,
+    avisos desde may-2025) y CONY (incep. ago-2023, avisos desde feb-2025).
+
+    Que el alcance sea el mismo en todas las vistas es lo que exige la Regla 3; que ese
+    alcance se DECLARE en el copy es lo que exige la Regla 2. Ampliarlo (extrapolar hacia
+    atrás) es una decisión de producto abierta, no un arreglo: movería también las cifras
+    ya desplegadas de «La matriz».
+
+    Vivió en `ui.adapters._roc_pct_by_year` hasta el 2026-09-18, y por eso la precedencia
+    del cierre fiscal solo llegaba a las simulaciones: el objeto fiscal real
+    (`estimate_roc_refund_by_year`) calculaba su propio promedio 19(a) y nunca leía el ICI
+    (auditoría R1: MSTY 2025 con ICI 100% se estimaba al 78.4% del 19(a)).
+    """
+    info = roc19a.get(ticker) or {}
+    por_anio = {}
+    for p in (info.get("per_distribution") or []):
+        try:
+            por_anio.setdefault(pd.Timestamp(p["date"]).year, []).append(float(p["roc_pct"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    try:
+        ponderado = float(info.get("weighted_pct"))
+    except (TypeError, ValueError):
+        ponderado = 0.0
+    # Ojo con el orden: aquí había un `return {}` cuando el ticker no tenía avisos 19(a).
+    # Con dos fuentes eso se saltaba el cierre fiscal justo en los fondos que MÁS lo
+    # necesitan —los que nunca publicaron 19(a), como CHPY—, y la vista seguía dando el
+    # número viejo sin que nada fallara. Ninguna salida temprana puede quedar por delante
+    # del merge.
+    anios = list(por_anio)
+    promedios = {a: sum(v) / len(v) for a, v in por_anio.items()}
+    # Los años del histórico que no tienen avisos propios heredan el ponderado, para que
+    # un hueco en la publicación no se lea como «ese año no hubo ROC».
+    if anios and ponderado > 0:
+        for a in range(min(anios), max(anios) + 1):
+            promedios.setdefault(a, ponderado)
+
+    # El cierre fiscal PISA la estimación, año por año. Nunca al revés: el 19(a) es un
+    # pronóstico del número que el ICI ya midió, así que sobre un año cerrado no aporta nada.
+    # Un 0.00% del ICI (CONY 2023) es un CERO MEDIDO, no un hueco: entra igual que cualquier
+    # otro valor y pisa lo que dijera el 19(a).
+    fuentes = {a: "estimacion" for a in promedios}
+    for anio, entrada in (roc_ici.get(str(ticker).upper()) or {}).items():
+        try:
+            anio, pct = int(anio), float(entrada["roc_pct"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        promedios[anio] = pct
+        fuentes[anio] = "cierre"
+    # `con_fuente` devuelve la procedencia que decidió ESTE mismo bucle, no una segunda
+    # implementación de la regla: un mapa de procedencia calculado aparte se despega del
+    # dato en cuanto una de las dos ramas cambia (p. ej. una entrada corrupta que el merge
+    # descarta y el mapa seguiría marcando como «cierre»).
+    return (promedios, fuentes) if con_fuente else promedios
+
+
 _DISTRATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'distribution_rate.yaml')
 _DISTRATE_CACHE = {}
@@ -3465,12 +3415,18 @@ def latest_health_verdict(ticker):
     return last.get('verdict')
 
 
-def _roc_events_from_19a(ticker, dist_dated):
+def _roc_events_from_19a(ticker, dist_bruto):
     """Serie FECHADA del ROC del holder: `[(fecha, roc_$)]`, una entrada por distribución.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
-    Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
-    usa el % ponderado del fondo (`weighted_pct`).
+    `dist_bruto`: lista de (fecha, monto BRUTO) — la de `_dividend_events`, con signo: una
+    reversa de IB resta ROC en vez de sumarlo.
+    Una distribución de un año con **cierre fiscal** (ICI, `roc_pct_by_year`) toma el % del
+    cierre: es el que fija la casilla 3 del 1099 y, por tanto, lo que de verdad baja la base.
+    En un año abierto se empata con el %ROC publicado de esa fecha (±7 días); si no hay
+    empate, el % ponderado del fondo (`weighted_pct`). Hasta el 2026-09-18 el cierre no se
+    leía aquí (auditoría R1): MSTY 2025 bajaba la base al 76% de lo cobrado cuando el cierre
+    —y el 1042-S real— dicen 100%. El nombre conserva el «19a» por sus llamadores y por
+    `roc_source='19a'`, que sigue queriendo decir «% publicado por el fondo, fechado».
 
     Existe porque el ROC **acumulado no sirve para la base fiscal de una venta**: a las
     acciones vendidas solo les corresponde el ROC devengado ANTES de venderlas, así que hay
@@ -3479,13 +3435,18 @@ def _roc_events_from_19a(ticker, dist_dated):
     posición y mueve la ganancia realizada de −$178.78 a +$32.81 — el signo depende de esto,
     no es un decimal.
 
-    Devuelve `None` —y no una lista parcial— si el fondo no publica 19a o si alguna
-    distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
+    Devuelve `None` —y no una lista parcial— si el fondo no publica ni 19a ni cierre, o si
+    alguna distribución se queda sin %. Es el mismo criterio de todo-o-nada que ya usaba el
     estimador: un ROC a medias mezclado con distribuciones sin catalogar no es una base
-    fiscal, es un híbrido, y la Regla 2 lo prohíbe.
+    fiscal, es un híbrido, y la Regla 2 lo prohíbe. (Un fondo con cierre y sin 19a solo sale
+    si todas sus distribuciones caen en años cerrados.)
     """
-    info = load_roc_19a().get(str(ticker).upper())
-    if not info or not dist_dated:
+    tk = str(ticker).upper()
+    roc19a = load_roc_19a()
+    info = roc19a.get(tk) or {}
+    pcts, fuentes = roc_pct_by_year(tk, roc19a, load_roc_ici(), con_fuente=True)
+    cierre = {a: pcts[a] for a, f in fuentes.items() if f == 'cierre'}
+    if (not info and not cierre) or not dist_bruto:
         return None
 
     dated = []
@@ -3498,10 +3459,10 @@ def _roc_events_from_19a(ticker, dist_dated):
     weighted = float(weighted) if weighted is not None else None
 
     eventos = []
-    for dt, amt in dist_dated:
-        amt = abs(amt or 0)
-        pct = None
-        if dated and dt is not None:
+    for dt, amt in dist_bruto:
+        amt = amt or 0
+        pct = cierre.get(_row_year(dt))
+        if pct is None and dated and dt is not None:
             best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
             if abs((best[0] - pd.Timestamp(dt).normalize()).days) <= 7:
                 pct = best[1]
@@ -3513,10 +3474,10 @@ def _roc_events_from_19a(ticker, dist_dated):
     return eventos
 
 
-def _estimate_roc_from_19a(ticker, dist_dated):
+def _estimate_roc_from_19a(ticker, dist_bruto):
     """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    `dist_bruto`: lista de (fecha, monto BRUTO), la de `_dividend_events`.
     Devuelve (roc_$|None, roc_%|None).
 
     Es la SUMA de `_roc_events_from_19a`, no un segundo empate por fecha: el criterio de
@@ -3524,10 +3485,10 @@ def _estimate_roc_from_19a(ticker, dist_dated):
     un solo sitio. Dos implementaciones del mismo empate es exactamente la divergencia que
     la Regla 3 del contrato prohíbe.
     """
-    total = sum(abs(a or 0) for _, a in dist_dated) if dist_dated else 0.0
+    total = sum((a or 0) for _, a in dist_bruto) if dist_bruto else 0.0
     if total <= 0:
         return None, None
-    eventos = _roc_events_from_19a(ticker, dist_dated)
+    eventos = _roc_events_from_19a(ticker, dist_bruto)
     if eventos is None:
         return None, None
     roc_sum = sum(a for _, a in eventos)
@@ -3822,10 +3783,11 @@ def build_interpretation(results: dict, ticker: str, mode: str = None) -> dict:
     info = load_instruments().get(str(ticker).upper(), {})
 
     pocket = s.get('pocket_investment', 0) or 0
-    market = s.get('market_value', 0) or 0
-    inc = s.get('dividends_collected_cash', 0) or 0
-    total_ret = market + inc - pocket
-    cap = market - pocket
+    inc = s.get('dividends_net_total')
+    if inc is None:
+        inc = s.get('dividends_collected_cash', 0) or 0
+    total_ret = s['net_profit']
+    cap = total_ret - inc
 
     def _signed(v):
         return f"{'-' if v < 0 else '+'}${abs(v):,.0f}"
@@ -5306,27 +5268,31 @@ def estimate_roc_refund(gross, withheld, roc_pct, base_rate=0.30):
 def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_rate=0.30,
                                  roc_fallback_pct=None):
     """`estimate_roc_refund` desglosado por año calendario — la reclasificación del broker
-    opera por año fiscal, así que cada año usa el %ROC promedio de los avisos 19a publicados
-    ESE año (no el histórico completo del fondo). Reutiliza `estimate_roc_refund` por año,
-    no duplica la fórmula.
+    opera por año fiscal, así que cada año usa el %ROC de ESE año, no el histórico completo
+    del fondo. Reutiliza `estimate_roc_refund` por año, no duplica la fórmula.
+
+    El %ROC de cada año sale de `roc_pct_by_year`, el objeto único del eje (el mismo que
+    alimenta las simulaciones): el **cierre fiscal** (ICI) del año si existe; si no, la
+    **estimación** 19(a) (promedio de los avisos de ese año, o el ponderado del fondo si el
+    año es un hueco dentro de la ventana de avisos); si no, `roc_fallback_pct`. Antes de
+    2026-09-18 este estimador promediaba el 19(a) por su cuenta y nunca leía el ICI: MSTY
+    2025 se estimaba al 78.4% cuando el cierre —y el 1042-S real— dicen 100% (auditoría R1).
 
     Args:
-        gross_by_year / withheld_by_year: dict {año -> monto}, del mismo ticker (ver
-            `dividends_gross_by_year` / `withheld_by_year` en el dict de resultados).
-        roc_fallback_pct: %ROC a usar en años sin avisos 19a en la ventana (normalmente el
+        gross_by_year / withheld_by_year: dict {año -> monto}, del mismo ticker. Para la
+            devolución TOTAL del año, la retención AL COBRO (`withheld_at_payment_by_year`):
+            con la neteada, un reembolso acreditado en ene–mar resta de la retención del
+            año siguiente y la devolución de ese año sale corta (auditoría F6).
+        roc_fallback_pct: %ROC a usar en años sin cierre ni avisos 19a (normalmente el
             `roc_percent` ya calculado del holder para ese ticker).
 
-    Devuelve dict {año: {'fair_withholding', 'refund', 'refund_pct', 'roc_pct_usado'}} más
-    la clave 'total' con los mismos tres primeros campos agregados sobre todos los años.
+    Devuelve dict {año: {'fair_withholding', 'refund', 'refund_pct', 'roc_pct_usado',
+    'roc_fuente'}} más la clave 'total' con los tres primeros campos agregados sobre todos los
+    años. `roc_fuente` declara de dónde salió el % de ESE año: 'cierre' (ICI), 'estimacion'
+    (19a), 'respaldo' (`roc_fallback_pct`) o 'sin_dato' (0%).
     """
-    info = load_roc_19a().get(str(ticker).upper()) or {}
-    roc_by_year = defaultdict(list)
-    for rowp in (info.get('per_distribution') or []):
-        try:
-            _y = pd.Timestamp(rowp['date']).year
-            roc_by_year[_y].append(float(rowp['roc_pct']))
-        except Exception:
-            continue
+    pcts, fuentes = roc_pct_by_year(str(ticker).upper(), load_roc_19a(), load_roc_ici(),
+                                    con_fuente=True)
 
     years = sorted(set(gross_by_year or {}) | set(withheld_by_year or {}))
     out = {}
@@ -5334,11 +5300,14 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     for y in years:
         gross = (gross_by_year or {}).get(y, 0.0) or 0.0
         withheld = (withheld_by_year or {}).get(y, 0.0) or 0.0
-        vals = roc_by_year.get(y)
-        roc_pct = (sum(vals) / len(vals)) if vals else (roc_fallback_pct if roc_fallback_pct
-                                                          is not None else 0.0)
+        if y in pcts:
+            roc_pct, fuente = pcts[y], fuentes[y]
+        elif roc_fallback_pct is not None:
+            roc_pct, fuente = roc_fallback_pct, 'respaldo'
+        else:
+            roc_pct, fuente = 0.0, 'sin_dato'
         res = estimate_roc_refund(gross, withheld, roc_pct, base_rate=base_rate)
-        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2))
+        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2), roc_fuente=fuente)
         tot_fair += res['fair_withholding']
         tot_refund += res['refund']
         tot_withheld += withheld
@@ -5346,6 +5315,47 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
     out['total'] = {'fair_withholding': round(tot_fair, 2), 'refund': round(tot_refund, 2),
                      'refund_pct': total_refund_pct}
     return out
+
+
+def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, rate_pct):
+    """Devolución total estimada por reclasificación ROC, medida contra la retención AL
+    COBRO — extraído de `build_tax_summary` para que `_roc_refund_recuperable` (R2, casilla 9
+    sin país) y el objeto fiscal con país compartan una sola implementación (Regla 3).
+
+    Misma rama que antes: más de un año con retención al cobro (`> 0.01`) usa el %ROC de CADA
+    año (`estimate_roc_refund_by_year`); si no, el agregado (`estimate_roc_refund`) con
+    `roc_pct` único. Devuelve {'fair_withholding', 'refund', 'refund_pct', 'method',
+    'by_year': bool, 'refund_by_year': dict|None}.
+    """
+    wap_by_year = wap_by_year or {}
+    withheld_at_payment = round(sum(wap_by_year.values()), 2) if wap_by_year else 0.0
+    years_wh = sorted(y for y, v in wap_by_year.items() if v > 0.01)
+
+    refund_info = estimate_roc_refund(gross, withheld_at_payment, roc_pct,
+                                      base_rate=rate_pct / 100.0)
+    method = f'ROC {roc_pct:.0f}%'
+    by_year = False
+    refund_by_year = None
+    if len(years_wh) > 1:
+        rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
+                                          base_rate=rate_pct / 100.0, roc_fallback_pct=roc_pct)
+        rby_total = (rby or {}).get('total')
+        if rby_total:
+            # Tarjetas y tabla anual deben sumar igual: el total sale del ROC de cada
+            # año, no del agregado (mismo criterio que el bloque original en app.py).
+            refund_info = rby_total
+            method = 'ROC por año'
+            by_year = True
+            refund_by_year = rby
+
+    return {
+        'fair_withholding': refund_info['fair_withholding'],
+        'refund': refund_info['refund'],
+        'refund_pct': refund_info.get('refund_pct'),
+        'method': method,
+        'by_year': by_year,
+        'refund_by_year': refund_by_year,
+    }
 
 
 def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
@@ -5381,11 +5391,26 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
     cuenta.
 
     Campos: ticker, base_rate_pct, country, roc_pct_used, roc_source, withheld_real,
-    fair_withholding, refund_estimated, refund_pct, net_estimated, refund_observed,
-    refund_pending, by_year, withheld_by_year, refund_observed_by_year, refund_by_year
-    (desglose año a año de `estimate_roc_refund_by_year`, o None), method,
+    withheld_at_payment, fair_withholding, refund_total_estimated, refund_estimated,
+    refund_pct, net_estimated, refund_observed, refund_pending, by_year, withheld_by_year,
+    withheld_at_payment_by_year, refund_observed_by_year, refund_by_year (desglose año a año
+    de `estimate_roc_refund_by_year`, con la fuente del %ROC de cada año, o None), method,
     basis='gross_withheld', moment='annual_reclass_estimate', is_estimate=True, label_short,
     label_long.
+
+    **Cuatro cifras de retención, cada una con su momento** (auditoría F6, 2026-09-18):
+      - `withheld_at_payment` — retención INICIAL, al cobro (lo que descontó el agente).
+      - `refund_observed`     — lo que el bróker YA devolvió (filas positivas genuinas).
+      - `withheld_real`       — SALDO retenido hoy = inicial − ya devuelto.
+      - `refund_total_estimated` — devolución TOTAL que corresponde tras la reclasificación,
+        medida contra la retención al cobro de cada año fiscal.
+    `refund_estimated` es la devolución ADICIONAL —lo que falta por volver—
+    `= max(0, total − ya devuelto)`, y es la que se resta del saldo: `net_estimated =
+    withheld_real − refund_estimated`. `refund_pending` es la misma cifra (se conserva el
+    nombre). Antes el total se estimaba sobre el saldo (que ya descontó lo devuelto) y
+    `refund_pending` volvía a restar lo devuelto: dos veces. Y como el reembolso de un año
+    llega en ene–mar del siguiente, medirlo contra el saldo le quitaba a ese año siguiente
+    una retención que sí se cobró.
     """
     # `RATE_UNDECLARED` no es una tasa: es la ausencia de una. Con él nunca se estima
     # devolución — `withheld_real` (real del CSV) se sigue mostrando, pero la aritmética
@@ -5406,12 +5431,13 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             'ticker': ticker, 'base_rate_pct': _rate, 'country': country,
             'rate_declared': not _undeclared,
             'roc_pct_used': roc_pct_used, 'roc_source': roc_source,
-            'withheld_real': round(withheld_real, 2), 'fair_withholding': 0.0,
+            'withheld_real': round(withheld_real, 2), 'withheld_at_payment': None,
+            'fair_withholding': 0.0, 'refund_total_estimated': 0.0,
             'refund_estimated': 0.0, 'refund_pct': 0.0,
             'net_estimated': round(withheld_real, 2),
             'refund_observed': 0.0, 'refund_pending': 0.0,
-            'by_year': False, 'withheld_by_year': {}, 'refund_observed_by_year': {},
-            'refund_by_year': None,
+            'by_year': False, 'withheld_by_year': {}, 'withheld_at_payment_by_year': {},
+            'refund_observed_by_year': {}, 'refund_by_year': None,
             'method': None, 'basis': 'gross_withheld', 'moment': 'annual_reclass_estimate',
             'is_estimate': True, 'label_short': '', 'label_long': label_long,
         }
@@ -5460,34 +5486,40 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         gross = float(_gross_declared) if _gross_declared is not None else (net_div + withheld_real)
         gross_by_year = stats.get('dividends_gross_by_year') or {}
         withheld_by_year = stats.get('withheld_by_year') or {}
-        years_wh = sorted(y for y, v in (withheld_by_year or {}).items() if v > 0.01)
         obs_by_year = stats.get('tax_refund_observed_by_year') or {}
         obs_total = round(sum(obs_by_year.values()), 2)
+        # Retención AL COBRO por año (F6): la devolución total se mide contra ella, no contra el
+        # saldo. `analyze_portfolio` la publica desde el clasificador único; stats armados a
+        # mano caen a la identidad del contrato `al_cobro = neteado + devuelto`.
+        wap_by_year = stats.get('withheld_at_payment_by_year')
+        if wap_by_year is None:
+            wap_by_year = {y: round(float(withheld_by_year.get(y, 0.0) or 0.0)
+                                    + float(obs_by_year.get(y, 0.0) or 0.0), 2)
+                           for y in set(withheld_by_year) | set(obs_by_year)}
+        withheld_at_payment = (round(sum(wap_by_year.values()), 2) if wap_by_year
+                               else round(withheld_real + obs_total, 2))
 
-        refund_info = estimate_roc_refund(gross, withheld_real, roc_pct, base_rate=_rate / 100.0)
-        method = f'ROC {roc_pct:.0f}%'
-        by_year = False
-        refund_by_year = None
-        if len(years_wh) > 1:
-            rby = estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker,
-                                               base_rate=_rate / 100.0, roc_fallback_pct=roc_pct)
-            rby_total = (rby or {}).get('total')
-            if rby_total:
-                # Tarjetas y tabla anual deben sumar igual: el total sale del ROC de cada
-                # año, no del agregado (mismo criterio que el bloque original en app.py).
-                refund_info = rby_total
-                method = 'ROC por año'
-                by_year = True
-                refund_by_year = rby
+        r = _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, _rate)
+        refund_info = r
+        method = r['method']
+        by_year = r['by_year']
+        refund_by_year = r['refund_by_year']
 
-        refund_estimated = refund_info['refund']
+        refund_total = refund_info['refund']
+        # Lo ya devuelto se resta UNA vez, aquí: el total se midió contra la retención al
+        # cobro, que no lo descuenta. El saldo (`withheld_real`) sí lo descontó, por eso lo que
+        # se le resta es la adicional, no el total.
+        refund_estimated = max(0.0, round(refund_total - obs_total, 2))
+        refund_pending = refund_estimated
+        refund_pct = (round(refund_estimated / withheld_real * 100.0, 1)
+                      if withheld_real > 0 else 0.0)
         net_estimated = round(withheld_real - refund_estimated, 2)
-        refund_pending = max(0.0, round(refund_estimated - obs_total, 2))
         label_short = (f'~${refund_estimated:,.0f} est. vuelve (ROC)'
                        if refund_estimated > 0.01 else '')
         label_long = (
-            f'Estimado: ~${refund_estimated:,.2f} ({refund_info["refund_pct"]:.0f}%) de lo '
-            f'retenido podría volver por la reclasificación anual del ROC (19a), con {method}. '
+            f'Estimado: ~${refund_estimated:,.2f} ({refund_pct:.0f}%) de lo retenido podría '
+            f'volver por la reclasificación anual del ROC (cierre fiscal del fondo o avisos '
+            f'19a), con {method}. '
             f'No es efectivo ya recibido — es una proyección; lo definitivo lo fija tu 1042-S.'
             if refund_estimated > 0.01 else
             'Con el % ROC de este fondo, la reclasificación anual no reduce la retención real.'
@@ -5497,14 +5529,19 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             'rate_declared': True,
             'roc_pct_used': roc_pct, 'roc_source': _roc_src,
             'withheld_real': round(withheld_real, 2),
+            'withheld_at_payment': withheld_at_payment,
             'fair_withholding': refund_info['fair_withholding'],
-            'refund_estimated': refund_estimated, 'refund_pct': refund_info['refund_pct'],
+            'refund_total_estimated': refund_total,
+            'refund_estimated': refund_estimated, 'refund_pct': refund_pct,
             'net_estimated': net_estimated,
             'refund_observed': obs_total, 'refund_pending': refund_pending,
             'by_year': by_year, 'withheld_by_year': dict(withheld_by_year),
+            'withheld_at_payment_by_year': dict(wap_by_year),
             'refund_observed_by_year': dict(obs_by_year),
             # Desglose año a año (dict {año: {fair_withholding, refund, refund_pct,
-            # roc_pct_usado}} + 'total'), tal cual lo devuelve estimate_roc_refund_by_year —
+            # roc_pct_usado, roc_fuente}} + 'total'), tal cual lo devuelve
+            # estimate_roc_refund_by_year: `refund` es la devolución TOTAL del año contra su
+            # retención al cobro, y `roc_fuente` dice si su % es cierre fiscal o estimación —
             # None si no hay >1 año con retención. Se guarda para que la tabla anual del paso
             # "Impuesto NRA" LEA este objeto en vez de recalcularlo (Regla 3).
             'refund_by_year': refund_by_year,
@@ -5634,6 +5671,35 @@ def withheld_tax_total(history_df) -> float:
             continue
         signed += float(amt)
     return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
+
+
+def _withheld_on_reinvested(history_df) -> float:
+    """Retención NRA de las distribuciones REINVERTIDAS (≥0): la de las filas de impuesto
+    fechadas el mismo día que una fila fuente 'Reinvest Dividend' del mismo historial.
+
+    La compra DRIP ya es neta de esa retención, así que el efectivo líquido no debe
+    descontarla otra vez. Se atribuye por fecha porque Schwab fecha la 'NRA Tax Adj' el día de
+    su distribución: en los CSV reales ninguna retención cae el mismo día que una distribución
+    en efectivo y otra reinvertida. Una retención sin distribución ese día no se atribuye aquí
+    y se sigue descontando del efectivo. Mismo neteo por signo que `withheld_tax_total`.
+    """
+    if history_df is None or len(history_df) == 0 or not {'Action', 'Date'} <= set(history_df.columns):
+        return 0.0
+    accion = history_df['Action'].astype(str).str.lower()
+    fechas = pd.to_datetime(history_df['Date'], errors='coerce').dt.normalize()
+    es_fuente_drip = (accion.str.contains('reinvest|reinversión|drip')
+                      & accion.str.contains('dividend|dividendo')
+                      & ~accion.map(_is_tax_row_action))
+    dias_drip = set(fechas[es_fuente_drip].dropna())
+    signed = 0.0
+    for (_, row), dia in zip(history_df.iterrows(), fechas):
+        if dia not in dias_drip or not _is_nra_withholding_action(row.get('Action', '')):
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        signed += float(amt)
+    return round(max(0.0, -signed), 2)
 
 
 def withheld_tax_total_by_year(history_df) -> dict:
@@ -6860,6 +6926,19 @@ def build_yieldmax_total_return_series(tickers: list, start: str = None) -> pd.D
 TASA_TOLERANCIA_PP = 2.0
 NRA_TECHO_ESTATUTARIO = 30.0   # techo de retención NRA sobre dividendos; una tasa aplicada por encima es imposible
 
+_TASAS_LEGALES_NRA = tuple(sorted({float(r) for r, _ in NRA_COUNTRY_RATES.values()} | {NRA_TECHO_ESTATUTARIO}))
+
+
+def broker_withholding_rate_pct(diag: dict):
+    """Tasa del bróker sin saber el país: la tasa legal más cercana a la MÁXIMA tasa aplicada
+    por año. Un año con el escudo ROC aplicado al cobro (IB 2025) retiene por debajo de su tasa;
+    el año sin escudo la revela. None si no hay años medibles."""
+    por_anio = (diag or {}).get('by_year') or {}
+    if not por_anio:
+        return None
+    maxima = max(por_anio.values())
+    return min(_TASAS_LEGALES_NRA, key=lambda r: abs(r - maxima))
+
 
 def applied_withholding_rate(stats: dict) -> dict:
     """Tasa de retención que el bróker APLICÓ de verdad, medida sobre los números del CSV.
@@ -6935,25 +7014,28 @@ def applied_withholding_rate(stats: dict) -> dict:
     return {'applied_pct': applied, 'gross': gross_total,
             'withheld_at_payment': wh_total, 'by_year': by_year,
             'years': sorted(by_year), 'implausible': implausible,
-            'n_tax_rows': n_tax_rows}
+            'n_tax_rows': n_tax_rows,
+            'withheld_at_payment_by_year': dict(wh_by_year)}
 
 
-def _roc_refund_recuperable(diag: dict, stats: dict) -> dict:
+def _roc_refund_recuperable(diag: dict, stats: dict, ticker=None) -> dict:
     """El ROC recuperable — la parte de lo retenido AL COBRO que vuelve sola cuando el bróker
     reclasifica la distribución como Retorno de Capital — se MIDE sin saber el país.
 
-    La fórmula usa la tasa OBSERVADA en el CSV (`applied`) y el escudo del ROC 19a; `entitled`
-    (la tasa CON DERECHO, dato de tratado) NO aparece. Ese dato solo entra en `gap_w8ben`, que
-    es el otro carril (Regla 4): uno vuelve solo, el otro se reclama con 1040-NR.
+    La tasa que se usa NO es la aplicada por año (mezclaría escudos de años con reclasificación
+    distinta — R2): es `broker_withholding_rate_pct(diag)`, la tasa LEGAL más cercana a la
+    máxima aplicada por año. `entitled` (la tasa CON DERECHO, dato de tratado) NO aparece acá.
+    Ese dato solo entra en `gap_w8ben`, que es el otro carril (Regla 4): uno vuelve solo, el
+    otro se reclama con 1040-NR.
 
     Aplica los MISMOS guards de datos que `build_withholding_diagnosis`, en el mismo orden:
     `applied is None` → nada; `withheld_at_payment <= 0.01` → nada; `implausible` → nada (guard
     del #92/#94: los reversos de split de IB dan tasas imposibles y sin él la casilla 9 saldría
-    inflada); `gross <= 0` → nada.
+    inflada); `gross <= 0` → nada; sin tasa de bróker medible → nada.
 
     Devuelve `{}` cuando no hay nada medible; si no, un dict con `refund_roc`, `roc_pct_usado`,
-    y los internos `justa_a_la_aplicada` / `escudo` / `gross` que el camino con país reutiliza
-    para el `gap_w8ben` — una sola implementación de la fórmula del escudo (Regla 3).
+    y los internos `justa_a_la_aplicada` / `tasa_broker` / `gross` que el camino con país
+    reutiliza para el `gap_w8ben` — una sola implementación de la fórmula (Regla 3).
     """
     applied = diag.get('applied_pct')
     if applied is None:
@@ -6967,18 +7049,25 @@ def _roc_refund_recuperable(diag: dict, stats: dict) -> dict:
     if gross <= 0:
         return {}
 
-    # Escudo ROC: parte de lo retenido corresponde a distribuciones que se reclasifican y deja
-    # de ser exigible. Se mide a la tasa APLICADA — es la que produjo esa retención. Sin dato de
-    # ROC (ETF de crecimiento, fondo sin avisos 19a) el escudo es CERO, no "desconocido": no hay
-    # reclasificación que esperar.
-    roc_pct = (stats or {}).get('roc_percent')
-    escudo = 1.0 - min(max(float(roc_pct), 0.0), 100.0) / 100.0 if roc_pct is not None else 1.0
-    justa_a_la_aplicada = gross * (applied / 100.0) * escudo
+    R = broker_withholding_rate_pct(diag)
+    if R is None:
+        return {}
+
+    # ROC realizado del holder, saneado igual que `build_tax_summary`: un ROC NEGATIVO no es
+    # un hecho fiscal (síntoma de traspaso con costo base pero sin importe en el CSV), se
+    # rotula «sin dato». Para el cálculo, sin dato cuenta como 0 (escudo completo, como hoy).
+    roc = (stats or {}).get('roc_percent')
+    if roc is not None and roc < 0:
+        roc = None
+
+    r = _refund_total_al_cobro(gross, (stats or {}).get('dividends_gross_by_year') or {},
+                               diag.get('withheld_at_payment_by_year') or {},
+                               roc or 0.0, ticker, R)
     return {
-        'refund_roc': round(max(0.0, wap - justa_a_la_aplicada), 2),
-        'roc_pct_usado': float(roc_pct) if roc_pct is not None else 0.0,
-        'justa_a_la_aplicada': justa_a_la_aplicada,
-        'escudo': escudo,
+        'refund_roc': round(r['refund'], 2),
+        'roc_pct_usado': float(roc) if roc is not None else 0.0,
+        'justa_a_la_aplicada': r['fair_withholding'],
+        'tasa_broker': R,
         'gross': gross,
     }
 
@@ -7025,7 +7114,7 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
         # OBSERVADA en el CSV y el escudo del ROC 19a — `entitled` no aparece, así que el gate
         # de país no le aplica. `gap_w8ben` se queda en 0.0 porque ESE sí es dato de tratado y
         # no se puede medir sin residencia (Regla 4: dos carriles, remedios distintos).
-        roc = _roc_refund_recuperable(diag, stats)
+        roc = _roc_refund_recuperable(diag, stats, ticker=ticker)
         if roc:
             out['refund_roc'] = roc['refund_roc']
             out['roc_pct_usado'] = roc['roc_pct_usado']
@@ -7064,14 +7153,15 @@ def build_withholding_diagnosis(stats: dict, ticker: str, entitled_pct=None,
 
     # `refund_roc` sale del helper único (Regla 3), el mismo que alimenta la rama `sin_declarar`.
     # El `gap_w8ben` es el otro carril y sí necesita la tasa CON DERECHO: se calcula aquí
-    # reutilizando el escudo/bruto/`justa_a_la_aplicada` que el helper ya devolvió, sin volver a
-    # implementar la fórmula del escudo. Sin dato de ROC el escudo es 1.0 (todo el exceso sobre
-    # la tasa con derecho es gap de tratado).
-    roc = _roc_refund_recuperable(diag, stats)
+    # reutilizando la `justa_a_la_aplicada` que el helper ya devolvió, sin volver a implementar
+    # la fórmula — la retención justa es LINEAL en la tasa, así que basta reescalar de la tasa
+    # del bróker a la tasa con derecho.
+    roc = _roc_refund_recuperable(diag, stats, ticker=ticker)
     if roc:
         out['refund_roc'] = roc['refund_roc']
         out['roc_pct_usado'] = roc['roc_pct_usado']
-        justa_con_derecho = roc['gross'] * (entitled / 100.0) * roc['escudo']
+        justa_con_derecho = (roc['justa_a_la_aplicada'] * entitled / roc['tasa_broker']
+                             if roc['tasa_broker'] else 0.0)
         out['gap_w8ben'] = round(max(0.0, roc['justa_a_la_aplicada'] - justa_con_derecho), 2)
 
     if abs(exceso) <= holgura:

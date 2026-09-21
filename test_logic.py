@@ -71,6 +71,32 @@ IB_ACTIVITY_STATEMENT = (
     b"Dividends,Data,USD,2024-01-20,MSFT(US123) Cash Dividend USD 0.75 per Share,75.00\n"
 )
 
+# Los mismos eventos por las dos rutas de IB. Las filas "Total" van a propósito: si llegaran
+# a normalize_csv como datos, duplicarían el bruto y la retención.
+IB_AS_CON_RETENCION = (
+    b"Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,"
+    b"Quantity,T. Price,Proceeds,Comm/Fee\n"
+    b'Trades,Data,Order,Stocks,USD,SCHD,"2024-01-02, 09:30:00",10,100.00,-1000.00,-1.0\n'
+    b"Dividends,Header,Currency,Date,Description,Amount\n"
+    b"Dividends,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share (Ordinary Dividend),6.10\n"
+    b"Dividends,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share (Ordinary Dividend),2.50\n"
+    b"Dividends,Data,Total,,,8.60\n"
+    b"Withholding Tax,Header,Currency,Date,Description,Amount,Code\n"
+    b"Withholding Tax,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share - US Tax,-1.83,\n"
+    b"Withholding Tax,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share - US Tax,-0.75,\n"
+    b"Withholding Tax,Data,Total,,,-2.58,\n"
+)
+
+IB_TH_MISMOS_EVENTOS = (
+    b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
+    b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+    b"Transaction History,Data,2024-01-02,U123,SCHD Buy,Buy,SCHD,10,100.00,USD,-1000.00,-1.0,-1001.00\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,6.10,-,6.10\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-1.83,-,-1.83\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,2.50,-,2.50\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-0.75,-,-0.75\n"
+)
+
 
 # ── detect_broker ──────────────────────────────────────────────────────────────
 
@@ -154,8 +180,51 @@ def test_ib_activity_statement_parsed():
 
 def test_ib_activity_statement_dividend_present():
     df, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
-    if "Action" in df.columns:
-        assert "Dividend" in df["Action"].values or len(df) > 0
+    assert "Dividend" in df["Action"].values
+
+
+def test_ib_activity_statement_normalizado_conserva_el_dividendo():
+    """I1 (auditoría 2026-09-17). Trades trae «fecha, hora» y Dividends solo la fecha. Con las
+    dos formas en la misma columna, normalize_csv infería el formato de la primera fila y
+    descartaba el dividendo como NaT: los $75 desaparecían del bruto sin error ni aviso.
+    El test de arriba no lo veía porque mira el df crudo, antes de normalizar."""
+    raw, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
+    df = logic.normalize_csv(raw.copy())
+    assert len(df) == len(raw) == 2
+    fechas = {a: d.strftime("%Y-%m-%d") for a, d in zip(df["Action"], df["Date"])}
+    assert fechas == {"Buy": "2024-01-15", "Dividend": "2024-01-20"}
+    assert logic.build_dividend_tax_totals(df)["gross"] == pytest.approx(75.0)
+
+
+def test_ib_activity_statement_lee_la_retencion_como_transaction_history():
+    """I2 (auditoría 2026-09-17). parse_ibkr_csv leía solo Trades y Dividends: la sección
+    Withholding Tax del Activity Statement se ignoraba y la retención salía en $0, con el neto
+    igual al bruto. Los mismos eventos entrando por Transaction History (ruta validada contra el
+    CSV real de IB) tienen que dar el mismo objeto fiscal, por ticker como lo lee
+    analyze_portfolio. La cifra absoluta va aparte: la igualdad sola pasaría si las dos rutas se
+    rompieran igual."""
+    def _fiscal_schd(csv):
+        raw, _ = logic.load_and_detect_csv(FakeFile(csv))
+        df = logic.normalize_csv(raw.copy())
+        schd = df[df["Ticker"] == "SCHD"]
+        return logic.build_dividend_tax_totals(schd), logic.withheld_tax_total(schd), len(df)
+
+    as_tot, as_ret, as_filas = _fiscal_schd(IB_AS_CON_RETENCION)
+    th_tot, th_ret, th_filas = _fiscal_schd(IB_TH_MISMOS_EVENTOS)
+
+    assert as_filas == th_filas == 5
+
+    for k in ("gross", "withheld", "net"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    for k in ("gross_by_year", "withheld_by_year", "net_by_year"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    assert as_ret == pytest.approx(th_ret)
+
+    assert as_tot["gross"] == pytest.approx(8.60)
+    assert as_tot["withheld"] == pytest.approx(2.58)
+    assert as_tot["net"] == pytest.approx(6.02)
+    assert as_tot["withheld_by_year"] == pytest.approx({2024: 1.83, 2025: 0.75})
+    assert as_ret == pytest.approx(2.58)
 
 
 # ── parse_schwab_csv ───────────────────────────────────────────────────────────
@@ -412,6 +481,70 @@ def test_ib_negative_dividend_corrections_reduce_total(monkeypatch):
     )
 
 
+# ── F5 — una sola fecha de valoración (auditoría 2026-09-18) ───────────────────────
+#
+# `unrealized.market_value` usaba el último cierre CON DATO (`_closes.index[-1]`), pero
+# `holding_days_ponderado` se anclaba al reloj de HOY (`ultimo_dia`/`pd.Timestamp.today()`
+# vía `today=None`) o a la última fila del CSV — dos fechas distintas para el mismo
+# tramo/tenencia. El fix pasa `today` explícito = la fecha del cierre que ya se usa para
+# `market_value`, así que tenencia y valor de mercado miden contra la MISMA fecha.
+
+def test_f5_tenencia_cuenta_hasta_la_fecha_de_valoracion():
+    """Unitario sobre `build_capital_gains` (misma forma de `ticker_df` que
+    `test_ganancias_capital.py::test_corte_de_dos_anios_por_un_dia_a_cada_lado`:
+    Date/Action/Symbol/Quantity/Price/Amount). Compra el 2024-01-01; con
+    `today=2026-01-10` (740 días desde la compra) el tramo cruza a `ge_2y`. Sin
+    `today` (None), el motor cae a la última fila del CSV (2025-12-01, 700 días) y
+    sigue en `lt_2y` — confirma que `today` es lo que decide, no un reloj interno
+    distinto."""
+    df = pd.DataFrame([
+        ('2024-01-01', 'Buy', 'AAA', 100, 10.00, -1000.00),
+        ('2025-12-01', 'Dividend', 'AAA', 0, 0.0, 1.00),   # última fila del CSV
+    ], columns=['Date', 'Action', 'Symbol', 'Quantity', 'Price', 'Amount'])
+
+    con_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today='2026-01-10')
+    u = con_fecha['unrealized']
+    assert u['holding_days_ponderado'] == 740
+    assert u['tramo'] == 'ge_2y'
+
+    sin_fecha = logic.build_capital_gains(df, 'AAA', market_price=20.00, today=None)
+    u2 = sin_fecha['unrealized']
+    assert u2['holding_days_ponderado'] == 700
+    assert u2['tramo'] == 'lt_2y'
+
+
+def test_f5_analyze_portfolio_pasa_la_fecha_del_ultimo_cierre(monkeypatch):
+    """`fetch_market_data` trae cierres hasta 2026-01-09 y una barra MÁS RECIENTE
+    (2026-01-12) sin dato (`Close=NaN`, fin de semana / feed incompleto). `_closes.dropna()`
+    descarta esa barra, así que la fecha de VALORACIÓN real es 2026-01-09 — la misma que ya
+    fija `current_price`/`market_value`. `build_capital_gains` debe recibir exactamente esa
+    fecha por `today`, y el dict del ticker debe publicarla en `valuation_date`."""
+    df = _roc_norm_df([("2024-01-01", "Buy", "MSTY", 100, -1000.0)])
+
+    def mock_fetch(ticker, start_date):
+        idx = pd.DatetimeIndex(["2026-01-09", "2026-01-12"])
+        data = pd.DataFrame(
+            {"Close": [50.0, float("nan")], "Dividends": [0.0, 0.0],
+             "Stock Splits": [0.0, 0.0]}, index=idx)
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+
+    capturado = {}
+    original_bcg = logic.build_capital_gains
+
+    def _spy(*args, **kwargs):
+        capturado["today"] = kwargs.get("today")
+        return original_bcg(*args, **kwargs)
+
+    monkeypatch.setattr(logic, "build_capital_gains", _spy)
+
+    results = logic.analyze_portfolio(df, version="TEST_F5")
+    s = results["MSTY"]
+    assert s["valuation_date"] == "2026-01-09"
+    assert capturado["today"] == pd.Timestamp("2026-01-09")
+
+
 # ── Lógica de negocio existente (CONY ground truth) ───────────────────────────
 
 def test_cony_portfolio_analysis(monkeypatch):
@@ -508,6 +641,8 @@ def test_roc_estimated_from_19a_when_no_basis(monkeypatch):
     # 19a controlado: el pago del 2024-10-01 fue 90% ROC
     monkeypatch.setattr(logic, "load_roc_19a", lambda: {
         "MSTY": {"weighted_pct": 90.0, "per_distribution": [{"date": "2024-10-01", "roc_pct": 90.0}]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     results = logic.analyze_portfolio(df, version="TEST_ROC_19A")  # sin ib_cost_basis_map
     s = results["MSTY"]
     assert s.get("ib_cost_basis") is None
@@ -545,6 +680,87 @@ def test_deep_fix_keeps_real_cash_roc_via_19a(monkeypatch):
     assert s["roc_accumulated"] != pytest.approx(400.0, abs=1.0)
 
 
+_ROC_80 = lambda: {"MSTY": {"weighted_pct": 80.0,
+                            "per_distribution": [{"date": "2024-10-01", "roc_pct": 80.0}]}}
+
+
+def test_roc_19a_no_cambia_por_reinvertir(monkeypatch):
+    """F1 (auditoría 2026-09-17). El % del 19a es de la distribución BRUTA, y reinvertirla no
+    la cambia. La rama DRIP tomaba la compra de acciones (el neto tras la retención) como si
+    fuera la distribución: con bruto $100, retención $30 y 80% de ROC daba $56 en vez de $80,
+    y la base ajustada $1,014 en vez de $990 ($1,070 aportados − $80)."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    compra = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+    efectivo = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+    ])
+    drip = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    s_ef = logic.analyze_portfolio(efectivo)["MSTY"]
+    s_dr = logic.analyze_portfolio(drip)["MSTY"]
+
+    assert s_ef["roc_source"] == s_dr["roc_source"] == "19a"
+    assert s_dr["roc_accumulated"] == pytest.approx(s_ef["roc_accumulated"])
+    assert s_dr["roc_accumulated"] == pytest.approx(80.0)
+    u = s_dr["capital_gains"]["unrealized"]
+    assert u["basis"] == pytest.approx(1070.0)
+    assert u["basis_roc_adjusted"] == pytest.approx(990.0)
+
+
+def test_roc_19a_se_aplica_al_bruto_del_objeto_fiscal_ib(monkeypatch):
+    """F1, convención IB. La base del ROC se reconstruía aparte del objeto fiscal: contaba como
+    distribución todo monto positivo con «dividend» en el Action —también el reverso de una
+    retención— e ignoraba las reversas de dividendo. En el CSV real de IB eso llevó la base de
+    MSTY a $9,778.33 contra $7,224.59 de bruto reconciliado, y el ROC ($7,773.87) por encima
+    del bruto entero. Aquí: un pago que IB revierte un día y re-emite al siguiente (el día de
+    la reversa queda en negativo y tiene que restar), y una retención revertida."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY 2024 (0%, roc_ici.yaml) pisa el año.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-08", "Dividend", "MSTY", 0, -100.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, 30.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-09", "Dividend", "MSTY", 0, 100.0),
+    ])
+    s = logic.analyze_portfolio(df)["MSTY"]
+
+    assert s["roc_source"] == "19a"
+    assert s["dividends_gross_total"] == pytest.approx(100.0)
+    assert s["roc_accumulated"] == pytest.approx(80.0)
+
+
+def test_roc_19a_nunca_supera_el_bruto_en_el_caso_real_ib():
+    """Ancla externa de F1: el bruto de `ib_1` está reconciliado contra el extracto de IB. El ROC
+    es una parte de la distribución, así que no puede superarlo, y con la ruta 19a es
+    exactamente su % aplicado a ese bruto."""
+    from conftest import frozen_price_cache
+    df = _load_real_ib_1()
+    with frozen_price_cache():
+        res = logic.analyze_portfolio(df)
+    fondos_19a = {t: s for t, s in res.items() if s.get("roc_source") == "19a"}
+    assert {"MSTY", "CONY", "TSLY", "NVDY"} <= set(fondos_19a)
+    for t, s in fondos_19a.items():
+        bruto = s["dividends_gross_total"]
+        assert s["roc_accumulated"] <= bruto + 0.01, t
+        # roc_percent se publica redondeado a 2 decimales: ±0.005 pp sobre el bruto.
+        redondeo = bruto * 0.005 / 100 + 0.01
+        assert s["roc_accumulated"] == pytest.approx(bruto * s["roc_percent"] / 100, abs=redondeo), t
+
+
 def test_roc_none_when_no_basis_provided(monkeypatch):
     """Sin ib_cost_basis_map los campos ROC son None."""
     csv = (
@@ -570,6 +786,71 @@ def test_roc_none_when_no_basis_provided(monkeypatch):
     assert s.get("ib_cost_basis") is None
     assert s.get("roc_accumulated") is None
     assert s.get("roc_percent") is None
+
+
+def _schwab_np(monkeypatch, filas):
+    from ui.adapters import cashflow_data
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(_roc_norm_df(filas))["MSTY"]
+    return s, cashflow_data(s, "MSTY")["RESULTADO"]
+
+
+def test_net_profit_no_resta_la_retencion_de_lo_reinvertido(monkeypatch):
+    """F2 (auditoría 2026-09-17). La compra DRIP ya es neta de retención: sus acciones están en
+    `market_value`. Restar esa retención del efectivo (que es $0) la descontaba otra vez:
+    bruto $100, retención $30, DRIP $70 -> net_profit $40 en lugar de $70, mientras cashflow
+    mostraba $70 para la misma posición."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["market_value"] == pytest.approx(1070.0)
+    assert s["net_profit"] == pytest.approx(70.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
+def test_net_profit_resta_solo_la_retencion_de_lo_cobrado_en_efectivo(monkeypatch):
+    """F2, caso mixto: una distribución cobrada en efectivo y otra reinvertida, cada una con su
+    retención. Solo la del efectivo sale del efectivo: 1070 + (100 − 30) − 1000 = 140. Restar
+    las dos da 110; no restar ninguna, 170."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-11-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["withheld_tax_total"] == pytest.approx(60.0)
+    assert s["net_profit"] == pytest.approx(140.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
+_COMPRA_MSTY = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+
+
+@pytest.mark.parametrize("filas", [
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0)],
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+     ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0)],
+], ids=["efectivo", "drip"])
+def test_salud_nav_publica_el_mismo_retorno_que_roi_y_cashflow(monkeypatch, filas):
+    """F3 (auditoría 2026-09-17). Salud NAV recalculaba el retorno con
+    `dividends_collected_cash`, que en Schwab es BRUTO: bruto $100 y retención $30 daban 10%
+    mientras ROI y cashflow decían 7%. Las tres vistas del mismo retorno tienen que coincidir,
+    cobrado en efectivo o reinvertido."""
+    from ui.adapters import salud_nav_data
+    s, resultado_cashflow = _schwab_np(monkeypatch, filas)
+    tr = salud_nav_data("MSTY", s)["total_return_pct"]
+    assert tr == pytest.approx(7.0)
+    assert tr == pytest.approx(s["roi_percent"])
+    assert tr == pytest.approx(resultado_cashflow / s["pocket_investment"] * 100)
 
 
 # ── Regresión: parsing numérico US vs Europeo (BUG clean_val) ───────────────
@@ -771,6 +1052,58 @@ def test_sortino_ratio_guards():
     assert logic._sortino_ratio(pd.Series([0.01]), 0.0) is None              # <2 datos
 
 
+# ── Drawdown sobre riqueza unitizada (TWR) — C·5/F4 ─────────────────────────────
+
+def test_f4_drawdown_parte_de_la_riqueza_inicial():
+    """Riqueza 1.0 -> 0.5 (-50%) -> 0.55 (+10%): el mínimo de la serie de drawdown
+    debe ser -50.0, medido desde la riqueza inicial de 1.0 (el primer pico)."""
+    mn, serie = logic._drawdown_twr([-0.5, 0.1])
+    assert mn == pytest.approx(-50.0)
+    assert len(serie) == 2
+
+
+def test_f4_drawdown_es_desde_el_pico_corriente():
+    """Riqueza 1 -> 0.5 -> 2.0 -> 1.5: el pico corriente en el último tramo es 2.0
+    (no el pico global inicial de 1.0), así que la caída final es -25%, pero el
+    MÍNIMO de toda la serie sigue siendo -50% (el primer tramo). Con pico global fijo
+    en 1.0 el resultado sería -75% en el último punto (1.5 vs 1.0*2.0 mal referenciado)."""
+    mn, serie = logic._drawdown_twr([-0.5, 3.0, -0.25])
+    assert mn == pytest.approx(-50.0)
+    assert serie.iloc[-1] == pytest.approx(-25.0)
+
+
+def test_f4_venta_a_precio_constante_no_es_caida(monkeypatch):
+    """Vender a precio constante no debe leerse como una caída de riqueza: antes del fix,
+    el drawdown se medía sobre 'User Total Value' (valor absoluto de la cartera), así que
+    una venta que reduce el valor de mercado (sin que el precio se mueva) contaba como
+    drawdown falso. Sobre la riqueza unitizada (TWR) el resultado debe ser 0.0."""
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+        b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2025-01-01,U123,Buy SCHB,Buy,SCHB,10,10.00,USD,-100.00,-1.0,-101.00\n"
+        b"Transaction History,Data,2025-01-20,U123,Sell SCHB,Sell,SCHB,-5,10.00,USD,50.00,-1.0,49.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    idx = pd.date_range("2025-01-01", "2025-02-15", freq="D")  # 46 días, precio constante
+    def mock_fetch(ticker, start_date):
+        data = pd.DataFrame(
+            {"Close": [10.0] * len(idx), "Dividends": [0.0] * len(idx),
+             "Stock Splits": [0.0] * len(idx)},
+            index=idx,
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+    results = logic.analyze_portfolio(df_clean, version="TEST_DD_VENTA")
+
+    assert "SCHB" in results
+    max_dd = results["SCHB"]["max_drawdown"]
+    assert max_dd is not None, "la base debe producir una serie de drawdown (con precio constante todo el tramo, si no hay serie el test no discrimina)"
+    assert max_dd == pytest.approx(0.0, abs=1e-6)
+
+
 # ── Reconciliación desde la captura del broker (límite de export ~3-4 años) ───
 
 _RECON_CSV = (
@@ -861,21 +1194,24 @@ def test_get_yieldmax_risk_profile_shape_stable():
 def test_build_interpretation_compensated_vs_deficit():
     """YieldMax: el bloque sintetiza COMPENSADO cuando el income supera la caída, y déficit si no."""
     comp = logic.build_interpretation(
-        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000}}, 'MSTY')
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000,
+                  'net_profit': 1000}}, 'MSTY')
     txt = ' '.join(comp['lines'])
     assert comp['lines']                      # no vacío
     assert 'income' in txt and 'compensó' in txt
     assert 'retorno total +$1,000' in txt
 
     deficit = logic.build_interpretation(
-        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 1000}}, 'MSTY')
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 1000,
+                  'net_profit': -3000}}, 'MSTY')
     assert 'todavía no cubre' in ' '.join(deficit['lines'])
 
 
 def test_build_interpretation_unknown_no_fabrication():
     """Ticker fuera del YAML: solo sintetiza los números, NO inventa conocimiento."""
     out = logic.build_interpretation(
-        {'ZZZZ': {'pocket_investment': 1000, 'market_value': 1200, 'dividends_collected_cash': 50}}, 'ZZZZ')
+        {'ZZZZ': {'pocket_investment': 1000, 'market_value': 1200, 'dividends_collected_cash': 50,
+                  'net_profit': 250}}, 'ZZZZ')
     assert len(out['lines']) == 1
     assert 'retorno total' in out['lines'][0].lower()
 
@@ -893,9 +1229,12 @@ def test_knowledge_and_interpretation_have_no_buy_sell_language():
                 assert not forbidden.search(val), f"{tk}.{field} contiene lenguaje de compra/venta: {val!r}"
     # 2) Líneas generadas para varios escenarios
     scenarios = {
-        'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000},
-        'XLK':  {'pocket_investment': 2000,  'market_value': 3500, 'dividends_collected_cash': 20},
-        'NVDL': {'pocket_investment': 1000,  'market_value': 1100, 'dividends_collected_cash': 0},
+        'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000,
+                 'net_profit': 1000},
+        'XLK':  {'pocket_investment': 2000,  'market_value': 3500, 'dividends_collected_cash': 20,
+                 'net_profit': 1520},
+        'NVDL': {'pocket_investment': 1000,  'market_value': 1100, 'dividends_collected_cash': 0,
+                 'net_profit': 100},
     }
     for tk, s in scenarios.items():
         for ln in logic.build_interpretation({tk: s}, tk)['lines']:
@@ -2535,6 +2874,8 @@ def test_estimate_roc_refund_by_year_uses_fallback_for_year_without_19a(monkeypa
     holder); el año con aviso usa el promedio de ESE año."""
     monkeypatch.setattr(logic, "load_roc_19a", lambda: {
         "MSTY": {"per_distribution": [{"date": "2025-03-01", "roc_pct": 80.0}]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     gross_by_year = {2024: 500.0, 2025: 500.0}
     withheld_by_year = {2024: 150.0, 2025: 150.0}
     result = logic.estimate_roc_refund_by_year(
@@ -2551,10 +2892,217 @@ def test_estimate_roc_refund_by_year_different_roc_different_refund(monkeypatch)
             {"date": "2024-06-01", "roc_pct": 10.0},
             {"date": "2025-06-01", "roc_pct": 90.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     gross_by_year = {2024: 1000.0, 2025: 1000.0}
     withheld_by_year = {2024: 300.0, 2025: 300.0}
     result = logic.estimate_roc_refund_by_year(gross_by_year, withheld_by_year, "MSTY", base_rate=0.30)
     assert result[2024]["refund"] < result[2025]["refund"]
+
+
+# ── R1 + F6 (auditoría 2026-09-17/18): cierre fiscal por año y una sola resta de lo devuelto ──
+
+def test_refund_por_anio_el_cierre_ici_manda_sobre_el_19a(monkeypatch):
+    """R1: en un año con cierre fiscal (ICI) manda el cierre, no el promedio 19(a); en el año
+    abierto, el 19(a). Un 0% del ICI es un cero MEDIDO y también pisa. Cada año declara su
+    fuente. Forma del caso real: MSTY 2025 con 19(a) 78.4% y cierre 100% (1042-S de Daniel)."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"per_distribution": [
+        {"date": "2024-11-01", "roc_pct": 95.9},
+        {"date": "2025-03-01", "roc_pct": 70.0}, {"date": "2025-09-01", "roc_pct": 86.8},
+        {"date": "2026-03-01", "roc_pct": 60.0}]}})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"MSTY": {
+        2024: {"roc_pct": 0.0}, 2025: {"roc_pct": 100.0}}})
+    r = logic.estimate_roc_refund_by_year(
+        {2024: 100.0, 2025: 1000.0, 2026: 1000.0}, {2024: 30.0, 2025: 300.0, 2026: 300.0},
+        "MSTY", base_rate=0.30, roc_fallback_pct=50.0)
+    assert (r[2025]["roc_pct_usado"], r[2025]["roc_fuente"]) == (100.0, "cierre")
+    assert r[2025]["refund"] == pytest.approx(300.0, abs=0.01)          # todo vuelve
+    assert (r[2024]["roc_pct_usado"], r[2024]["roc_fuente"]) == (0.0, "cierre")
+    assert r[2024]["refund"] == pytest.approx(0.0, abs=0.01)            # nada vuelve
+    assert (r[2026]["roc_pct_usado"], r[2026]["roc_fuente"]) == (60.0, "estimacion")
+    assert r[2026]["refund"] == pytest.approx(300.0 - 0.30 * 1000.0 * 0.40, abs=0.01)
+    assert r["total"]["refund"] == pytest.approx(300.0 + 0.0 + 180.0, abs=0.01)
+
+
+def test_refund_por_anio_sin_cierre_ni_19a_cae_al_respaldo_declarado(monkeypatch):
+    """Un año sin cierre ni avisos usa el %ROC del holder y lo DECLARA como respaldo; sin
+    respaldo, 0% declarado como sin dato — nunca una fuente inventada."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    r = logic.estimate_roc_refund_by_year({2025: 100.0}, {2025: 30.0}, "ZZZY",
+                                          roc_fallback_pct=40.0)
+    assert (r[2025]["roc_pct_usado"], r[2025]["roc_fuente"]) == (40.0, "respaldo")
+    r0 = logic.estimate_roc_refund_by_year({2025: 100.0}, {2025: 30.0}, "ZZZY")
+    assert (r0[2025]["roc_pct_usado"], r0[2025]["roc_fuente"]) == (0.0, "sin_dato")
+
+
+def _f6_summary(monkeypatch, filas, roc19a, roc_ici):
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: roc19a)
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: roc_ici)
+    results = logic.analyze_portfolio(_roc_norm_df(filas), version="TEST_F6")
+    return logic.build_tax_summaries(
+        results, base_rate_pct=logic.NRA_DEFAULT_RATE, country="Colombia")["MSTY"]
+
+
+def test_tax_summary_no_resta_dos_veces_lo_ya_devuelto(monkeypatch):
+    """F6, caso del informe: bruto $100, retenido al cobro $30, ya devuelto $10, ROC 80%,
+    tasa 30%. Justa $6 ⇒ devolución TOTAL $24, ADICIONAL $14 (la que falta), saldo $20 y lo
+    que se queda el fisco $6. Antes: `refund_pending` = $4 (restaba los $10 dos veces)."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2025-09-01", "NRA Tax Adj", "MSTY", 0, 10.0),
+    ], {"MSTY": {"weighted_pct": 80.0,
+                 "per_distribution": [{"date": "2025-06-01", "roc_pct": 80.0}]}}, {})
+    assert ts["withheld_at_payment"] == pytest.approx(30.0, abs=0.01)   # inicial
+    assert ts["refund_observed"] == pytest.approx(10.0, abs=0.01)       # ya devuelto
+    assert ts["withheld_real"] == pytest.approx(20.0, abs=0.01)         # saldo
+    assert ts["refund_total_estimated"] == pytest.approx(24.0, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(14.0, abs=0.01)      # adicional
+    assert ts["refund_pending"] == pytest.approx(14.0, abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(6.0, abs=0.01)          # = justa
+    assert ts["net_estimated"] == pytest.approx(ts["fair_withholding"], abs=0.01)
+
+
+def test_tax_summary_el_reembolso_de_un_anio_llega_al_siguiente(monkeypatch):
+    """F6 + R1 con la forma real (IB MSTY): la retención de 2025 se devuelve entera en
+    febrero de 2026 (cierre 100%). Medida contra el SALDO, esa devolución le quitaba a 2026
+    una retención que sí se cobró: 2026 salía sin nada que devolver y el fisco se quedaba en
+    $0. Medida al cobro: total $30 + $15, ya devuelto $30, falta $15, y el fisco se queda la
+    justa de 2026 ($15)."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2026-02-15", "NRA Tax Adj", "MSTY", 0, 30.0),
+        ("2026-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2026-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+    ], {"MSTY": {"weighted_pct": 50.0,
+                 "per_distribution": [{"date": "2026-06-01", "roc_pct": 50.0}]}},
+       {"MSTY": {2025: {"roc_pct": 100.0}}})
+    assert ts["withheld_at_payment_by_year"] == {2025: 30.0, 2026: 30.0}
+    assert ts["refund_by_year"][2025]["roc_fuente"] == "cierre"
+    assert ts["refund_by_year"][2025]["refund"] == pytest.approx(30.0, abs=0.01)
+    assert ts["refund_by_year"][2026]["roc_fuente"] == "estimacion"
+    assert ts["refund_by_year"][2026]["refund"] == pytest.approx(15.0, abs=0.01)
+    assert ts["refund_total_estimated"] == pytest.approx(45.0, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(15.0, abs=0.01)
+    assert ts["withheld_real"] == pytest.approx(30.0, abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(15.0, abs=0.01)
+
+
+def test_tax_summary_devuelto_de_mas_no_da_devolucion_negativa(monkeypatch):
+    """Si el bróker ya devolvió MÁS de lo que estimamos, no falta nada por volver (cero, no
+    negativo) y el fisco se queda el saldo — no una cifra por debajo de él."""
+    ts = _f6_summary(monkeypatch, [
+        ("2025-01-02", "Buy", "MSTY", 100, -2000.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2025-09-01", "NRA Tax Adj", "MSTY", 0, 28.0),
+    ], {"MSTY": {"weighted_pct": 80.0,
+                 "per_distribution": [{"date": "2025-06-01", "roc_pct": 80.0}]}}, {})
+    assert ts["refund_total_estimated"] == pytest.approx(24.0, abs=0.01)
+    assert ts["refund_estimated"] == 0.0
+    assert ts["net_estimated"] == pytest.approx(ts["withheld_real"], abs=0.01)
+    assert ts["withheld_real"] == pytest.approx(2.0, abs=0.01)
+
+
+def test_roc_de_la_base_usa_el_cierre_en_años_cerrados(monkeypatch):
+    """R1, base fiscal: el ROC en dólares de una distribución de año cerrado sale del cierre
+    (ICI), no del 19(a) del día; en el año abierto, del 19(a). Un 0% de cierre anula el ROC
+    del año aunque el 19(a) dijera 95%. Y la base ajustada baja por lo que dice el cierre."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {"MSTY": {"weighted_pct": 75.0,
+        "per_distribution": [{"date": "2024-10-01", "roc_pct": 95.0},
+                             {"date": "2025-06-01", "roc_pct": 70.0},
+                             {"date": "2026-06-01", "roc_pct": 60.0}]}})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"MSTY": {
+        2024: {"roc_pct": 0.0}, 2025: {"roc_pct": 100.0}}})
+    s = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
+        ("2025-06-01", "Dividend", "MSTY", 0, 100.0),
+        ("2026-06-01", "Dividend", "MSTY", 0, 100.0),
+    ]), version="TEST_R1_BASE")["MSTY"]
+    assert s["roc_source"] == "19a"
+    assert s["roc_accumulated"] == pytest.approx(0.0 + 100.0 + 60.0, abs=0.01)
+    assert s["roc_percent"] == pytest.approx(160.0 / 300.0 * 100.0, abs=0.01)
+    u = s["capital_gains"]["unrealized"]
+    assert u["basis_roc_adjusted"] == pytest.approx(u["basis"] - 160.0, abs=0.01)
+
+
+def test_roc_fondo_solo_con_cierre_es_todo_o_nada(monkeypatch):
+    """Un fondo sin avisos 19(a) pero con cierre fiscal: si todas sus distribuciones caen en
+    años cerrados, su ROC sale del cierre; si una cae en un año abierto (sin % que la
+    catalogue), no hay ROC — un ROC a medias no es una base fiscal (Regla 2)."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"CHPY": {2025: {"roc_pct": 24.47}}})
+    ev = logic._roc_events_from_19a("CHPY", [(pd.Timestamp("2025-05-01"), 100.0),
+                                             (pd.Timestamp("2025-11-01"), 50.0)])
+    assert [r for _, r in ev] == pytest.approx([100.0 * 0.2447, 50.0 * 0.2447])
+    assert logic._roc_events_from_19a("CHPY", [(pd.Timestamp("2025-05-01"), 100.0),
+                                               (pd.Timestamp("2026-02-01"), 50.0)]) is None
+
+
+def _schwab_daniel_df():
+    import glob
+    rutas = glob.glob(os.path.join(os.path.dirname(__file__), "real_examples",
+                                   "charles_schwab_data", "daniel_zambrano", "*.csv"))
+    if not rutas:
+        pytest.skip("real_examples no montado (data privada)")
+    with open(rutas[0], "rb") as f:
+        df, _b = logic.load_and_detect_csv(FakeFile(f.read(), os.path.basename(rutas[0])))
+    return logic.normalize_csv(df)
+
+
+def test_refund_real_schwab_msty_2025_vuelve_entero_como_dice_el_1042s():
+    """Ground truth externo: el 1042-S 2025 de Daniel reporta las 21 distribuciones de MSTY
+    ($275.97) bajo el código 37 (ROC, tasa 0%), o sea que TODA la retención de 2025 ($82.81)
+    se devuelve. Con el 19(a) (78.4%) la app devolvía $66.70 de ese año."""
+    df = _schwab_daniel_df()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_SCHWAB")
+    ts = logic.build_tax_summary(res["MSTY"], "MSTY", base_rate_pct=30.0)
+    y25 = ts["refund_by_year"][2025]
+    assert y25["roc_fuente"] == "cierre"
+    assert y25["roc_pct_usado"] == pytest.approx(100.0)
+    assert y25["refund"] == pytest.approx(82.81, abs=0.01)
+    assert ts["withheld_at_payment_by_year"][2025] == pytest.approx(82.81, abs=0.01)
+
+
+def test_roc_real_schwab_msty_2025_baja_la_base_por_todo_el_bruto():
+    """Ground truth del 1042-S 2025 de Daniel: todo MSTY 2025 fue ROC (código 37), así que
+    los $275.97 de ese año bajan la base enteros; con el 19(a) bajaban $210.23. El ROC de
+    MSTY 2024 fue 0% al cierre (el 19(a) decía ~73%): no baja nada."""
+    df = _schwab_daniel_df()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_BASE_R")
+    s = res["MSTY"]
+    ev = logic._roc_events_from_19a(
+        "MSTY", [(d, float(a)) for d, a in logic._dividend_events(s["history"]).items()])
+    por_anio = {}
+    for d, r in ev:
+        por_anio[pd.Timestamp(d).year] = por_anio.get(pd.Timestamp(d).year, 0.0) + r
+    assert por_anio[2025] == pytest.approx(s["dividends_gross_by_year"][2025], abs=0.01)
+    assert por_anio[2025] == pytest.approx(275.97, abs=0.01)
+    assert por_anio[2024] == pytest.approx(0.0, abs=0.01)
+    assert s["roc_accumulated"] == pytest.approx(sum(r for _, r in ev), abs=0.01)
+
+
+def test_refund_real_ib_msty_lo_devuelto_se_resta_una_sola_vez():
+    """IB MSTY real: los $23.25 retenidos en 2025 (cierre 100%) se acreditaron en 2026. Lo
+    que falta por volver es el total menos esos $23.25 UNA vez, y lo que se queda el fisco es
+    exactamente la retención justa (ningún año topa en cero ni en lo retenido)."""
+    df = _load_real_ib_1()
+    res = logic.analyze_portfolio(df[df["Ticker"] == "MSTY"].copy(), version="TEST_R1_IB")
+    ts = logic.build_tax_summary(res["MSTY"], "MSTY", base_rate_pct=30.0)
+    assert ts["refund_observed"] == pytest.approx(23.25, abs=0.01)
+    assert ts["refund_by_year"][2025]["roc_fuente"] == "cierre"
+    assert ts["refund_by_year"][2025]["refund"] == pytest.approx(23.25, abs=0.01)
+    assert ts["withheld_at_payment"] == pytest.approx(ts["withheld_real"] + 23.25, abs=0.01)
+    assert ts["refund_estimated"] == pytest.approx(ts["refund_total_estimated"] - 23.25,
+                                                   abs=0.01)
+    assert ts["net_estimated"] == pytest.approx(ts["fair_withholding"], abs=0.02)
 
 
 # ── Objeto fiscal único `tax_summary` (Regla 3, specs/roc-nra-invariants.md) ────────────────
@@ -2580,6 +3128,8 @@ def _tax_summary_multi_year_setup(monkeypatch):
             {"date": "2024-06-01", "roc_pct": 40.0},
             {"date": "2025-06-01", "roc_pct": 80.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     return logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY")
 
 
@@ -2648,6 +3198,8 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
             {"date": "2024-06-01", "roc_pct": 40.0},
             {"date": "2025-06-01", "roc_pct": 80.0},
         ]}})
+    # 19a sintético: sin esto el cierre fiscal REAL de MSTY (roc_ici.yaml) pisa sus años.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
     results = logic.analyze_portfolio(df, version="TEST_TAX_SUMMARY_CAPITAL")
     s = results["MSTY"]
 
@@ -2832,6 +3384,73 @@ def test_ninguna_ruta_null_publica_devolucion():
         assert ts["method"] is None, kw
         assert ts["fair_withholding"] == 0.0, kw
         assert ts["by_year"] is False, kw
+
+
+# ── R2 — la casilla 9 mezcla años con tasas distintas (auditoría 2026-09-18) ────────────
+#
+# `_roc_refund_recuperable` usaba UNA tasa (la aplicada agregada) y UN escudo (el ROC del
+# holder) para todos los años: en un fondo con un año sin escudo (retención plana) y otro
+# con el escudo YA aplicado al cobro (IB reclasificó antes de emitir el CSV), esa mezcla
+# cuenta el escudo dos veces en el año que ya lo tenía. El fix mide la tasa del bróker
+# (`broker_withholding_rate_pct`, la tasa LEGAL más cercana a la máxima aplicada por año) y
+# corre `_refund_total_al_cobro` año por año — la misma función que ya usaba `build_tax_summary`.
+
+def test_r2_casilla9_por_anio_no_mezcla_tasas(monkeypatch):
+    """Caso sintético: 2 años, bruto 1000/1000. 2024 retuvo 4.30 (0.43%, escudo YA aplicado —
+    cierre ICI 100%); 2025 retuvo 300.00 (30%, sin escudo — cierre ICI 40%). ROC del holder
+    60% (no se usa: ambos años tienen cierre ICI). La fórmula vieja (una tasa/escudo para
+    todo) daba 182.62; la correcta, año por año, da 124.30 — exactamente el objeto fiscal
+    al 30%."""
+    hist = _roc_norm_df([
+        ("2024-06-14", "Cash Dividend", "ZZZZ", 0, 1000.0),
+        ("2024-06-14", "NRA Tax Adj", "ZZZZ", 0, -4.30),
+        ("2025-06-13", "Cash Dividend", "ZZZZ", 0, 1000.0),
+        ("2025-06-13", "NRA Tax Adj", "ZZZZ", 0, -300.00),
+    ])
+    s = {
+        "history": hist,
+        "dividends_gross_by_year": {2024: 1000.0, 2025: 1000.0},
+        "dividends_gross_total": 2000.0,
+        "withheld_tax_total": 304.30,
+        "total_dividends": round(2000.0 - 304.30, 2),
+        "withheld_by_year": {2024: 4.30, 2025: 300.00},
+        "tax_refund_observed_by_year": {},
+        "roc_percent": 60.0, "roc_source": "broker",
+    }
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {
+        "ZZZZ": {2024: {"roc_pct": 100.0}, 2025: {"roc_pct": 40.0}}})
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+
+    diag = logic.build_withholding_diagnosis(s, "ZZZZ", entitled_pct=None)
+    assert diag["refund_roc"] == pytest.approx(124.30, abs=0.01)
+    ts = logic.build_tax_summary(s, "ZZZZ", base_rate_pct=30.0)
+    assert ts["refund_total_estimated"] == pytest.approx(124.30, abs=0.01)
+    assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.01)
+
+
+def test_r2_tasa_del_broker_redondea_a_la_legal():
+    """Caso sintético: 1 año, bruto 1000, retenido 302.20 (30.22% aparente por redondeo de
+    centavos), ROC 50%. `broker_withholding_rate_pct` redondea la tasa observada a la legal
+    más cercana (30.0, no 30.22) y la devolución sale 152.20 (= 302.20 − 0.30·1000·0.50)."""
+    hist = _roc_norm_df([
+        ("2025-06-01", "Cash Dividend", "YYYY", 0, 1000.0),
+        ("2025-06-01", "NRA Tax Adj", "YYYY", 0, -302.20),
+    ])
+    s = {
+        "history": hist,
+        "dividends_gross_by_year": {2025: 1000.0},
+        "dividends_gross_total": 1000.0,
+        "withheld_tax_total": 302.20,
+        "total_dividends": round(1000.0 - 302.20, 2),
+        "withheld_by_year": {2025: 302.20},
+        "tax_refund_observed_by_year": {},
+        "roc_percent": 50.0, "roc_source": "broker",
+    }
+    diag = logic.applied_withholding_rate(s)
+    assert logic.broker_withholding_rate_pct(diag) == pytest.approx(30.0)
+
+    out = logic.build_withholding_diagnosis(s, "YYYY", entitled_pct=None)
+    assert out["refund_roc"] == pytest.approx(152.20, abs=0.01)
 
 
 def test_build_tax_summaries_etiqueta_el_pais(monkeypatch):
@@ -3195,45 +3814,20 @@ def test_sum_roc_credit_from_forms_int_and_str_code():
     assert len(result["per_form"]) == 2
 
 
-def test_extract_roc_credit_from_pdf_parses_mixed_forms(monkeypatch):
-    class _FakeResp:
-        text = ('{"forms": ['
-                '{"income_code": "01", "gross_income": 1, "federal_tax_withheld": 0, "withholding_credit": 0},'
-                '{"income_code": "06", "gross_income": 28, "federal_tax_withheld": 8, "withholding_credit": 8},'
-                '{"income_code": "37", "gross_income": 276, "federal_tax_withheld": 83, "withholding_credit": 83}'
-                ']}')
-
-    class _FakeModels:
-        def generate_content(self, model, contents, config):
-            return _FakeResp()
-
-    class _FakeClient:
-        def __init__(self, api_key=None):
-            self.models = _FakeModels()
-
-    from google import genai
-    monkeypatch.setattr(genai, "Client", _FakeClient)
-
-    result = logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key")
-    assert result["credit"] == pytest.approx(83.0)
-    assert result["roc_gross"] == pytest.approx(276.0)
-    assert len(result["per_form"]) == 1
+def test_analyze_portfolio_cache_caduca():
+    """N2 (auditoría de privacidad 2026-09-17): sin ttl ni max_entries, el resultado de cada
+    análisis quedaba en la memoria del proceso hasta reiniciarlo. PRIVACY.md promete que se
+    descarta en 1 hora; dentro de la sesión el resultado vive en `_vd_resultados`."""
+    info = logic.analyze_portfolio._info
+    assert info.ttl is not None, "el resultado del análisis nunca caduca"
+    assert info.ttl <= 3600
+    assert info.max_entries is not None, "el caché del análisis crece sin tope"
 
 
-def test_extract_roc_credit_from_pdf_returns_none_on_sdk_failure(monkeypatch):
-    class _FakeClient:
-        def __init__(self, api_key=None):
-            raise RuntimeError("no client")
-
-    from google import genai
-    monkeypatch.setattr(genai, "Client", _FakeClient)
-
-    assert logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key") is None
-
-
-def test_extract_roc_credit_from_pdf_none_without_bytes_or_key():
-    assert logic.extract_roc_credit_from_pdf(b"", "fake-key") is None
-    assert logic.extract_roc_credit_from_pdf(b"%PDF", "") is None
+def test_extract_roc_credit_from_pdf_retirada():
+    """Retirada el 2026-09-18 (auditoría de privacidad, S1): mandaba el 1042-S completo a
+    Gemini y no tenía consumidor vivo."""
+    assert not hasattr(logic, "extract_roc_credit_from_pdf")
 
 
 # ── Alineación de transacciones al calendario bursátil ────────────────────────
@@ -3435,8 +4029,15 @@ def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
 def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
     """Regresión de raíz: las 4 vistas de Detalle vía `AppTest` (patrón de
     `test_carga_1042s.py`) con un `skipped` en mode_a (TSLY) y otro en mode_b (SMH). El
-    criterio principal es `at.exception == []`; además, las tarjetas deben excluir a los
-    tickers `skipped` en vez de sumarlos con ceros."""
+    criterio principal es `at.exception == []`; además, los tickers `skipped` deben
+    quedar excluidos en vez de sumarse con ceros.
+
+    Adaptado (sep-2026, Portafolios v3): las tarjetas A/B que este test leía en
+    `at.markdown` («1 fondo: SCHB») fueron sustituidas por el componente
+    `ui/componentes/portafolios.html`, que viaja en un iframe (`components.html`). El
+    invariante es el mismo y ahora se verifica en el `srcdoc` del iframe — el JSON de
+    `portafolios_data` debe traer solo los tickers con datos — y en el markdown de las
+    secciones que siguen nativas."""
     results = _resultados_con_skipped(monkeypatch)
 
     script = """
@@ -3454,9 +4055,15 @@ render_portafolios(resultados)
     at.run()
     assert at.exception == [], [e.value for e in at.exception]
 
+    iframes = at.get("iframe")
+    assert len(iframes) == 1, "el componente Portafolios v3 debe dibujarse en un iframe"
+    srcdoc = iframes[0].proto.srcdoc
+    assert '"SCHB"' in srcdoc, "el grupo de crecimiento debe incluir a SCHB"
+    assert '"MSTY"' in srcdoc, "el grupo de dividendos debe incluir a MSTY"
+    assert "SMH" not in srcdoc, "SMH está skipped: no debe llegar al componente"
+    assert "TSLY" not in srcdoc, "TSLY está skipped: no debe llegar al componente"
+
     texto = "\n".join(m.value for m in at.markdown)
-    assert "1 fondo: SCHB" in texto, "la tarjeta de crecimiento debe excluir a SMH (skipped)"
-    assert "1 fondo: MSTY" in texto, "la tarjeta de dividendos debe excluir a TSLY (skipped)"
     assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"
     assert "TSLY" not in texto, "TSLY está skipped: no debe aparecer en ninguna vista de Detalle"
 
@@ -3511,3 +4118,199 @@ _render_excluidos(obtener_resultados())
 
     texto = "\n".join(m.value for m in at.markdown)
     assert "SMH" in texto and "TSLY" in texto and "ACME" in texto
+
+
+# ── C·4/E4 · el efectivo líquido publicado por el motor, no reconstruido ────────────────
+
+_REAL_EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "real_examples")
+
+
+def _e4_casos_reales():
+    """(res, ticker) de las posiciones reales de real_examples/, vía el mismo patrón que
+    `o2c_e4_oraculo.py` (validate_real_cases.discover_cases + conftest.frozen_price_cache)."""
+    import conftest
+    from validate_real_cases import FakeFile, discover_cases
+
+    out = []
+    for case in discover_cases():
+        d, m = case["dir"], case["manifest"]
+        csvp = None
+        import glob as _glob
+        candidatos = _glob.glob(os.path.join(d, m.get("csv_glob", "*.csv")))
+        inc = _glob.glob(os.path.join(d, m["income_glob"])) if m.get("income_glob") else []
+        candidatos = [c for c in candidatos if os.path.basename(c) not in
+                     {os.path.basename(i) for i in inc}]
+        if not candidatos:
+            continue
+        csvp = candidatos[0]
+        raw, _b = logic.load_and_detect_csv(FakeFile(open(csvp, "rb").read(),
+                                                       os.path.basename(csvp)))
+        df = logic.normalize_csv(raw)
+        with conftest.frozen_price_cache():
+            res = logic.analyze_portfolio(df.copy(), version="TEST_E4")
+        for t, s in sorted(res.items()):
+            if s.get("skipped"):
+                continue
+            out.append((res, t, s))
+    return out
+
+
+@pytest.mark.skipif(not os.path.isdir(_REAL_EXAMPLES_DIR), reason="sin real_examples/ (data privada)")
+def test_e4_cashflow_igual_a_net_profit_en_los_casos_reales():
+    """Las 24 posiciones reales: net_profit == cashflow RESULTADO (abs <= 0.02). Un verde de
+    CI (con skip) no sustituye la corrida local — la corrida local la escribe O3 al auditar."""
+    from ui.adapters import cashflow_data
+
+    casos = _e4_casos_reales()
+    assert casos, "no se encontraron posiciones reales analizables"
+    for _res, t, s in casos:
+        cf = cashflow_data(s, t)
+        assert abs(s["net_profit"] - cf["RESULTADO"]) <= 0.02, (
+            f"{t}: net_profit={s['net_profit']} != RESULTADO={cf['RESULTADO']}")
+
+
+@pytest.mark.skipif(not os.path.isdir(_REAL_EXAMPLES_DIR), reason="sin real_examples/ (data privada)")
+def test_e4_el_efectivo_publicado_nunca_es_negativo():
+    """`dividends_cash_net >= -0.005` en las 24 posiciones reales."""
+    casos = _e4_casos_reales()
+    assert casos, "no se encontraron posiciones reales analizables"
+    for _res, t, s in casos:
+        assert s.get("dividends_cash_net") is not None, f"{t}: falta dividends_cash_net"
+        assert s["dividends_cash_net"] >= -0.005, (
+            f"{t}: dividends_cash_net={s['dividends_cash_net']} es negativo")
+
+
+def test_e4_marca_calidad_cuando_faltan_filas_fuente_del_drip(monkeypatch):
+    """Sintético: 2 `Reinvest Shares` y 1 `Reinvest Dividend` -> drip_sin_fuente True; con
+    2 y 2, False."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+
+    con_gap = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 1.0, -50.0),   # sin su Reinvest Dividend
+    ]))["MSTY"]
+    assert con_gap["drip_sin_fuente"] is True
+
+    sin_gap = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+        ("2024-11-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
+    ]))["MSTY"]
+    assert sin_gap["drip_sin_fuente"] is False
+def test_e1_el_texto_usa_el_mismo_retorno_que_la_tarjeta():
+    """C·1/E1: `build_interpretation` publica el mismo `net_profit` que
+    `_tarjeta_retorno_total` (regla 3b) — ya no usa el bruto (`mv + inc - pk`)."""
+    stats = {"pocket_investment": 10000, "market_value": 6000,
+             "dividends_collected_cash": 5000, "net_profit": 1234}
+    # el bruto (mv + inc - pk) da 1000, deliberadamente distinto de net_profit (1234)
+    # para que el test muerda si el texto sigue leyendo la fórmula vieja
+    out = logic.build_interpretation({"MSTY": stats}, "MSTY")
+    txt = " ".join(out["lines"])
+    assert "$1,234" in txt, f"el texto no usa net_profit (1234): {txt!r}"
+    assert "$1,000" not in txt, f"el texto todavía publica el bruto (1000): {txt!r}"
+
+
+def test_e1_el_texto_usa_dividends_net_total_no_el_bruto():
+    """C·1/E1: el «Income» del texto sale de `dividends_net_total` (neto), no de
+    `dividends_collected_cash` (bruto en Schwab). Fixture con AMBOS presentes y
+    distintos — si el texto lee el bruto, este test muerde (el anterior no podía:
+    su fixture no traía `dividends_net_total`, así que el fallback daba el mismo
+    valor con o sin el bug)."""
+    stats = {"pocket_investment": 10000, "market_value": 6000,
+             "dividends_net_total": 800, "dividends_collected_cash": 5000,
+             "net_profit": 1234}
+    out = logic.build_interpretation({"MSTY": stats}, "MSTY")
+    txt = " ".join(out["lines"])
+    assert "$800" in txt, f"el texto no usa dividends_net_total (800): {txt!r}"
+    assert "$5,000" not in txt, f"el texto publica el bruto (5000) en vez del neto: {txt!r}"
+
+# ── C·3/E3 + I5 — filas "as of" descartadas en silencio ────────────────────────
+
+_ASOF_CSV = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"01/13/2026 as of 12/31/2025","Pr Yr Div Reinvest","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+    b'"06/02/2025","Cash Dividend","MSTY","YIELDMAX MSTY","","","","30.00"\n'
+    b'"12/05/2025 as of 12/04/2025","Stock Split","XLK","TECH SELECT SPDR","11","","",""\n'
+    b'"Transactions Total","","","","","","","$-10.00"\n'
+)
+
+
+def test_e3_cuenta_las_filas_as_of_descartadas():
+    """`ultimo_descarte` cuenta las filas «as of» y las desglosa por acción — sintético
+    con 3 filas «as of» (2 recuperables + 1 Stock Split que se sigue descartando)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    logic.normalize_csv(df)
+    descarte = logic.normalize_csv.ultimo_descarte
+    assert descarte["total"] == 2
+    assert descarte["por_accion"] == {"Pr Yr Div Reinvest": 1, "Stock Split": 1}
+
+
+def test_e3_manda_la_fecha_efectiva_no_la_de_registro():
+    """«01/13/2026 as of 12/31/2025» (Pr Yr Div Reinvest) entra fechada el 2025-12-31,
+    no el 2026-01-13 — el año fiscal cambia, que es el motivo de la decisión de Daniel."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    fila = df_clean[df_clean["Action"] == "Pr Yr Div Reinvest"]
+    assert len(fila) == 1
+    assert fila["Date"].iloc[0] == pd.Timestamp("2025-12-31")
+
+
+def test_e3_los_stock_split_siguen_descartados():
+    """Una fila `Stock Split ... as of ...` con `Quantity` no entra — ni su fecha se
+    restaura ni `shares_owned` se mueve con ella."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    assert "XLK" not in set(df_clean["Ticker"]), (
+        "el Stock Split «as of» debe seguir descartado (NaT), no restaurado")
+    assert logic.normalize_csv.ultimo_descarte["por_accion"].get("Stock Split") == 1
+
+
+def test_e3_paso1_no_mueve_ninguna_cifra():
+    """A/B del commit 1: sobre un fixture sintético con filas «as of» (`_ASOF_CSV`), el
+    número de filas limpias y sus valores no dependen de si el paso 2 (fecha efectiva)
+    está o no — la única fila recuperable (Cash Dividend MSTY normal) no es «as of», y
+    la única fila «as of» no-split queda con la misma cuenta total de descarte que
+    antes de que existiera el paso 2 (ver test_e3_cuenta_las_filas_as_of_descartadas)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    # la fila normal (no "as of") sigue intacta y es la única "MSTY" viva salvo la
+    # recuperada — el conteo de descarte es el oráculo de "cuántas seguían siendo NaT
+    # antes del paso 2": aquí 2 (coincide con lo medido arriba).
+    assert logic.normalize_csv.ultimo_descarte["total"] == 2
+    assert len(df_clean[df_clean["Action"] == "Cash Dividend"]) == 1
+
+
+_I5_CSV = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/01/2025","Cash In Lieu","MSTY","YIELDMAX MSTY","","","","5.00"\n'
+    b'"04/02/2025","Special Qual Div","MSTY","YIELDMAX MSTY","","","","2.52"\n'
+    b'"04/03/2025","ADR Mgmt Fee","MSTY","YIELDMAX MSTY","","","","-0.06"\n'
+    b'"04/04/2025","Wire Received","MSTY","YIELDMAX MSTY","","","","3.00"\n'
+    b'"04/05/2025","Bond Interest","","","","","","5.89"\n'
+    b'"Transactions Total","","","","","","","$-1988.65"\n'
+)
+
+
+def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama():
+    """Cash In Lieu, Special Qual Div, ADR Mgmt Fee y Wire Received quedan
+    clasificados (suman a `dividends_collected_cash`) en vez de caer SIN RAMA —
+    control: Bond Interest sigue entrando por `is_div_payout` ('interest'), sin
+    cambiar de rama."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_I5_CSV))
+    df_clean = logic.normalize_csv(df)
+    import conftest
+    with conftest.frozen_price_cache():
+        res = logic.analyze_portfolio(df_clean.copy(), version="TEST_I5")
+    s = res["MSTY"]
+    # 5.00 + 2.52 - 0.06 + 3.00 = 10.46 de las 4 acciones I5; Bond Interest (5.89) es
+    # `Ticker` vacío -> no ticker MSTY, así que no debe sumar aquí (control de rama).
+    assert s["dividends_collected_cash"] == pytest.approx(10.46, abs=0.01), (
+        f"dividends_collected_cash = {s['dividends_collected_cash']}, esperaba 10.46 "
+        "(5.00 Cash In Lieu + 2.52 Special Qual Div - 0.06 ADR Mgmt Fee + 3.00 Wire Received)")

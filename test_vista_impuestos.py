@@ -270,10 +270,11 @@ def test_regresion_roc_100_todo_recuperable_y_roc_0_nada():
     ($82.81) es toda recuperable y la «correcta» es $0; SCHB 0 % ROC retenido a la tasa
     aplicada ⇒ recuperable $0.
 
-    NOTA: sobre el CSV de transacciones real (`real_examples/charles_schwab_data/
-    daniel_zambrano`) el pipeline estima MSTY con ROC 72.9 % vía avisos 19(a), no 100 %
-    del cierre fiscal — la precedencia cierre-fiscal > 19(a) (Regla 4b) vive en `logic.py`
-    y queda fuera del alcance de esta fase. Este test fija la aritmética de los buckets,
+    NOTA: hasta el 2026-09-18 el pipeline estimaba MSTY sobre el CSV real
+    (`real_examples/charles_schwab_data/daniel_zambrano`) con el 19(a) —72.9 %— y no con el
+    100 % del cierre fiscal. Desde R1 la base del ROC usa el cierre en años cerrados
+    (`logic._roc_events_from_19a` vía `logic.roc_pct_by_year`) y el ROC del holder queda en
+    ~90 % (2025 al 100 %, 2026 aún estimado). Este test fija la aritmética de los buckets,
     que es lo que `impuestos_data` sí decide.
     """
     res = {
@@ -352,6 +353,17 @@ def test_peldano2_descuenta_roc_sin_retencion_nra_con_pais():
     assert f["gravable"] == pytest.approx(400.0, abs=0.02)
 
 
+def test_i3_sin_retencion_no_se_afirma_con_7a_ilegible():
+    """C·6/I3: un 7a que no se pudo leer no es 'sin retención' (0.01 de retenido no es
+    lo mismo que 'no se sabe'). Con `withholding_credit`/`federal_tax_withheld` en None,
+    `retenido_completo` sale False y `sin_retencion` debe ser False."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    forms = [{"income_code": "37", "gross_income": 276.0,
+              "federal_tax_withheld": None, "withholding_credit": 30.0}]
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), forms)
+    assert datos["ruta_a"]["sin_retencion"] is False
+
+
 def test_peldano2_roc_negativo_no_descuenta_y_se_declara():
     """`roc_percent` negativo (método 'broker' que no cuadra) ⇒ la fila figura «sin dato»
     (`roc_pct` None) y tributa sobre el bruto completo; el peldaño lo declara en `sin_roc`."""
@@ -414,8 +426,10 @@ def test_cruce_peldano2_schwab2_exacto():
     datos = _impuestos_demo("schwab2")
     g = datos["peldanos"]["gravable"]
     assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
-    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 126.02 -> 125.81
-    assert g["monto"] == pytest.approx(125.81, abs=0.05)
+    # ACTUALIZADO 2026-09-21 (R1+F6): 125.81 -> 63.80. NO es deriva del refresh 19a: el
+    # objeto fiscal pasa a consumir el CIERRE (ICI, casilla 3 del 1099) en los años cerrados
+    # en vez de la ESTIMACIÓN 19(a). El bruto (385.78) no se mueve — sólo el bucket gravable.
+    assert g["monto"] == pytest.approx(63.80, abs=0.05)
     assert set(g["sin_roc"]) == {"SCHB", "XLK"}
     assert (g["cubiertos"], g["total"]) == (1, 3)
 
@@ -540,6 +554,48 @@ def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     assert bundle is not None, alias
     datos = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
     assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(casilla9_esp, abs=0.05)
+
+
+def test_r2_casilla9_igual_al_objeto_fiscal_ib_real():
+    """R2 sobre el caso real IB (9 fondos, retención al cobro mezclando 2025 con escudo
+    aplicado y 2026 sin escudo): por fondo, `build_withholding_diagnosis(..., None)`
+    (sin país) coincide EXACTO con `build_tax_summary(..., base_rate_pct=30.0)` — mismo
+    helper único (Regla 3) — y la casilla 9 agregada del peldaño 4 da 801.69, la que mide
+    año por año, no los 1466.19 que mezclaba las tasas de 2025 y 2026."""
+    import demo_mode
+    if not demo_mode.demo_available():
+        pytest.skip("real_examples/ no montado")
+    bundle = demo_mode.load_demo_case("ib_1")
+    assert bundle is not None
+    res = bundle["_results"]
+
+    comparados = 0
+    for t, s in sorted(res.items()):
+        if not isinstance(s, dict) or s.get("skipped") or "error" in s:
+            continue
+        dg = logic.applied_withholding_rate(s)
+        wap = float(dg.get("withheld_at_payment") or 0)
+        if dg.get("applied_pct") is None or wap <= 0.01 or dg.get("implausible"):
+            continue
+        if not (dg.get("gross") or 0) > 0:
+            continue
+        ts = logic.build_tax_summary(s, t, base_rate_pct=30.0)
+        netted = float(ts.get("withheld_real") if ts.get("withheld_real") is not None
+                       else s.get("withheld_tax_total") or 0)
+        ya = sum(float(v or 0) for v in (s.get("tax_refund_observed_by_year") or {}).values())
+        if abs(wap - round(netted + ya, 2)) > max(0.02, 0.01 * wap):
+            continue  # no reconcilia: mismo filtro que el oráculo (r2_casilla9_casos.py)
+
+        diag = logic.build_withholding_diagnosis(s, t, None)
+        assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.05), t
+        comparados += 1
+
+    assert comparados >= 8, "muy pocos fondos reconciliaron: revisa el fixture ib_1"
+
+    datos = impuestos_data(res, logic.build_fiscal_profile(), [])
+    # ACTUALIZADO 2026-09-21: 801.69 -> 780.92. El oráculo se midió antes de `dccad80`
+    # (refresh automático de knowledge/roc_19a.yaml del 19-sep), que movió la base.
+    assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(780.92, abs=0.05)
 
 
 # ── 5. La segunda vía para declarar el país: la casilla 13b del 1042-S ─────────────────
@@ -948,13 +1004,15 @@ def test_editar_el_csv_invalida_el_cache_de_resultados():
     handler que borra `_wizard_df_clean` tiene que borrarlo también. Con la captura dentro del
     cálculo el síntoma empeora: arrastraría las posiciones de un portafolio al siguiente.
     """
-    import re
-    fuente = open("ui/carga.py", encoding="utf-8").read()
-    # El bloque de claves del handler de «editar» CSV.
-    bloque = re.search(r'for clave in \(([^)]*)\):', fuente, re.S)
-    assert bloque, "no se encontró el handler que limpia la carga"
-    assert '"_vd_resultados"' in bloque.group(1), (
+    # C·10/S1: la lista literal en el handler se reemplazó por la constante única
+    # `CLAVES_CONTEXTO_CARTERA` (una sola fuente para «editar» CSV, `demo_mode` y este
+    # test — dos copias es como este defecto entró la primera vez).
+    from ui.carga import CLAVES_CONTEXTO_CARTERA
+    assert "_vd_resultados" in CLAVES_CONTEXTO_CARTERA, (
         "el handler de editar-CSV tiene que invalidar el caché de analyze_portfolio")
+    fuente = open("ui/carga.py", encoding="utf-8").read()
+    assert "for clave in CLAVES_CONTEXTO_CARTERA:" in fuente, (
+        "no se encontró el handler que limpia la carga usando la lista única")
     # Y el de confirmar posiciones, que cambia la captura que alimenta ese mismo cálculo.
     assert 'pop("_vd_resultados", None)' in fuente, (
         "confirmar posiciones tiene que invalidar el caché: la captura entra al cálculo")

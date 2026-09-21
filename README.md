@@ -65,10 +65,14 @@ allowlist_pat = "..."
 hmac_key = "..."
 telegram_token = "..."
 telegram_chat_id = "..."
+admins = ["gdeaxx@gmail.com"]
 ```
 
 Sin la sección `[auth]`, la puerta queda en modo `apagado` (la app funciona como hoy, sin
 login). El login se lanza con `st.login("auth0")`.
+
+`admins` (opcional): sirve para dar acceso a quien no es cliente (Daniel, un diseñador);
+exige código de correo igual que todos; quitar a alguien = borrarlo de la lista.
 
 ### Probar el login real en local
 

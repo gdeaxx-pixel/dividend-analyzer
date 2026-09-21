@@ -10,12 +10,22 @@ Ningún color se escribe a mano aquí: se usan las variables CSS que inyecta `ui
 
 from __future__ import annotations
 
+import hashlib
 import os
 
 import streamlit as st
 
 import logic
 from ui import estado
+
+
+CLAVES_CONTEXTO_CARTERA = (
+    "_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker", "_wizard_csv_name",
+    "_wizard_positions", "_wizard_income_summary", "_wizard_income_df", "_wizard_income_multi",
+    "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
+    "_wizard_ocr_positions",
+    "_wizard_photo_sig",
+)
 
 
 def _clave_gemini():
@@ -150,6 +160,17 @@ def render_bloque_transacciones() -> bool:
         st.markdown(bloque_resumen("CSV cargado",
                                    f"{nombre} · {broker} · {len(tickers)} tickers"),
                     unsafe_allow_html=True)
+        _descarte = st.session_state.get("_wizard_csv_descarte")
+        if _descarte and _descarte.get("total"):
+            # E3 (spec S5 §3): toda fila "MM/DD/YYYY as of MM/DD/YYYY" que el parser de
+            # fechas no reconoce se descartaba en silencio — Stock Split, MoneyLink
+            # Transfer, Pr Yr Div Reinvest, etc. Las que SÍ se recuperan (paso 2, la
+            # fecha efectiva) no llegan aquí: esto son las que se siguen descartando.
+            _detalle = ", ".join(f"{v}× {k}" for k, v in
+                                 sorted(_descarte["por_accion"].items(),
+                                        key=lambda kv: -kv[1]))
+            st.caption(f"⚠️ {_descarte['total']} fila(s) con fecha «... as of ...» que no "
+                      f"se pudieron ubicar en el tiempo, excluidas: {_detalle}.")
         _, col = st.columns([5, 1])
         with col:
             if st.button("editar", key="_vd_edit_csv", type="tertiary",
@@ -159,10 +180,7 @@ def render_bloque_transacciones() -> bool:
                 # cuando es `None`—, así que el CSV nuevo se mostraría con las cifras del
                 # anterior. Con la captura dentro del cálculo, además arrastraría posiciones
                 # de un portafolio a otro.
-                for clave in ("_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker",
-                              "_wizard_csv_name", "_wizard_positions", "_wizard_income_summary",
-                              "_wizard_income_df", "_wizard_income_multi", "_vd_resultados",
-                              "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error"):
+                for clave in CLAVES_CONTEXTO_CARTERA:
                     st.session_state.pop(clave, None)
                 st.session_state["_wizard_pos_confirmed"] = False
                 st.session_state["_wizard_listo"] = False
@@ -195,6 +213,8 @@ def render_bloque_transacciones() -> bool:
         st.session_state["_wizard_csv_ticker_data"] = _resumen_por_ticker(limpio)
         st.session_state["_wizard_broker"] = broker
         st.session_state["_wizard_csv_name"] = archivo.name
+        st.session_state["_wizard_csv_descarte"] = getattr(
+            logic.normalize_csv, "ultimo_descarte", None)
         st.rerun()
     except Exception as error:                                    # noqa: BLE001
         st.error(f"Error procesando el archivo: {error}")
@@ -249,6 +269,13 @@ def _render_residencia_fiscal() -> None:
                 unsafe_allow_html=True)
 
 
+def _firma_fotos(fotos) -> tuple:
+    """Firma por CONTENIDO, no por (nombre, tamaño): dos capturas distintas guardadas con el
+    mismo nombre y el mismo tamaño dejaban la firma igual, el OCR no se volvía a correr y la
+    tabla seguía mostrando las posiciones de la foto anterior."""
+    return tuple(hashlib.sha256(f.getvalue()).hexdigest() for f in fotos)
+
+
 def render_bloque_posiciones() -> bool:
     """Bloque 2. Confirma acciones y costo real por ETF."""
     if st.session_state.get("_wizard_pos_confirmed"):
@@ -285,9 +312,12 @@ def render_bloque_posiciones() -> bool:
             accept_multiple_files=True, label_visibility="collapsed",
             key="_vd_fotos",
             help="Sube capturas donde se vean «Acciones/Posición» y «Base de coste / Cost "
-                 "Basis» y rellenamos la tabla por ti.")
+                 "Basis» y rellenamos la tabla por ti. "
+                 "Las imágenes se envían a Google Gemini para leerlas; esta app no las guarda.")
+        st.caption("Las capturas se leen con Google Gemini. Antes de subirlas, recorta tu "
+                  "nombre y tu número de cuenta.")
         if fotos:
-            firma = tuple((f.name, f.size) for f in fotos)
+            firma = _firma_fotos(fotos)
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
@@ -428,7 +458,8 @@ def _render_1042s_uploader() -> None:
         "Tu broker te lo envía a inicio de año (Schwab: Cuenta → Documentos → Impuestos). "
         "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
         "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
-        "El PDF no se guarda: se lee en memoria y se descarta.")
+        "El PDF no se guarda: se lee en memoria, no se envía a ningún servicio externo y se "
+        "descarta.")
 
     if archivo is None:
         return
@@ -439,7 +470,7 @@ def _render_1042s_uploader() -> None:
     sig = (archivo.name, archivo.size)
     if sig != st.session_state.get("_wizard_1042s_sig"):
         with st.spinner("Leyendo tu 1042-S…"):
-            resultado = logic.extract_1042s(archivo.getvalue(), _clave_gemini())
+            resultado = logic.extract_1042s(archivo.getvalue())
         st.session_state["_wizard_1042s_sig"] = sig
 
         if resultado is None:
@@ -456,9 +487,11 @@ def _render_1042s_uploader() -> None:
 
     error = st.session_state.get("_wizard_1042s_error")
     if error == "ilegible":
-        st.error("No reconocimos este PDF como un Formulario 1042-S.")
-        st.caption("Verifica que sea el documento que te envió tu broker (Schwab: Cuenta → "
-                   "Documentos → Impuestos), en formato PDF y sin escanear.")
+        st.error("No pudimos leer este PDF de forma automática.")
+        st.caption("Verifica que sea el 1042-S que te envió tu broker (Schwab: Cuenta → "
+                   "Documentos → Impuestos). Si es escaneado, pide la versión digital. También "
+                   "puedes saltar este paso: la app funciona sin el 1042-S; solo pierdes la "
+                   "validación contra el documento oficial.")
     elif error == "sin_dividendos":
         st.warning("Leímos el PDF, pero no encontramos dividendos (código 06) ni ROC "
                    "(código 37) en tus formularios.")
@@ -576,6 +609,26 @@ def render_bloque_1042s() -> None:
     _render_income_uploader()
 
 
+_ANEXO = "## Anexo"
+
+
+def _privacy_visible(texto: str) -> str:
+    """Lo que ve el cliente en el paso de carga.
+
+    Recorta la VISTA, no el documento: `PRIVACY.md` sigue siendo la fuente única y
+    completa. Fuera quedan el título del documento (el expander ya tiene el suyo),
+    la línea de fecha y el anexo técnico, que describe un mecanismo desactivado.
+    """
+    cuerpo = texto.split(_ANEXO)[0]
+    lineas = []
+    for linea in cuerpo.splitlines():
+        s = linea.strip()
+        if not lineas and (s.startswith("# ") or s.startswith("*Actualizado:") or not s):
+            continue
+        lineas.append(linea)
+    return "\n".join(lineas).strip()
+
+
 def render_carga() -> bool:
     """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
 
@@ -588,6 +641,12 @@ def render_carga() -> bool:
         '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
         'la lectura.</p>',
         unsafe_allow_html=True)
+
+    with st.expander("Cómo tratamos tus datos"):
+        ruta_privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    "PRIVACY.md")
+        with open(ruta_privacy, encoding="utf-8") as f:
+            st.markdown(_privacy_visible(f.read()))
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:

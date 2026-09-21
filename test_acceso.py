@@ -637,6 +637,11 @@ def _script_puerta_error_interno():
         raise RuntimeError("boom")
 
     acceso._usuario_actual = _usuario_que_falla
+    class _AvisadorMudo:
+        def __getattr__(self, nombre):
+            return lambda *args: None
+
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorMudo()
 
     st.session_state["resultado"] = acceso.puerta()
 
@@ -716,6 +721,11 @@ def _script_puerta_error_con_correo():
         raise RuntimeError("fallo con a@ejemplo.com adentro")
 
     acceso._usuario_actual = _usuario_que_falla
+    class _AvisadorMudo:
+        def __getattr__(self, nombre):
+            return lambda *args: None
+
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorMudo()
     acceso.puerta()
 
 
@@ -727,3 +737,277 @@ def test_red_no_imprime_mensaje(capsys):
     capturado = capsys.readouterr()
     assert "a@ejemplo.com" not in capturado.out
     assert "a@ejemplo.com" not in capturado.err
+
+
+# ============================================================
+# Auditoría de privacidad 2026-09-17, S3: el login roto no abre la puerta
+# ============================================================
+
+class _AvisadorEspia:
+    """Registra cada aviso. Con `lanza_en`, ese aviso falla después de registrarse."""
+
+    def __init__(self, lanza_en=None):
+        self.avisos = []
+        self._lanza_en = lanza_en
+
+    def __getattr__(self, nombre):
+        def _registrar(*args):
+            self.avisos.append((nombre,) + args)
+            if nombre == self._lanza_en:
+                raise RuntimeError("aviso roto")
+        return _registrar
+
+
+class _ListaSinLeer:
+    def obtener(self):
+        return None, "ninguna"
+
+
+@pytest.mark.parametrize("lanza_en", [None, "login_roto"])
+def test_app_login_roto_no_abre_la_app(monkeypatch, lanza_en):
+    """Con Authlib roto (la familia del PR #119) `st.login` lanza StreamlitAuthError. Antes el
+    `except` de `puerta()` lo convertía en acceso: un anónimo pulsaba «Recibir código» y
+    entraba. Ahora la puerta queda cerrada aunque el aviso a Telegram también falle."""
+    import sys
+
+    espia = _AvisadorEspia(lanza_en=lanza_en)
+    monkeypatch.setattr(acceso, "_avisador_singleton", lambda token, chat_id: espia)
+    monkeypatch.setattr(acceso, "_lista_cache_singleton", lambda pat: _ListaSinLeer())
+    monkeypatch.setitem(sys.modules, "authlib", None)
+
+    at = AppTest.from_file("app.py", default_timeout=60)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    at.button[0].click().run()
+
+    assert len(at.get("file_uploader")) == 0, "la app se abrió a un visitante sin sesión"
+    assert any("no está disponible" in e.value for e in at.error)
+    assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+    assert ("login_roto", "StreamlitAuthError") in espia.avisos
+
+
+def _script_puerta_error_avisa(lanza):
+    import streamlit as st
+
+    import acceso
+
+    avisos = []
+
+    class _Avisador:
+        def puerta_abierta_por_error(self, nombre):
+            avisos.append(nombre)
+            if lanza:
+                raise RuntimeError("Telegram caído")
+
+    def _usuario_que_falla():
+        raise RuntimeError("fallo con a@ejemplo.com adentro")
+
+    acceso._usuario_actual = _usuario_que_falla
+    acceso._avisador_singleton = lambda token, chat_id: _Avisador()
+    st.session_state["resultado"] = acceso.puerta()
+    st.session_state["avisos"] = avisos
+
+
+@pytest.mark.parametrize("lanza", [False, True])
+def test_puerta_abierta_por_error_avisa_sin_datos(lanza):
+    """El fail-open del resto de errores se conserva (decisión 3), pero deja de ser mudo: avisa
+    por Telegram con el nombre de la excepción y nada más (el mensaje puede traer un correo)."""
+    at = AppTest.from_function(_script_puerta_error_avisa, args=(lanza,))
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert len(at.exception) == 0
+    assert at.session_state["resultado"] is True
+    assert at.session_state["avisos"] == ["RuntimeError"]
+
+
+def test_avisos_de_puerta_con_freno_6h():
+    enviados = []
+    reloj = {"t": _dt("2026-09-18T10:00:00+00:00")}
+    avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: reloj["t"])
+
+    avisador.login_roto("StreamlitAuthError")
+    avisador.login_roto("StreamlitAuthError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    assert len(enviados) == 2
+
+    reloj["t"] += timedelta(hours=6, seconds=1)
+    avisador.login_roto("StreamlitAuthError")
+    avisador.puerta_abierta_por_error("RuntimeError")
+    assert len(enviados) == 4
+    assert all("@" not in mensaje for mensaje in enviados)
+
+
+# ============================================================
+# Auditoría de privacidad 2026-09-17, N1: ?clear no corre antes de la puerta
+# ============================================================
+
+def _app_con_espia_de_clear(monkeypatch, secrets):
+    import streamlit as st
+
+    llamadas = []
+    monkeypatch.setattr(st.cache_data, "clear", lambda: llamadas.append("clear"))
+    monkeypatch.setattr(acceso, "_avisador_singleton", lambda token, chat_id: _AvisadorEspia())
+    monkeypatch.setattr(acceso, "_lista_cache_singleton", lambda pat: _ListaSinLeer())
+    at = AppTest.from_file("app.py", default_timeout=60)
+    for clave, valor in secrets.items():
+        at.secrets[clave] = valor
+    at.query_params["clear"] = "1"
+    at.run()
+    return at, llamadas
+
+
+def test_clear_no_vacia_el_cache_con_la_puerta_cerrada(monkeypatch):
+    """`?clear` vaciaba el caché de TODOS los usuarios antes de `acceso.puerta()`: cualquier
+    visitante sin sesión podía forzar recálculos y re-descargas de Yahoo."""
+    at, llamadas = _app_con_espia_de_clear(monkeypatch, {
+        "auth": {},
+        "acceso": {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"},
+    })
+    assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
+    assert llamadas == [], "un visitante sin sesión vació el caché global"
+
+
+def test_clear_sigue_funcionando_con_la_puerta_abierta(monkeypatch):
+    _, llamadas = _app_con_espia_de_clear(monkeypatch, {})
+    assert llamadas == ["clear"]
+
+
+# ============================================================
+# Fase 4: lista de admins (mutantes M1-M8, admins.md 2026-09-14)
+# ============================================================
+
+
+# --- M3 / M7: leer_admins normaliza y nunca lanza ---
+
+def test_leer_admins_tipos_raros_devuelve_vacio():
+    assert acceso.leer_admins({}) == frozenset()
+    assert acceso.leer_admins({"admins": None}) == frozenset()
+    assert acceso.leer_admins({"admins": 5}) == frozenset()
+    assert acceso.leer_admins({"admins": [5, None, ""]}) == frozenset()
+
+
+def test_leer_admins_normaliza_lista():
+    assert acceso.leer_admins({"admins": [" Admin@X.com "]}) == frozenset({"admin@x.com"})
+
+
+def test_leer_admins_string_suelto():
+    assert acceso.leer_admins({"admins": "x@y.com"}) == frozenset({"x@y.com"})
+
+
+# --- M1: la regla de admin va después de email_verified ---
+
+def test_admin_sin_email_verified_no_pasa():
+    admins = frozenset({"admin@x.com"})
+    usuario_ausente = {"is_logged_in": True, "email": "admin@x.com"}
+    decision = acceso.decidir("aplicar", usuario_ausente, None, CLAVE, admins=admins)
+    assert decision.accion == "no_verificado"
+
+    usuario_string = {"is_logged_in": True, "email_verified": "true", "email": "admin@x.com"}
+    decision2 = acceso.decidir("aplicar", usuario_string, None, CLAVE, admins=admins)
+    assert decision2.accion == "no_verificado"
+
+
+# --- M2: el correo del usuario se normaliza antes de comparar con admins ---
+
+def test_admin_correo_usuario_se_normaliza():
+    admins = acceso.leer_admins({"admins": ["gdeaxx@gmail.com"]})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": " GdeAXX@Gmail.com "}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+
+
+# --- M4: un admin fuera de la allowlist entra en modo aplicar ---
+
+def test_admin_fuera_de_lista_entra_en_aplicar():
+    admins = frozenset({"admin@x.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "admin@x.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+
+
+# --- M5: un admin fuera de la allowlist en observar pasa SIN correo_rechazado ---
+
+def test_admin_fuera_de_lista_en_observar_no_genera_alerta():
+    admins = frozenset({"admin@x.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "admin@x.com"}
+    decision = acceso.decidir("observar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "pasar"
+    assert decision.correo_rechazado is None
+
+
+# --- M6: comparación por igualdad exacta, no por subcadena ---
+
+def test_admin_no_es_por_subcadena():
+    admins = frozenset({"a@b.com"})
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "ba@b.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE, admins=admins)
+    assert decision.accion == "rechazar"
+
+
+# --- Sin admins (default) el comportamiento actual no cambia ---
+
+def test_decidir_sin_admins_default_es_igual_que_antes():
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "fuera@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, _lista({}), CLAVE)
+    assert decision.accion == "rechazar"
+
+
+# --- M8: _puerta() pasa admins a decidir() ---
+
+def _script_puerta_admin_fuera_de_lista():
+    import streamlit as st
+
+    import acceso
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "product_id": 4903539,
+                    "count": 0,
+                    "entries": {},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def lista_ilegible(self):
+            pass
+
+        def lista_vieja(self):
+            pass
+
+        def modo_invalido(self):
+            pass
+
+        def rechazo_observar(self, correo):
+            pass
+
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True,
+        "email_verified": True,
+        "email": "admin@x.com",
+    }
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+
+
+def test_puerta_pasa_admins_a_decidir():
+    at = AppTest.from_function(_script_puerta_admin_fuera_de_lista)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {
+        "modo": "aplicar",
+        "hmac_key": CLAVE_SECRETS,
+        "allowlist_pat": "pat-fake",
+        "admins": ["admin@x.com"],
+    }
+    at.run()
+    assert at.session_state["resultado"] is True
+    assert len(at.error) == 0
