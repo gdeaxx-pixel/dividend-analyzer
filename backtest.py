@@ -383,6 +383,7 @@ def run_backtest(
 
     history = history.sort_index()
     first_price = float(history["Close"].iloc[0])
+    preexistente = initial_shares is not None
     if initial_shares is None:
         initial_shares = initial_capital / first_price if first_price > 0 else 0.0
     if initial_capital is None:
@@ -396,7 +397,9 @@ def run_backtest(
     # tarde es la CONFIRMACION —y el dinero— via 1042-S.
     receivable_by_year: dict[int, float] = {}
     rows = []
-    for date, row in history.iterrows():
+    for i, (date, row) in enumerate(history.iterrows()):
+        elegibles = shares if (i > 0 or preexistente) else 0.0
+
         price = float(row["Close"]) if pd.notna(row["Close"]) else 0.0
         div_rate = float(row["Dividends"]) if pd.notna(row.get("Dividends", 0.0)) else 0.0
 
@@ -412,7 +415,7 @@ def run_backtest(
             else:
                 cash_accum += roc_refund_hoy
 
-        gross_div = shares * div_rate if div_rate > 0 else 0.0
+        gross_div = elegibles * div_rate if div_rate > 0 else 0.0
         nra_withheld = gross_div * nra_rate
         net_div = gross_div - nra_withheld
 
