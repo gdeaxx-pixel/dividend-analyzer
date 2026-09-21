@@ -9,7 +9,8 @@ Las filas 22-24 (calidad de datos, notas técnicas, excluidos) y el banner 1042-
 aquí y en `ui.vistas` respectivamente, se movieron a `ui.validacion` (2026-08-10):
 Daniel pidió consolidar toda señal de confiabilidad en un solo panel «Validación datos»
 detrás del menú de 3 puntos de la ruta, en vez de tenerlas sueltas por la página. La
-descarga del reporte PDF (antes fila 37 aquí) se movió al mismo menú, en `ui.chrome`.
+descarga del reporte PDF (antes fila 37 aquí, luego en `ui.chrome`) se retiró (sep-2026):
+la app se centra en su uso en pantalla.
 «Otras calculadoras» (antes fila 25, un expander aquí) se movió al mismo menú por el
 mismo pedido — `render_calculadoras` sigue viviendo en este módulo (es su dueño
 histórico) pero ahora la llama `ui.vistas` como panel de pantalla completa, no

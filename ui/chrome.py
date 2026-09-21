@@ -214,18 +214,16 @@ def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actua
                     st.rerun()
 
 
-def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
-                 pdf_filename: str = "") -> Ruta:
+def render_ruta(alerta: bool = False) -> Ruta:
     """Ruta horizontal funcional Categoría › Vista › ETF, un popover por segmento.
 
     Sustituye a `render_crumb` (decorativo) y a la barra lateral: es el único navegador.
     El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
     (Dividendos · Largo Plazo); Comparación y Método tradicional no lo llevan.
 
-    `alerta`/`pdf_bytes`/`pdf_filename` son datos ya resueltos por quien llama
-    (`app.py`, vía `ui.validacion`): este módulo es solo presentación (docstring de
-    arriba) y no calcula ni la confiabilidad ni el PDF — solo dibuja el menú de 3 puntos
-    con lo que se le entrega.
+    `alerta` es un dato ya resuelto por quien llama (`app.py`, vía `ui.validacion`): este
+    módulo es solo presentación (docstring de arriba) y no calcula la confiabilidad —
+    solo dibuja el menú de 3 puntos con lo que se le entrega.
     """
     _consumir_cierre_popover()
 
@@ -302,12 +300,6 @@ def render_ruta(alerta: bool = False, pdf_bytes: bytes | None = None,
                             st.session_state["vd_panel"] = "validacion"
                             _pedir_cierre_popover()
                             st.rerun()
-                        if pdf_bytes is not None:
-                            st.download_button(
-                                "Descargar reporte PDF", data=pdf_bytes,
-                                file_name=pdf_filename or "auditoria-portafolio.pdf",
-                                mime="application/pdf", key="vd_menu_pdf",
-                                use_container_width=True)
 
     return Ruta(categoria=categoria, vista=vista, etf=etf,
                 tema=st.session_state.get("vd_tema", "Claro"))

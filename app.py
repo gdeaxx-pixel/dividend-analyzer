@@ -28,7 +28,7 @@ stale_guard.asegurar_frescura()
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
 from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
 from ui.pie import render_pie
-from ui.validacion import hay_alertas, preparar_pdf
+from ui.validacion import hay_alertas
 from ui.vistas import obtener_resultados, render_vista
 
 st.set_page_config(
@@ -84,8 +84,7 @@ render_encabezado(con_datos)
 
 if con_datos:
     resultados = obtener_resultados()
-    pdf_bytes, pdf_filename = preparar_pdf(resultados)
-    ruta = render_ruta(hay_alertas(resultados), pdf_bytes, pdf_filename)
+    ruta = render_ruta(hay_alertas(resultados))
     render_vista(ruta)
     render_pie(resultados)
 else:
