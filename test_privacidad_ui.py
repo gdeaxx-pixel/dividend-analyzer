@@ -5,6 +5,7 @@ import os
 import sys
 
 import pandas as pd
+import pytest
 from streamlit.testing.v1 import AppTest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -113,3 +114,186 @@ def test_f4_ttl_coincide_con_el_aviso():
         assert "hasta 1 hora" in texto
     else:
         assert "hasta 1 hora" not in texto
+
+
+# ── C·10/S1 · el contexto de captura sobrevive a «editar» el CSV ────────────────
+
+def _df(caso):
+    ruta = os.path.join(_RAIZ, "fixtures", caso, "synthetic_transactions.csv")
+    return logic.normalize_csv(pd.read_csv(ruta))
+
+
+def _ss(at, k):
+    try:
+        return at.session_state[k]
+    except Exception:
+        return None
+
+
+def test_s1_editar_csv_borra_el_contexto_de_captura():
+    """Reproductor de o2c_s1_wizard.py convertido en test: cartera A con OCR de MSTY
+    (999 acciones / $12,345 base) → clic en «editar» → cartera B → el number_input
+    _vd_sh_MSTY vale 5.0, _vd_cb_MSTY vale 120.0 y 'vd-ocr' no aparece en el markdown.
+    Mira lo presentado, no session_state."""
+    ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
+    sig_a = (("captura_A.png", 100),)
+
+    at = AppTest.from_string(_SCRIPT)
+    at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
+    at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
+    at.session_state["_wizard_broker"] = "schwab"
+    at.session_state["_wizard_csv_name"] = "cartera_A.csv"
+    at.session_state["_wizard_ocr_positions"] = ocr_a
+    at.session_state["_wizard_photo_sig"] = sig_a
+    at.run()
+    assert at.exception == []
+
+    botones = [b for b in at.button if b.proto.id.endswith("_vd_edit_csv")]
+    assert botones, "no se encontró el botón «editar»"
+    botones[0].click().run()
+    assert at.exception == []
+
+    at.session_state["_wizard_df_clean"] = _df("schwab_synth_2")
+    at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 5.0, "invested": 120.0}}
+    at.session_state["_wizard_broker"] = "schwab"
+    at.session_state["_wizard_csv_name"] = "cartera_B.csv"
+    at.run()
+    assert at.exception == []
+
+    sh = [n for n in at.number_input if n.proto.id.endswith("_vd_sh_MSTY")]
+    cb = [n for n in at.number_input if n.proto.id.endswith("_vd_cb_MSTY")]
+    assert sh and sh[0].value == 5.0
+    assert cb and cb[0].value == 120.0
+    texto = "\n".join(m.value for m in at.markdown)
+    assert "vd-ocr" not in texto
+
+
+def test_s1_demo_no_hereda_capturas_de_la_sesion_previa():
+    """El bundle del demo LIMPIA el contexto de captura de la sesión anterior.
+
+    Mide la consecuencia, no la forma: vuelca el bundle sobre una sesión ya contaminada,
+    igual que `app.py:52-55`. La versión anterior afirmaba `bundle.get(clave) is None`,
+    que **no vigila nada**: `.get` devuelve `None` tanto si la clave vale `None` como si
+    falta, así que un bundle que no traiga las claves dejaba la captura vieja intacta y
+    el test seguía verde (medido: mutantes M2 y M4 de `mutar_s4_s1.sh` sobrevivían).
+    """
+    import demo_mode
+    from ui.carga import CLAVES_CONTEXTO_CARTERA
+
+    bundle = demo_mode.load_demo_case("schwab")
+    assert bundle is not None
+
+    sesion = {"_wizard_ocr_positions": {"MSTY": {"shares": 999.0, "cost": 12345.0}},
+              "_wizard_photo_sig": ("captura_de_otra_cartera.png", 4321)}
+    for _k, _v in bundle.items():          # así lo aplica app.py:52-55
+        sesion[_k] = _v
+
+    for clave in ("_wizard_ocr_positions", "_wizard_photo_sig"):
+        assert clave in CLAVES_CONTEXTO_CARTERA, f"{clave} salió del contrato de reset"
+        assert clave in bundle, f"el bundle del demo no trae {clave}: no puede limpiarla"
+        assert sesion[clave] is None, f"{clave} conserva la captura de la sesión previa"
+
+
+def test_s1_firma_por_contenido_no_por_nombre_y_tamano():
+    """Unitario de _firma_fotos: dos payloads con el mismo nombre y el mismo tamaño y
+    contenido distinto dan firmas distintas; el mismo contenido da la misma firma."""
+    from ui.carga import _firma_fotos
+
+    class _FakeUpload:
+        def __init__(self, name, content):
+            self.name = name
+            self.size = len(content)
+            self._content = content
+
+        def getvalue(self):
+            return self._content
+
+    a1 = _FakeUpload("captura.png", b"contenido A")
+    a2 = _FakeUpload("captura.png", b"contenido B")  # mismo nombre, mismo tamaño (11 bytes)
+    assert len(a1._content) == len(a2._content)
+    assert _firma_fotos([a1]) != _firma_fotos([a2])
+
+    a3 = _FakeUpload("captura.png", b"contenido A")
+    assert _firma_fotos([a1]) == _firma_fotos([a3])
+
+
+def test_s1_confirmar_posiciones_conserva_la_captura():
+    """Control: confirmar posiciones (que hoy hace
+    st.session_state.pop("_vd_resultados")) no borra _wizard_ocr_positions. Sin este
+    control, borrar la captura en cualquier rerun también pondría verdes los otros tres."""
+    ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
+    at = AppTest.from_string(_SCRIPT)
+    at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
+    at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
+    at.session_state["_wizard_broker"] = "schwab"
+    at.session_state["_wizard_csv_name"] = "cartera_A.csv"
+    at.session_state["_wizard_ocr_positions"] = ocr_a
+    at.session_state["_wizard_photo_sig"] = (("captura_A.png", 100),)
+    at.run()
+    assert at.exception == []
+
+    botones = [b for b in at.button if b.proto.id.endswith("_vd_confirm_pos")]
+    if not botones:
+        pytest.skip("no se encontró el botón de confirmar posiciones en este layout")
+    botones[0].click().run()
+    assert at.exception == []
+    assert _ss(at, "_wizard_ocr_positions") is not None
+
+
+def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypatch):
+    """Cierra el PARA de S1: M3_firma_nombre_tamano sobrevivía porque
+    test_s1_firma_por_contenido_no_por_nombre_y_tamano mide `_firma_fotos` aislado, no el
+    sitio de llamada real (`ui/carga.py:307`, dentro de render_bloque_posiciones).
+
+    Este test pasa por la pantalla real: la firma de la foto A sale de un primer render
+    (no se precalcula con el helper, para no imitar por construcción lo que el sitio de
+    llamada debe hacer solo), y en un segundo render se sube la foto B — mismo name, mismo
+    size, contenido distinto. Con la firma vieja por (nombre, tamaño) las dos fotos son
+    indistinguibles y el OCR no se vuelve a correr; con la firma por contenido, sí."""
+    import streamlit as st
+
+    class _FakeUpload:
+        def __init__(self, name, content):
+            self.name = name
+            self.size = len(content)
+            self.type = "image/png"
+            self._content = content
+
+        def getvalue(self):
+            return self._content
+
+    contenido_a = b"contenido de la foto A"
+    contenido_b = b"contenido de la foto B"
+    assert len(contenido_a) == len(contenido_b)
+
+    foto_a = _FakeUpload("captura.png", contenido_a)
+    foto_b = _FakeUpload("captura.png", contenido_b)
+    assert (foto_a.name, foto_a.size) == (foto_b.name, foto_b.size)
+
+    ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
+    ocr_b = {"MSTY": {"shares": 5.0, "cost_basis": 120.0}}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "falsa")
+    fotos_actuales = [foto_a]
+    monkeypatch.setattr(st, "file_uploader", lambda *a, **k: fotos_actuales)
+    resultados_ocr = iter([ocr_a, ocr_b])
+    monkeypatch.setattr(logic, "extract_positions_from_images",
+                        lambda *a, **k: next(resultados_ocr))
+
+    at = AppTest.from_string(_SCRIPT)
+    at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
+    at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
+    at.session_state["_wizard_broker"] = "schwab"
+    at.session_state["_wizard_csv_name"] = "cartera_A.csv"
+    at.run()
+    assert at.exception == []
+    sig_a = _ss(at, "_wizard_photo_sig")
+    assert sig_a is not None
+    assert _ss(at, "_wizard_ocr_positions") == ocr_a
+
+    fotos_actuales[:] = [foto_b]
+    at.run()
+    assert at.exception == []
+
+    assert _ss(at, "_wizard_photo_sig") != sig_a
+    assert _ss(at, "_wizard_ocr_positions") == ocr_b

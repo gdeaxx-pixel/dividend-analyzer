@@ -1000,13 +1000,15 @@ def test_editar_el_csv_invalida_el_cache_de_resultados():
     handler que borra `_wizard_df_clean` tiene que borrarlo también. Con la captura dentro del
     cálculo el síntoma empeora: arrastraría las posiciones de un portafolio al siguiente.
     """
-    import re
-    fuente = open("ui/carga.py", encoding="utf-8").read()
-    # El bloque de claves del handler de «editar» CSV.
-    bloque = re.search(r'for clave in \(([^)]*)\):', fuente, re.S)
-    assert bloque, "no se encontró el handler que limpia la carga"
-    assert '"_vd_resultados"' in bloque.group(1), (
+    # C·10/S1: la lista literal en el handler se reemplazó por la constante única
+    # `CLAVES_CONTEXTO_CARTERA` (una sola fuente para «editar» CSV, `demo_mode` y este
+    # test — dos copias es como este defecto entró la primera vez).
+    from ui.carga import CLAVES_CONTEXTO_CARTERA
+    assert "_vd_resultados" in CLAVES_CONTEXTO_CARTERA, (
         "el handler de editar-CSV tiene que invalidar el caché de analyze_portfolio")
+    fuente = open("ui/carga.py", encoding="utf-8").read()
+    assert "for clave in CLAVES_CONTEXTO_CARTERA:" in fuente, (
+        "no se encontró el handler que limpia la carga usando la lista única")
     # Y el de confirmar posiciones, que cambia la captura que alimenta ese mismo cálculo.
     assert 'pop("_vd_resultados", None)' in fuente, (
         "confirmar posiciones tiene que invalidar el caché: la captura entra al cálculo")
