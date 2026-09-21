@@ -104,6 +104,13 @@ ALTO_IMPUESTOS = {
     "recuperar": 1450,
 }
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. Portafolios v3: dona + leyenda +
+# dos tarjetas en cascada. Se fija por encima del peor caso —celular con 9 fondos
+# (`?demo=ib`), donde la leyenda apila todas las filas—: con `scrolling=False` lo que
+# no cabe es inalcanzable, no solo invisible.
+ALTO_PORTAFOLIOS = 2400
+
 
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
@@ -272,6 +279,20 @@ def render_impuestos(datos: dict, tema: str, vista: str = "corte",
     html = html.replace("{{VISTA_ACTIVA}}", vista)
     if alto is None:
         alto = ALTO_IMPUESTOS.get(vista, max(ALTO_IMPUESTOS.values()))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> None:
+    """Dibuja la vista Portafolios v3 (dona agrupada + cascada por grupo). `datos` viene
+    de `ui.adapters.portafolios_data` — el componente solo RENDERIZA (Regla 3): toda
+    cifra y todo veredicto ya salen calculados de Python. El componente vive a mano,
+    copiado byte a byte de `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-componente.html`
+    (diseño aprobado «Propuesta v3»); no hay extractor. Mismo patrón `{{DATA_JSON}}` +
+    `_con_tema` que `render_impuestos`, sin `VISTA_ACTIVA` (es una sola pantalla).
+    """
+    html = _plantilla("portafolios.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
 
 
