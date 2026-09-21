@@ -80,29 +80,20 @@ ALTO_METODOLOGIA = 7000
 # de medición en vivo con un portafolio real (`?demo=ib`/`schwab`/`schwab2`).
 ALTO_METODO_REAL = 2600
 
-# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
-# componente corrige su propio alto en cuanto carga. Escrito a mano (esta vista nunca
-# existió en el artifact). Desde la «mudanza» de PR 1 la vista se parte en 5 pantallas
-# (`ui/impuestos.VIEW_ORDER`), cada una con su propio alto: el `3000` único
-# sobredimensionaba las cinco.
-# Medido en el navegador a un ancho de contenido de 337px (el del iframe a 375px de
-# viewport). fondos/venta/pais/recuperar: `?demo=ib` sin país — corte 1842 · fondos 531 ·
-# venta 1077 · pais 1508 · recuperar 989 (PR 1.1). corte se rehízo en PR 2 (veredicto +
-# 3 barras + tarjetas + notas): con país declarado y estado 'ok' (todas las barras) el
-# preview standalone mide **1736** (retención baja) / **1715** (retención alta), sin
-# scroll horizontal — el respaldo de 2200 deja margen para la línea de impuesto
-# extranjero y la frase de cobertura del ROC, que ninguna de las dos fixtures activa.
-# Con `scrolling=False` lo que no cabe es inalcanzable — nunca bajarlos a la medida de
-# escritorio (corte ≈1200 · fondos 578 · venta 933 · pais 704 · recuperar 656).
-ALTO_IMPUESTOS = {
-    "corte":     2200,
-    "fondos":     900,
-    "venta":     1400,
-    "pais":      1900,
-    # +150 sobre los 1150 que medía antes del PR 4: la franja de ventanas de «Cuándo llega»
-    # añade dos filas de meses con su rótulo (~95px) dentro de la caja de Ruta A.
-    "recuperar": 1450,
-}
+# Respaldo si el script auto-alto no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. U2 (dona de dos fases): las 5
+# sub-vistas pasan a UNA pantalla —dona arriba + «El corte», «Ver detalle fiscal» y
+# los 4 desplegables de Recuperación/Declaración debajo—, así que el dict por vista
+# pasa a UNA altura medida (patrón `heredadas.VIEW_ORDER`, decisión §6›9 F).
+# Medida en el navegador (Chromium, previews standalone con fixtures sintéticas —
+# _D_FULL del test de render, los SEIS desplegables abiertos a la vez, que es el peor
+# caso: en la app nacen cerrados y el auto-alto sigue cada apertura) a un ancho de
+# contenido de 337px (el del iframe a 375px de viewport) y a 1280px:
+# full 6925/6942 (fase 1/2) · sin_pais 5653 · parcial 5383 · sin_retencion 6555 ·
+# divergente 5883 — y en desktop 4100 · 3652 · 3510 · 3998 · 3765. Se fija por encima
+# del peor caso (337px, fase 2, todo abierto): con `scrolling=False` lo que no cabe es
+# inalcanzable — nunca bajarla a la medida de escritorio.
+ALTO_IMPUESTOS = 7100
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # componente corrige su propio alto en cuanto carga. Portafolios v3: dona + leyenda +
@@ -262,23 +253,18 @@ def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> 
     components.html(html, height=alto, scrolling=False)
 
 
-def render_impuestos(datos: dict, tema: str, vista: str = "corte",
-                     alto: int | None = None) -> None:
-    """Dibuja una de las 5 vistas de Impuestos (categoría «Impuestos», Fase 2). `datos`
-    viene de `ui.adapters.impuestos_data` — objetos fiscales ya resueltos; el componente
-    solo RENDERIZA (Regla 3). El componente vive a mano (nunca existió en el artifact, así
-    que no hay extractor).
+def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None:
+    """Dibuja la vista única de Impuestos (U2: dona de dos fases + desplegables).
+    `datos` viene de `ui.adapters.impuestos_data` — objetos fiscales ya resueltos; el
+    componente solo RENDERIZA (Regla 3). El componente vive a mano (nunca existió en el
+    artifact, así que no hay extractor).
 
-    `vista` es una clave de `ui.impuestos.VIEW_ORDER`; el JS del componente lee
-    `{{VISTA_ACTIVA}}` y construye solo el trozo de esa vista (mismo patrón que
-    `render_metodo`). `alto` por defecto sale del dict `ALTO_IMPUESTOS` según la vista.
+    Las 5 vistas antiguas (`ui/impuestos.VIEW_ORDER` de antes de U2) pasaron a UNA:
+    las fases 1/2 y el detalle viven dentro del iframe, no como vistas de Streamlit.
     """
-    html = _plantilla("impuestos.html")
+    html = _plantilla("impuestos_v2.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    html = html.replace("{{VISTA_ACTIVA}}", vista)
-    if alto is None:
-        alto = ALTO_IMPUESTOS.get(vista, max(ALTO_IMPUESTOS.values()))
     components.html(html, height=alto, scrolling=False)
 
 

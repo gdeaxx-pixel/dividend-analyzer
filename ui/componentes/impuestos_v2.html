@@ -1,0 +1,1645 @@
+<!-- Escrito y mantenido A MANO (U2 · dona de dos fases). Reemplaza a `impuestos.html`
+     (5 vistas) con UNA vista: la dona de dos fases de la referencia auditada
+     (`Obsidian/IA/traspasos/referencia-impuestos-dona-dos-fases.html`) arriba, y el
+     contenido de las 5 vistas antiguas en desplegables debajo. NO hay un
+     `tools/extract_impuestos_v2.py`: nunca existió en el artifact. Se cablea a datos
+     reales por {{DATA_JSON}} (armado en `ui/adapters.py::impuestos_data`, que solo lee
+     objetos fiscales ya calculados por `logic.py` — Regla 3 de
+     `specs/roc-nra-invariants.md`). Lo que SÍ se sigue generando del demo es la
+     taxonomía y los tokens, con `tools/extract_design_system.py`; ese contrato está
+     vivo y su `--check` pasa. El bloque de auto-alto del final es el de
+     `tools/_auto_alto.py`, igual que los demás componentes. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:      #f4f7fa;
+    --panel:       #ffffff;
+    --panel-tint:  #eef4f9;
+    --ink:         #021C36;
+    --ink-2:       #33475a;
+    --ink-mut:     #6a7b8a;
+    --hair:        #d5e0ea;
+    --hair-soft:   #e6edf3;
+    --accent:      #006497;
+    --accent-tint: rgba(0,100,151,0.10);
+    --cash:        #1f8a5b;
+    --loss:        #A32D2D;
+    --warn:        #a06a1a;
+    --coral:       #c0522d;
+    /* barras de «El corte» (PR 2) — mismos valores que `cashflow.html` (s-anchor/s-drip);
+       el iframe no ve `ui/tokens.py`, así que van en los CUATRO bloques (§5.2). */
+    --anchor:      #021C36;
+    --drip:        #006497;
+    /* rampas de la dona (U2), mismos valores que `portafolios.html`:
+       Dividendos f4→f5, Crecimiento f1→f3, Otros ink-mut→hair */
+    --f1:          #021C36;
+    --f3:          #9fb3c5;
+    --f4:          #006497;
+    --f5:          #8fc0da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+      --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6;
+      --accent-tint:rgba(62,160,214,0.14); --cash:#35b07d; --loss:#e07a7a; --warn:#d9a441;
+      --coral:#e0885f; --anchor:#b9c9d8; --drip:#3ea0d6;
+      --f1:#dbe6ef; --f3:#4d677f; --f4:#3ea0d6; --f5:#1d5676;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497;
+    --accent-tint:rgba(0,100,151,0.10); --cash:#1f8a5b; --loss:#A32D2D; --warn:#a06a1a;
+    --coral:#c0522d; --anchor:#021C36; --drip:#006497;
+    --f1:#021C36; --f3:#9fb3c5; --f4:#006497; --f5:#8fc0da;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6;
+    --accent-tint:rgba(62,160,214,0.14); --cash:#35b07d; --loss:#e07a7a; --warn:#d9a441;
+    --coral:#e0885f; --anchor:#b9c9d8; --drip:#3ea0d6;
+    --f1:#dbe6ef; --f3:#4d677f; --f4:#3ea0d6; --f5:#1d5676;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--font-sans); -webkit-font-smoothing: antialiased; line-height: 1.5;
+  }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  .wrap { max-width: 1032px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 36px) 40px; }
+
+  .imp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
+  .imp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .imp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
+  .imp-lede b { color: var(--ink); font-weight: 600; }
+
+  /* ── Estado de residencia (banner) ── */
+  .imp-status { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 0 18px; padding: 14px 18px; background: var(--panel-tint); border-left: 3px solid var(--warn); font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .imp-status-title { font-weight: 600; color: var(--ink); }
+  .imp-status p { margin: 2px 0 0; }
+
+  /* ── Tarjeta de la dona ── */
+  .imp-card { background: var(--panel); border: 1px solid var(--hair); padding: clamp(18px, 3vw, 26px) clamp(16px, 3vw, 30px) 0; }
+  .imp-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 0 0 20px; background: var(--panel-tint); padding: 4px; }
+  .imp-step-btn { appearance: none; border: 0; background: none; padding: 12px 14px; min-height: 66px; text-align: left; cursor: pointer; color: var(--ink-mut); font: inherit; }
+  .imp-step-btn[aria-pressed="true"] { background: var(--panel); color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+  .imp-step-btn b { display: block; font-size: 12.5px; font-weight: 600; }
+  .imp-step-btn small { font-family: var(--font-mono); font-size: 11px; display: block; margin-top: 5px; }
+  .imp-step-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* Las dos notas ocupan la misma celda: la más larga manda sobre el alto en cada ancho
+     (la fase invisible sigue reservando altura — §3C.5 del traspaso). */
+  .imp-notas { display: grid; margin: 0 0 14px; align-items: start; }
+  .imp-nota { grid-area: 1 / 1; margin: 0; min-height: 0; font-size: 11.5px; color: var(--ink-mut); line-height: 1.7; visibility: hidden; }
+  .imp-nota strong { font-weight: 600; color: var(--ink-2); }
+  .imp-notas[data-phase="0"] .imp-nota[data-note="0"],
+  .imp-notas[data-phase="1"] .imp-nota[data-note="1"] { visibility: visible; }
+
+  .imp-dist { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: clamp(20px, 4vw, 36px); align-items: center; }
+  .imp-chart { width: 100%; max-width: 320px; position: relative; aspect-ratio: 1; margin: auto; }
+  .imp-chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .imp-arc { cursor: pointer; transition: opacity .15s ease; }
+  .imp-arc.dim { opacity: .22; }
+  .imp-rim { fill: none; stroke: var(--ink); stroke-width: 2.5; pointer-events: none; }
+  .imp-center { position: absolute; inset: 29% 15%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; pointer-events: none; text-align: center; }
+  .imp-center .name { color: var(--ink-mut); font-size: 13px; }
+  .imp-center .value { font-family: var(--font-mono); font-weight: 700; font-size: 29px; line-height: 1.3; letter-spacing: -0.04em; white-space: nowrap; color: var(--ink); }
+  .imp-center .value.pending { font-size: 19px; }
+  .imp-center .sub { color: var(--ink-2); font-size: 11px; white-space: nowrap; }
+
+  .imp-legend { min-width: 0; }
+  .imp-legend-head { display: grid; grid-template-columns: 1fr 88px 63px; gap: 12px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); padding: 0 12px 10px; }
+  .imp-legend-head span:not(:first-child) { text-align: right; }
+  .imp-row { appearance: none; border: 0; background: none; font: inherit; color: inherit; display: grid; grid-template-columns: 10px minmax(0, 1fr) 88px 63px; gap: 12px; width: 100%; text-align: left; align-items: center; min-height: 44px; padding: 7px 12px; cursor: pointer; }
+  .imp-row.group { min-height: 40px; }
+  .imp-row + .group { margin-top: 12px; }
+  .imp-swatch { width: 10px; height: 10px; flex: none; }
+  .imp-row .rname { font-size: 13px; font-weight: 600; min-width: 0; }
+  .imp-row.group .rname { font-family: var(--font-mono); font-weight: 600; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .imp-row .ramount, .imp-row .rpercent { font-family: var(--font-mono); font-size: 12px; text-align: right; white-space: nowrap; }
+  .imp-row .ramount { color: var(--ink-2); }
+  .imp-row.group .rpercent { font-weight: 700; }
+  .imp-row.fund .rname { padding-left: 8px; }
+  .imp-row.group .ramount { color: var(--ink); font-weight: 700; }
+  .imp-row:hover, .imp-row.active { background: var(--panel-tint); }
+  .imp-row.active { box-shadow: inset 2px 0 var(--accent); }
+  .imp-row.dim { color: var(--ink-mut); }
+  .imp-row .ramount.pending { font-family: var(--font-sans); font-size: 10.5px; color: var(--ink-mut); }
+  .imp-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .imp-totalrow { margin-top: 14px; border-top: 1px solid var(--hair); padding: 12px; display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+  .imp-legend-tools { display: flex; min-height: 34px; padding: 0 12px; }
+  .imp-reset { appearance: none; border: 0; background: none; font: inherit; cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; padding: 6px 0; visibility: hidden; }
+  .imp-reset.visible { visibility: visible; }
+  .imp-key[hidden] { display: flex; visibility: hidden; }
+  .imp-key { display: flex; gap: 16px; justify-content: center; font-size: 10.5px; color: var(--ink-mut); margin-top: 4px; min-height: 18px; }
+  .imp-key span { display: flex; gap: 6px; align-items: center; }
+  .imp-key i { width: 11px; height: 11px; background: var(--accent); display: inline-block; }
+  .imp-key .recovered { background: repeating-linear-gradient(135deg, #fff 0 3px, #b2c4d4 3px 4px); border: 1px solid #b2c4d4; }
+  .imp-reading { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 11px; color: var(--ink-mut); padding: 10px 2px 16px; }
+  .imp-reading p { margin: 0; }
+  .imp-reading b { color: var(--ink-2); }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+  /* ── Desplegables (las 5 vistas antiguas + El corte) ── */
+  .imp-lower { margin-top: 24px; display: flex; flex-direction: column; gap: 22px; }
+  .imp-group-title { font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-mut); margin: 0 0 10px 2px; }
+  .imp-rows { display: flex; flex-direction: column; gap: 8px; }
+  .imp-rows > details { background: var(--panel); border: 1px solid var(--hair); padding: 0 clamp(16px, 3vw, 26px); }
+  .imp-rows summary { list-style: none; cursor: pointer; min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--ink); }
+  .imp-rows summary::-webkit-details-marker { display: none; }
+  .imp-rows summary:after { content: "+"; font-family: var(--font-mono); font-size: 22px; color: var(--accent); }
+  .imp-rows details[open] > summary:after { content: "−"; }
+  .imp-rows details[open] > summary .imp-sum-title { color: var(--accent); }
+  .imp-sum-title { flex: 1; font-size: 13px; font-weight: 600; }
+  .imp-sum-title small { display: block; color: var(--ink-mut); font-size: 11px; font-weight: 400; }
+  .imp-sum-value { text-align: right; font-family: var(--font-mono); font-weight: 500; font-size: 13px; }
+  .imp-sum-value small { display: block; font-family: var(--font-sans); font-size: 10px; color: var(--ink-mut); margin-top: 4px; }
+  .imp-det-body { padding: 0 0 24px; color: var(--ink-2); font-size: 12.5px; }
+  .imp-det-body .imp-lede { margin: 0 0 14px; }
+  .imp-det-h { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink); margin: 0 0 12px; letter-spacing: -0.01em; }
+
+  /* escalera vertical (heredada de «El corte») */
+  .imp-escalera { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+  .imp-step {
+    padding: 14px 18px; background: var(--panel); border: 1px solid var(--hair);
+    border-left: 3px solid var(--hair-soft);
+  }
+  .imp-step.activo { border-left-color: var(--accent); }
+  .imp-step.pendiente { border-left-color: var(--hair); opacity: .7; }
+  .imp-step-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; }
+  .imp-step-q { font-size: 13.5px; color: var(--ink); font-weight: 600; }
+  .imp-step-n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); }
+  .imp-step-val { text-align: right; }
+  .imp-step-money { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--ink); }
+  .imp-step-pct { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
+  .imp-step-sub { font-size: 11.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.5; }
+  .imp-step-sub b { color: var(--ink-2); }
+  .imp-step-body { min-height: 20px; }
+
+  /* CTA de residencia — reserva su espacio para que declarar el país no empuje nada */
+  .imp-cta { margin-top: 8px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--warn); font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .imp-cta b { color: var(--ink); }
+
+  /* tres buckets de la retención — tres colores porque los remedios son tres */
+  .imp-buckets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .imp-buckets.dos { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 560px) {
+    .imp-buckets, .imp-buckets.dos { grid-template-columns: 1fr; }
+  }
+  .imp-bucket { padding: 11px 13px; background: var(--panel-tint); border-top: 3px solid var(--hair); }
+  .imp-bucket.gris { border-top-color: var(--ink-mut); }
+  .imp-bucket.ambar { border-top-color: var(--warn); }
+  .imp-bucket.coral { border-top-color: var(--coral); }
+  .imp-bucket-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 6px; }
+  .imp-bucket-money { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); }
+  .imp-bucket-pct { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); }
+  .imp-bucket.gris .imp-bucket-lab { color: var(--ink-2); }
+  .imp-bucket.ambar .imp-bucket-lab { color: var(--warn); }
+  .imp-bucket.coral .imp-bucket-lab { color: var(--coral); }
+  .imp-bucket-note { font-size: 10.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.45; }
+  /* Base fiscal tras el ROC: MISMA cifra en otro momento — panel aparte, nunca una
+     cuarta caja hermana (la resta invitaría a violar la Regla 2). */
+  .imp-fiscal { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--ink-mut); }
+  .imp-fiscal-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 6px; }
+  .imp-fiscal-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 10px 0 0; font-size: 11.5px; color: var(--ink-mut); }
+  .imp-fiscal-par b { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink); }
+  .imp-fiscal-flecha { font-family: var(--font-mono); color: var(--ink-mut); }
+
+  .imp-conc { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--accent); font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+  .imp-conc b { font-family: var(--font-mono); }
+
+  /* ── «El corte»: veredicto + barras apiladas a escala compartida (PR 2, portado) ──
+     Impuestos es COMPOSICIÓN (un dólar se reparte), no secuencia. La barra 1 y la 2
+     comparten borde izquierdo y escala (base `bruto`); la barra 3 es un ZOOM con base
+     `retenido` — su rótulo lo declara. */
+  .imp-verdict { background: var(--panel); border: 1px solid var(--hair); border-left: 4px solid var(--ink-mut); padding: 16px clamp(16px, 3vw, 24px); margin-top: 4px; }
+  .imp-verdict-kick { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 8px; }
+  .imp-verdict-big { font-family: var(--font-mono); font-weight: 700; font-size: clamp(18px, 2.6vw, 22px); line-height: 1.2; color: var(--ink); letter-spacing: -0.01em; margin: 0; min-height: 2.4em; }
+  .imp-verdict-sub { font-size: 14px; color: var(--ink-2); margin: 8px 0 0; line-height: 1.55; }
+  .imp-verdict-sub .c-warn { color: var(--warn); font-weight: 600; }
+  .imp-verdict-sub .c-coral { color: var(--coral); font-weight: 600; }
+
+  .imp-bar-block { margin-top: 22px; }
+  .imp-bar-h { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 8px; }
+  .imp-bar-zoom-lab { font-size: 11.5px; color: var(--ink-mut); margin: 0 0 8px; line-height: 1.45; }
+  .imp-bar-zoom-lab b { color: var(--ink-2); }
+  .imp-bar-track { position: relative; display: flex; height: 30px; width: 100%; background: var(--panel-tint); border: 1px solid var(--hair-soft); }
+  .imp-bar-seg { height: 100%; min-width: 0; }
+  .imp-bar-seg.rest { background: transparent; border-left: 1px dashed var(--hair); }
+  .imp-bar-rule { position: absolute; top: -5px; bottom: -5px; width: 0; border-left: 2px dashed var(--ink); z-index: 2; }
+  .imp-bar-rule-lab { position: absolute; top: 100%; margin-top: 6px; max-width: 60%; font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); line-height: 1.3; background: var(--ground); padding-right: 4px; }
+  .imp-bar-labs { display: flex; margin-top: 8px; min-height: 3em; }
+  .imp-bar-lab { min-width: 0; padding-right: 10px; font-size: 12px; color: var(--ink-mut); line-height: 1.35; }
+  .imp-bar-lab .n { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--ink); }
+  .imp-bar-block.has-rule .imp-bar-track { margin-bottom: 26px; }
+
+  /* tabla por fondo */
+  .imp-scroll { overflow-x: auto; padding-bottom: 2px; }
+  .imp-tbl { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
+  .imp-tbl th, .imp-tbl td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--hair-soft); white-space: nowrap; }
+  .imp-tbl th { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; border-bottom: 2px solid var(--ink); }
+  .imp-tbl th:first-child, .imp-tbl td:first-child { text-align: left; }
+  .imp-tbl td { font-family: var(--font-mono); color: var(--ink); }
+  .imp-tbl td.tk { font-family: var(--font-sans); font-weight: 800; }
+  .imp-tbl td.mut { color: var(--ink-mut); font-weight: 400; }
+  .imp-tbl tr.total td { border-bottom: none; border-top: 2px solid var(--ink); font-weight: 700; }
+  .imp-tbl .c-ambar { color: var(--warn); }
+  .imp-tbl .c-coral { color: var(--coral); }
+  .imp-tbl-base { font-family: var(--font-sans); font-size: 10px; font-weight: 400; color: var(--ink-mut); text-transform: none; letter-spacing: 0; }
+
+  /* Ruta A / Ruta B */
+  .imp-rutas { margin-top: 8px; display: flex; flex-direction: column; gap: 14px; }
+  .imp-ruta { padding: 14px 16px; background: var(--panel); border: 1px solid var(--hair); border-left: 3px solid var(--accent); }
+  .imp-ruta-h { font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.03em; color: var(--accent); margin: 0 0 8px; }
+  .imp-ruta-p { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 8px; }
+  .imp-ruta-p:last-child { margin-bottom: 0; }
+  .imp-ruta-p b { color: var(--ink); font-weight: 600; }
+  .imp-ruta-est { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn); }
+  .imp-ruta ol { margin: 6px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--ink-2); line-height: 1.65; }
+  .imp-ruta ol li { margin: 0 0 5px; }
+  .imp-ruta ol li b { color: var(--ink); }
+
+  /* Ventana de reclasificación (PR 4). Franja de 12 meses SIN año y SIN marca de «hoy»:
+     la ventana es el cierre fiscal del año analizado y cae en el año calendario siguiente
+     — un eje fechado mezclaría los dos momentos (Regla 2). La fila del bróker que NO es el
+     del cliente se apaga en vez de ocultarse. */
+  .imp-vent { margin: 10px 0 12px; display: flex; flex-direction: column; gap: 10px; }
+  .imp-vent-fila.apagada { opacity: .45; }
+  .imp-vent-lab { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 5px; }
+  .imp-vent-tuyo { color: var(--cash); letter-spacing: 0.04em; }
+  .imp-vent-meses { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; }
+  .imp-vent-mes {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-align: center;
+    padding: 5px 0; color: var(--ink-mut); background: var(--panel-tint);
+    border-top: 2px solid transparent; min-width: 0; overflow: hidden;
+  }
+  .imp-vent-mes.dentro { color: var(--warn); background: var(--panel); border-top-color: var(--warn); }
+  @media (max-width: 560px) {
+    .imp-vent-meses { gap: 1px; }
+    .imp-vent-mes { font-size: 8px; padding: 4px 0; letter-spacing: -0.02em; }
+  }
+
+  .imp-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 11px; color: var(--ink-mut); line-height: 1.6; }
+
+  /* ── Modales ⓘ — la letra chica a un clic. Patrón de `cashflow.html`/`metodo.html`. */
+  .imp-info { cursor: pointer; }
+  .imp-info::after { content: " ⓘ"; font-size: 10px; vertical-align: super; color: var(--accent); font-family: var(--font-sans); }
+  .imp-info.c-warn::after  { color: var(--warn); }
+  .imp-info.c-coral::after { color: var(--coral); }
+  .imp-info.c-mut::after   { color: var(--ink-mut); }
+  .imp-modal { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.55); align-items: center; justify-content: center; padding: 20px; }
+  .imp-modal.open { display: flex; }
+  .imp-modal-box { background: var(--panel); border: 1px solid var(--hair); max-width: 500px; width: 100%; padding: clamp(20px, 4vw, 30px); position: relative; max-height: 88vh; overflow-y: auto; }
+  .imp-modal-close { position: absolute; top: 10px; right: 12px; font-family: var(--font-mono); font-size: 20px; font-weight: 700; background: none; border: none; color: var(--ink-mut); cursor: pointer; line-height: 1; padding: 4px 8px; }
+  .imp-modal-close:hover { color: var(--ink); }
+  .imp-modal-eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .imp-modal-title { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 12px; letter-spacing: -0.01em; }
+  .imp-modal-p { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin: 0 0 12px; }
+  .imp-modal-p:last-child { margin-bottom: 0; }
+  .imp-modal-p b { color: var(--ink); font-weight: 600; }
+  .imp-modal-formula { background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 12px 14px; margin: 0 0 12px; }
+  .imp-mf-eq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); display: block; line-height: 1.4; }
+  .imp-mf-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .imp-mf-table td { font-family: var(--font-mono); padding: 5px 8px 5px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: baseline; color: var(--ink-mut); }
+  .imp-mf-table td:last-child { color: var(--ink); padding-right: 0; }
+  .imp-mf-table tr:last-child td { border-bottom: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .imp-modal-box { animation: none; }
+    .imp-arc, .imp-row { transition: none; }
+  }
+
+  @media (max-width: 820px) {
+    .imp-dist { grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 20px; }
+    .imp-row { grid-template-columns: 9px minmax(0, 1fr) 69px 51px; gap: 8px; padding: 7px 8px; }
+    .imp-legend-head { grid-template-columns: 1fr 69px 51px; gap: 8px; padding: 0 8px 10px; }
+    .imp-row .ramount, .imp-row .rpercent { font-size: 11px; }
+    .imp-row.group .rname { font-size: 9px; }
+    .imp-row .rname { font-size: 12px; }
+    .imp-row.fund .rname { padding-left: 4px; }
+  }
+  @media (max-width: 700px) {
+    .imp-dist { grid-template-columns: 1fr; gap: 18px; }
+    .imp-chart { max-width: 285px; }
+    .imp-reading { flex-direction: column; gap: 6px; margin-top: 10px; }
+    .imp-step-btn { padding: 10px 7px; }
+    .imp-step-btn b { font-size: 11px; }
+    .imp-step-btn small { font-size: 10px; }
+    .imp-notas .imp-nota { line-height: 1.7; }
+    .imp-center .value.pending { font-size: 17px; }
+    .imp-status { align-items: flex-start; gap: 10px; flex-direction: column; }
+  }
+  @media (max-width: 400px) {
+    .imp-row { grid-template-columns: 8px minmax(0, 1fr) 66px 48px; gap: 6px; padding: 9px 6px; }
+    .imp-legend-head { grid-template-columns: 1fr 66px 48px; gap: 6px; padding: 0 6px 10px; }
+    .imp-row.group .rname { font-size: 9px; letter-spacing: 0.02em; }
+    .imp-row .ramount, .imp-row .rpercent { font-size: 11px; }
+    .imp-chart { max-width: 255px; }
+    .imp-center .value { font-size: 26px; }
+    .imp-center .name { font-size: 12px; }
+    .imp-center .sub { font-size: 10px; }
+    .imp-sum-title { font-size: 12px; }
+    .imp-sum-title small { font-size: 10px; }
+    .imp-sum-value { font-size: 11px; }
+    .imp-rows summary { gap: 8px; }
+    .imp-vent-meses { gap: 2px; }
+    .imp-vent-mes { font-size: 7px; }
+    .imp-status { padding: 12px; }
+    .imp-status-title { font-size: 11px; }
+  }
+</style>
+<main class="wrap">
+  <header class="imp-head">
+    <h2 class="imp-title" id="impTitle">Impuestos</h2>
+    <p class="imp-lede" id="impLede"></p>
+  </header>
+
+  <div id="impStatus"></div>
+
+  <section class="imp-card" aria-label="Retención antes y después de la reclasificación">
+    <div class="imp-steps" id="impFases" role="group" aria-label="Fases de la retención"></div>
+    <div class="imp-notas" id="impNotas" data-phase="0"></div>
+    <div class="imp-dist">
+      <div class="imp-chart" id="impDona"></div>
+      <div class="imp-legend">
+        <div class="imp-legend-head" aria-hidden="true"><span>PORTAFOLIO / ETF</span><span id="impColMonto">RETENIDO</span><span>% INICIAL</span></div>
+        <div id="impLeyenda"></div>
+        <div class="imp-totalrow"><span>Cartera</span><span id="impTotalFase"></span></div>
+        <div class="imp-legend-tools"><button class="imp-reset" id="impReset" type="button">Ver toda la cartera</button></div>
+      </div>
+    </div>
+    <div class="imp-key" id="impClave" hidden><span><i class="recovered"></i>ROC estimado</span><span><i></i>Retención restante</span></div>
+    <div id="impAviso3b"></div>
+    <div class="imp-reading" id="impLectura"></div>
+    <p class="sr-only" id="impAnuncio" aria-live="polite"></p>
+  </section>
+
+  <section class="imp-lower" aria-label="Detalle de la vista fiscal">
+    <div class="imp-rows">
+      <details id="det-corte">
+        <summary><span class="imp-sum-title">El corte<small>Veredicto, barras a escala compartida y los tres buckets</small></span><span class="imp-sum-value" id="impSumCorte"></span></summary>
+        <div class="imp-det-body"><div class="imp-escalera" id="impEscalera"></div></div>
+      </details>
+      <details id="det-tabla">
+        <summary><span class="imp-sum-title">Ver detalle fiscal<small>Bruto, ROC, gravable y retenido, fondo por fondo</small></span><span class="imp-sum-value" id="impSumTabla"></span></summary>
+        <div class="imp-det-body">
+          <h3 class="imp-det-h" id="impTablaH">De dónde salió cada dólar de retención</h3>
+          <section class="imp-block" id="impBlock">
+            <div class="imp-scroll">
+              <table class="imp-tbl" id="impTabla"></table>
+            </div>
+            <div id="impTablaExtra"></div>
+          </section>
+        </div>
+      </details>
+    </div>
+
+    <div>
+      <h2 class="imp-group-title">Recuperación</h2>
+      <div class="imp-rows">
+        <details id="det-volver">
+          <summary><span class="imp-sum-title">Lo que puede volver<small>Reclasificación del bróker y casilla 9 del 1042-S</small></span><span class="imp-sum-value" id="impSumVolver"></span></summary>
+          <div class="imp-det-body"><section class="imp-rutas" id="impRutaA"></section></div>
+        </details>
+        <details id="det-irs">
+          <summary><span class="imp-sum-title">Vía IRS<small>Lo que no vuelve solo: gap de tratado / W-8BEN</small></span><span class="imp-sum-value" id="impSumIrs"></span></summary>
+          <div class="imp-det-body"><section class="imp-rutas" id="impRutaB"></section></div>
+        </details>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="imp-group-title">Para tu declaración</h2>
+      <div class="imp-rows">
+        <details id="det-pais">
+          <summary><span class="imp-sum-title">Dividendos y crédito fiscal<small>La base y lo pagado a EE.UU.</small></span><span class="imp-sum-value" id="impSumPais"></span></summary>
+          <div class="imp-det-body" id="impPais"></div>
+        </details>
+        <details id="det-venta">
+          <summary><span class="imp-sum-title">Ventas y base fiscal<small>Ganancias realizadas, latentes y ajuste por ROC</small></span><span class="imp-sum-value" id="impSumVenta"></span></summary>
+          <div class="imp-det-body" id="impVenta"></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <p class="imp-foot" id="impFoot"></p>
+</main>
+<script>
+(function initImpuestosV2() {
+  "use strict";
+  const DATA = {{DATA_JSON}};
+  // U2: UNA vista (dona de dos fases) en vez de las 5 antiguas. Todo el JSON de
+  // `ui/adapters.py::impuestos_data` se renderiza de una vez; las fases 1/2 son estado
+  // LOCAL del iframe (un clic no es un rerun de Streamlit). Ninguna cifra fiscal se
+  // calcula aquí: los arcos y los porcentajes de la leyenda son geometría/proporción de
+  // cifras que ya vienen resueltas (mismo criterio que la referencia auditada).
+
+  function money(x) {
+    var n = (x == null || isNaN(x)) ? 0 : Number(x);
+    return (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
+  }
+  function pct(p) {
+    if (p == null || isNaN(p)) return "";
+    return p.toFixed(1) + "% del bruto";
+  }
+  // §9.4: un ancho negativo es CSS inválido y uno > 100 empuja al vecino fuera de la
+  // caja. Todo ancho de barra pasa por aquí.
+  function clampW(x) {
+    if (x == null || isNaN(x)) return 0;
+    return Math.max(0, Math.min(100, x));
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+  function set(id, html) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
+  var P = DATA.peldanos || {};
+  var tasaTxt = DATA.declarado ? (DATA.tasa_pct + "% " + (DATA.tiene_tratado ? "por el tratado con EE.UU." : "sin tratado")) : null;
+
+  // La SEGUNDA vía para declarar el país (portado de «El corte»). Tres estados, porque
+  // prometer un atajo que no existe es peor que no ofrecerlo. El país nunca se deduce de
+  // la tasa retenida: lo decide `logic.pais_desde_codigo_1042s` sobre la casilla 13b.
+  var R1042 = DATA.residencia_1042s || {};
+  function viaPais() {
+    if (R1042.pais_detectado) {
+      return " Ya lo sabemos por tu 1042-S, que declara <b>" + esc(R1042.pais_detectado)
+           + "</b> (casilla 13b): basta con que lo confirmes.";
+    }
+    if (R1042.codigo) {
+      return " Tu 1042-S trae el código <b>" + esc(R1042.codigo) + "</b> (casilla 13b), que no "
+           + "está en nuestra tabla de tasas: elígelo a mano.";
+    }
+    return " Si tienes tu <b>1042-S</b>, subirlo también sirve: la casilla 13b trae tu residencia.";
+  }
+
+  // ---- Veredicto de «El corte» (PR 2, portado literal) --------------------------------
+  // Borde y verbo SALEN DEL DATO, nunca cableados.
+  //
+  // EL ORDEN DE LAS RAMAS ES LOAD-BEARING: `retenido.correcta` / `recuperable_roc` /
+  // `gap_w8ben` son `null` salvo `estado === "ok"` (adapters.py). Las ramas `!declarado` y
+  // `parcial` cortan ANTES de tocarlos — reordenar mete un TypeError sobre null que mata
+  // el script entero (modo de fallo del #84). Pineado como EFECTO por `test_veredicto_*`
+  // con una fixture por rama.
+  function veredicto(DATA, Pc, R) {
+    var X = money(R.monto == null ? 0 : R.monto);
+    var kick = DATA.declarado
+      ? "El corte · " + esc(DATA.pais || "") + ", " + esc(DATA.tasa_pct) + "% "
+        + (DATA.tiene_tratado ? "con tratado" : "sin tratado")
+      : "El corte · sin residencia declarada";
+    if (!DATA.declarado) {
+      return { borde: "warn", kick: kick,
+        big: "Falta tu residencia fiscal para saber si te retuvieron de más.", sub: "" };
+    }
+    if (R.estado === "parcial") {
+      var n = (R.fondos_sin_desglose || []).length;
+      return { borde: "warn", kick: kick,
+        big: "Te retuvieron " + X + ". En " + (n === 1 ? "1 fondo" : n + " fondos")
+             + " no podemos decir cuánto sobra.", sub: "" };
+    }
+    var Y = money(Pc ? Pc.monto : 0);
+    var roc = (R.recuperable_roc && R.recuperable_roc.monto) || 0;
+    var gap = (R.gap_w8ben && R.gap_w8ben.monto) || 0;
+
+    // UN solo predicado para «¿hay gap de W-8BEN que importe?». Con un gap de EXACTAMENTE
+    // $0.01 (`0.01 > 0.01` es falso) el titular decía «Todo el exceso vuelve solo» mientras
+    // la tarjeta de abajo mostraba «W-8BEN · $0.01». Visto en producción. El arreglo NO es
+    // redondear la tarjeta a $0.00 — el centavo existe: es que el titular deje de decir
+    // «todo» cuando no es todo.
+    var GAP_MATERIAL = 0.01;
+    var gapMaterial = gap > GAP_MATERIAL;
+    var gapResidual = gap > 0 && !gapMaterial;
+    var subResidual = gapResidual
+      ? '<span class="c-coral">Quedan ' + money(gap)
+        + ' de gap de W-8BEN, que no vuelven solos</span>'
+      : "";
+
+    if (gapMaterial) {
+      return { borde: "coral", kick: kick,
+        big: "Te retuvieron " + X + " — te tocaban " + Y + ".",
+        sub: '<span class="c-warn">' + money(roc) + ' vuelven solos cuando tu bróker '
+           + 'reclasifique el ROC</span> · <span class="c-coral">' + money(gap)
+           + ' no vuelven nunca: falta tu W-8BEN</span>' };
+    }
+    if (roc > 0.01) {
+      return { borde: "warn", kick: kick,
+        big: "Te retuvieron " + X + " — te tocaban " + Y + ". "
+             + (gapResidual ? "Prácticamente todo" : "Todo") + " el exceso vuelve solo.",
+        sub: subResidual };
+    }
+    return { borde: "cash", kick: kick,
+      big: "Te retuvieron " + X + ", "
+           + (gapResidual ? "prácticamente" : "justo") + " lo que te tocaba.",
+      sub: subResidual };
+  }
+
+  // ---- Modales ⓘ (PR 3, portado) -------------------------------------------------------
+  function modalHTML(id, eyebrow, title, partes) {
+    var cuerpo = "";
+    partes.forEach(function (p) {
+      cuerpo += (p.charAt(0) === "<") ? p : '<p class="imp-modal-p">' + p + '</p>';
+    });
+    return '<div id="' + id + '" class="imp-modal" role="dialog" aria-modal="true" '
+      + 'aria-labelledby="' + id + '-title">'
+      + '<div class="imp-modal-box">'
+      + '<button class="imp-modal-close" id="' + id + '-close" aria-label="Cerrar">×</button>'
+      + '<p class="imp-modal-eyebrow">' + esc(eyebrow) + '</p>'
+      + '<p class="imp-modal-title" id="' + id + '-title">' + esc(title) + '</p>'
+      + cuerpo + '</div></div>';
+  }
+  function wireModal(id, triggerSel) {
+    var modal = document.getElementById(id);
+    var closeBtn = document.getElementById(id + "-close");
+    if (!modal || !closeBtn || !modal.classList || !modal.addEventListener) return;
+    var trig = (typeof document.querySelectorAll === "function")
+      ? document.querySelectorAll(triggerSel) : [];
+    function abrir() { modal.classList.add("open"); closeBtn.focus(); }
+    function cerrar() { modal.classList.remove("open"); }
+    for (var i = 0; i < trig.length; i++) {
+      trig[i].addEventListener("click", function (e) { e.stopPropagation(); abrir(); });
+    }
+    closeBtn.addEventListener("click", cerrar);
+    modal.addEventListener("click", function (e) { if (e.target === modal) cerrar(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") cerrar(); });
+  }
+
+  // ---- Título + lede (los de la vista «corte», que era la entrada) ----------------------
+  set("impTitle", "La escalera de tus impuestos");
+  set("impLede",
+    DATA.declarado
+      ? "Vives en <b>" + esc(DATA.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
+        + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
+      : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
+        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
+        + viaPais());
+
+  // ---- Banner de estado de residencia (nuevo en U2, patrón de la referencia) ------------
+  if (!DATA.declarado) {
+    set("impStatus",
+      '<div class="imp-status" role="status"><div>'
+      + '<p class="imp-status-title">Falta tu residencia fiscal</p>'
+      + '<p>Podemos mostrar lo retenido, pero no cerrar el diagnóstico. '
+      + 'Declara tu país en el <b>Paso 2</b>.' + viaPais() + '</p>'
+      + '</div></div>');
+  } else {
+    set("impStatus", "");
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // Dona de dos fases (U2). Fase 1: la retención AL COBRO partida por ETF. Fase 2: el
+  // agregado tras la reclasificación anual — anillo interior «ROC que vuelve» (trama) +
+  // «retención restante»; el anillo exterior fino conserva la distribución inicial.
+  //
+  // FUENTE DE CADA CIFRA (traspaso §6›9 E, ruta corregida 2026-09-20):
+  //   Fase 1 centro/arcos  → peldanos.retenido.monto / fondos[].retenido
+  //   Fase 2 centro        → impuesto_local.credito_eeuu.definitivo
+  //   Fase 2 corte ROC     → impuesto_local.credito_eeuu.vuelve_por_roc
+  //   Fase 2 por ETF       → fondos[].recuperable_roc (None → «Pendiente»; NUNCA prorratear)
+  //   Grupos               → fondos[].grupo (logic.classify_tickers, vía adapter)
+  // ════════════════════════════════════════════════════════════════════════════════════
+  var R = P.retenido || {};
+  var CE = (DATA.impuesto_local && DATA.impuesto_local.credito_eeuu) || null;
+  var retTotal = (R.monto == null) ? 0 : Number(R.monto);
+  var vuelveAgg = (CE && CE.vuelve_por_roc != null) ? Number(CE.vuelve_por_roc) : null;
+  var definitivo = (CE && CE.definitivo != null) ? Number(CE.definitivo) : null;
+  var motivoDefinitivo = CE ? (CE.definitivo_motivo || null) : null;
+  var MOTIVOS = {
+    "sin_dato_de_roc_recuperable": "no hay dato de ROC recuperable con qué medirlo"
+  };
+  var fondos = (DATA.fondos || []).slice();
+  var sinRetencion = !(retTotal > 0.01);
+
+  // Grupos Dividendos/Crecimiento (§6›9 E: mode_a/mode_b de `logic.classify_tickers`).
+  // Los fondos sin clasificar (mode_skip/ausente) NO se tiran: van a «Otros» (decisión
+  // conservadora — inventario completo).
+  var GRUPOS_DEF = [
+    { clave: "mode_a", nombre: "Dividendos", rampa: ["--f4", "--f5"] },
+    { clave: "mode_b", nombre: "Crecimiento", rampa: ["--f1", "--f3"] },
+    { clave: "otros",  nombre: "Otros",      rampa: ["--ink-mut", "--hair"] }
+  ];
+  function claveGrupo(f) {
+    return (f && (f.grupo === "mode_a" || f.grupo === "mode_b")) ? f.grupo : "otros";
+  }
+  function colorDe(rampa, i, n) {
+    if (n <= 1) return "var(" + rampa[0] + ")";
+    var p = Math.round(100 - i * 100 / (n - 1));
+    return "color-mix(in srgb, var(" + rampa[0] + ") " + p + "%, var(" + rampa[1] + "))";
+  }
+  var grupos = [];
+  GRUPOS_DEF.forEach(function (gd) {
+    var fs = fondos.filter(function (f) { return claveGrupo(f) === gd.clave; });
+    if (!fs.length) return;
+    fs.forEach(function (f, i) { f._color = colorDe(gd.rampa, i, fs.length); f._g = gd.clave; });
+    grupos.push({ clave: gd.clave, nombre: gd.nombre, fondos: fs,
+                  color: "var(" + gd.rampa[0] + ")" });
+  });
+  var conEncabezados = grupos.length > 1;   // §6›9 G: un solo portafolio → sin encabezados
+
+  // Regla 3b: Σ fondos[].recuperable_roc contra vuelve_por_roc. Tienen gates distintos
+  // (`desglose_ok` vs `reconcilia`) y PUEDEN divergir: si divergen, la UI no puede pintar
+  // las dos cifras como si fueran la misma (aviso explícito con las dos).
+  var sigmaDesglose = null;
+  (function () {
+    var todos = fondos.length > 0;
+    var suma = 0;
+    fondos.forEach(function (f) {
+      if (f.recuperable_roc == null) { todos = false; return; }
+      suma += Number(f.recuperable_roc);
+    });
+    if (todos) sigmaDesglose = Math.round(suma * 100) / 100;
+  })();
+  var divergencia = (sigmaDesglose != null && vuelveAgg != null
+                     && Math.abs(sigmaDesglose - vuelveAgg) > 0.01);
+
+  var fase = 0;
+  var pinned = null;   // null | {tipo:"f"|"g", id:string}
+
+  function objetivoDe(sel) {
+    if (!sel) return null;
+    if (sel.tipo === "g") {
+      for (var i = 0; i < grupos.length; i++) {
+        if (grupos[i].clave === sel.id) {
+          return { label: grupos[i].nombre, items: grupos[i].fondos };
+        }
+      }
+      return null;
+    }
+    for (var j = 0; j < fondos.length; j++) {
+      if (fondos[j].ticker === sel.id) return { label: fondos[j].ticker, items: [fondos[j]] };
+    }
+    return null;
+  }
+  function selDe(idStr) {
+    if (!idStr) return null;
+    var p = String(idStr).split(":");
+    return { tipo: p[0], id: p.slice(1).join(":") };
+  }
+  function sumaRet(items) {
+    var s = 0;
+    items.forEach(function (f) { s += (f.retenido == null ? 0 : Number(f.retenido)); });
+    return s;
+  }
+  function pctDe(x, base) {
+    if (base == null || !(base > 0) || x == null) return null;
+    return x / base * 100;
+  }
+  function pctTxt(x) { return (x == null) ? "—" : x.toFixed(1) + "%"; }
+
+  // Geometría de arcos (misma fórmula que la referencia auditada).
+  function punto(r, a) { return [120 + r * Math.sin(a), 120 - r * Math.cos(a)]; }
+  function arco(r, a, b) {
+    var p = punto(r, a), q = punto(r, b);
+    return "M " + p[0].toFixed(3) + " " + p[1].toFixed(3)
+      + " A " + r + " " + r + " 0 " + ((b - a) > Math.PI ? 1 : 0) + " 1 "
+      + q[0].toFixed(3) + " " + q[1].toFixed(3);
+  }
+  function pathArc(r, a, b, extra) {
+    return '<path d="' + arco(r, a, b) + '" fill="none" ' + extra + '></path>';
+  }
+
+  function donutSVG() {
+    var s = '<svg viewBox="0 0 240 240" role="group" aria-label="'
+      + (fase === 0
+          ? "Retención al cobro por ETF. También seleccionable desde la leyenda."
+          : "Retención tras la reclasificación: ROC que vuelve y retención restante. El anillo exterior conserva la distribución inicial.")
+      + '">';
+    s += '<defs><pattern id="refundPattern" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+      + '<rect width="5" height="5" fill="#fff"/><line x1="0" y1="0" x2="0" y2="5" stroke="#b2c4d4" stroke-width="1.1"/>'
+      + '</pattern></defs>';
+    var activos = null;
+    var obj = objetivoDe(pinned);
+    if (obj) {
+      activos = {};
+      obj.items.forEach(function (f) { activos[f.ticker] = true; });
+    }
+    if (fase === 0) {
+      var ang = 0;
+      fondos.forEach(function (f) {
+        var ret = (f.retenido == null ? 0 : Number(f.retenido));
+        var span = retTotal > 0 ? ret / retTotal * Math.PI * 2 : 0;
+        if (span <= 0) return;
+        var a = ang + 0.012, b = ang + span - 0.012;
+        ang += span;
+        var dim = activos && !activos[f.ticker];
+        s += pathArc(92, a, b, 'stroke="' + f._color + '" stroke-width="28" class="imp-arc'
+          + (dim ? " dim" : "") + '" data-sel="f:' + esc(f.ticker) + '" tabindex="0" role="button" '
+          + 'aria-label="' + esc(f.ticker) + ": " + money(ret) + ", "
+          + pctTxt(pctDe(ret, retTotal)) + ' de la retención total" aria-pressed="'
+          + (pinned && pinned.tipo === "f" && pinned.id === f.ticker ? "true" : "false") + '"');
+        if (activos && activos[f.ticker]) s += pathArc(113, a, b, 'class="imp-rim"');
+      });
+    } else {
+      // Anillo exterior fino: la distribución inicial, conservada (referencia).
+      var ang2 = 0;
+      fondos.forEach(function (f) {
+        var ret = (f.retenido == null ? 0 : Number(f.retenido));
+        var span = retTotal > 0 ? ret / retTotal * Math.PI * 2 : 0;
+        if (span <= 0) return;
+        s += pathArc(110, ang2 + 0.012, ang2 + span - 0.012,
+          'stroke="' + f._color + '" stroke-width="4" class="imp-arc" style="pointer-events:none"');
+        ang2 += span;
+      });
+      // Anillo interior: agregado. Trama = ROC que vuelve; sólido = retención restante;
+      // gris = «Sin dato» (definitivo None → motivo; NUNCA retenido − 0, §6›9 E).
+      if (retTotal > 0) {
+        var cut = 0;
+        if (vuelveAgg != null && vuelveAgg > 0.005) {
+          cut = Math.min(vuelveAgg / retTotal, 1) * Math.PI * 2;
+          s += pathArc(86, 0.012, Math.max(cut - 0.012, 0.013),
+            'stroke="url(#refundPattern)" stroke-width="28" data-kind="recovery"');
+        }
+        if (definitivo != null && definitivo > 0.005 && cut < Math.PI * 2) {
+          s += pathArc(86, Math.max(cut + 0.012, 0.012), Math.PI * 2 - 0.012,
+            'stroke="var(--accent)" stroke-width="28" data-kind="remaining"');
+        } else if (definitivo == null && cut < Math.PI * 2) {
+          s += pathArc(86, Math.max(cut + 0.012, 0.012), Math.PI * 2 - 0.012,
+            'stroke="var(--hair)" stroke-width="28" data-kind="sin-dato"');
+        }
+      } else {
+        s += pathArc(86, 0.012, Math.PI * 2 - 0.012,
+          'stroke="var(--hair)" stroke-width="28" data-kind="sin-dato"');
+      }
+    }
+    s += '</svg>';
+    // Centro
+    var cName, cValue, cSub, pending = false;
+    if (fase === 0) {
+      if (obj) {
+        var m = sumaRet(obj.items);
+        cName = obj.label; cValue = money(m);
+        cSub = pctTxt(pctDe(m, retTotal)) + " del total inicial";
+      } else {
+        cName = "Retenido al cobro"; cValue = money(retTotal);
+        cSub = fondos.length + " ETF" + (conEncabezados ? " · " + grupos.length + " portafolios" : "");
+      }
+    } else {
+      if (obj) {
+        cName = obj.label; cValue = "Por verificar"; pending = true;
+        cSub = "Reparto por ETF pendiente";
+      } else {
+        cName = "Retención restante";
+        if (definitivo != null) {
+          cValue = money(definitivo);
+          cSub = pctTxt(pctDe(definitivo, retTotal)) + " de lo retenido al cobro · estimado";
+        } else {
+          cValue = "Sin dato"; pending = true;
+          cSub = "Motivo: " + (MOTIVOS[motivoDefinitivo] || esc(motivoDefinitivo) || "sin dato");
+        }
+      }
+    }
+    s += '<div class="imp-center"><span class="name" id="impCentroNombre">' + cName + '</span>'
+      + '<strong class="value' + (pending ? " pending" : "") + '" id="impCentroValor">' + cValue + '</strong>'
+      + '<span class="sub" id="impCentroSub">' + cSub + '</span></div>';
+    return s;
+  }
+
+  function leyendaHTML() {
+    var s = "";
+    grupos.forEach(function (g) {
+      if (conEncabezados) {
+        var gRet = sumaRet(g.fondos);
+        var gMonto, gPct;
+        if (fase === 0) {
+          gMonto = money(gRet); gPct = pctTxt(pctDe(gRet, retTotal));
+        } else {
+          // §7.5.2: con desglose disponible, la fase 2 NO puede quedar toda en
+          // «Pendiente». Suma del grupo solo si TODOS sus fondos tienen desglose:
+          // una suma parcial se presentaría como total (mentira de alcance).
+          var completos = g.fondos.every(function (f) { return f.recuperable_roc != null; });
+          if (completos) {
+            var sg = 0;
+            g.fondos.forEach(function (f) { sg += Number(f.recuperable_roc); });
+            gMonto = money(sg); gPct = pctTxt(pctDe(sg, retTotal));
+          } else { gMonto = "Pendiente"; gPct = "—"; }
+        }
+        s += filaHTML({ id: "g:" + g.clave, cls: "group", color: g.color, nombre: g.nombre,
+                        monto: gMonto, pct: gPct,
+                        pending: fase === 1 && gMonto === "Pendiente" });
+      }
+      g.fondos.forEach(function (f) {
+        var ret = (f.retenido == null ? 0 : Number(f.retenido));
+        var monto, p, pending = false;
+        if (fase === 0) {
+          monto = money(ret); p = pctTxt(pctDe(ret, retTotal));
+        } else if (f.recuperable_roc != null) {
+          monto = money(f.recuperable_roc); p = pctTxt(pctDe(Number(f.recuperable_roc), retTotal));
+        } else {
+          monto = "Pendiente"; p = "—"; pending = true;
+        }
+        s += filaHTML({ id: "f:" + f.ticker, cls: "fund", color: f._color, nombre: f.ticker,
+                        monto: monto, pct: p, pending: pending });
+      });
+    });
+    return s;
+  }
+  function filaHTML(r) {
+    var obj = objetivoDe(selDe(r.id));
+    var ariaExtra;
+    if (fase === 1 && r.pending) ariaExtra = ": reparto pendiente de verificar";
+    else if (fase === 1 && r.cls === "fund") ariaExtra = ": " + r.monto + " de ROC que vuelve (estimado)";
+    else ariaExtra = ": " + r.monto + ", " + r.pct + " de la retención total";
+    var isActive = pinned && (r.id === pinned.tipo + ":" + pinned.id);
+    return '<button type="button" class="imp-row ' + r.cls + (isActive ? " active" : "")
+      + '" data-sel="' + esc(r.id) + '" aria-pressed="' + (isActive ? "true" : "false")
+      + '" aria-label="' + esc(r.nombre) + esc(ariaExtra) + '">'
+      + '<span class="imp-swatch" style="background:' + r.color + '" aria-hidden="true"></span>'
+      + '<span class="rname">' + esc(r.nombre) + '</span>'
+      + '<span class="ramount' + (r.pending ? " pending" : "") + '">' + esc(r.monto) + '</span>'
+      + '<span class="rpercent">' + esc(r.pct) + '</span></button>';
+  }
+
+  function renderDona() {
+    set("impFases",
+      '<button class="imp-step-btn" type="button" data-fase="0" aria-pressed="' + (fase === 0) + '">'
+      + '<b>1 · Retenido al cobro</b><small>' + money(retTotal) + ' · al cobro</small></button>'
+      + '<button class="imp-step-btn" type="button" data-fase="1" aria-pressed="' + (fase === 1) + '">'
+      + '<b>2 · Retención restante</b><small>'
+      + (definitivo != null ? money(definitivo) + ' · estimado' : 'Sin dato') + '</small></button>');
+
+    // Notas de fase. §7.5.1: el porcentaje de la fase 2 ROTULA SU BASE («de lo retenido
+    // al cobro») — el ROC de la tabla es % sobre el bruto y se leen como la misma cifra.
+    var nota1;
+    if (definitivo != null && vuelveAgg != null && retTotal > 0) {
+      nota1 = "Tras la reclasificación anual, podrían devolverse <strong>" + money(vuelveAgg)
+        + " (" + pctTxt(pctDe(vuelveAgg, retTotal)) + " de lo retenido al cobro)</strong>. "
+        + "Quedarían <strong>" + money(definitivo) + "</strong> retenidos · estimado, "
+        + "no devolución confirmada.";
+    } else if (vuelveAgg != null && retTotal > 0) {
+      nota1 = "Tras la reclasificación anual, podrían devolverse <strong>" + money(vuelveAgg)
+        + " (" + pctTxt(pctDe(vuelveAgg, retTotal)) + " de lo retenido al cobro)</strong>. "
+        + "De lo restante no hay dato: "
+        + (MOTIVOS[motivoDefinitivo] || esc(motivoDefinitivo) || "sin dato") + ".";
+    } else {
+      nota1 = "No hay una reclasificación estimada que mostrar sobre estos datos.";
+    }
+    var notas = document.getElementById("impNotas");
+    if (notas && notas.setAttribute) notas.setAttribute("data-phase", String(fase));
+    if (notas) {
+      notas.innerHTML =
+        '<p class="imp-nota" data-note="0">Retención descontada por el bróker al pagar tus dividendos. '
+        + 'La dona la reparte por ETF; el anillo exterior de la fase 2 conserva ese reparto.</p>'
+        + '<p class="imp-nota" data-note="1"' + (fase === 1 ? "" : ' aria-hidden="true"') + '>'
+        + nota1 + '</p>';
+    }
+
+    set("impDona", donutSVG());
+    set("impLeyenda", leyendaHTML());
+    set("impColMonto", fase === 0 ? "RETENIDO" : "ROC QUE VUELVE");
+    set("impTotalFase", fase === 0
+      ? money(retTotal)
+      : (definitivo != null ? money(definitivo) + " restantes" : "Sin dato"));
+    var clave = document.getElementById("impClave");
+    if (clave) {
+      if (fase === 1 && clave.removeAttribute) clave.removeAttribute("hidden");
+      else if (clave.setAttribute) clave.setAttribute("hidden", "");
+    }
+    set("impLectura", fase === 0
+      ? '<p>Selecciona un portafolio o un ETF para resaltarlo.</p>'
+        + '<p>Base fija: <strong>' + money(retTotal) + ' retenidos inicialmente</strong>.</p>'
+      : '<p>El anillo interior es el agregado de la cartera: sin atribuir el ROC a ningún ETF.</p>'
+        + '<p>Base fija: <strong>' + money(retTotal) + ' retenidos inicialmente</strong>.</p>');
+    var reset = document.getElementById("impReset");
+    if (reset && reset.classList) reset.classList.toggle("visible", !!pinned);
+    set("impAnuncio", (fase === 0 ? "Retenido al cobro" : "Retención restante estimada")
+      + ": " + (fase === 0 ? money(retTotal)
+                             : (definitivo != null ? money(definitivo) : "sin dato")));
+  }
+
+  // Aviso Regla 3b: solo cuando las dos superficies DIVERGEN de verdad. Las dos cifras se
+  // nombran separadas; nunca se pinta una como si fuera la otra.
+  if (divergencia) {
+    set("impAviso3b",
+      '<div class="imp-cta imp-aviso3b">El desglose por ETF suma <b>' + money(sigmaDesglose)
+      + '</b>, que no cuadra con el corte agregado de <b>' + money(vuelveAgg)
+      + '</b> que usa la fase 2. Las dos cifras tienen gates de reconciliación distintos '
+      + '(desglose por fondo frente a casilla 9): no son la misma cifra y no las '
+      + 'presentamos como equivalentes.</div>');
+  } else {
+    set("impAviso3b", "");
+  }
+
+  if (sinRetencion) {
+    // §6›9 G: retención cero → SIN dona, mensaje (equivalente al «Sin dividendos que
+    // declarar» de la ruta; aquí hay dividendos pero retención 0.00).
+    set("impFases", "");
+    set("impNotas", "");
+    set("impDona", "");
+    set("impLeyenda", "");
+    set("impLectura", "");
+    set("impTotalFase", money(0));
+    set("impAnuncio", "Sin retención al cobro en la ventana analizada.");
+    var elDona = document.getElementById("impDona");
+    if (elDona) {
+      elDona.innerHTML = '<div class="imp-cta" style="margin-top:0">No hubo retención al cobro '
+        + 'sobre tus dividendos en la ventana analizada: no hay dona que repartir. Lo que '
+        + 'sigue abajo (detalle fiscal, declaración) sí aplica.</div>';
+    }
+  } else {
+    renderDona();
+  }
+
+  // Hook de fase para tests (node) y re-render en navegador.
+  globalThis.__impSetFase = function (n) {
+    fase = (n === 1) ? 1 : 0;
+    if (sinRetencion) return;
+    renderDona();
+  };
+  globalThis.__impSelect = function (idStr) {
+    var sel = selDe(idStr);
+    if (pinned && sel && pinned.tipo === sel.tipo && pinned.id === sel.id) pinned = null;
+    else pinned = sel;
+    if (sinRetencion) return;
+    renderDona();
+  };
+
+  // Interacción por delegación (los arcos y filas se re-dibujan como string en cada
+  // render: escuchar sobre `document` es lo único que sobrevive al re-render).
+  if (typeof document.addEventListener === "function") {
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || typeof t.closest !== "function") return;
+      var f = t.closest("[data-fase]");
+      if (f) { globalThis.__impSetFase(Number(f.getAttribute("data-fase"))); return; }
+      var s = t.closest("[data-sel]");
+      if (s) { globalThis.__impSelect(s.getAttribute("data-sel")); return; }
+      if (t.closest("#impReset")) { pinned = null; if (!sinRetencion) renderDona(); return; }
+      var tip = t.closest("[data-tip]");
+      if (tip) {
+        var mid = "modal-" + tip.getAttribute("data-tip");
+        var m = document.getElementById(mid);
+        if (m && m.classList) {
+          m.classList.add("open");
+          var c = document.getElementById(mid + "-close");
+          if (c && c.focus) c.focus();
+        }
+      }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        if (pinned !== null) { pinned = null; if (!sinRetencion) renderDona(); }
+        return;
+      }
+      var t = e.target;
+      if ((e.key === "Enter" || e.key === " ") && t && typeof t.closest === "function") {
+        var s = t.closest("[data-sel]");
+        if (s) { e.preventDefault(); globalThis.__impSelect(s.getAttribute("data-sel")); }
+      }
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // «El corte» (vista antigua `corte`, portado literal: veredicto + barras + buckets +
+  // líneas de contexto + modales). Las frases y marcadores se conservan verbatim — el
+  // guard `test_ninguna_frase_desaparece…` las compara contra origin/main.
+  // ════════════════════════════════════════════════════════════════════════════════════
+  var Pb = P.bruto || {};
+  var Pg = P.gravable || {};
+  var Pc = P.corresponde || null;
+
+  var bruto = Pb.monto || 0;
+  var grav  = Pg.monto || 0;
+
+  var rocEfectivo = null;
+  if (P.bruto && P.bruto.monto > 0 && P.gravable) {
+    rocEfectivo = (1 - P.gravable.monto / P.bruto.monto) * 100;
+  }
+
+  // ---- 1. Veredicto ----
+  var V = veredicto(DATA, Pc, R);
+  var vHTML = '<div class="imp-verdict" data-borde="' + V.borde + '" '
+    + 'style="border-left-color:var(--' + V.borde + ')">'
+    + '<p class="imp-verdict-kick">' + esc(V.kick) + '</p>'
+    + '<p class="imp-verdict-big">' + V.big + '</p>'
+    + (V.sub ? '<p class="imp-verdict-sub">' + V.sub + '</p>' : '')
+    + '</div>';
+
+  // ---- 2. Barra 1 — base = bruto = 100% ----
+  var wAnchor = clampW(bruto > 0 ? (bruto - grav) / bruto * 100 : 0);
+  var wDrip   = clampW(bruto > 0 ? grav / bruto * 100 : 0);
+  var rocLab  = (rocEfectivo != null && rocEfectivo > 0.05)
+    ? ' (ROC ' + rocEfectivo.toFixed(1) + '%)' : '';
+  var bar1 = '<div class="imp-bar-block">'
+    + '<p class="imp-bar-h"><span class="imp-info" data-tip="imp-bruto">De cada dólar que repartieron tus fondos</span></p>'
+    + '<div class="imp-bar-track" data-bar="1">'
+      + '<div class="imp-bar-seg" data-seg="1-anchor" style="width:' + wAnchor + '%;background:var(--anchor)"></div>'
+      + '<div class="imp-bar-seg" data-seg="1-drip" style="width:' + wDrip + '%;background:var(--drip)"></div>'
+    + '</div>'
+    + '<div class="imp-bar-labs">'
+      + '<div class="imp-bar-lab" style="width:' + wAnchor + '%"><span class="n">' + money(bruto - grav)
+        + '</span> · <span class="imp-info c-warn" data-tip="imp-roc">era tuyo' + rocLab + '</span></div>'
+      + '<div class="imp-bar-lab" style="width:' + wDrip + '%"><span class="n">' + money(grav)
+        + '</span> · renta real</div>'
+    + '</div>'
+    + '</div>';
+
+  // ---- 3. Barra 2 — MISMA base `bruto`, SIN normalizar; regla vertical en corresponde ----
+  var okEstado = R.estado === "ok";
+  var mC  = okEstado && R.correcta        ? (R.correcta.monto || 0)        : 0;
+  var mRR = okEstado && R.recuperable_roc ? (R.recuperable_roc.monto || 0) : 0;
+  var mGG = okEstado && R.gap_w8ben       ? (R.gap_w8ben.monto || 0)       : 0;
+  var ret = R.monto == null ? 0 : R.monto;
+  var wRule = clampW(bruto > 0 && Pc ? Pc.monto / bruto * 100 : 0);
+  var reglaHTML = Pc
+    ? '<div class="imp-bar-rule" data-rule style="left:' + wRule + '%"></div>'
+      + '<div class="imp-bar-rule-lab" style="left:' + wRule + '%">↑ hasta aquí te tocaba pagar</div>'
+    : '';
+
+  var bar2 = '<div class="imp-bar-block' + (Pc ? ' has-rule' : '') + '">'
+    + '<p class="imp-bar-h"><span class="imp-info" data-tip="imp-retenido">Lo que el bróker se llevó — a la misma escala</span></p>';
+  if (okEstado) {
+    var wC = clampW(bruto > 0 ? mC / bruto * 100 : 0);
+    var wR = clampW(bruto > 0 ? mRR / bruto * 100 : 0);
+    var wG = clampW(bruto > 0 ? mGG / bruto * 100 : 0);
+    bar2 += '<div class="imp-bar-track" data-bar="2">'
+      + '<div class="imp-bar-seg" data-seg="2-correcta" style="width:' + wC + '%;background:var(--ink-mut)"></div>'
+      + '<div class="imp-bar-seg" data-seg="2-roc" style="width:' + wR + '%;background:var(--warn)"></div>'
+      + '<div class="imp-bar-seg" data-seg="2-gap" style="width:' + wG + '%;background:var(--coral)"></div>'
+      + '<div class="imp-bar-seg rest" data-seg="2-rest" style="width:' + clampW(100 - wC - wR - wG) + '%"></div>'
+      + reglaHTML
+      + '</div>';
+  } else {
+    var wRet = clampW(bruto > 0 ? ret / bruto * 100 : 0);
+    bar2 += '<div class="imp-bar-track" data-bar="2">'
+      + '<div class="imp-bar-seg" data-seg="2-retenido" style="width:' + wRet + '%;background:var(--loss)"></div>'
+      + '<div class="imp-bar-seg rest" data-seg="2-rest" style="width:' + clampW(100 - wRet) + '%"></div>'
+      + (R.estado === "parcial" ? reglaHTML : '')
+      + '</div>';
+    if (R.estado === "parcial") {
+      var sin = (R.fondos_sin_desglose || []).join(", ");
+      bar2 += '<div class="imp-cta">No podemos separar tu retención en tres con seguridad: en '
+        + '<b>' + esc(sin) + '</b> el CSV de tu bróker mezcla los reversos del split inverso de dic-2025 con las filas de impuesto, '
+        + 'y la retención «al cobro» de esos fondos no es una cifra fiable. Mostramos lo retenido neto por fondo en la tabla, sin el desglose.</div>';
+    } else {
+      bar2 += '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Declara tu país en el Paso 2.</b></div>'
+        + '<div class="imp-cta">Declara tu país para separar lo retenido en lo que es permanente, lo que vuelve solo por ROC y el gap de tratado. Son tres cifras con tres remedios distintos — sumarlas en una sola es el error que este diseño evita.' + viaPais() + '</div>';
+    }
+  }
+  bar2 += '</div>';
+
+  // ---- 4. Barra 3 — ZOOM: base = `retenido` = 100% (Regla 2: el rótulo lo declara) ----
+  var bar3 = '';
+  if (okEstado) {
+    var zC = clampW(ret > 0 ? mC / ret * 100 : 0);
+    var zR = clampW(ret > 0 ? mRR / ret * 100 : 0);
+    var zG = clampW(ret > 0 ? mGG / ret * 100 : 0);
+    bar3 = '<div class="imp-bar-block">'
+      + '<p class="imp-bar-h">La mordida, de cerca</p>'
+      + '<p class="imp-bar-zoom-lab">Ahora el <b>100% de la barra es lo retenido</b> (' + money(ret)
+        + '), no el bruto — los porcentajes de aquí son «de lo retenido».</p>'
+      + '<div class="imp-bar-track" data-bar="3">'
+        + '<div class="imp-bar-seg" data-seg="3-correcta" style="width:' + zC + '%;background:var(--ink-mut)"></div>'
+        + '<div class="imp-bar-seg" data-seg="3-roc" style="width:' + zR + '%;background:var(--warn)"></div>'
+        + '<div class="imp-bar-seg" data-seg="3-gap" style="width:' + zG + '%;background:var(--coral)"></div>'
+      + '</div>'
+      + '<div class="imp-buckets">'
+        + '<div class="imp-bucket gris"><p class="imp-bucket-lab"><span class="imp-info c-mut" data-tip="imp-correcta">Correcta</span></p>'
+          + '<span class="imp-bucket-money">' + money(mC) + '</span> '
+          + '<span class="imp-bucket-pct">' + zC.toFixed(1) + '% de lo retenido</span>'
+          + '<p class="imp-bucket-note">Permanente. No se recupera.</p></div>'
+        + '<div class="imp-bucket ambar"><p class="imp-bucket-lab"><span class="imp-info c-warn" data-tip="imp-vuelvesolo">Vuelve solo</span></p>'
+          + '<span class="imp-bucket-money">' + money(mRR) + '</span> '
+          + '<span class="imp-bucket-pct">' + zR.toFixed(1) + '% de lo retenido</span>'
+          + '<p class="imp-bucket-note">En el cierre anual de tu bróker: IB ene–mar, Schwab jun–sep.</p></div>'
+        + '<div class="imp-bucket coral"><p class="imp-bucket-lab"><span class="imp-info c-coral" data-tip="imp-w8ben">Solo si renuevas el W-8BEN</span></p>'
+          + '<span class="imp-bucket-money">' + money(mGG) + '</span> '
+          + '<span class="imp-bucket-pct">' + zG.toFixed(1) + '% de lo retenido</span>'
+          + '<p class="imp-bucket-note">Se repite cada año hasta que lo hagas.</p></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ---- 5. Las tres líneas de contexto — texto LITERAL, en este orden (§4.5) ----
+  var yaDev = R.ya_devuelto || {monto: 0};
+  var devLine = '<div class="imp-conc" style="border-left-color:var(--cash)">'
+    + 'De esa retención al cobro, el bróker <b>ya te devolvió</b> ' + money(yaDev.monto)
+    + (yaDev.pct != null ? ' (' + yaDev.pct.toFixed(1) + '% del bruto)' : '')
+    + ' en la reclasificación anual del ROC — es un movimiento aparte, no una de las tres porciones.</div>';
+  var ftp = R.impuesto_extranjero;
+  var ftpLine = '';
+  if (ftp && ftp.monto > 0.01) {
+    ftpLine = '<div class="imp-conc" style="border-left-color:var(--ink-mut)">'
+      + 'Además pagaste ' + money(ftp.monto) + ' de impuesto retenido por <b>emisores de otros '
+      + 'países</b> (p. ej. ZIM, Israel). No es retención de EE.UU. y no se reclama con el '
+      + '1040-NR: suele ser <b>crédito fiscal</b> en tu país de residencia.</div>';
+  }
+  var conc = '';
+  if (DATA.concentracion && DATA.concentracion.otro_ticker) {
+    var C = DATA.concentracion;
+    conc = '<div class="imp-conc"><b>' + C.pct.toFixed(1) + '%</b> de tu retención salió de un solo fondo: '
+      + '<b>' + esc(C.ticker) + '</b> ' + money(C.retenido) + ' frente a <b>' + esc(C.otro_ticker) + '</b> ' + money(C.otro_retenido)
+      + '. La retención NRA se concentra donde se concentra el rendimiento.</div>';
+  }
+
+  // ---- 6. Modales ⓘ de los peldaños 1-4, movidos LITERAL (PR 3) ----
+  var gCob = Pg;
+  var sinRoc = gCob.sin_roc || [];
+  var cobertura = sinRoc.length
+    ? ' El cálculo cubre <b>' + gCob.cubiertos + ' de ' + gCob.total + '</b> '
+        + (gCob.total === 1 ? 'fondo' : 'fondos') + '; '
+        + (sinRoc.length === 1
+            ? 'el fondo <b>' + esc(sinRoc[0]) + '</b> figura sin dato de ROC y tributa'
+            : 'los fondos <b>' + sinRoc.map(esc).join(', ') + '</b> figuran sin dato de ROC y tributan')
+        + ' sobre el bruto completo.'
+    : '';
+  var modales = modalHTML("modal-imp-bruto", "Qué es", "El dividendo bruto", [
+      "El dividendo <b>bruto</b> declarado por tus fondos, antes de cualquier retención. "
+        + "Leído del CSV de tu bróker — no reconstruido sumando hacia atrás.",
+    ])
+    + modalHTML("modal-imp-roc", "Cómo se calcula", "Retorno de capital (ROC)", [
+      '<div class="imp-modal-formula"><span class="imp-mf-eq">Gravable = bruto × (1 − ROC)</span></div>',
+      "El <b>Retorno de Capital</b> (ROC) no es renta: es tu propio dinero de vuelta, y no "
+        + "paga impuesto hoy"
+        + (rocEfectivo != null && rocEfectivo > 0.5
+            ? '. En tu cartera el ROC fue <b>' + rocEfectivo.toFixed(0) + '%</b> del reparto (ver «Fondo por fondo»)'
+            : '')
+        + '.' + cobertura,
+    ])
+    + modalHTML("modal-imp-retenido", "Qué es", "Lo retenido al cobro", [
+      "Lo que el bróker descontó <b>al momento del cobro</b> del dividendo, según tu CSV."
+        + (okEstado ? ' No se suma en una cifra: se parte en tres, y los tres suman este monto.' : ''),
+    ]);
+  if (okEstado) {
+    modales += modalHTML("modal-imp-correcta", "Qué es esta cifra", "Retención correcta", [
+        "Tu tasa de residencia (<b>" + esc(DATA.tasa_pct + "%") + "</b>) aplicada sobre la parte "
+          + "gravable. Es lo que un bróker debería retenerte si tu W-8BEN está al día.",
+      ])
+      + modalHTML("modal-imp-vuelvesolo", "Cómo vuelve", "Exceso por ROC", [
+        "Puede volver solo en el cierre anual del bróker (IB ene–mar, Schwab jun–sep).",
+        "Al cerrar el año el fondo reclasifica parte de lo que repartió como retorno de "
+          + "capital. Sobre ese trozo no debía haber retención — y el bróker la corrige sin "
+          + "que tú hagas nada.",
+      ])
+      + modalHTML("modal-imp-w8ben", "Qué es el W-8BEN", "Gap de tratado / W-8BEN", [
+        "Nunca vuelve solo. Se repite cada año hasta renovar el formulario.",
+        "El <b>W-8BEN</b> le dice a tu bróker en qué país resides y qué tasa de tratado te "
+          + "toca. Caduca a los tres años; sin él vigente, el bróker retiene el 30% por "
+          + "defecto y esa diferencia no vuelve sola.",
+      ]);
+  }
+
+  set("impEscalera", vHTML + bar1 + bar2 + bar3
+    + (yaDev.monto > 0.01 ? devLine : '') + ftpLine + conc + modales);
+  set("impSumCorte", money(ret) + '<small>retenido al cobro</small>');
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // Tabla por fondo (vista antigua `fondos`, portada). §7.5.1: el ROC total de la tabla
+  // rotula SU BASE («sobre el bruto») — la fase 2 rota el suyo «sobre lo retenido».
+  // ════════════════════════════════════════════════════════════════════════════════════
+  var T = P.retenido || {};
+  var hayDevuelto = (T.ya_devuelto && T.ya_devuelto.monto > 0.01);
+  var conBuckets = DATA.declarado;                 // columnas Correcta/ROC/W-8BEN
+  var np = '<span class="mut">no publ.</span>';
+  var head = '<tr><th>Fondo</th><th>Bruto</th><th>ROC <span class="imp-tbl-base">% del bruto</span></th><th>Gravable</th>'
+    + (DATA.declarado ? '<th>Te toca</th>' : '')
+    + '<th>Al cobro</th>'
+    + (hayDevuelto ? '<th>Devuelto</th>' : '')
+    + (conBuckets ? '<th>Correcta</th><th class="c-ambar">ROC</th><th class="c-coral">W-8BEN</th>' : '')
+    + '</tr>';
+  var body = '';
+  (DATA.fondos || []).forEach(function (f) {
+    var rocCell = f.roc_pct == null ? '<span class="mut">—</span>' : (f.roc_pct.toFixed(0) + '%');
+    body += '<tr>'
+      + '<td class="tk">' + esc(f.ticker) + '</td>'
+      + '<td>' + money(f.bruto) + '</td>'
+      + '<td>' + rocCell + '</td>'
+      + '<td>' + money(f.gravable) + '</td>'
+      + (DATA.declarado ? '<td>' + (f.corresponde == null ? '—' : money(f.corresponde)) + '</td>' : '')
+      + '<td>' + money(f.retenido) + '</td>'
+      + (hayDevuelto ? '<td class="mut">' + (f.ya_devuelto > 0.01 ? money(f.ya_devuelto) : '—') + '</td>' : '')
+      + (conBuckets ? (f.indeterminado
+          ? '<td class="mut">' + np + '</td><td class="c-ambar">' + np + '</td><td class="c-coral">' + np + '</td>'
+          : '<td class="mut">' + money(f.retencion_correcta) + '</td>'
+            + '<td class="c-ambar">' + money(f.recuperable_roc) + '</td>'
+            + '<td class="c-coral">' + money(f.gap_w8ben) + '</td>') : '')
+      + '</tr>';
+  });
+  var totBuckets = (T.estado === "ok")
+    ? '<td class="mut">' + money(T.correcta.monto) + '</td>'
+      + '<td class="c-ambar">' + money(T.recuperable_roc.monto) + '</td>'
+      + '<td class="c-coral">' + money(T.gap_w8ben.monto) + '</td>'
+    : '<td class="mut">' + np + '</td><td class="c-ambar">' + np + '</td><td class="c-coral">' + np + '</td>';
+  var tot = '<tr class="total">'
+    + '<td>Cartera</td>'
+    + '<td>' + money(P.bruto ? P.bruto.monto : 0) + '</td>'
+    + '<td>' + (rocEfectivo == null ? '—' : rocEfectivo.toFixed(0) + '%')
+      + ' <span class="imp-tbl-base">sobre el bruto</span></td>'
+    + '<td>' + money(P.gravable ? P.gravable.monto : 0) + '</td>'
+    + (DATA.declarado ? '<td>' + money(P.corresponde ? P.corresponde.monto : 0) + '</td>' : '')
+    + '<td>' + money(T.monto) + '</td>'
+    + (hayDevuelto ? '<td class="mut">' + money(T.ya_devuelto.monto) + '</td>' : '')
+    + (conBuckets ? totBuckets : '')
+    + '</tr>';
+  set("impTabla", head + body + tot);
+  set("impSumTabla", money(P.bruto ? P.bruto.monto : 0) + '<small>bruto al cobro</small>');
+
+  // Leyenda de la tabla en un solo modal ⓘ (disparado desde el título de la sección).
+  var filasLeyenda = [
+    ["Fondo", "El ticker de la posición."],
+    ["Bruto", "El dividendo declarado, antes de cualquier retención."],
+    ["ROC", "Qué parte del reparto fue retorno de capital (tu propio dinero de vuelta)."],
+    ["Gravable", "Lo que sí es renta: bruto menos el ROC."],
+  ];
+  if (DATA.declarado) filasLeyenda.push(["Te toca", "Tu tasa de residencia aplicada sobre la parte gravable."]);
+  filasLeyenda.push(["Al cobro", "Lo que el bróker te descontó al pagar el dividendo."]);
+  if (hayDevuelto) filasLeyenda.push(["Devuelto", "Lo que el bróker ya te reintegró al reclasificar el ROC."]);
+  if (conBuckets) filasLeyenda.push(
+    ["Correcta", "De lo retenido, lo que corresponde a tu tasa: permanente."],
+    ["ROC", "De lo retenido, el exceso que vuelve solo cuando el bróker reclasifica el ROC."],
+    ["W-8BEN", "De lo retenido, el gap de tratado: no vuelve sin renovar el W-8BEN."]);
+  filasLeyenda.push(
+    ["no publ.", "El fondo no publica el dato (o su CSV no permite separarlo con seguridad)."],
+    ["—", "No aplica a esa posición, o no hay dato."]);
+  var leyenda = '<div class="imp-modal-formula"><table class="imp-mf-table">';
+  filasLeyenda.forEach(function (f) {
+    leyenda += '<tr><td><b>' + esc(f[0]) + '</b></td><td>' + esc(f[1]) + '</td></tr>';
+  });
+  leyenda += '</table></div>';
+  set("impTablaExtra",
+    modalHTML("modal-imp-tabla", "Qué significa cada columna", "Fondo por fondo", [leyenda]));
+  set("impTablaH", 'De dónde salió cada dólar de retención'
+    + ' <span class="imp-info c-mut" data-tip="imp-tabla"></span>');
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // «Ventas y base fiscal» (vista antigua `venta` / Peldaño 5, portada).
+  // ════════════════════════════════════════════════════════════════════════════════════
+  function stepRow(n, q, val, pctVal, sub, cls, tip) {
+    var right = val == null
+      ? '<span class="imp-step-money" style="color:var(--ink-mut)">—</span>'
+      : '<span class="imp-step-money">' + money(val) + '</span>'
+        + (pctVal == null ? '' : '<span class="imp-step-pct">' + esc(pct(pctVal)) + '</span>');
+    var qHTML = tip
+      ? '<span class="imp-info" data-tip="' + esc(tip) + '">' + esc(q) + '</span>'
+      : esc(q);
+    return '<div class="imp-step ' + (cls || 'activo') + '">'
+      + '<div class="imp-step-top">'
+      + '<div><span class="imp-step-n">' + esc(n) + '</span><br><span class="imp-step-q">' + qHTML + '</span></div>'
+      + '<div class="imp-step-val">' + right + '</div>'
+      + '</div>'
+      + '<div class="imp-step-body">' + (sub || '') + '</div>'
+      + '</div>';
+  }
+
+  var G = DATA.ganancias_capital;
+  var ventaHTML = '<p class="imp-lede"><b>Vender no es cobrar un dividendo.</b> '
+    + 'Para un no residente, la ganancia de capital de un ETF o una acción '
+    + 'normal <b>no es renta de fuente estadounidense</b>: EE.UU. no te retiene nada al vender.</p>';
+  var ventaResumen = '—<small>sin ventas medidas</small>';
+  if (!G) {
+    ventaHTML += stepRow("Próximamente", "Ganancias de capital cuando vendas", null, null,
+      '<p class="imp-step-sub">Cuando vendas, lo que pagues depende de tu base de costo — y el '
+      + 'ROC que te devolvieron la baja. <b>Pendiente</b> — no hay ninguna posición medible en '
+      + 'este CSV.</p>',
+      "pendiente");
+  } else {
+    var gBody = '';
+    var gVenderPartes = [];   // texto para el modal ⓘ de «¿Y cuando vendas?»
+
+    // Las dos ganancias van como cajas hermanas, NO sumadas: son momentos distintos (al
+    // cierre de la venta vs. a precio de hoy).
+    var gCajas = '';
+    if (G.no_realizado) {
+      gCajas += '<div class="imp-bucket gris"><p class="imp-bucket-lab">Latente · aún no vendes</p>'
+        + '<span class="imp-bucket-money">' + money(G.no_realizado.monto) + '</span>'
+        + '<p class="imp-bucket-note">Valor hoy ' + money(G.no_realizado.valor_mercado)
+        + ' &minus; base de costo ' + money(G.no_realizado.base)
+        + '. Se mueve con el mercado todos los días.</p></div>';
+    }
+    if (G.realizado) {
+      gCajas += '<div class="imp-bucket gris"><p class="imp-bucket-lab">Ya realizada · '
+        + G.realizado.n_ventas + (G.realizado.n_ventas === 1 ? ' venta' : ' ventas')
+        + '</p><span class="imp-bucket-money">' + money(G.realizado.monto) + '</span>'
+        + '<p class="imp-bucket-note">Cerrada al precio al que vendiste. Ya no cambia.</p></div>';
+      ventaResumen = money(G.realizado.monto) + '<small>realizada · '
+        + G.realizado.n_ventas + (G.realizado.n_ventas === 1 ? ' venta' : ' ventas') + '</small>';
+    }
+    var gFaltan = (G.tickers_indeterminados || []).length;
+    var gCaptura = G.tickers_base_captura || [];
+    var gNLat = (G.no_realizado && G.no_realizado.n_fondos) || 0;
+    var gNReal = (G.realizado && G.realizado.n_fondos) || 0;
+
+    if (gCajas) {
+      // Un total PARCIAL no puede presentarse como el de la cartera: se declara el alcance
+      // ANTES de las cifras. Cuando los dos alcances difieren, cada cifra declara el suyo.
+      if (gFaltan || (G.realizado && gNReal !== gNLat)) {
+        gBody += '<p class="imp-step-sub"><b>Estas cifras no cubren tu cartera completa.</b> '
+          + 'La ganancia latente sale de <b>' + gNLat + ' de tus ' + G.n_fondos_total
+          + ' fondos</b>'
+          + (G.realizado ? ', y la ya realizada de <b>' + gNReal + '</b>' : '')
+          + (gFaltan ? '. De ' + gFaltan + (gFaltan === 1 ? ' no se puede' : ' no se pueden')
+              + ' saber la base de costo' : '')
+          + '.</p>';
+      }
+      gBody += '<div class="imp-buckets dos">' + gCajas + '</div>';
+      gVenderPartes.push(
+        (G.realizado ? 'Las dos <b>no se suman</b>: una está cerrada y la otra sigue viva. ' : '')
+        + 'Base por <b>costo promedio ponderado</b>, con las acciones del DRIP contadas como lo '
+        + 'que costaron'
+        + (gCaptura.length ? ' — salvo los fondos cuya base viene de tu captura, donde el '
+            + 'método de lotes lo eligió tu bróker' : '')
+        + '.');
+      if (gCaptura.length) {
+        gVenderPartes.push('En <b>' + esc(gCaptura.join(", ")) + '</b> la base de '
+          + 'costo no sale de tu CSV sino de <b>la captura de tu bróker</b> — el archivo no '
+          + 'llega hasta la compra original. Por eso de esos fondos aparece la ganancia '
+          + '<b>latente y nada más</b>: la captura describe lo que tienes hoy, no lo que '
+          + 'vendiste. Y como no trae fecha de compra, esas posiciones <b>no tienen '
+          + 'antigüedad</b>, que es lo que decide el tramo de 2 años en «En tu país».');
+      }
+    }
+    // ── Base fiscal tras el ROC: la misma posición en otro momento
+    // ('tras_reclasificacion_anual'), en panel aparte y con su propio alcance. ──
+    var F = G.fiscal_roc;
+    if (F && F.n_fondos) {
+      var fAlcance = (F.n_fondos === G.n_fondos_total)
+        ? 'Tus ' + F.n_fondos + ' fondos'
+        : F.n_fondos + ' de tus ' + G.n_fondos_total + ' fondos';
+      gBody += '<div class="imp-fiscal">'
+        + '<p class="imp-fiscal-lab">Tu base fiscal · tras la reclasificación del ROC</p>'
+        + '<p class="imp-step-sub">' + esc(fAlcance) + ' (<b>' + esc(F.tickers.join(", "))
+        + '</b>) te devolvieron parte de tu propio capital dentro de las distribuciones. Eso '
+        + '<b>no cambia lo que pusiste</b> — cambia lo que el fisco considera que te costó, '
+        + 'y por eso importa el día que vendas. Estimado con los avisos <b>19a</b> que '
+        + 'publica cada fondo.</p>'
+        + '<p class="imp-fiscal-par">Base de costo <b>' + money(F.base_mercado) + '</b>'
+        + '<span class="imp-fiscal-flecha">&rarr;</span>base fiscal <b>' + money(F.base) + '</b></p>'
+        + '<p class="imp-step-sub">Con esa base, la ganancia latente de <b>esos mismos fondos</b> '
+        + 'es <b>' + money(F.no_realizado) + '</b> en vez de ' + money(F.no_realizado_mercado)
+        + '.' + (F.realizado != null
+            ? ' Y la ya realizada, <b>' + money(F.realizado) + '</b> en vez de '
+              + money(F.realizado_mercado) + '.'
+            : '')
+        + ' <b>Las dos no se suman ni se restan:</b> son el mismo dinero medido en dos '
+        + 'momentos — al comprar, y tras la reclasificación anual.</p>'
+        + ((F.tickers_19a_sin_ajuste && F.tickers_19a_sin_ajuste.length)
+            ? '<p class="imp-step-sub"><b>' + esc(F.tickers_19a_sin_ajuste.join(", "))
+              + '</b> también publica avisos 19a, pero su ROC salió del costo que reporta tu '
+              + 'bróker y ahí todavía no aparece — la reclasificación es de fin de año. '
+              + 'Su base fiscal <b>no está ajustada arriba</b>, así que no lo leas como que '
+              + 'ese fondo no tiene ROC.</p>'
+            : '')
+        + (F.roc_exceso > 0.01
+            ? '<p class="imp-step-sub"><b>' + money(F.roc_exceso) + '</b> de ese ROC superó tu '
+              + 'base de costo. Una base fiscal no baja de cero: ese excedente es ganancia de '
+              + 'capital desde ya, no un costo negativo.</p>'
+            : '')
+        + '</div>';
+    }
+
+    if (gFaltan) {
+      // Dos remedios distintos, y por eso dos listas (a los 19a no les FALTA ningún dato).
+      var gNo19a = (G.tickers_captura_no_usada || []);
+      var gSinDato = G.tickers_indeterminados.filter(function (t) {
+        return gNo19a.indexOf(t) === -1;
+      });
+      if (gSinDato.length) {
+        gBody += '<div class="imp-cta">Sin base de costo para <b>'
+          + esc(gSinDato.join(", "))
+          + '</b>: en tu CSV esas acciones llegaron por traspaso o el historial no alcanza hasta '
+          + 'la compra original, y <b>tu captura tampoco trae su costo</b>. '
+          + '<b>No las contamos como costo cero</b> — eso las haría parecer ganancia pura. Para '
+          + 'verlas aquí necesitas el historial completo desde que abriste la posición, o el '
+          + 'costo de esas posiciones en la captura de tu bróker.</div>';
+      }
+      if (gNo19a.length) {
+        gBody += '<div class="imp-cta"><b>' + esc(gNo19a.join(", ")) + '</b> sí tiene costo en '
+          + 'tu captura, y aun así no aparece arriba — <b>no te falta ningún dato</b>. Ese '
+          + 'fondo reparte <b>retorno de capital</b>, y el costo que reporta tu bróker ya viene '
+          + 'rebajado por el ROC que él mismo reclasificó. Usarlo aquí restaría ese ROC <b>dos '
+          + 'veces</b> y te mostraría una ganancia inflada. Preferimos no darte la cifra a '
+          + 'darte una mal medida.</div>';
+      }
+    }
+    if (gVenderPartes.length) {
+      gBody += modalHTML("modal-imp-vender", "Cómo se mide la base",
+        "La base de costo", gVenderPartes);
+    }
+    ventaHTML += stepRow("Peldaño 5", "¿Y cuando vendas?", G.retencion_eeuu, null,
+      gBody, "activo", gVenderPartes.length ? "imp-vender" : null);
+  }
+  set("impVenta", ventaHTML);
+  set("impSumVenta", ventaResumen);
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // «Dividendos y crédito fiscal» (vista antigua `pais` / Peldaño 6, portada).
+  // ════════════════════════════════════════════════════════════════════════════════════
+  var L = DATA.impuesto_local;
+  var paisHTML = '<p class="imp-lede">Esta renta es de <b>fuente extranjera</b> para tu país, así que '
+    + 'normalmente se declara allí aunque EE.UU. ya te haya retenido. Lo que sigue es '
+    + '<b>la base</b> y <b>el crédito</b>: las dos cifras que tu declaración necesita.</p>';
+  if (L) {
+    var lBody = '';
+
+    lBody += '<div class="imp-buckets">'
+      + '<div class="imp-bucket gris"><p class="imp-bucket-lab">Dividendos (bruto)</p>'
+        + '<span class="imp-bucket-money">' + money(L.dividendos.bruto) + '</span>'
+        + '<p class="imp-bucket-note">Lo repartido ANTES de la retención — es el bruto el que '
+        + 'viaja a la declaración, no lo que entró a tu cuenta.</p></div>'
+      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Crédito por lo pagado a EE.UU.</p>'
+        + '<span class="imp-bucket-money">'
+        + money(L.credito_eeuu.definitivo != null ? L.credito_eeuu.definitivo
+                                                  : L.credito_eeuu.monto) + '</span>'
+        + '<p class="imp-bucket-note">Casi todos los países lo dejan descontar del impuesto '
+        + 'propio. Es el dato que más se pierde el contribuyente: sin él, paga dos veces.</p></div>'
+      + '</div>';
+
+    // Aviso del crédito neto y aviso del ROC — en el ⓘ de «¿Y en tu país?».
+    var lPartes = [];
+    if (L.credito_eeuu.definitivo != null && L.credito_eeuu.vuelve_por_roc > 0.005) {
+      lPartes.push('Tu bróker te retuvo <b>' + money(L.credito_eeuu.monto) + '</b> al cobro, pero '
+        + '<b>' + money(L.credito_eeuu.vuelve_por_roc) + '</b> vuelven solos al reclasificar el '
+        + 'ROC. <b>Eso no es crédito</b>: lo que te devuelven nunca llegaste a pagarlo. El que '
+        + 'puedes descontar es <b>' + money(L.credito_eeuu.definitivo) + '</b>. '
+        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.');
+    } else if (L.credito_eeuu.definitivo == null) {
+      lPartes.push('No podemos medir cuánto de esa retención vuelve por ROC, '
+        + 'así que <b>' + money(L.credito_eeuu.monto) + '</b> es el <b>techo</b> del crédito, no '
+        + 'la cifra final: si tu bróker reclasifica ROC, parte volverá y esa parte no se '
+        + 'descuenta.');
+    }
+    if (L.dividendos.roc > 0.005) {
+      lPartes.push('De ese bruto, EE.UU. trató como renta '
+        + '<b>' + money(L.dividendos.gravable_eeuu) + '</b>; el resto, '
+        + '<b>' + money(L.dividendos.roc) + '</b>, fue retorno de capital. '
+        + '<b>Si tu país no reconoce el ROC de un fondo estadounidense, tu base es el bruto.</b> '
+        + 'Eso lo decide la ley de tu país — por eso mostramos las dos cifras y no elegimos una.');
+    }
+
+    // Ganancias realizadas, separadas por antigüedad (corte de 2 años).
+    var TR = L.realizado_por_tramo || {};
+    var nV = (TR.ge_2y.n_ventas || 0) + (TR.lt_2y.n_ventas || 0) + (TR.sin_tramo.n_ventas || 0);
+    if (nV > 0) {
+      var anios = Math.round((L.corte_tramo_dias || 730) / 365);
+      lBody += '<div class="imp-conc">Y por lo que <b>vendiste</b>: '
+        + '<b>' + money(TR.ge_2y.monto) + '</b> con ' + anios + ' años o más de tenencia, '
+        + '<b>' + money(TR.lt_2y.monto) + '</b> por debajo de ese corte. '
+        + 'Van separadas porque varios países las gravan distinto según la antigüedad.</div>';
+    }
+
+    if (L.no_realizado_excluido != null) {
+      lBody += '<div class="imp-conc">Lo que <b>no</b> has vendido ('
+        + money(L.no_realizado_excluido) + ' de ganancia latente) <b>no entra aquí</b>: '
+        + 'todavía no se declara.</div>';
+    }
+
+    lBody += '<div class="imp-cta">No te decimos cuánto pagarás: la tarifa de tu país es '
+      + '<b>progresiva sobre tu renta total</b> —tu sueldo incluido—, y esta app solo ve tu '
+      + 'portafolio. Con la base y el crédito de arriba, tu contador cierra la cuenta en un '
+      + 'minuto. Poner un número aquí sería inventarte el dato que falta.</div>';
+    if (lPartes.length) {
+      lBody += modalHTML("modal-imp-pais", "La letra chica", "El crédito, de cerca", lPartes);
+    }
+    paisHTML += stepRow("Peldaño 6", "¿Y en tu país?", null, null, lBody, "activo",
+      lPartes.length ? "imp-pais" : null);
+    set("impSumPais", money(L.dividendos.bruto) + '<small>bruto · antes de retención</small>');
+  } else {
+    set("impSumPais", '—<small>sin objeto fiscal</small>');
+  }
+  // Peldaños reservados de fases futuras — sin contenido inventado. Hoy la lista va vacía.
+  var slotsHTML = '';
+  (DATA.slots_pendientes || []).forEach(function (s) {
+    slotsHTML += stepRow("Próximamente", s.titulo, null, null,
+      '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',
+      "pendiente");
+  });
+  set("impPais", paisHTML + slotsHTML);
+
+  // ════════════════════════════════════════════════════════════════════════════════════
+  // «Lo que puede volver» (Ruta A) y «Vía IRS» (Ruta B) — vista antigua `recuperar`.
+  // ════════════════════════════════════════════════════════════════════════════════════
+  var A = DATA.ruta_a || {};
+  var estimadoA = A.tiene_1042s ? '' : '<span class="imp-ruta-est">estimado — sin 1042-S cargado</span> ';
+  var rutaA;
+  if (A.sin_retencion && A.tiene_1042s) {
+    rutaA = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta A · el bróker ya lo resolvió</p>'
+      + '<p class="imp-ruta-p">Tu 1042-S no muestra retención pendiente (casilla 7a en cero). No hay nada que reclamar por esta vía.</p></div>';
+  } else {
+    rutaA = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta A · lo que vuelve solo (ROC)</p>'
+      + '<p class="imp-ruta-p">' + estimadoA
+        + 'El 1042-S <b>no se presenta — se lee</b>: si el bróker reclasificó el ROC, la <b>casilla 9</b> («Overwithheld tax repaid») debería decir <b>' + money(A.casilla9_esperada) + '</b>. '
+        + 'Se descubre comparando las casillas 9 y 10 del formulario que te llega a inicio de año — no hay trámite que iniciar.</p>';
+    if (A.tiene_1042s && A.veredicto === "pendiente") {
+      rutaA += '<p class="imp-ruta-p">Tu 1042-S dice que <b>' + money(A.pendiente) + '</b> sigue en el IRS: esa parte va por la Ruta B.</p>';
+    } else if (A.tiene_1042s && A.veredicto === "devuelto") {
+      rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
+    }
+    // ---- Cuándo llega: la franja de meses (PR 4). SIN año y SIN marca de «hoy» ----
+    var MESES = ["ENE","FEB","MAR","ABR","MAY","JUN",
+                 "JUL","AGO","SEP","OCT","NOV","DIC"];
+    var vents = A.ventanas || [];
+    var mio = A.broker || null;
+    var franja = '<div class="imp-vent">';
+    vents.forEach(function (v) {
+      var activa = (mio === null) || (v.broker === mio);
+      franja += '<div class="imp-vent-fila' + (activa ? '' : ' apagada') + '">'
+        + '<p class="imp-vent-lab">' + esc(v.label)
+        + (mio === v.broker ? ' <span class="imp-vent-tuyo">tu bróker</span>' : '') + '</p>'
+        + '<div class="imp-vent-meses">';
+      for (var m = 1; m <= 12; m++) {
+        var dentro = m >= v.desde && m <= v.hasta;
+        franja += '<span class="imp-vent-mes' + (dentro ? ' dentro' : '') + '">'
+          + MESES[m - 1] + '</span>';
+      }
+      franja += '</div></div>';
+    });
+    franja += '</div>';
+
+    var frase;
+    if (mio) {
+      var vMio = vents.filter(function (v) { return v.broker === mio; })[0];
+      frase = 'Tu bróker es <b>' + esc(vMio ? vMio.label : mio) + '</b>, así que la '
+        + 'reclasificación cae en la ventana marcada arriba. ';
+    } else {
+      frase = 'No pudimos identificar tu bróker en el CSV, así que te mostramos las dos '
+        + 'ventanas. ';
+    }
+    // La cola va IDÉNTICA en las dos ramas y como oración propia: es la que carga el año,
+    // y el guard de frases la compara verbatim contra `main`. SIN negrita.
+    frase += 'Es el cierre fiscal del año que analizaste, no de este.';
+    rutaA += '<p class="imp-ruta-p"><b>Cuándo llega</b></p>' + franja
+      + '<p class="imp-ruta-p">' + frase + '</p>';
+    rutaA += '</div>';
+  }
+  // El encabezado de la vista antigua `recuperar` se conserva como lede del bloque: el
+  // guard de frases lo compara verbatim contra origin/main.
+  set("impRutaA", '<p class="imp-lede">Lo que vuelve solo y lo que hay que reclamar.</p>' + rutaA);
+  // «Lo que puede volver» (§6›9 E): `peldanos.retenido.recuperable_roc` cuando el
+  // desglose está ok; si no, el agregado `vuelve_por_roc`. Son gates distintos — si
+  // divergen, el aviso 3b de arriba ya lo dice y aquí no se mezcla la cifra.
+  var volverResumen = (okEstado && R.recuperable_roc) ? Number(R.recuperable_roc.monto)
+                                                       : vuelveAgg;
+  set("impSumVolver", (volverResumen != null ? money(volverResumen) : "—")
+    + '<small>ROC · estimado</small>');
+
+  var gapResumen = (okEstado && R.gap_w8ben) ? money(R.gap_w8ben.monto) : "—";
+  set("impSumIrs", gapResumen + '<small>gap W-8BEN</small>');
+
+  var rutaB = '<div class="imp-ruta"><p class="imp-ruta-h">Ruta B · lo que hay que reclamar al IRS</p>'
+    + '<p class="imp-ruta-p">El gap de tratado / W-8BEN no vuelve solo. Para recuperarlo:</p>'
+    + '<ol>'
+    + '<li>Solicita un <b>ITIN</b> con el formulario <b>W-7</b>.</li>'
+    + '<li>Presenta un <b>1040-NR</b> del <b>año exacto</b> de la retención.</li>'
+    + '<li>Adjunta copia de tu <b>1042-S</b> de ese año.</li>'
+    + '<li>Tienes <b>3 años</b> desde la fecha de la retención para reclamar.</li>'
+    + '</ol>'
+    + '<p class="imp-ruta-p">Existe la <b>Excepción 1(b) del W-7</b> (ingreso pasivo con retención de terceros) para obtener el ITIN sin esperar a declarar. <b>Confírmala con tu bróker</b> — no está verificada con Schwab, no la des por garantizada.</p></div>';
+  set("impRutaB", rutaB);
+
+  set("impFoot",
+    "Todas las cifras salen de objetos fiscales ya calculados sobre tu CSV y, si lo cargaste, tu 1042-S. "
+    + "El ROC y su fuente vienen del cierre fiscal del fondo cuando existe, y de la estimación 19(a) del gestor mientras el año sigue abierto. "
+    + "Esto no es asesoría fiscal: confirma con tu bróker o un asesor.");
+
+  // Cableado de los modales ⓘ — después de los `set()`, con los nodos ya en el DOM.
+  [["modal-imp-bruto", "imp-bruto"], ["modal-imp-roc", "imp-roc"],
+   ["modal-imp-retenido", "imp-retenido"], ["modal-imp-correcta", "imp-correcta"],
+   ["modal-imp-vuelvesolo", "imp-vuelvesolo"], ["modal-imp-w8ben", "imp-w8ben"],
+   ["modal-imp-vender", "imp-vender"], ["modal-imp-pais", "imp-pais"],
+   ["modal-imp-tabla", "imp-tabla"]
+  ].forEach(function (m) { wireModal(m[0], '[data-tip="' + m[1] + '"]'); });
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h || Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>
