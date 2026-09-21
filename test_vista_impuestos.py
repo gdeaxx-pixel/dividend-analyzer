@@ -426,8 +426,10 @@ def test_cruce_peldano2_schwab2_exacto():
     datos = _impuestos_demo("schwab2")
     g = datos["peldanos"]["gravable"]
     assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
-    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 126.02 -> 125.81
-    assert g["monto"] == pytest.approx(125.81, abs=0.05)
+    # ACTUALIZADO 2026-09-21 (R1+F6): 125.81 -> 63.80. NO es deriva del refresh 19a: el
+    # objeto fiscal pasa a consumir el CIERRE (ICI, casilla 3 del 1099) en los años cerrados
+    # en vez de la ESTIMACIÓN 19(a). El bruto (385.78) no se mueve — sólo el bucket gravable.
+    assert g["monto"] == pytest.approx(63.80, abs=0.05)
     assert set(g["sin_roc"]) == {"SCHB", "XLK"}
     assert (g["cubiertos"], g["total"]) == (1, 3)
 
@@ -591,7 +593,9 @@ def test_r2_casilla9_igual_al_objeto_fiscal_ib_real():
     assert comparados >= 8, "muy pocos fondos reconciliaron: revisa el fixture ib_1"
 
     datos = impuestos_data(res, logic.build_fiscal_profile(), [])
-    assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(801.69, abs=0.05)
+    # ACTUALIZADO 2026-09-21: 801.69 -> 780.92. El oráculo se midió antes de `dccad80`
+    # (refresh automático de knowledge/roc_19a.yaml del 19-sep), que movió la base.
+    assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(780.92, abs=0.05)
 
 
 # ── 5. La segunda vía para declarar el país: la casilla 13b del 1042-S ─────────────────
