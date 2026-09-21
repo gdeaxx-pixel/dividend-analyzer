@@ -181,7 +181,11 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         # del neto ya declarado una vez descontado lo reinvertido (`drip`, que siempre es
         # neto: el DRIP se compra con el monto post-retención) — no se reconstruye sumando,
         # se deriva del objeto fiscal único que ya trae el neto correcto.
-        cash = round(neto - drip, 2)
+        # E4: el motor ya calcula este residuo con el detalle de filas fuente
+        # (`_cash_collected_net`, logic.py) — reconstruirlo aquí como `neto - drip` sale
+        # negativo cuando al export le faltan filas `Reinvest Dividend` del DRIP. El `_f`
+        # con defecto conserva el camino legado de los `stats` armados a mano.
+        cash = _f(stats.get("dividends_cash_net"), round(neto - drip, 2))
 
     total_trabajando = pocket + drip
     mercado = valor_hoy - total_trabajando
@@ -221,6 +225,10 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         "tasa_declarada": bool(tax.get("rate_declared", False)),
         "tasa_pais": tax.get("country"),
         "tasa_pct": tax.get("base_rate_pct"),
+        # E4: al export le faltan filas fuente del DRIP (más `Reinvest Shares` que
+        # `Reinvest Dividend`) — la vista puede rotular el dato incompleto. Clave de
+        # cashflow_data, no de impuestos_data.
+        "drip_sin_fuente": bool(stats.get("drip_sin_fuente")),
     }
 
 
