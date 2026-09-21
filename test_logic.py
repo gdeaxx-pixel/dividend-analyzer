@@ -3814,45 +3814,20 @@ def test_sum_roc_credit_from_forms_int_and_str_code():
     assert len(result["per_form"]) == 2
 
 
-def test_extract_roc_credit_from_pdf_parses_mixed_forms(monkeypatch):
-    class _FakeResp:
-        text = ('{"forms": ['
-                '{"income_code": "01", "gross_income": 1, "federal_tax_withheld": 0, "withholding_credit": 0},'
-                '{"income_code": "06", "gross_income": 28, "federal_tax_withheld": 8, "withholding_credit": 8},'
-                '{"income_code": "37", "gross_income": 276, "federal_tax_withheld": 83, "withholding_credit": 83}'
-                ']}')
-
-    class _FakeModels:
-        def generate_content(self, model, contents, config):
-            return _FakeResp()
-
-    class _FakeClient:
-        def __init__(self, api_key=None):
-            self.models = _FakeModels()
-
-    from google import genai
-    monkeypatch.setattr(genai, "Client", _FakeClient)
-
-    result = logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key")
-    assert result["credit"] == pytest.approx(83.0)
-    assert result["roc_gross"] == pytest.approx(276.0)
-    assert len(result["per_form"]) == 1
+def test_analyze_portfolio_cache_caduca():
+    """N2 (auditoría de privacidad 2026-09-17): sin ttl ni max_entries, el resultado de cada
+    análisis quedaba en la memoria del proceso hasta reiniciarlo. PRIVACY.md promete que se
+    descarta en 1 hora; dentro de la sesión el resultado vive en `_vd_resultados`."""
+    info = logic.analyze_portfolio._info
+    assert info.ttl is not None, "el resultado del análisis nunca caduca"
+    assert info.ttl <= 3600
+    assert info.max_entries is not None, "el caché del análisis crece sin tope"
 
 
-def test_extract_roc_credit_from_pdf_returns_none_on_sdk_failure(monkeypatch):
-    class _FakeClient:
-        def __init__(self, api_key=None):
-            raise RuntimeError("no client")
-
-    from google import genai
-    monkeypatch.setattr(genai, "Client", _FakeClient)
-
-    assert logic.extract_roc_credit_from_pdf(b"%PDF-fake-bytes", "fake-key") is None
-
-
-def test_extract_roc_credit_from_pdf_none_without_bytes_or_key():
-    assert logic.extract_roc_credit_from_pdf(b"", "fake-key") is None
-    assert logic.extract_roc_credit_from_pdf(b"%PDF", "") is None
+def test_extract_roc_credit_from_pdf_retirada():
+    """Retirada el 2026-09-18 (auditoría de privacidad, S1): mandaba el 1042-S completo a
+    Gemini y no tenía consumidor vivo."""
+    assert not hasattr(logic, "extract_roc_credit_from_pdf")
 
 
 # ── Alineación de transacciones al calendario bursátil ────────────────────────

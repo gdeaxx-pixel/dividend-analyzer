@@ -149,7 +149,7 @@ def test_sum_roc_dedupe_con_identificador(synthetic_1042s_bytes):
     assert result["credit"] == 83.0
 
 
-# ── T2 · extract_1042s (wrapper determinista → Gemini) ──────────────────────────
+# ── T2 · extract_1042s (solo determinista; sin Gemini desde 2026-09-18) ─────────
 
 def test_extract_1042s_camino_determinista_sin_api_key(synthetic_1042s_bytes):
     """Sin GEMINI_API_KEY el Bloque 3 debe seguir funcionando: pdfplumber no la
@@ -163,6 +163,29 @@ def test_extract_1042s_camino_determinista_sin_api_key(synthetic_1042s_bytes):
 def test_extract_1042s_pdf_ajeno_sin_api_key_devuelve_none():
     result = logic.extract_1042s(_build_unrelated_pdf(), api_key=None)
     assert result is None
+
+
+def test_extract_1042s_pdf_ilegible_no_llama_a_gemini(monkeypatch):
+    """S1 (auditoría de privacidad 2026-09-17): el 1042-S trae nombre, TIN, dirección, fecha
+    de nacimiento y número de cuenta. Si pdfplumber no lo lee, el PDF no sale del servidor,
+    haya key o no. El doble registra en vez de lanzar: el camino viejo envolvía
+    `genai.Client(...)` en try/except y un doble que lanzara quedaba tragado."""
+    from google import genai
+    llamadas = []
+
+    class _ClienteEspia:
+        def __init__(self, *args, **kwargs):
+            llamadas.append("Client")
+            self.models = self
+
+        def generate_content(self, *args, **kwargs):
+            llamadas.append("generate_content")
+            raise RuntimeError("el 1042-S no debe llegar aquí")
+
+    monkeypatch.setattr(genai, "Client", _ClienteEspia)
+    resultado = logic.extract_1042s(_build_unrelated_pdf(), "KEY-FALSA")
+    assert llamadas == [], f"el 1042-S intentó salir a Gemini: {llamadas}"
+    assert resultado is None
 
 
 # ── T3 · build_1042s_validation ─────────────────────────────────────────────────
@@ -253,8 +276,9 @@ def test_validation_ignora_tickers_descartados():
 
 
 def test_income_code_str_normaliza_lo_que_devuelve_gemini():
-    """El camino determinista da '37', pero Gemini puede dar 37, '037' o '37 '.
-    Comparar crudo contra '37' haría que un ROC válido contara como cero."""
+    """El camino determinista da '37', pero un lector externo (el de Gemini, retirado el
+    2026-09-18) daba 37, '037' o '37 '. Comparar crudo contra '37' haría que un ROC válido
+    contara como cero; la normalización se conserva como defensa."""
     assert logic.income_code_str("37") == "37"
     assert logic.income_code_str(37) == "37"
     assert logic.income_code_str("037") == "37"
@@ -265,7 +289,8 @@ def test_income_code_str_normaliza_lo_que_devuelve_gemini():
 
 
 def test_validation_acepta_codigos_no_normalizados():
-    """Un 1042-S leído por Gemini con códigos enteros debe dar el mismo bruto y ROC."""
+    """Un 1042-S con códigos enteros (como los devolvía el lector de Gemini, retirado el
+    2026-09-18) debe dar el mismo bruto y ROC."""
     forms = [{"unique_form_id": fid, "income_code": int(code), "gross_income": gross,
               "federal_tax_withheld": wh, "withholding_credit": cr}
              for fid, code, gross, wh, cr in GROUND_TRUTH]
@@ -370,15 +395,12 @@ def test_mapeo_de_codigos_de_pais(codigo, esperado):
     assert logic.pais_desde_codigo_1042s(codigo) == esperado
 
 
-def test_los_dos_caminos_de_gemini_piden_las_dos_casillas():
-    """Estructural: hay tres extractores (pdfplumber + dos de Gemini) y los tres tienen que
-    traer los mismos campos, o el resultado dependería de cuál respondió."""
+def test_ningun_pdf_viaja_a_gemini():
+    """Complemento estructural del guard conductual de S1: `mime_type="application/pdf"` era
+    la firma de los dos emisores de PDFs fiscales a Gemini (`extract_1042s` y
+    `extract_roc_credit_from_pdf`), retirados el 2026-09-18."""
     import inspect
-    fuente = inspect.getsource(logic)
-    assert fuente.count('"tax_rate": types.Schema') == 2, "falta tax_rate en algún schema"
-    assert fuente.count('"recipient_country_code": types.Schema') == 2
-    assert fuente.count("'tax_rate' = Box 3b") == 2, "falta la casilla 3b en algún prompt"
-    assert fuente.count("'recipient_country_code' = Box 13b") == 2
+    assert 'mime_type="application/pdf"' not in inspect.getsource(logic)
 
 
 def test_contra_el_1042s_real():
