@@ -988,6 +988,58 @@ def test_sortino_ratio_guards():
     assert logic._sortino_ratio(pd.Series([0.01]), 0.0) is None              # <2 datos
 
 
+# ── Drawdown sobre riqueza unitizada (TWR) — C·5/F4 ─────────────────────────────
+
+def test_f4_drawdown_parte_de_la_riqueza_inicial():
+    """Riqueza 1.0 -> 0.5 (-50%) -> 0.55 (+10%): el mínimo de la serie de drawdown
+    debe ser -50.0, medido desde la riqueza inicial de 1.0 (el primer pico)."""
+    mn, serie = logic._drawdown_twr([-0.5, 0.1])
+    assert mn == pytest.approx(-50.0)
+    assert len(serie) == 2
+
+
+def test_f4_drawdown_es_desde_el_pico_corriente():
+    """Riqueza 1 -> 0.5 -> 2.0 -> 1.5: el pico corriente en el último tramo es 2.0
+    (no el pico global inicial de 1.0), así que la caída final es -25%, pero el
+    MÍNIMO de toda la serie sigue siendo -50% (el primer tramo). Con pico global fijo
+    en 1.0 el resultado sería -75% en el último punto (1.5 vs 1.0*2.0 mal referenciado)."""
+    mn, serie = logic._drawdown_twr([-0.5, 3.0, -0.25])
+    assert mn == pytest.approx(-50.0)
+    assert serie.iloc[-1] == pytest.approx(-25.0)
+
+
+def test_f4_venta_a_precio_constante_no_es_caida(monkeypatch):
+    """Vender a precio constante no debe leerse como una caída de riqueza: antes del fix,
+    el drawdown se medía sobre 'User Total Value' (valor absoluto de la cartera), así que
+    una venta que reduce el valor de mercado (sin que el precio se mueva) contaba como
+    drawdown falso. Sobre la riqueza unitizada (TWR) el resultado debe ser 0.0."""
+    csv = (
+        b"Transaction History,Header,Date,Account,Description,Transaction Type,"
+        b"Symbol,Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+        b"Transaction History,Data,2025-01-01,U123,Buy SCHB,Buy,SCHB,10,10.00,USD,-100.00,-1.0,-101.00\n"
+        b"Transaction History,Data,2025-01-20,U123,Sell SCHB,Sell,SCHB,-5,10.00,USD,50.00,-1.0,49.00\n"
+    )
+    df, _ = logic.load_and_detect_csv(FakeFile(csv))
+    df_clean = logic.normalize_csv(df)
+
+    idx = pd.date_range("2025-01-01", "2025-02-15", freq="D")  # 46 días, precio constante
+    def mock_fetch(ticker, start_date):
+        data = pd.DataFrame(
+            {"Close": [10.0] * len(idx), "Dividends": [0.0] * len(idx),
+             "Stock Splits": [0.0] * len(idx)},
+            index=idx,
+        )
+        return data, None
+
+    monkeypatch.setattr(logic, "fetch_market_data", mock_fetch)
+    results = logic.analyze_portfolio(df_clean, version="TEST_DD_VENTA")
+
+    assert "SCHB" in results
+    max_dd = results["SCHB"]["max_drawdown"]
+    assert max_dd is not None, "la base debe producir una serie de drawdown (con precio constante todo el tramo, si no hay serie el test no discrimina)"
+    assert max_dd == pytest.approx(0.0, abs=1e-6)
+
+
 # ── Reconciliación desde la captura del broker (límite de export ~3-4 años) ───
 
 _RECON_CSV = (

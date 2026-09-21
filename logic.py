@@ -915,6 +915,19 @@ def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20):
     return r.clip(lo, hi)
 
 
+def _drawdown_twr(daily_returns_q):
+    """Drawdown máximo sobre la riqueza unitizada (TWR) que arranca en 1.0: una venta o un aporte
+    no mueven la riqueza por unidad, solo el precio y las distribuciones. Recibe los retornos
+    diarios ya winsorizados (los mismos que usa Calmar). Devuelve (mínimo en %, serie en % con el
+    índice de los retornos) o (None, serie vacía) con menos de 2 retornos."""
+    r = pd.Series(daily_returns_q, dtype=float).dropna()
+    if len(r) < 2:
+        return None, pd.Series(dtype=float)
+    riqueza = pd.concat([pd.Series([1.0]), (1.0 + r.reset_index(drop=True)).cumprod()], ignore_index=True)
+    dd = (riqueza / riqueza.cummax() - 1.0) * 100.0
+    return float(dd.min()), pd.Series(dd.iloc[1:].values, index=r.index)
+
+
 def _sortino_ratio(daily_returns, rf_daily, periods: int = 252):
     """Sortino anualizado con downside deviation estándar (CFA/GIPS).
 
@@ -2093,16 +2106,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # 4. Sortino Ratio — downside deviation estándar (no std de solo los negativos)
         sortino_ratio = _sortino_ratio(daily_returns_q, rf_diario)
 
-        # 5. Maximum Drawdown
-        valor_port = daily_history['User Total Value'].replace(0, np.nan).dropna()
-        if len(valor_port) >= 2:
-            peak_acum = valor_port.cummax()
-            drawdown_serie = (valor_port - peak_acum) / peak_acum * 100
-            max_drawdown = float(drawdown_serie.min())
-            daily_history['Drawdown %'] = drawdown_serie.reindex(daily_history.index).fillna(np.nan)
-        else:
-            max_drawdown = None
-            daily_history['Drawdown %'] = np.nan
+        # 5. Maximum Drawdown sobre la riqueza unitizada (TWR), no sobre el valor absoluto de la
+        # cartera: una venta a precio constante o un aporte no deben leerse como caída/recuperación.
+        max_drawdown, _dd_serie = _drawdown_twr(daily_returns_q)
+        daily_history['Drawdown %'] = _dd_serie.reindex(daily_history.index) if len(_dd_serie) else np.nan
 
         # 6. Calmar Ratio — CAGR compuesto desde los retornos diarios YA winsorizados (no desde el
         # TWR acumulado crudo, que puede estar corrupto por transferencias / costo incompleto).
