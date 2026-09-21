@@ -665,6 +665,10 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     mostrarle las dos. **Ninguna cifra depende de él**, y 'generic' se normaliza a `None`:
     un bróker que no reconocemos no tiene ventana conocida, y mostrarle una sería inventar
     el dato. Mismo principio que el país: no se deduce de las cifras.
+
+    `fondos[].grupo` (U2, dona de dos fases): clasificación Dividendos/Crecimiento de
+    `logic.classify_tickers` — mismo criterio que `ui/heredadas.py:115-118`. Es el único
+    campo añadido por U2; el componente agrupa la leyenda con él y ninguna cifra lo usa.
     """
     if not resultados:
         return None
@@ -678,6 +682,13 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     # SIEMPRE con ambos kwargs — `build_tax_summaries(resultados)` a secas significaría
     # «sin declarar» aunque el cliente sí lo haya hecho (ver `test_perfil_fiscal.py`).
     resumenes = logic.build_tax_summaries(resultados, base_rate_pct=_tasa_arg, country=pais)
+
+    # Grupo Dividendos/Crecimiento de cada fondo (U2 §6›9 E): `logic.classify_tickers`,
+    # MISMO criterio que `ui/heredadas.py::_tus_dos_portafolios` (mode_a = dividendos,
+    # mode_b = crecimiento, mode_skip = ninguno de los dos). Se publica el valor crudo del
+    # clasificador — la etiqueta la pone el componente. Es el único campo nuevo de este
+    # adapter en U2: ninguna cifra depende de él.
+    clasificacion = logic.classify_tickers(list((resultados or {}).keys()))
 
     fondos: list[dict] = []
     bruto_total = gravable_total = corresponde_total = 0.0
@@ -747,6 +758,11 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
 
         fondos.append({
             "ticker": ticker,
+            # Grupo Dividendos/Crecimiento (U2): valor crudo de `logic.classify_tickers`
+            # ('mode_a' | 'mode_b' | 'mode_skip'), MISMO criterio que
+            # `ui/heredadas.py:115-118`. `None` solo si el ticker no viene en la
+            # clasificación (no debería pasar: se clasifica la misma lista de resultados).
+            "grupo": clasificacion.get(str(ticker).upper().strip()),
             "bruto": round(bruto, 2),
             "bruto_fuente": fuente_bruto,
             "roc_pct": roc_pct,

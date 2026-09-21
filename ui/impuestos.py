@@ -27,28 +27,31 @@ CAT_CLAVE = "impuestos"
 CAT_LABEL = "Impuestos"
 
 VIEWS = {
-    "corte":     "El corte",
-    "fondos":    "Fondo por fondo",
-    "venta":     "Cuando vendas",
-    "pais":      "En tu país",
-    "recuperar": "Cómo recuperarlo",
+    "impuestos": "Impuestos",
 }
 
-VIEW_ORDER = ("corte", "fondos", "venta", "pais", "recuperar")
+# U2 (dona de dos fases): las 5 vistas actuales pasan a UNA, dibujada por
+# `ui/componentes/impuestos_v2.html`. Patrón `heredadas.VIEW_ORDER = ("portafolios",)`:
+# con una sola vista el breadcrumb nativo no dibuja el segmento de vista
+# (`ui/chrome.py:unica_vista`). Las fases 1/2 viven DENTRO del componente (botones de
+# fase en el iframe), no como vistas de Streamlit: un clic de fase no es un rerun.
+VIEW_ORDER = ("impuestos",)
 
 
 def render_vista(vista: str, ruta) -> None:
-    """Despacho de Impuestos — 5 vistas sobre el mismo objeto fiscal.
+    """Despacho de Impuestos — UNA vista (dona de dos fases) sobre el objeto fiscal.
 
-    El contenido no cambia entre vistas: cada una RENDERIZA un trozo distinto del JSON
-    que arma `ui/adapters.py::impuestos_data`. El breadcrumb nativo (`ui/chrome.py`) ya
-    despacha la clave; aquí solo se pasa a `render_impuestos`.
+    El contenido no cambia con `vista`: todo el JSON que arma
+    `ui/adapters.py::impuestos_data` se renderiza de una vez en
+    `ui/componentes/impuestos_v2.html`. El breadcrumb nativo (`ui/chrome.py`) ya
+    despacha la clave; aquí solo se normaliza y se pasa a `render_impuestos`.
     """
     from ui import adapters, componentes
     from ui.vistas import obtener_resultados
 
-    # Cinturón: `chrome.py` ya cae a `VIEW_ORDER[0]` si la vista en sesión no existe,
-    # pero un llamador directo (tests, `render_placeholder`) podría pasar otra cosa.
+    # Cinturón: `chrome.py` ya cae a `VIEW_ORDER[0]` si la vista en sesión no existe
+    # (p. ej. un `vd_vista = "corte"` guardado antes de U2), pero un llamador directo
+    # (tests, `render_placeholder`) podría pasar otra cosa.
     vista = vista if vista in VIEWS else VIEW_ORDER[0]
 
     resultados = obtener_resultados()
@@ -89,4 +92,4 @@ def render_vista(vista: str, ruta) -> None:
             unsafe_allow_html=True)
         return
 
-    componentes.render_impuestos(datos, ruta.tema, vista=vista)
+    componentes.render_impuestos(datos, ruta.tema)
