@@ -71,6 +71,32 @@ IB_ACTIVITY_STATEMENT = (
     b"Dividends,Data,USD,2024-01-20,MSFT(US123) Cash Dividend USD 0.75 per Share,75.00\n"
 )
 
+# Los mismos eventos por las dos rutas de IB. Las filas "Total" van a propósito: si llegaran
+# a normalize_csv como datos, duplicarían el bruto y la retención.
+IB_AS_CON_RETENCION = (
+    b"Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,"
+    b"Quantity,T. Price,Proceeds,Comm/Fee\n"
+    b'Trades,Data,Order,Stocks,USD,SCHD,"2024-01-02, 09:30:00",10,100.00,-1000.00,-1.0\n'
+    b"Dividends,Header,Currency,Date,Description,Amount\n"
+    b"Dividends,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share (Ordinary Dividend),6.10\n"
+    b"Dividends,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share (Ordinary Dividend),2.50\n"
+    b"Dividends,Data,Total,,,8.60\n"
+    b"Withholding Tax,Header,Currency,Date,Description,Amount,Code\n"
+    b"Withholding Tax,Data,USD,2024-12-11,SCHD(US8085247976) Cash Dividend USD 0.61 per Share - US Tax,-1.83,\n"
+    b"Withholding Tax,Data,USD,2025-03-26,SCHD(US8085247976) Cash Dividend USD 0.25 per Share - US Tax,-0.75,\n"
+    b"Withholding Tax,Data,Total,,,-2.58,\n"
+)
+
+IB_TH_MISMOS_EVENTOS = (
+    b"Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,"
+    b"Quantity,Price,Price Currency,Gross Amount,Commission,Net Amount\n"
+    b"Transaction History,Data,2024-01-02,U123,SCHD Buy,Buy,SCHD,10,100.00,USD,-1000.00,-1.0,-1001.00\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,6.10,-,6.10\n"
+    b"Transaction History,Data,2024-12-11,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-1.83,-,-1.83\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD Cash Dividend,Dividend,SCHD,-,-,-,2.50,-,2.50\n"
+    b"Transaction History,Data,2025-03-26,U123,SCHD US Tax,Foreign Tax Withholding,SCHD,-,-,-,-0.75,-,-0.75\n"
+)
+
 
 # ── detect_broker ──────────────────────────────────────────────────────────────
 
@@ -154,8 +180,51 @@ def test_ib_activity_statement_parsed():
 
 def test_ib_activity_statement_dividend_present():
     df, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
-    if "Action" in df.columns:
-        assert "Dividend" in df["Action"].values or len(df) > 0
+    assert "Dividend" in df["Action"].values
+
+
+def test_ib_activity_statement_normalizado_conserva_el_dividendo():
+    """I1 (auditoría 2026-09-17). Trades trae «fecha, hora» y Dividends solo la fecha. Con las
+    dos formas en la misma columna, normalize_csv infería el formato de la primera fila y
+    descartaba el dividendo como NaT: los $75 desaparecían del bruto sin error ni aviso.
+    El test de arriba no lo veía porque mira el df crudo, antes de normalizar."""
+    raw, _ = logic.load_and_detect_csv(FakeFile(IB_ACTIVITY_STATEMENT))
+    df = logic.normalize_csv(raw.copy())
+    assert len(df) == len(raw) == 2
+    fechas = {a: d.strftime("%Y-%m-%d") for a, d in zip(df["Action"], df["Date"])}
+    assert fechas == {"Buy": "2024-01-15", "Dividend": "2024-01-20"}
+    assert logic.build_dividend_tax_totals(df)["gross"] == pytest.approx(75.0)
+
+
+def test_ib_activity_statement_lee_la_retencion_como_transaction_history():
+    """I2 (auditoría 2026-09-17). parse_ibkr_csv leía solo Trades y Dividends: la sección
+    Withholding Tax del Activity Statement se ignoraba y la retención salía en $0, con el neto
+    igual al bruto. Los mismos eventos entrando por Transaction History (ruta validada contra el
+    CSV real de IB) tienen que dar el mismo objeto fiscal, por ticker como lo lee
+    analyze_portfolio. La cifra absoluta va aparte: la igualdad sola pasaría si las dos rutas se
+    rompieran igual."""
+    def _fiscal_schd(csv):
+        raw, _ = logic.load_and_detect_csv(FakeFile(csv))
+        df = logic.normalize_csv(raw.copy())
+        schd = df[df["Ticker"] == "SCHD"]
+        return logic.build_dividend_tax_totals(schd), logic.withheld_tax_total(schd), len(df)
+
+    as_tot, as_ret, as_filas = _fiscal_schd(IB_AS_CON_RETENCION)
+    th_tot, th_ret, th_filas = _fiscal_schd(IB_TH_MISMOS_EVENTOS)
+
+    assert as_filas == th_filas == 5
+
+    for k in ("gross", "withheld", "net"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    for k in ("gross_by_year", "withheld_by_year", "net_by_year"):
+        assert as_tot[k] == pytest.approx(th_tot[k]), k
+    assert as_ret == pytest.approx(th_ret)
+
+    assert as_tot["gross"] == pytest.approx(8.60)
+    assert as_tot["withheld"] == pytest.approx(2.58)
+    assert as_tot["net"] == pytest.approx(6.02)
+    assert as_tot["withheld_by_year"] == pytest.approx({2024: 1.83, 2025: 0.75})
+    assert as_ret == pytest.approx(2.58)
 
 
 # ── parse_schwab_csv ───────────────────────────────────────────────────────────
@@ -545,6 +614,83 @@ def test_deep_fix_keeps_real_cash_roc_via_19a(monkeypatch):
     assert s["roc_accumulated"] != pytest.approx(400.0, abs=1.0)
 
 
+_ROC_80 = lambda: {"MSTY": {"weighted_pct": 80.0,
+                            "per_distribution": [{"date": "2024-10-01", "roc_pct": 80.0}]}}
+
+
+def test_roc_19a_no_cambia_por_reinvertir(monkeypatch):
+    """F1 (auditoría 2026-09-17). El % del 19a es de la distribución BRUTA, y reinvertirla no
+    la cambia. La rama DRIP tomaba la compra de acciones (el neto tras la retención) como si
+    fuera la distribución: con bruto $100, retención $30 y 80% de ROC daba $56 en vez de $80,
+    y la base ajustada $1,014 en vez de $990 ($1,070 aportados − $80)."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    compra = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+    efectivo = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+    ])
+    drip = _roc_norm_df([
+        compra,
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    s_ef = logic.analyze_portfolio(efectivo)["MSTY"]
+    s_dr = logic.analyze_portfolio(drip)["MSTY"]
+
+    assert s_ef["roc_source"] == s_dr["roc_source"] == "19a"
+    assert s_dr["roc_accumulated"] == pytest.approx(s_ef["roc_accumulated"])
+    assert s_dr["roc_accumulated"] == pytest.approx(80.0)
+    u = s_dr["capital_gains"]["unrealized"]
+    assert u["basis"] == pytest.approx(1070.0)
+    assert u["basis_roc_adjusted"] == pytest.approx(990.0)
+
+
+def test_roc_19a_se_aplica_al_bruto_del_objeto_fiscal_ib(monkeypatch):
+    """F1, convención IB. La base del ROC se reconstruía aparte del objeto fiscal: contaba como
+    distribución todo monto positivo con «dividend» en el Action —también el reverso de una
+    retención— e ignoraba las reversas de dividendo. En el CSV real de IB eso llevó la base de
+    MSTY a $9,778.33 contra $7,224.59 de bruto reconciliado, y el ROC ($7,773.87) por encima
+    del bruto entero. Aquí: un pago que IB revierte un día y re-emite al siguiente (el día de
+    la reversa queda en negativo y tiene que restar), y una retención revertida."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    monkeypatch.setattr(logic, "load_roc_19a", _ROC_80)
+    df = _roc_norm_df([
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-08", "Dividend", "MSTY", 0, -100.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, 30.0),
+        ("2024-10-08", "Dividend - Foreign Tax Withholding", "MSTY", 0, -30.0),
+        ("2024-10-09", "Dividend", "MSTY", 0, 100.0),
+    ])
+    s = logic.analyze_portfolio(df)["MSTY"]
+
+    assert s["roc_source"] == "19a"
+    assert s["dividends_gross_total"] == pytest.approx(100.0)
+    assert s["roc_accumulated"] == pytest.approx(80.0)
+
+
+def test_roc_19a_nunca_supera_el_bruto_en_el_caso_real_ib():
+    """Ancla externa de F1: el bruto de `ib_1` está reconciliado contra el extracto de IB. El ROC
+    es una parte de la distribución, así que no puede superarlo, y con la ruta 19a es
+    exactamente su % aplicado a ese bruto."""
+    from conftest import frozen_price_cache
+    df = _load_real_ib_1()
+    with frozen_price_cache():
+        res = logic.analyze_portfolio(df)
+    fondos_19a = {t: s for t, s in res.items() if s.get("roc_source") == "19a"}
+    assert {"MSTY", "CONY", "TSLY", "NVDY"} <= set(fondos_19a)
+    for t, s in fondos_19a.items():
+        bruto = s["dividends_gross_total"]
+        assert s["roc_accumulated"] <= bruto + 0.01, t
+        # roc_percent se publica redondeado a 2 decimales: ±0.005 pp sobre el bruto.
+        redondeo = bruto * 0.005 / 100 + 0.01
+        assert s["roc_accumulated"] == pytest.approx(bruto * s["roc_percent"] / 100, abs=redondeo), t
+
+
 def test_roc_none_when_no_basis_provided(monkeypatch):
     """Sin ib_cost_basis_map los campos ROC son None."""
     csv = (
@@ -570,6 +716,71 @@ def test_roc_none_when_no_basis_provided(monkeypatch):
     assert s.get("ib_cost_basis") is None
     assert s.get("roc_accumulated") is None
     assert s.get("roc_percent") is None
+
+
+def _schwab_np(monkeypatch, filas):
+    from ui.adapters import cashflow_data
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    s = logic.analyze_portfolio(_roc_norm_df(filas))["MSTY"]
+    return s, cashflow_data(s, "MSTY")["RESULTADO"]
+
+
+def test_net_profit_no_resta_la_retencion_de_lo_reinvertido(monkeypatch):
+    """F2 (auditoría 2026-09-17). La compra DRIP ya es neta de retención: sus acciones están en
+    `market_value`. Restar esa retención del efectivo (que es $0) la descontaba otra vez:
+    bruto $100, retención $30, DRIP $70 -> net_profit $40 en lugar de $70, mientras cashflow
+    mostraba $70 para la misma posición."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["market_value"] == pytest.approx(1070.0)
+    assert s["net_profit"] == pytest.approx(70.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
+def test_net_profit_resta_solo_la_retencion_de_lo_cobrado_en_efectivo(monkeypatch):
+    """F2, caso mixto: una distribución cobrada en efectivo y otra reinvertida, cada una con su
+    retención. Solo la del efectivo sale del efectivo: 1070 + (100 − 30) − 1000 = 140. Restar
+    las dos da 110; no restar ninguna, 170."""
+    s, resultado_cashflow = _schwab_np(monkeypatch, [
+        ("2024-09-01", "Buy", "MSTY", 50, -1000.0),
+        ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+        ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-11-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+        ("2024-11-01", "Reinvest Shares", "MSTY", 3.5, -70.0),
+    ])
+    assert s["withheld_tax_total"] == pytest.approx(60.0)
+    assert s["net_profit"] == pytest.approx(140.0)
+    assert s["net_profit"] == pytest.approx(resultado_cashflow)
+
+
+_COMPRA_MSTY = ("2024-09-01", "Buy", "MSTY", 50, -1000.0)
+
+
+@pytest.mark.parametrize("filas", [
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Cash Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0)],
+    [_COMPRA_MSTY,
+     ("2024-10-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+     ("2024-10-01", "NRA Tax Adj", "MSTY", 0, -30.0),
+     ("2024-10-01", "Reinvest Shares", "MSTY", 3.5, -70.0)],
+], ids=["efectivo", "drip"])
+def test_salud_nav_publica_el_mismo_retorno_que_roi_y_cashflow(monkeypatch, filas):
+    """F3 (auditoría 2026-09-17). Salud NAV recalculaba el retorno con
+    `dividends_collected_cash`, que en Schwab es BRUTO: bruto $100 y retención $30 daban 10%
+    mientras ROI y cashflow decían 7%. Las tres vistas del mismo retorno tienen que coincidir,
+    cobrado en efectivo o reinvertido."""
+    from ui.adapters import salud_nav_data
+    s, resultado_cashflow = _schwab_np(monkeypatch, filas)
+    tr = salud_nav_data("MSTY", s)["total_return_pct"]
+    assert tr == pytest.approx(7.0)
+    assert tr == pytest.approx(s["roi_percent"])
+    assert tr == pytest.approx(resultado_cashflow / s["pocket_investment"] * 100)
 
 
 # ── Regresión: parsing numérico US vs Europeo (BUG clean_val) ───────────────

@@ -1462,7 +1462,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Iterate through transactions to build history
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
-        dist_dated      = []   # (date, monto) de distribuciones recibidas (cash + reinvertido) p/ ROC 19a
         divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
         for idx, row in ticker_df.iterrows():
             action = str(row['Action']).lower()
@@ -1552,7 +1551,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned += _adj_qty
                     shares_owned_drip += _adj_qty
                     dividends_collected_drip += abs(amount)
-                    dist_dated.append((_tx_date, abs(amount)))
                     _dy = _row_year(_tx_date)
                     if _dy is not None:
                         divs_by_year[_dy] += abs(amount)
@@ -1568,7 +1566,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     shares_owned_drip += _adj_qty
                     if amount < 0:
                         dividends_collected_drip += abs(amount)
-                        dist_dated.append((_tx_date, abs(amount)))
                         _dy = _row_year(_tx_date)
                         if _dy is not None:
                             divs_by_year[_dy] += abs(amount)
@@ -1582,8 +1579,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     if _dy is not None:
                         divs_by_year[_dy] += amount
                     irr_flows_dated.append((_tx_date, amount))
-                    if amount > 0:
-                        dist_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf
@@ -1755,9 +1750,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # la convención por fila -> solo restamos la retención cuando NO viene plegada, para
         # no restarla dos veces en IB. `dividends_collected_drip` no se toca: ese dinero ya
         # está dentro de `market_value` (acciones compradas con el neto post-retención).
+        # Por eso tampoco se resta la retención de las distribuciones REINVERTIDAS: ya salió
+        # antes de comprar las acciones. Restarla del efectivo la descontaba dos veces
+        # (bruto $100, retención $30, DRIP $70, efectivo $0: net_profit bajaba $30).
         _tax_totals_early = build_dividend_tax_totals(ticker_df)
+        _retencion_en_efectivo = _tax_totals_early['withheld'] - _withheld_on_reinvested(ticker_df)
         _cash_collected_net = (dividends_collected_cash if _tax_totals_early['netted']
-                                else dividends_collected_cash - _tax_totals_early['withheld'])
+                                else dividends_collected_cash - _retencion_en_efectivo)
 
         gross_value = market_value + _cash_collected_net
         net_profit = gross_value - pocket_investment
@@ -2256,8 +2255,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Respaldo: si no hay costo base del bróker, estimar el ROC con el % que el fondo
         # publica en sus avisos 19a (ver knowledge/roc_19a.yaml). Empate por fecha si hay
         # historial por distribución; si no, % ponderado del fondo.
+        # El % del 19a se aplica a la distribución BRUTA, la misma en efectivo que reinvertida:
+        # la compra DRIP es el neto tras la retención, y tomarla como distribución dejaba el ROC
+        # de una posición reinvertida en el 70% del de la misma posición cobrada en efectivo.
+        _dist_bruto = [(d, float(a)) for d, a in _dividend_events(ticker_df).items()]
         if _roc_accum is None and total_dividends > 0:
-            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, dist_dated)
+            _est_roc, _est_pct = _estimate_roc_from_19a(ticker, _dist_bruto)
             if _est_roc is not None:
                 _roc_accum = round(_est_roc, 2)
                 _roc_pct   = round(_est_pct, 2) if _est_pct is not None else None
@@ -2267,7 +2270,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # origen es 19a: el método 'broker' es una resta contra el costo de HOY, no tiene
         # fecha que repartir en el tiempo, y subestima el ROC al reinvertir (M1 §4). Sale del
         # mismo empate por fecha que alimentó `_roc_accum` — no es un segundo cálculo.
-        _roc_events = _roc_events_from_19a(ticker, dist_dated) if _roc_source == '19a' else None
+        _roc_events = _roc_events_from_19a(ticker, _dist_bruto) if _roc_source == '19a' else None
 
         # ── Forward vs realized yield + retención real (Mejoras 3 y 4) ────
         _fy = forward_realized_yield(ticker_df, market_value, today=_snapshot_date)
@@ -2899,7 +2902,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     """
     Parses an Interactive Brokers Activity Statement CSV.
     IBKR exports are multi-section: each section has a Header row and Data rows.
-    Extracts Trades (Stocks) and Dividends sections and merges into unified format.
+    Extracts Trades (Stocks), Dividends and Withholding Tax sections and merges into unified format.
     """
     for encoding in ['utf-8', 'latin1', 'cp1252']:
         try:
@@ -2921,6 +2924,12 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             return float(s)
         except (ValueError, TypeError):
             return 0.0
+
+    def _solo_fecha(raw) -> str:
+        # Activity Statement: Trades trae "2024-01-15, 09:30:00" y Dividends "2024-01-20".
+        # Con las dos formas en una misma columna, normalize_csv infiere el formato de la
+        # primera fila y descarta el resto como NaT: el dividendo desaparecía sin aviso.
+        return re.split(r'[,;]', str(raw), maxsplit=1)[0].strip()
 
     def _ibkr_reader(section_name: str):
         """Yield (header, [data_rows]) for a named IB section using csv.reader."""
@@ -3034,6 +3043,8 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                     col_map[col] = 'Amount'
 
             trades_df = trades_df.rename(columns=col_map)
+            if 'Date' in trades_df.columns:
+                trades_df['Date'] = trades_df['Date'].map(_solo_fecha)
 
             # Derive Action from Quantity sign
             if 'Quantity' in trades_df.columns:
@@ -3049,34 +3060,41 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     except Exception as e:
         print(f"IBKR trades parse error: {e}")
 
-    # --- Extract Dividends section ---
-    try:
-        div_header, div_rows = _ibkr_reader('Dividends')
+    # --- Extract Dividends and Withholding Tax sections ---
+    # Withholding Tax va como fila aparte con signo y el mismo rótulo que Transaction History
+    # ('Dividend - Foreign Tax Withholding'). Sin esta sección la retención salía en $0 y el
+    # neto igual al bruto.
+    for section_name, section_action in (('Dividends', 'Dividend'),
+                                         ('Withholding Tax', 'Dividend - Foreign Tax Withholding')):
+        try:
+            sec_header, sec_rows = _ibkr_reader(section_name)
 
-        if div_header and div_rows:
-            divs_df = pd.DataFrame(div_rows, columns=div_header)
+            if sec_header and sec_rows:
+                sec_df = pd.DataFrame(sec_rows, columns=sec_header)
 
-            # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
-            if 'Description' in divs_df.columns:
-                divs_df['Ticker'] = divs_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
+                # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
+                if 'Description' in sec_df.columns:
+                    sec_df['Ticker'] = sec_df['Description'].str.extract(r'^([A-Z]+)', expand=False)
 
-            col_map = {}
-            for col in divs_df.columns:
-                cl = col.lower()
-                if 'date' in cl:
-                    col_map[col] = 'Date'
-                elif 'amount' in cl:
-                    col_map[col] = 'Amount'
+                col_map = {}
+                for col in sec_df.columns:
+                    cl = col.lower()
+                    if 'date' in cl:
+                        col_map[col] = 'Date'
+                    elif 'amount' in cl:
+                        col_map[col] = 'Amount'
 
-            divs_df = divs_df.rename(columns=col_map)
-            divs_df['Action'] = 'Dividend'
-            divs_df['Quantity'] = 0
-            divs_df['Price'] = 0
+                sec_df = sec_df.rename(columns=col_map)
+                if 'Date' in sec_df.columns:
+                    sec_df['Date'] = sec_df['Date'].map(_solo_fecha)
+                sec_df['Action'] = section_action
+                sec_df['Quantity'] = 0
+                sec_df['Price'] = 0
 
-            keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in divs_df.columns]
-            frames.append(divs_df[keep])
-    except Exception as e:
-        print(f"IBKR dividends parse error: {e}")
+                keep = [c for c in ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount'] if c in sec_df.columns]
+                frames.append(sec_df[keep])
+        except Exception as e:
+            print(f"IBKR {section_name} parse error: {e}")
 
     if frames:
         return pd.concat(frames, ignore_index=True)
@@ -3465,10 +3483,11 @@ def latest_health_verdict(ticker):
     return last.get('verdict')
 
 
-def _roc_events_from_19a(ticker, dist_dated):
+def _roc_events_from_19a(ticker, dist_bruto):
     """Serie FECHADA del ROC del holder: `[(fecha, roc_$)]`, una entrada por distribución.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    `dist_bruto`: lista de (fecha, monto BRUTO) — la de `_dividend_events`, con signo: una
+    reversa de IB resta ROC en vez de sumarlo.
     Empata cada distribución con el %ROC publicado de esa fecha (±7 días); si no hay empate
     usa el % ponderado del fondo (`weighted_pct`).
 
@@ -3485,7 +3504,7 @@ def _roc_events_from_19a(ticker, dist_dated):
     fiscal, es un híbrido, y la Regla 2 lo prohíbe.
     """
     info = load_roc_19a().get(str(ticker).upper())
-    if not info or not dist_dated:
+    if not info or not dist_bruto:
         return None
 
     dated = []
@@ -3498,8 +3517,8 @@ def _roc_events_from_19a(ticker, dist_dated):
     weighted = float(weighted) if weighted is not None else None
 
     eventos = []
-    for dt, amt in dist_dated:
-        amt = abs(amt or 0)
+    for dt, amt in dist_bruto:
+        amt = amt or 0
         pct = None
         if dated and dt is not None:
             best = min(dated, key=lambda dp: abs((dp[0] - pd.Timestamp(dt).normalize()).days))
@@ -3513,10 +3532,10 @@ def _roc_events_from_19a(ticker, dist_dated):
     return eventos
 
 
-def _estimate_roc_from_19a(ticker, dist_dated):
+def _estimate_roc_from_19a(ticker, dist_bruto):
     """Estima el ROC del holder con el % que el fondo publica en sus avisos 19a.
 
-    `dist_dated`: lista de (fecha, monto) de distribuciones recibidas (cash + reinvertido).
+    `dist_bruto`: lista de (fecha, monto BRUTO), la de `_dividend_events`.
     Devuelve (roc_$|None, roc_%|None).
 
     Es la SUMA de `_roc_events_from_19a`, no un segundo empate por fecha: el criterio de
@@ -3524,10 +3543,10 @@ def _estimate_roc_from_19a(ticker, dist_dated):
     un solo sitio. Dos implementaciones del mismo empate es exactamente la divergencia que
     la Regla 3 del contrato prohíbe.
     """
-    total = sum(abs(a or 0) for _, a in dist_dated) if dist_dated else 0.0
+    total = sum((a or 0) for _, a in dist_bruto) if dist_bruto else 0.0
     if total <= 0:
         return None, None
-    eventos = _roc_events_from_19a(ticker, dist_dated)
+    eventos = _roc_events_from_19a(ticker, dist_bruto)
     if eventos is None:
         return None, None
     roc_sum = sum(a for _, a in eventos)
@@ -5634,6 +5653,35 @@ def withheld_tax_total(history_df) -> float:
             continue
         signed += float(amt)
     return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
+
+
+def _withheld_on_reinvested(history_df) -> float:
+    """Retención NRA de las distribuciones REINVERTIDAS (≥0): la de las filas de impuesto
+    fechadas el mismo día que una fila fuente 'Reinvest Dividend' del mismo historial.
+
+    La compra DRIP ya es neta de esa retención, así que el efectivo líquido no debe
+    descontarla otra vez. Se atribuye por fecha porque Schwab fecha la 'NRA Tax Adj' el día de
+    su distribución: en los CSV reales ninguna retención cae el mismo día que una distribución
+    en efectivo y otra reinvertida. Una retención sin distribución ese día no se atribuye aquí
+    y se sigue descontando del efectivo. Mismo neteo por signo que `withheld_tax_total`.
+    """
+    if history_df is None or len(history_df) == 0 or not {'Action', 'Date'} <= set(history_df.columns):
+        return 0.0
+    accion = history_df['Action'].astype(str).str.lower()
+    fechas = pd.to_datetime(history_df['Date'], errors='coerce').dt.normalize()
+    es_fuente_drip = (accion.str.contains('reinvest|reinversión|drip')
+                      & accion.str.contains('dividend|dividendo')
+                      & ~accion.map(_is_tax_row_action))
+    dias_drip = set(fechas[es_fuente_drip].dropna())
+    signed = 0.0
+    for (_, row), dia in zip(history_df.iterrows(), fechas):
+        if dia not in dias_drip or not _is_nra_withholding_action(row.get('Action', '')):
+            continue
+        amt = _clean_money(row.get('Amount', 0))
+        if pd.isna(amt):
+            continue
+        signed += float(amt)
+    return round(max(0.0, -signed), 2)
 
 
 def withheld_tax_total_by_year(history_df) -> dict:
