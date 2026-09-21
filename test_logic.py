@@ -1194,21 +1194,24 @@ def test_get_yieldmax_risk_profile_shape_stable():
 def test_build_interpretation_compensated_vs_deficit():
     """YieldMax: el bloque sintetiza COMPENSADO cuando el income supera la caída, y déficit si no."""
     comp = logic.build_interpretation(
-        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000}}, 'MSTY')
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000,
+                  'net_profit': 1000}}, 'MSTY')
     txt = ' '.join(comp['lines'])
     assert comp['lines']                      # no vacío
     assert 'income' in txt and 'compensó' in txt
     assert 'retorno total +$1,000' in txt
 
     deficit = logic.build_interpretation(
-        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 1000}}, 'MSTY')
+        {'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 1000,
+                  'net_profit': -3000}}, 'MSTY')
     assert 'todavía no cubre' in ' '.join(deficit['lines'])
 
 
 def test_build_interpretation_unknown_no_fabrication():
     """Ticker fuera del YAML: solo sintetiza los números, NO inventa conocimiento."""
     out = logic.build_interpretation(
-        {'ZZZZ': {'pocket_investment': 1000, 'market_value': 1200, 'dividends_collected_cash': 50}}, 'ZZZZ')
+        {'ZZZZ': {'pocket_investment': 1000, 'market_value': 1200, 'dividends_collected_cash': 50,
+                  'net_profit': 250}}, 'ZZZZ')
     assert len(out['lines']) == 1
     assert 'retorno total' in out['lines'][0].lower()
 
@@ -1226,9 +1229,12 @@ def test_knowledge_and_interpretation_have_no_buy_sell_language():
                 assert not forbidden.search(val), f"{tk}.{field} contiene lenguaje de compra/venta: {val!r}"
     # 2) Líneas generadas para varios escenarios
     scenarios = {
-        'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000},
-        'XLK':  {'pocket_investment': 2000,  'market_value': 3500, 'dividends_collected_cash': 20},
-        'NVDL': {'pocket_investment': 1000,  'market_value': 1100, 'dividends_collected_cash': 0},
+        'MSTY': {'pocket_investment': 10000, 'market_value': 6000, 'dividends_collected_cash': 5000,
+                 'net_profit': 1000},
+        'XLK':  {'pocket_investment': 2000,  'market_value': 3500, 'dividends_collected_cash': 20,
+                 'net_profit': 1520},
+        'NVDL': {'pocket_investment': 1000,  'market_value': 1100, 'dividends_collected_cash': 0,
+                 'net_profit': 100},
     }
     for tk, s in scenarios.items():
         for ln in logic.build_interpretation({tk: s}, tk)['lines']:
@@ -4207,3 +4213,30 @@ def test_e4_marca_calidad_cuando_faltan_filas_fuente_del_drip(monkeypatch):
         ("2024-11-01", "Reinvest Shares", "MSTY", 1.0, -50.0),
     ]))["MSTY"]
     assert sin_gap["drip_sin_fuente"] is False
+def test_e1_el_texto_usa_el_mismo_retorno_que_la_tarjeta():
+    """C·1/E1: `build_interpretation` publica el mismo `net_profit` que
+    `_tarjeta_retorno_total` (regla 3b) — ya no usa el bruto (`mv + inc - pk`)."""
+    stats = {"pocket_investment": 10000, "market_value": 6000,
+             "dividends_collected_cash": 5000, "net_profit": 1234}
+    # el bruto (mv + inc - pk) da 1000, deliberadamente distinto de net_profit (1234)
+    # para que el test muerda si el texto sigue leyendo la fórmula vieja
+    out = logic.build_interpretation({"MSTY": stats}, "MSTY")
+    txt = " ".join(out["lines"])
+    assert "$1,234" in txt, f"el texto no usa net_profit (1234): {txt!r}"
+    assert "$1,000" not in txt, f"el texto todavía publica el bruto (1000): {txt!r}"
+
+
+def test_e1_el_texto_usa_dividends_net_total_no_el_bruto():
+    """C·1/E1: el «Income» del texto sale de `dividends_net_total` (neto), no de
+    `dividends_collected_cash` (bruto en Schwab). Fixture con AMBOS presentes y
+    distintos — si el texto lee el bruto, este test muerde (el anterior no podía:
+    su fixture no traía `dividends_net_total`, así que el fallback daba el mismo
+    valor con o sin el bug)."""
+    stats = {"pocket_investment": 10000, "market_value": 6000,
+             "dividends_net_total": 800, "dividends_collected_cash": 5000,
+             "net_profit": 1234}
+    out = logic.build_interpretation({"MSTY": stats}, "MSTY")
+    txt = " ".join(out["lines"])
+    assert "$800" in txt, f"el texto no usa dividends_net_total (800): {txt!r}"
+    assert "$5,000" not in txt, f"el texto publica el bruto (5000) en vez del neto: {txt!r}"
+

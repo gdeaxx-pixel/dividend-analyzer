@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 
 import logic
-from ui.heredadas import _resumen_consolidado
+from ui.heredadas import _agregados, _resumen_consolidado, _tarjeta_retorno_total
 
 
 class FakeFile:
@@ -185,7 +185,7 @@ def test_resumen_sin_objeto_fiscal_degrada_al_campo_crudo():
     analyze_portfolio) usan `dividends_collected_cash`, igual que `_agregados`."""
     stats = {"pocket_investment": 100.0, "market_value": 120.0,
              "shares_owned": 1.0, "roi_percent": 20.0,
-             "dividends_collected_cash": 30.0}
+             "dividends_collected_cash": 30.0, "net_profit": 45.0}
     import ui.heredadas as heredadas_mod
     capturado = {}
 
@@ -205,3 +205,134 @@ def test_resumen_sin_objeto_fiscal_degrada_al_campo_crudo():
 
     fila_total = capturado["df"][capturado["df"]["Ticker"] == "TOTAL"].iloc[0]
     assert fila_total["Dividendos cobrados"] == "$60.00"  # 30 + 30, campo crudo
+
+
+def test_resumen_ignora_posiciones_skipped_sin_net_profit(monkeypatch):
+    """E1 indexa `s["net_profit"]` directo (regla: si una ruta nueva entrega stats sin
+    `net_profit`, se quiere un error, no un número equivocado en pantalla). Esto exige que
+    `_tiene_datos` (ui/adapters.py) filtre las posiciones `skipped` ANTES de llegar aquí —
+    un `skipped` solo trae `skipped`/`reason`/`ticker`, nunca `net_profit`."""
+    from ui.adapters import _tiene_datos
+
+    resultados = {
+        "X": {"pocket_investment": 100.0, "market_value": 120.0, "shares_owned": 1.0,
+              "roi_percent": 20.0, "dividends_collected_cash": 30.0, "net_profit": 45.0},
+        "Y": {"pocket_investment": 200.0, "market_value": 240.0, "shares_owned": 2.0,
+              "roi_percent": 20.0, "dividends_collected_cash": 60.0, "net_profit": 90.0},
+        "SKIP": {"skipped": True, "reason": "held_less_than_14_days", "ticker": "SKIP"},
+    }
+    rows = [(t, resultados[t]) for t in resultados if _tiene_datos(resultados.get(t))]
+    assert sorted(t for t, _ in rows) == ["X", "Y"]  # SKIP quedó fuera
+
+    import ui.heredadas as heredadas_mod
+    monkeypatch.setattr(heredadas_mod.st, "dataframe", lambda *a, **k: None)
+    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(heredadas_mod.st, "caption", lambda *a, **k: None)
+    _resumen_consolidado(rows)  # no debe reventar con KeyError: 'net_profit'
+
+
+def test_e1_retorno_total_de_cartera_es_la_suma_de_net_profit(monkeypatch):
+    """C·1/E1: el titular de cartera (`_agregados`) ya no cuenta el DRIP dos veces —
+    el total es la suma de `net_profit` del motor, no `mv + neto - inv`. El fixture
+    mixto no trae DRIP real, así que se fuerza un `net_profit` distinto de
+    `mv + div - pk` en una posición (simula lo que hace el DRIP: mv ya incluye las
+    acciones reinvertidas) para probar que el código LEE net_profit y no recalcula."""
+    results, _mixto = _resultados_mixtos(monkeypatch)
+    todos = ["MSTY", "SCHB", "NVDY", "CONY", "SMH"]
+    results["MSTY"]["net_profit"] = results["MSTY"]["net_profit"] + 500.0  # divergencia forzada
+
+    inv, mv, div, tr, pct = _agregados(results, todos)
+
+    esperado = sum(results[t]["net_profit"] for t in todos)
+    formula_vieja = mv + div - inv
+    assert tr == pytest.approx(esperado, abs=0.01)
+    assert tr != pytest.approx(formula_vieja, abs=0.01), (
+        "el total sigue siendo mv + div - inv, no net_profit")
+    assert pct == pytest.approx(esperado / inv * 100, abs=0.01)
+
+
+def test_e1_tarjeta_de_posicion_es_net_profit(monkeypatch):
+    """C·1/E1: la tarjeta por posición (`_tarjeta_retorno_total`) publica `net_profit`,
+    no `mv + neto - pk` (que cuenta el DRIP dos veces). Se fuerza un `net_profit`
+    distinto de `mv + neto - pk` para probar que el código lo lee, no lo recalcula."""
+    results, _mixto = _resultados_mixtos(monkeypatch)
+    stats = results["MSTY"]
+    stats["net_profit"] = stats["net_profit"] + 500.0  # divergencia forzada
+
+    import ui.heredadas as heredadas_mod
+    capturado = []
+    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda html, **k: capturado.append(html))
+
+    _tarjeta_retorno_total(stats)
+
+    texto_esperado = f'${stats["net_profit"]:,.2f}'  # `_money` formatea negativos como "$-X"
+    assert any(texto_esperado in html for html in capturado), (
+        f"la tarjeta no publicó {texto_esperado!r} (net_profit); capturado: {capturado[:1]}")
+
+
+def test_e1_resumen_consolidado_es_la_suma_de_net_profit(monkeypatch):
+    """C·1/E1: el TOTAL de `_resumen_consolidado` es la suma de `net_profit`, no
+    `mv + div - inv`. Se fuerza una divergencia en una posición para probarlo."""
+    results, _mixto = _resultados_mixtos(monkeypatch)
+    schwab_tickers = ["MSTY", "SCHB"]
+    results["MSTY"]["net_profit"] = results["MSTY"]["net_profit"] + 500.0
+    rows = [(t, results[t]) for t in schwab_tickers]
+
+    import ui.heredadas as heredadas_mod
+    capturado = {}
+    monkeypatch.setattr(heredadas_mod.st, "dataframe", lambda df, *a, **k: capturado.__setitem__("df", df))
+    monkeypatch.setattr(heredadas_mod.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(heredadas_mod.st, "caption", lambda *a, **k: None)
+
+    _resumen_consolidado(rows)
+
+    fila_total = capturado["df"][capturado["df"]["Ticker"] == "TOTAL"].iloc[0]
+
+    def _num(celda):
+        return float(str(celda).replace("$", "").replace(",", ""))
+
+    inv_vista = _num(fila_total["Tu inversión"])
+    mv_vista = _num(fila_total["Valor mercado"])
+    div_vista = _num(fila_total["Dividendos cobrados"])
+    roi_vista = float(str(fila_total["ROI total"]).replace("%", "").replace("+", ""))
+
+    esperado = sum(results[t]["net_profit"] for t in schwab_tickers)
+    roi_esperado = esperado / inv_vista * 100
+    roi_viejo = (mv_vista + div_vista - inv_vista) / inv_vista * 100
+
+    assert roi_vista == pytest.approx(roi_esperado, abs=0.01), (
+        "el ROI total del consolidado no es la suma de net_profit")
+    assert roi_esperado != pytest.approx(roi_viejo, abs=0.01), (
+        "el total sigue siendo mv + div - inv, no net_profit")
+
+
+def test_e1_capital_mas_income_es_el_total(monkeypatch):
+    """G2: Capital + Income == Total al centavo, en las dos convenciones de bróker
+    (Schwab y IB) y con DRIP real en el fixture (MSTY trae DRIP). Lee los tres números
+    del HTML que `_tarjeta_retorno_total` renderiza de verdad — no los recalcula, si no
+    la aserción se compara consigo misma y pasa siempre."""
+    import re
+
+    results, _mixto = _resultados_mixtos(monkeypatch)
+
+    patron = re.compile(
+        r'vd-her-retorno-num[^>]*>\$(-?[\d,]+\.\d\d).*?'
+        r'Capital: <b[^>]*>\$(-?[\d,]+\.\d\d)</b>.*?'
+        r'Income: <b[^>]*>\$(-?[\d,]+\.\d\d)</b>', re.DOTALL)
+
+    import ui.heredadas as heredadas_mod
+    for ticker in ("MSTY", "SCHB", "NVDY", "CONY", "SMH"):
+        stats = results[ticker]
+        capturado = []
+        monkeypatch.setattr(heredadas_mod.st, "markdown", lambda html, **k: capturado.append(html))
+        _tarjeta_retorno_total(stats)
+
+        html = capturado[0]
+        m = patron.search(html)
+        assert m, f"{ticker}: no se pudo leer Total/Capital/Income del HTML: {html!r}"
+        total_html, cap_html, inc_html = (float(x.replace(",", "")) for x in m.groups())
+
+        assert total_html == pytest.approx(stats["net_profit"], abs=0.005), (
+            f"{ticker}: el Total renderizado no es net_profit")
+        assert cap_html + inc_html == pytest.approx(total_html, abs=0.005), (
+            f"{ticker}: Capital + Income != Total en el HTML renderizado")

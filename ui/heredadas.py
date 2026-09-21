@@ -102,7 +102,7 @@ def _agregados(resultados: dict, tickers: list[str]) -> tuple:
     div = sum(s.get("dividends_net_total") if s.get("dividends_net_total") is not None
               else s.get("dividends_collected_cash", 0)
               for _, s in filas)
-    tr = mv + div - inv
+    tr = sum(s["net_profit"] for _, s in filas)
     pct = tr / inv * 100 if inv > 0 else 0
     return inv, mv, div, tr, pct
 
@@ -336,10 +336,10 @@ def _tarjeta_retorno_total(stats: dict) -> None:
     """
     inc = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
            else stats.get("dividends_collected_cash", 0))
-    total_ret = stats["market_value"] + inc - stats["pocket_investment"]
+    total_ret = stats["net_profit"]
     total_ret_pct = (total_ret / stats["pocket_investment"] * 100) if stats["pocket_investment"] > 0 else 0
-    cap_comp = stats["market_value"] - stats["pocket_investment"]
     inc_comp = inc
+    cap_comp = total_ret - inc_comp
     color_tr = _color_signo(total_ret)
     color_cap = _color_signo(cap_comp)
     st.markdown(
@@ -514,7 +514,7 @@ def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
     total_div = sum((s.get("dividends_net_total") if s.get("dividends_net_total") is not None
                      else s.get("dividends_collected_cash", 0))
                     for _, s in rows)
-    total_tr = total_mv + total_div - total_inv
+    total_tr = sum(s["net_profit"] for _, s in rows)
     total_tr_pct = (total_tr / total_inv * 100) if total_inv > 0 else 0
     has_roc = any(s.get("ib_cost_basis") is not None for _, s in rows)
     total_ib = sum(s["ib_cost_basis"] for _, s in rows if s.get("ib_cost_basis") is not None)
