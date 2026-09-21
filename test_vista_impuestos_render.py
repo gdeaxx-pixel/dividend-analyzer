@@ -845,14 +845,18 @@ def _frases(html):
 
 # Frases de `main` que pueden NO sobrevivir verbatim en la vista única. U2 §8.bis: cada
 # entrada va con su justificación y se reporta a Daniel.
-_PERDIDAS_APROBADAS = {
-    # PR 4 «ventana de reembolso» (heredada de main, única pérdida del rediseño viejo):
-    # los meses dejaron la prosa y pasaron a la franja `.imp-vent`, que además resalta
-    # SOLO la ventana del bróker del cliente. La sostiene
-    # `test_la_franja_de_ventanas_conserva_los_meses_que_salieron_de_la_prosa`.
-    "si tu bróker es Interactive Brokers, entre enero y marzo; "
-    "si es Schwab, entre junio y septiembre",
-}
+#
+# VACÍA, y medido, no asumido: las 5 vistas de `origin/main` (con `_D_FULL`) producen
+# 122 frases; TODAS sobreviven verbatim en la vista única (dona + «Ver detalle fiscal»
+# + los 4 desplegables), así que no hay ninguna pérdida que aprobar.
+#
+# La entrada heredada de PR 4 («si tu bróker es IB entre enero y marzo; si es Schwab,
+# entre junio y septiembre») se retiró: `origin/main` YA no la emite — PR 4 se mergó y
+# los meses viven solo en la franja `.imp-vent`, que sigue sostenida por
+# `test_la_franja_de_ventanas_conserva_los_meses_que_salieron_de_la_prosa`. Dejarla aquí
+# sería una whitelist tapando un hueco que ya no existe (y podría esconder una regresión
+# futura). Verificado corriendo el guard con la whitelist vacía: pasa igual.
+_PERDIDAS_APROBADAS = set()
 
 
 @_node
