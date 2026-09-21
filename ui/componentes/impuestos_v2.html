@@ -432,7 +432,7 @@
 <script>
 (function initImpuestosV2() {
   "use strict";
-  var D = {{DATA_JSON}};
+  const DATA = {{DATA_JSON}};
   // U2: UNA vista (dona de dos fases) en vez de las 5 antiguas. Todo el JSON de
   // `ui/adapters.py::impuestos_data` se renderiza de una vez; las fases 1/2 son estado
   // LOCAL del iframe (un clic no es un rerun de Streamlit). Ninguna cifra fiscal se
@@ -462,13 +462,13 @@
     if (el) el.innerHTML = html;
   }
 
-  var P = D.peldanos || {};
-  var tasaTxt = D.declarado ? (D.tasa_pct + "% " + (D.tiene_tratado ? "por el tratado con EE.UU." : "sin tratado")) : null;
+  var P = DATA.peldanos || {};
+  var tasaTxt = DATA.declarado ? (DATA.tasa_pct + "% " + (DATA.tiene_tratado ? "por el tratado con EE.UU." : "sin tratado")) : null;
 
   // La SEGUNDA vía para declarar el país (portado de «El corte»). Tres estados, porque
   // prometer un atajo que no existe es peor que no ofrecerlo. El país nunca se deduce de
   // la tasa retenida: lo decide `logic.pais_desde_codigo_1042s` sobre la casilla 13b.
-  var R1042 = D.residencia_1042s || {};
+  var R1042 = DATA.residencia_1042s || {};
   function viaPais() {
     if (R1042.pais_detectado) {
       return " Ya lo sabemos por tu 1042-S, que declara <b>" + esc(R1042.pais_detectado)
@@ -489,13 +489,13 @@
   // `parcial` cortan ANTES de tocarlos — reordenar mete un TypeError sobre null que mata
   // el script entero (modo de fallo del #84). Pineado como EFECTO por `test_veredicto_*`
   // con una fixture por rama.
-  function veredicto(D, Pc, R) {
+  function veredicto(DATA, Pc, R) {
     var X = money(R.monto == null ? 0 : R.monto);
-    var kick = D.declarado
-      ? "El corte · " + esc(D.pais || "") + ", " + esc(D.tasa_pct) + "% "
-        + (D.tiene_tratado ? "con tratado" : "sin tratado")
+    var kick = DATA.declarado
+      ? "El corte · " + esc(DATA.pais || "") + ", " + esc(DATA.tasa_pct) + "% "
+        + (DATA.tiene_tratado ? "con tratado" : "sin tratado")
       : "El corte · sin residencia declarada";
-    if (!D.declarado) {
+    if (!DATA.declarado) {
       return { borde: "warn", kick: kick,
         big: "Falta tu residencia fiscal para saber si te retuvieron de más.", sub: "" };
     }
@@ -574,15 +574,15 @@
   // ---- Título + lede (los de la vista «corte», que era la entrada) ----------------------
   set("impTitle", "La escalera de tus impuestos");
   set("impLede",
-    D.declarado
-      ? "Vives en <b>" + esc(D.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
+    DATA.declarado
+      ? "Vives en <b>" + esc(DATA.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
         + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
       : "Declara tu residencia fiscal en el <b>Paso 2</b> para completar la escalera. "
         + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
         + viaPais());
 
   // ---- Banner de estado de residencia (nuevo en U2, patrón de la referencia) ------------
-  if (!D.declarado) {
+  if (!DATA.declarado) {
     set("impStatus",
       '<div class="imp-status" role="status"><div>'
       + '<p class="imp-status-title">Falta tu residencia fiscal</p>'
@@ -606,7 +606,7 @@
   //   Grupos               → fondos[].grupo (logic.classify_tickers, vía adapter)
   // ════════════════════════════════════════════════════════════════════════════════════
   var R = P.retenido || {};
-  var CE = (D.impuesto_local && D.impuesto_local.credito_eeuu) || null;
+  var CE = (DATA.impuesto_local && DATA.impuesto_local.credito_eeuu) || null;
   var retTotal = (R.monto == null) ? 0 : Number(R.monto);
   var vuelveAgg = (CE && CE.vuelve_por_roc != null) ? Number(CE.vuelve_por_roc) : null;
   var definitivo = (CE && CE.definitivo != null) ? Number(CE.definitivo) : null;
@@ -614,7 +614,7 @@
   var MOTIVOS = {
     "sin_dato_de_roc_recuperable": "no hay dato de ROC recuperable con qué medirlo"
   };
-  var fondos = (D.fondos || []).slice();
+  var fondos = (DATA.fondos || []).slice();
   var sinRetencion = !(retTotal > 0.01);
 
   // Grupos Dividendos/Crecimiento (§6›9 E: mode_a/mode_b de `logic.classify_tickers`).
@@ -1013,7 +1013,7 @@
   }
 
   // ---- 1. Veredicto ----
-  var V = veredicto(D, Pc, R);
+  var V = veredicto(DATA, Pc, R);
   var vHTML = '<div class="imp-verdict" data-borde="' + V.borde + '" '
     + 'style="border-left-color:var(--' + V.borde + ')">'
     + '<p class="imp-verdict-kick">' + esc(V.kick) + '</p>'
@@ -1131,8 +1131,8 @@
       + '1040-NR: suele ser <b>crédito fiscal</b> en tu país de residencia.</div>';
   }
   var conc = '';
-  if (D.concentracion && D.concentracion.otro_ticker) {
-    var C = D.concentracion;
+  if (DATA.concentracion && DATA.concentracion.otro_ticker) {
+    var C = DATA.concentracion;
     conc = '<div class="imp-conc"><b>' + C.pct.toFixed(1) + '%</b> de tu retención salió de un solo fondo: '
       + '<b>' + esc(C.ticker) + '</b> ' + money(C.retenido) + ' frente a <b>' + esc(C.otro_ticker) + '</b> ' + money(C.otro_retenido)
       + '. La retención NRA se concentra donde se concentra el rendimiento.</div>';
@@ -1168,7 +1168,7 @@
     ]);
   if (okEstado) {
     modales += modalHTML("modal-imp-correcta", "Qué es esta cifra", "Retención correcta", [
-        "Tu tasa de residencia (<b>" + esc(D.tasa_pct + "%") + "</b>) aplicada sobre la parte "
+        "Tu tasa de residencia (<b>" + esc(DATA.tasa_pct + "%") + "</b>) aplicada sobre la parte "
           + "gravable. Es lo que un bróker debería retenerte si tu W-8BEN está al día.",
       ])
       + modalHTML("modal-imp-vuelvesolo", "Cómo vuelve", "Exceso por ROC", [
@@ -1195,23 +1195,23 @@
   // ════════════════════════════════════════════════════════════════════════════════════
   var T = P.retenido || {};
   var hayDevuelto = (T.ya_devuelto && T.ya_devuelto.monto > 0.01);
-  var conBuckets = D.declarado;                 // columnas Correcta/ROC/W-8BEN
+  var conBuckets = DATA.declarado;                 // columnas Correcta/ROC/W-8BEN
   var np = '<span class="mut">no publ.</span>';
   var head = '<tr><th>Fondo</th><th>Bruto</th><th>ROC <span class="imp-tbl-base">% del bruto</span></th><th>Gravable</th>'
-    + (D.declarado ? '<th>Te toca</th>' : '')
+    + (DATA.declarado ? '<th>Te toca</th>' : '')
     + '<th>Al cobro</th>'
     + (hayDevuelto ? '<th>Devuelto</th>' : '')
     + (conBuckets ? '<th>Correcta</th><th class="c-ambar">ROC</th><th class="c-coral">W-8BEN</th>' : '')
     + '</tr>';
   var body = '';
-  (D.fondos || []).forEach(function (f) {
+  (DATA.fondos || []).forEach(function (f) {
     var rocCell = f.roc_pct == null ? '<span class="mut">—</span>' : (f.roc_pct.toFixed(0) + '%');
     body += '<tr>'
       + '<td class="tk">' + esc(f.ticker) + '</td>'
       + '<td>' + money(f.bruto) + '</td>'
       + '<td>' + rocCell + '</td>'
       + '<td>' + money(f.gravable) + '</td>'
-      + (D.declarado ? '<td>' + (f.corresponde == null ? '—' : money(f.corresponde)) + '</td>' : '')
+      + (DATA.declarado ? '<td>' + (f.corresponde == null ? '—' : money(f.corresponde)) + '</td>' : '')
       + '<td>' + money(f.retenido) + '</td>'
       + (hayDevuelto ? '<td class="mut">' + (f.ya_devuelto > 0.01 ? money(f.ya_devuelto) : '—') + '</td>' : '')
       + (conBuckets ? (f.indeterminado
@@ -1232,7 +1232,7 @@
     + '<td>' + (rocEfectivo == null ? '—' : rocEfectivo.toFixed(0) + '%')
       + ' <span class="imp-tbl-base">sobre el bruto</span></td>'
     + '<td>' + money(P.gravable ? P.gravable.monto : 0) + '</td>'
-    + (D.declarado ? '<td>' + money(P.corresponde ? P.corresponde.monto : 0) + '</td>' : '')
+    + (DATA.declarado ? '<td>' + money(P.corresponde ? P.corresponde.monto : 0) + '</td>' : '')
     + '<td>' + money(T.monto) + '</td>'
     + (hayDevuelto ? '<td class="mut">' + money(T.ya_devuelto.monto) + '</td>' : '')
     + (conBuckets ? totBuckets : '')
@@ -1247,7 +1247,7 @@
     ["ROC", "Qué parte del reparto fue retorno de capital (tu propio dinero de vuelta)."],
     ["Gravable", "Lo que sí es renta: bruto menos el ROC."],
   ];
-  if (D.declarado) filasLeyenda.push(["Te toca", "Tu tasa de residencia aplicada sobre la parte gravable."]);
+  if (DATA.declarado) filasLeyenda.push(["Te toca", "Tu tasa de residencia aplicada sobre la parte gravable."]);
   filasLeyenda.push(["Al cobro", "Lo que el bróker te descontó al pagar el dividendo."]);
   if (hayDevuelto) filasLeyenda.push(["Devuelto", "Lo que el bróker ya te reintegró al reclasificar el ROC."]);
   if (conBuckets) filasLeyenda.push(
@@ -1287,7 +1287,7 @@
       + '</div>';
   }
 
-  var G = D.ganancias_capital;
+  var G = DATA.ganancias_capital;
   var ventaHTML = '<p class="imp-lede"><b>Vender no es cobrar un dividendo.</b> '
     + 'Para un no residente, la ganancia de capital de un ETF o una acción '
     + 'normal <b>no es renta de fuente estadounidense</b>: EE.UU. no te retiene nada al vender.</p>';
@@ -1430,7 +1430,7 @@
   // ════════════════════════════════════════════════════════════════════════════════════
   // «Dividendos y crédito fiscal» (vista antigua `pais` / Peldaño 6, portada).
   // ════════════════════════════════════════════════════════════════════════════════════
-  var L = D.impuesto_local;
+  var L = DATA.impuesto_local;
   var paisHTML = '<p class="imp-lede">Esta renta es de <b>fuente extranjera</b> para tu país, así que '
     + 'normalmente se declara allí aunque EE.UU. ya te haya retenido. Lo que sigue es '
     + '<b>la base</b> y <b>el crédito</b>: las dos cifras que tu declaración necesita.</p>';
@@ -1504,7 +1504,7 @@
   }
   // Peldaños reservados de fases futuras — sin contenido inventado. Hoy la lista va vacía.
   var slotsHTML = '';
-  (D.slots_pendientes || []).forEach(function (s) {
+  (DATA.slots_pendientes || []).forEach(function (s) {
     slotsHTML += stepRow("Próximamente", s.titulo, null, null,
       '<p class="imp-step-sub">' + esc(s.nota) + ' <b>Pendiente</b> — llega en una fase posterior.</p>',
       "pendiente");
@@ -1514,7 +1514,7 @@
   // ════════════════════════════════════════════════════════════════════════════════════
   // «Lo que puede volver» (Ruta A) y «Vía IRS» (Ruta B) — vista antigua `recuperar`.
   // ════════════════════════════════════════════════════════════════════════════════════
-  var A = D.ruta_a || {};
+  var A = DATA.ruta_a || {};
   var estimadoA = A.tiene_1042s ? '' : '<span class="imp-ruta-est">estimado — sin 1042-S cargado</span> ';
   var rutaA;
   if (A.sin_retencion && A.tiene_1042s) {

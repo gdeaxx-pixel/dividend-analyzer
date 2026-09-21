@@ -250,8 +250,7 @@ def test_render_impuestos_inyecta_datos_y_tema(monkeypatch):
     assert "{{DATA_JSON}}" not in html, "quedó el placeholder sin sustituir"
     assert "{{" not in html, "quedó un placeholder sin sustituir"
     assert 'data-theme", "dark"' in html, "el tema no llegó al iframe (lo pone _con_tema)"
-    assert "const DATA =" not in html  # el v2 lee `var D = {...}`, no `const DATA`
-    assert "var D = " in html
+    assert "const DATA = " in caja["html"]
 
 
 def test_alto_unico_medido(monkeypatch):
@@ -279,7 +278,7 @@ def test_impuestos_render_vista_normaliza_la_clave(monkeypatch):
         tema = "Claro"
 
     impuestos.render_vista("corte-ya-no-existe", _Ruta())
-    assert "var D = " in caja["html"]
+    assert "const DATA = " in caja["html"]
     assert caja["height"] == componentes.ALTO_IMPUESTOS
 
 
@@ -694,9 +693,9 @@ def test_mutante_reordenar_el_veredicto_mata_el_script():
     `!declarado`) → TypeError sobre null → script muerto → returncode != 0 (#84)."""
     script = _primer_script()
     mut = script.replace(
-        "    if (!D.declarado) {",
+        "    if (!DATA.declarado) {",
         "    if (R.gap_w8ben.monto > 0.01) { return { borde: 'coral', "
-        "kick: kick, big: 'x', sub: '' }; }\n    if (!D.declarado) {")
+        "kick: kick, big: 'x', sub: '' }; }\n    if (!DATA.declarado) {")
     assert mut != script
     d = _D_para("sin_pais")
     js = mut.replace("{{DATA_JSON}}", json.dumps(d))
@@ -744,6 +743,25 @@ def test_todo_token_usado_esta_en_los_cuatro_bloques():
     for tok in sorted(usados - ignora):
         faltan = [i for i, b in enumerate(bloques) if (tok + ":") not in b.replace(" ", "")]
         assert not faltan, f"{tok} usado pero ausente en los bloques de tokens #{faltan}"
+
+
+# La rampa de la dona se arma por CONCATENACIÓN (`"var(" + rampa[0] + ")"` en `colorDe`),
+# así que el regex `var\((--x)\)` del guard de arriba NO la ve. Mismo patrón que el
+# `portafolios.html` auditado. Se cubre explícitamente: si un token de la rampa falta en
+# algún bloque, el arco cae al color inicial del navegador (bug de `--anchor`/`--drip`,
+# PR 2: la barra salió invisible en vivo).
+_TOKENS_RAMPA = {"--f1", "--f3", "--f4", "--f5"}
+
+
+def test_los_tokens_de_la_rampa_de_la_dona_estan_en_los_cuatro_bloques():
+    with open(_HTML, encoding="utf-8") as f:
+        src = f.read()
+    style = src[src.index("<style>"):src.index("</style>")]
+    bloques = re.findall(r"(?::root(?:\[data-theme=\"\w+\"\])?|@media[^{]+\{\s*:root)\s*\{([^}]*)\}", style)
+    assert len(bloques) >= 4, f"esperaba ≥4 bloques de tokens, encontré {len(bloques)}"
+    for tok in sorted(_TOKENS_RAMPA):
+        faltan = [i for i, b in enumerate(bloques) if (tok + ":") not in b.replace(" ", "")]
+        assert not faltan, f"{tok} (rampa de la dona) ausente en los bloques #{faltan}"
 
 
 def test_ambar_no_reaparece_como_token_css():
