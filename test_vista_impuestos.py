@@ -353,6 +353,17 @@ def test_peldano2_descuenta_roc_sin_retencion_nra_con_pais():
     assert f["gravable"] == pytest.approx(400.0, abs=0.02)
 
 
+def test_i3_sin_retencion_no_se_afirma_con_7a_ilegible():
+    """C·6/I3: un 7a que no se pudo leer no es 'sin retención' (0.01 de retenido no es
+    lo mismo que 'no se sabe'). Con `withholding_credit`/`federal_tax_withheld` en None,
+    `retenido_completo` sale False y `sin_retencion` debe ser False."""
+    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    forms = [{"income_code": "37", "gross_income": 276.0,
+              "federal_tax_withheld": None, "withholding_credit": 30.0}]
+    datos = impuestos_data(res, logic.build_fiscal_profile("Colombia"), forms)
+    assert datos["ruta_a"]["sin_retencion"] is False
+
+
 def test_peldano2_roc_negativo_no_descuenta_y_se_declara():
     """`roc_percent` negativo (método 'broker' que no cuadra) ⇒ la fila figura «sin dato»
     (`roc_pct` None) y tributa sobre el bruto completo; el peldaño lo declara en `sin_roc`."""
