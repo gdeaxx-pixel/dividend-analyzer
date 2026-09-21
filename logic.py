@@ -1028,7 +1028,39 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
             actual_rename_map[col] = col_map_lower[col_lower]
             
     df = df.rename(columns=actual_rename_map)
-    
+
+    # E3 (spec S5 §3) — "MM/DD/YYYY as of MM/DD/YYYY": Schwab registra la fila con la
+    # fecha de REGISTRO primero y la fecha EFECTIVA después. `pd.to_datetime` no
+    # reconoce ese formato y descarta la fila como NaT en silencio. Paso 1: contar y
+    # avisar, sin tocar todavía las fechas.
+    _ASOF_RE = re.compile(r"^\s*(\d{1,2}/\d{1,2}/\d{4})\s+as of\s+(\d{1,2}/\d{1,2}/\d{4})\s*$")
+    _ACCIONES_ASOF_EXCLUIDAS = ("stock split", "reverse split")
+
+    if 'Date' in df.columns:
+        _mask_asof = df['Date'].astype(str).str.contains(" as of ", na=False)
+        descartadas_as_of = int(_mask_asof.sum())
+        normalize_csv.ultimo_descarte = {
+            "total": descartadas_as_of,
+            "por_accion": (df.loc[_mask_asof, 'Action'].astype(str).value_counts().to_dict()
+                          if descartadas_as_of and 'Action' in df.columns else {}),
+        }
+
+        # Paso 2: la fecha EFECTIVA (la segunda) manda (G4, Daniel 2026-09-18) — salvo
+        # en Stock Split / Reverse Split, que traen `Quantity` y NO se restauran: ese
+        # campo activaría `if 'split' in action: shares_owned = qty` ENCIMA del factor
+        # de yfinance, que ya es el manejador autoritativo (double-count documentado).
+        # Esas siguen descartándose, y siguen contando en `ultimo_descarte`.
+        if descartadas_as_of and 'Action' in df.columns:
+            def _fecha_efectiva(s):
+                """G4: en «MM/DD/YYYY as of MM/DD/YYYY» manda la SEGUNDA — la efectiva.
+                La primera es la de registro del bróker."""
+                return _ASOF_RE.sub(r"\2", s)
+
+            _accion_excluida = df['Action'].astype(str).str.lower().str.strip().isin(
+                _ACCIONES_ASOF_EXCLUIDAS)
+            _aplicar = _mask_asof & ~_accion_excluida
+            df.loc[_aplicar, 'Date'] = df.loc[_aplicar, 'Date'].astype(str).apply(_fecha_efectiva)
+
     # Ensure Date is datetime
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -1508,6 +1540,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             # Keywords: dividend, payout, yield, interest (excluding reinvestment)
             is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
 
+            # I5 (spec S5 §3): 'Cash In Lieu', 'Special Qual Div', 'ADR Mgmt Fee' y 'Wire
+            # Received' no traen ninguna de las palabras de arriba, así que caían SIN
+            # RAMA — dinero real que no movía ni pocket_investment ni el efectivo
+            # cobrado, ni el cronograma de IRR. Rama propia, no `is_div_payout`, para no
+            # mezclar su semántica fiscal (no son dividendos) con el mismo tratamiento
+            # de caja (si no se reinvierten, es efectivo que entró o salió de la cuenta).
+            # `Reverse Split` NO entra aquí: suma $0.00 y su terreno (splits) está cerrado
+            # sin defectos — moverlo exige evidencia nueva, no esta spec.
+            is_misc_cash = any(k in action for k in
+                              ('cash in lieu', 'special qual div', 'adr mgmt fee', 'wire received'))
+
             # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
             # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
             # ('Dividend - Foreign Tax Withholding') SÍ contiene 'dividend' y ya la cubre
@@ -1595,6 +1638,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     if _dy is not None:
                         divs_by_year[_dy] += amount
                     irr_flows_dated.append((_tx_date, amount))
+
+            elif is_misc_cash:
+                # I5: mismo tratamiento de CAJA que is_div_payout (signed amount: un
+                # cargo como 'ADR Mgmt Fee' es negativo y resta) pero sin pasar por
+                # `dividends_gross_by_year`/objeto fiscal — no son distribuciones.
+                dividends_collected_cash += amount
+                irr_flows_dated.append((_tx_date, amount))
 
             elif is_sell:
                 _adj_qty = abs(qty) * _sf

@@ -150,6 +150,17 @@ def render_bloque_transacciones() -> bool:
         st.markdown(bloque_resumen("CSV cargado",
                                    f"{nombre} · {broker} · {len(tickers)} tickers"),
                     unsafe_allow_html=True)
+        _descarte = st.session_state.get("_wizard_csv_descarte")
+        if _descarte and _descarte.get("total"):
+            # E3 (spec S5 §3): toda fila "MM/DD/YYYY as of MM/DD/YYYY" que el parser de
+            # fechas no reconoce se descartaba en silencio — Stock Split, MoneyLink
+            # Transfer, Pr Yr Div Reinvest, etc. Las que SÍ se recuperan (paso 2, la
+            # fecha efectiva) no llegan aquí: esto son las que se siguen descartando.
+            _detalle = ", ".join(f"{v}× {k}" for k, v in
+                                 sorted(_descarte["por_accion"].items(),
+                                        key=lambda kv: -kv[1]))
+            st.caption(f"⚠️ {_descarte['total']} fila(s) con fecha «... as of ...» que no "
+                      f"se pudieron ubicar en el tiempo, excluidas: {_detalle}.")
         _, col = st.columns([5, 1])
         with col:
             if st.button("editar", key="_vd_edit_csv", type="tertiary",
@@ -195,6 +206,8 @@ def render_bloque_transacciones() -> bool:
         st.session_state["_wizard_csv_ticker_data"] = _resumen_por_ticker(limpio)
         st.session_state["_wizard_broker"] = broker
         st.session_state["_wizard_csv_name"] = archivo.name
+        st.session_state["_wizard_csv_descarte"] = getattr(
+            logic.normalize_csv, "ultimo_descarte", None)
         st.rerun()
     except Exception as error:                                    # noqa: BLE001
         st.error(f"Error procesando el archivo: {error}")

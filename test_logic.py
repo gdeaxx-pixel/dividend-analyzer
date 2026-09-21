@@ -4240,3 +4240,89 @@ def test_e1_el_texto_usa_dividends_net_total_no_el_bruto():
     assert "$800" in txt, f"el texto no usa dividends_net_total (800): {txt!r}"
     assert "$5,000" not in txt, f"el texto publica el bruto (5000) en vez del neto: {txt!r}"
 
+# ── C·3/E3 + I5 — filas "as of" descartadas en silencio ────────────────────────
+
+_ASOF_CSV = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"01/13/2026 as of 12/31/2025","Pr Yr Div Reinvest","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+    b'"06/02/2025","Cash Dividend","MSTY","YIELDMAX MSTY","","","","30.00"\n'
+    b'"12/05/2025 as of 12/04/2025","Stock Split","XLK","TECH SELECT SPDR","11","","",""\n'
+    b'"Transactions Total","","","","","","","$-10.00"\n'
+)
+
+
+def test_e3_cuenta_las_filas_as_of_descartadas():
+    """`ultimo_descarte` cuenta las filas «as of» y las desglosa por acción — sintético
+    con 3 filas «as of» (2 recuperables + 1 Stock Split que se sigue descartando)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    logic.normalize_csv(df)
+    descarte = logic.normalize_csv.ultimo_descarte
+    assert descarte["total"] == 2
+    assert descarte["por_accion"] == {"Pr Yr Div Reinvest": 1, "Stock Split": 1}
+
+
+def test_e3_manda_la_fecha_efectiva_no_la_de_registro():
+    """«01/13/2026 as of 12/31/2025» (Pr Yr Div Reinvest) entra fechada el 2025-12-31,
+    no el 2026-01-13 — el año fiscal cambia, que es el motivo de la decisión de Daniel."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    fila = df_clean[df_clean["Action"] == "Pr Yr Div Reinvest"]
+    assert len(fila) == 1
+    assert fila["Date"].iloc[0] == pd.Timestamp("2025-12-31")
+
+
+def test_e3_los_stock_split_siguen_descartados():
+    """Una fila `Stock Split ... as of ...` con `Quantity` no entra — ni su fecha se
+    restaura ni `shares_owned` se mueve con ella."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    assert "XLK" not in set(df_clean["Ticker"]), (
+        "el Stock Split «as of» debe seguir descartado (NaT), no restaurado")
+    assert logic.normalize_csv.ultimo_descarte["por_accion"].get("Stock Split") == 1
+
+
+def test_e3_paso1_no_mueve_ninguna_cifra():
+    """A/B del commit 1: sobre un fixture sintético con filas «as of» (`_ASOF_CSV`), el
+    número de filas limpias y sus valores no dependen de si el paso 2 (fecha efectiva)
+    está o no — la única fila recuperable (Cash Dividend MSTY normal) no es «as of», y
+    la única fila «as of» no-split queda con la misma cuenta total de descarte que
+    antes de que existiera el paso 2 (ver test_e3_cuenta_las_filas_as_of_descartadas)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_ASOF_CSV))
+    df_clean = logic.normalize_csv(df)
+    # la fila normal (no "as of") sigue intacta y es la única "MSTY" viva salvo la
+    # recuperada — el conteo de descarte es el oráculo de "cuántas seguían siendo NaT
+    # antes del paso 2": aquí 2 (coincide con lo medido arriba).
+    assert logic.normalize_csv.ultimo_descarte["total"] == 2
+    assert len(df_clean[df_clean["Action"] == "Cash Dividend"]) == 1
+
+
+_I5_CSV = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/01/2025","Cash In Lieu","MSTY","YIELDMAX MSTY","","","","5.00"\n'
+    b'"04/02/2025","Special Qual Div","MSTY","YIELDMAX MSTY","","","","2.52"\n'
+    b'"04/03/2025","ADR Mgmt Fee","MSTY","YIELDMAX MSTY","","","","-0.06"\n'
+    b'"04/04/2025","Wire Received","MSTY","YIELDMAX MSTY","","","","3.00"\n'
+    b'"04/05/2025","Bond Interest","","","","","","5.89"\n'
+    b'"Transactions Total","","","","","","","$-1988.65"\n'
+)
+
+
+def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama():
+    """Cash In Lieu, Special Qual Div, ADR Mgmt Fee y Wire Received quedan
+    clasificados (suman a `dividends_collected_cash`) en vez de caer SIN RAMA —
+    control: Bond Interest sigue entrando por `is_div_payout` ('interest'), sin
+    cambiar de rama."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_I5_CSV))
+    df_clean = logic.normalize_csv(df)
+    import conftest
+    with conftest.frozen_price_cache():
+        res = logic.analyze_portfolio(df_clean.copy(), version="TEST_I5")
+    s = res["MSTY"]
+    # 5.00 + 2.52 - 0.06 + 3.00 = 10.46 de las 4 acciones I5; Bond Interest (5.89) es
+    # `Ticker` vacío -> no ticker MSTY, así que no debe sumar aquí (control de rama).
+    assert s["dividends_collected_cash"] == pytest.approx(10.46, abs=0.01), (
+        f"dividends_collected_cash = {s['dividends_collected_cash']}, esperaba 10.46 "
+        "(5.00 Cash In Lieu + 2.52 Special Qual Div - 0.06 ADR Mgmt Fee + 3.00 Wire Received)")
