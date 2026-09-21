@@ -127,6 +127,26 @@ class ListaCache:
         return None, "ninguna"
 
 
+def leer_admins(acceso_secrets) -> frozenset:
+    try:
+        admins = acceso_secrets.get("admins")
+    except Exception:
+        return frozenset()
+
+    if isinstance(admins, str):
+        normalizado = admins.strip().lower()
+        return frozenset({normalizado}) if normalizado else frozenset()
+
+    if isinstance(admins, (list, tuple)):
+        return frozenset(
+            correo.strip().lower()
+            for correo in admins
+            if isinstance(correo, str) and correo.strip()
+        )
+
+    return frozenset()
+
+
 @dataclass
 class Decision:
     accion: str
@@ -134,7 +154,13 @@ class Decision:
     correo_rechazado: Optional[str] = None
 
 
-def decidir(modo: str, usuario: dict, lista: Optional[dict], clave: str) -> Decision:
+def decidir(
+    modo: str,
+    usuario: dict,
+    lista: Optional[dict],
+    clave: str,
+    admins: frozenset = frozenset(),
+) -> Decision:
     if modo == "apagado":
         return Decision(accion="pasar")
 
@@ -145,6 +171,9 @@ def decidir(modo: str, usuario: dict, lista: Optional[dict], clave: str) -> Deci
         if modo == "aplicar":
             return Decision(accion="no_verificado")
         return Decision(accion="pasar", correo_rechazado=usuario.get("email"))
+
+    if usuario.get("email", "").strip().lower() in admins:
+        return Decision(accion="pasar")
 
     if lista is None:
         return Decision(accion="pasar")
@@ -323,6 +352,7 @@ def _puerta() -> bool:
     pat = acceso_secrets.get("allowlist_pat", "")
     token = acceso_secrets.get("telegram_token", "")
     chat_id = acceso_secrets.get("telegram_chat_id", "")
+    admins = leer_admins(acceso_secrets)
 
     if "auth" in secrets and acceso_secrets.get("modo") not in MODOS_VALIDOS:
         _avisador_singleton(token, chat_id).modo_invalido()
@@ -344,7 +374,7 @@ def _puerta() -> bool:
     elif lista is not None and lista_vieja(lista, datetime.now(timezone.utc)):
         avisador.lista_vieja()
 
-    decision = decidir(modo, usuario, lista, clave)
+    decision = decidir(modo, usuario, lista, clave, admins=admins)
 
     if _debe_avisar_rechazo(modo, decision):
         avisador.rechazo_observar(decision.correo_rechazado)
