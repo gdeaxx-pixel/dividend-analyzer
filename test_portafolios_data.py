@@ -1,10 +1,14 @@
 """Tests de `ui.adapters.portafolios_data` y del render del componente Portafolios v3.
 
 Pytest puro con fixtures de dicts sintéticos (cifras inventadas, números redondos):
-`_agregados` solo lee `pocket_investment`, `market_value`, `dividends_net_total` /
-`dividends_collected_cash` y el filtro `_tiene_datos`, así que no hace falta correr
-`analyze_portfolio`. Toda cifra esperada se calcula a mano aquí — nunca con la función
-auditada (trampa 3 del traspaso).
+`_agregados` lee `pocket_investment`, `market_value`, `dividends_net_total` /
+`dividends_collected_cash`, `net_profit` y el filtro `_tiene_datos`, así que no hace
+falta correr `analyze_portfolio`. Desde E1 (`fix/retorno-total-net-profit`) el retorno
+total sale de `net_profit` con acceso duro `[]` — medido por Opus: las 24 posiciones
+reales lo traen siempre y el único llamador de producción pasa por `analyze_portfolio`,
+así que el contrato duro es correcto y son los fixtures los que deben declararlo.
+Toda cifra esperada se calcula a mano aquí — nunca con la función auditada (trampa 3
+del traspaso).
 """
 import json
 
@@ -14,19 +18,27 @@ from ui.adapters import _veredicto_portafolio, portafolios_data
 from ui.heredadas import _agregados
 
 
-def _stats(inv, mv, neto, bruto=None):
+def _stats(inv, mv, neto, bruto=None, net_profit=None):
     """Un ticker analizado mínimo. `bruto` distinto de `neto` simula la convención
-    Schwab (bruto al cobro, retención en fila aparte) que `_agregados` resuelve."""
+    Schwab (bruto al cobro, retención en fila aparte) que `_agregados` resuelve.
+
+    `net_profit` es el campo que E1 convirtió en contrato duro de `_agregados` para el
+    retorno total. Si no se pasa, cae a `mv + neto - inv` (la fórmula pre-E1), que es lo
+    que los tests que no miran `retorno` necesitan. Los fixtures que SÍ vigilan el
+    retorno lo pasan siempre DISTINTO de `mv + neto - inv`: si coincidiera, un `_agregados`
+    que volviera a la fórmula vieja pasaría en verde sin vigilar nada (mismo patrón que
+    el test de E1, 1234 vs 1000)."""
     s = {"pocket_investment": inv, "market_value": mv, "dividends_net_total": neto}
     s["dividends_collected_cash"] = neto if bruto is None else bruto
+    s["net_profit"] = mv + neto - inv if net_profit is None else net_profit
     return s
 
 
 # ── Fixture base: un grupo por modo, convención Schwab (neto != cash) ──────────────
 
 RESULTADOS = {
-    "GROW": _stats(1000, 1200, 10, bruto=20),    # mode_b — crecimiento
-    "YIEL": _stats(2000, 1800, 300, bruto=400),   # mode_a — dividendos
+    "GROW": _stats(1000, 1200, 10, bruto=20, net_profit=180),    # mode_b — crecimiento
+    "YIEL": _stats(2000, 1800, 300, bruto=400, net_profit=50),   # mode_a — dividendos
 }
 CLASSIFY = {"GROW": "mode_b", "YIEL": "mode_a"}
 
@@ -55,8 +67,8 @@ def test_grupo_coincide_con_agregados():
     assert g["mv"] == pytest.approx(mv_e) == 1200
     # El punto del test: neto (10), no el bruto de Schwab (20).
     assert g["dividendos"] == pytest.approx(div_e) == 10
-    assert g["retorno"] == pytest.approx(tr_e) == 210        # 1200 + 10 − 1000
-    assert g["retorno_pct"] == pytest.approx(pct_e) == 21.0  # 210/1000
+    assert g["retorno"] == pytest.approx(tr_e) == 180        # net_profit declarado (E1)
+    assert g["retorno_pct"] == pytest.approx(pct_e) == 18.0  # 180/1000
     assert g["precio"] == pytest.approx(200)                 # mv − inv
 
     inv_d, mv_d, div_d, tr_d, _ = _agregados(RESULTADOS, ["YIEL"])
