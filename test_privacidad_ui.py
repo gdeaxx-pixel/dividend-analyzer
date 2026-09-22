@@ -93,11 +93,10 @@ def test_f4_expander_sin_titulo_duplicado():
     assert contenido.startswith("**Tus archivos.**")
 
 
-def test_f4_telegram_dice_para_que_sirve():
+def test_f4_privacy_no_promete_telegram():
     with open(_PRIVACY_PATH, encoding="utf-8") as f:
         texto = f.read()
-    assert "Telegram" in texto
-    assert "para verificar manualmente tu acceso" in texto
+    assert "Telegram" not in texto
 
 
 def test_f4_privacy_no_miente_sobre_la_memoria():
