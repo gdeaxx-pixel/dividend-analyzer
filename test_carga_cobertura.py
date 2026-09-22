@@ -1,14 +1,23 @@
 """U4 · Carga + cobertura integrada — tests del adapter `cobertura_data`, de la dona de
-5 segmentos y de los tres retoques del flujo de 3 pasos.
+5 segmentos y de los tres retoques del flujo de 3 pasos. U4bis añade las correcciones
+H1 (Regla 3b sobre tres segmentos, parametrizada por residencia) y los guards H2/H3
+del componente.
 
-Tres capas (mismo patrón que `test_portafolios_data.py` / `test_vista_impuestos_render.py`):
+Cuatro capas (mismo patrón que `test_portafolios_data.py` / `test_vista_impuestos_render.py`):
 
 1. ADAPTER — los 5 segmentos salen de SUS señales (tabla §4.1 de la spec), sobre fixtures
    sintéticos. Cifras/estados esperados escritos A MANO, nunca con la expresión auditada
    (trampa 3 de la spec §7).
-2. REGLA 3b (§4.2) — la dona y la etiqueta Alta/Media/Baja de `_puntuacion_acertividad`
-   leen las mismas señales y no pueden contradecirse.
-3. FLUJO (`AppTest`) — dona arriba del flujo, los 5 pendientes antes de confirmar (y
+2. REGLA 3b (§4.2, corregida por U4bis H1) — la dona y la etiqueta Alta/Media/Baja de
+   `_puntuacion_acertividad` leen las mismas señales de datos y no pueden contradecirse.
+   El invariante es sobre TRES segmentos (movimientos/posiciones/excluidos); `fiscal` y
+   `valoracion` quedan fuera porque la etiqueta no lee `rate_declared` ni
+   `valuation_date`. Parametrizado por residencia (con país / sin país): «Sin declarar»
+   es el default de la app y tiene que estar vigilado.
+3. RENDER — datos, tema, decisiones cerradas (§5.2) y los guards U4bis H2/H3: el tono
+   de cada segmento depende de su `estado` y el centro N/5 lee `DATA.verificados` en
+   vez de recalcularlo en JS.
+4. FLUJO (`AppTest`) — dona arriba del flujo, los 5 pendientes antes de confirmar (y
    `analyze_portfolio` NO llamado), residencia en el paso 3 antes de los dos retornos,
    y «Editar» del paso 2 que vuelve conservando el CSV.
 
@@ -223,28 +232,47 @@ def test_contrato_del_adapter_sin_cifras(sesion):
         assert s["estado"] in ("ok", "pendiente")
 
 
-# ── Capa 2 · REGLA 3b (§4.2) — la dona y la etiqueta no pueden contradecirse ────────
+# ── Capa 2 · REGLA 3b (§4.2, corregida por U4bis H1) — dona y etiqueta no se contradicen ──
 #
 # `_puntuacion_acertividad` (ui/validacion.py) y `cobertura_data` leen las mismas
-# señales: 1042-S, unreliable/parcial, income warn y posiciones propias excluidas.
+# señales de datos: unreliable/parcial y posiciones propias excluidas.
 #
-# Dos aclaraciones de alcance, las dos deliberadas:
+# U4bis H1 — el invariante queda sobre TRES segmentos: movimientos, posiciones y
+# excluidos. Dos quedan FUERA, los dos porque la etiqueta no los lee:
 #
-# 1. El SEGMENTO 4 (Valoración) queda FUERA del invariante a propósito: hoy la etiqueta
-#    Alta/Media/Baja NO lee `valuation_date`, así que una cartera puede salir
-#    «Confiabilidad alta» con Valoración pendiente. No se cambia `_puntuacion_acertividad`
-#    para cerrar ese hueco — movería una cifra que ya está en producción (spec §4.2).
-#    PENDIENTE PARA DANIEL: decidir si la etiqueta debe leer la valoración.
-# 2. Las dos PUERTAS DE SESIÓN del segmento 2/3 (`_wizard_pos_confirmed`, residencia
-#    declarada) se mantienen FIJAS y satisfechas en estas fixtures: la etiqueta no las
-#    lee, y sin ellas el segmento va pendiente por diseño (§4.1/§4.3), no por
-#    contradicción. Lo que varía son las señales que AMBAS partes leen.
+# 1. VALORACIÓN: la etiqueta no lee `valuation_date` (hueco documentado desde U4
+#    §4.2; PENDIENTE PARA DANIEL: decidir si la etiqueta debe leer la valoración).
+# 2. FISCAL: la etiqueta no lee la RESIDENCIA (`rate_declared`), y «Sin declarar» es
+#    el default deliberado de la app (`ui/carga.py:236-238`). Con la Regla 3b original
+#    (4 segmentos) el estado por defecto de un cliente nuevo pintaba 4/5 con
+#    «Confiabilidad alta» — medido por Opus el 22-sep sobre casos reales (IB · 39
+#    tickers sin declarar: fiscal pendiente, etiqueta Alta). Por eso este test se
+#    PARAMETRIZA POR RESIDENCIA: cada caso corre con país y sin país, porque un 3b
+#    que solo existe en la rama «con país» no vigila el estado por defecto (H1.2).
+#
+# Las dos señales que la etiqueta SÍ lee pero que en la dona aterrizan solo en
+# `fiscal` (1042-S que no cuadra, income en alerta) tienen su propio test abajo
+# (`test_senal_fiscal_...`): su reflejo en la dona queda fuera del invariante de tres
+# y se pinea por separado, medido — no se predice.
+#
+# La PUERTA DE SESIÓN `_wizard_pos_confirmed` se mantiene FIJA y satisfecha en estas
+# fixtures: la etiqueta no la lee y sin ella `posiciones` va pendiente por diseño
+# (§4.1/§4.3), no por contradicción. Lo que varía son las señales que AMBAS partes leen.
 
 _CARTERAS_3B = {
     # nombre: (cartera, claves de sesión extra, nivel esperado escrito A MANO)
+    # Las 4 que mueven señales que la etiqueta Y los tres segmentos del invariante
+    # leen. Los casos cuya señal aterriza solo en `fiscal` están en _CASOS_SENAL_FISCAL.
     "limpia": ({}, {}, "Alta"),
     "unreliable": ({"MSTY_mod": "history_incomplete"}, {}, "Baja"),
     "reconciliada": ({"SCHB_mod": "reconciled"}, {}, "Media"),
+    "posicion_propia_excluida": ({"ZZZ_extra": True}, {}, "Media"),
+}
+
+_CASOS_SENAL_FISCAL = {
+    # Señales que la etiqueta lee (bajan a «Media») pero que en la dona SOLO aterrizan
+    # en `fiscal` — segmento fuera del invariante (H1). Medido: etiqueta Media con los
+    # tres invariantes verdes y fiscal pendiente, con país y sin país.
     "income_en_alerta": ({"MSTY_hist": [("2025-06-01", "Cash Dividend", 100.0)]},
                          {"_wizard_income_summary": {"tickers": {"MSTY": {"received_total": 5000.0}}}},
                          "Media"),
@@ -254,7 +282,6 @@ _CARTERAS_3B = {
                                  "gross_income": 100.0, "federal_tax_withheld": 30.0,
                                  "withholding_credit": 0.0}]}},
                             "Media"),
-    "posicion_propia_excluida": ({"ZZZ_extra": True}, {}, "Media"),
 }
 
 
@@ -274,15 +301,23 @@ def _cartera_3b(mods):
 
 
 @pytest.mark.parametrize("nombre", sorted(_CARTERAS_3B))
-def test_regla_3b_dona_y_etiqueta_no_se_contradicen(sesion, nombre):
-    """Regla 3b de U4 (§4.2), en las dos direcciones y sobre fixtures sintéticos:
+@pytest.mark.parametrize("residencia", ("con_pais", "sin_pais"))
+def test_regla_3b_dona_y_etiqueta_no_se_contradicen(sesion, monkeypatch, nombre, residencia):
+    """Regla 3b de U4 (§4.2, corregida por U4bis H1), en las dos direcciones, sobre
+    fixtures sintéticos y SOBRE LAS DOS RESIDENCIAS (H1.2: «Sin declarar» es el default
+    de la app — un 3b que solo corre con país no vigila el estado por defecto):
 
-    - etiqueta «Alta»  → segmentos 1, 2, 3 y 5 todos verdes;
-    - etiqueta «Media»/«Baja» → al menos uno de esos cuatro pendiente.
+    - etiqueta «Alta»  → movimientos, posiciones y excluidos todos verdes;
+    - etiqueta «Media»/«Baja» → al menos uno de esos tres pendiente.
 
-    El segmento 4 (Valoración) queda deliberadamente FUERA — ver el bloque de
-    comentarios arriba: la etiqueta no lee `valuation_date`.
+    FUERA del invariante, los dos porque la etiqueta no los lee:
+    - `valoracion`: `_puntuacion_acertividad` no lee `valuation_date`;
+    - `fiscal`: `_puntuacion_acertividad` no lee `rate_declared` (la residencia).
     """
+    if residencia == "sin_pais":
+        monkeypatch.setattr(estado, "perfil_fiscal",
+                            lambda: {"rate_declared": False, "country": None})
+
     mods, extra_sesion, nivel_esperado = _CARTERAS_3B[nombre]
     cartera = _cartera_3b(mods)
     sesion.update(extra_sesion)
@@ -293,14 +328,46 @@ def test_regla_3b_dona_y_etiqueta_no_se_contradicen(sesion, nombre):
 
     d = cobertura_data(cartera)
     invariantes = [_seg(d, c)["estado"] for c in
-                   ("movimientos", "posiciones", "fiscal", "excluidos")]
+                   ("movimientos", "posiciones", "excluidos")]
 
     if nivel == "Alta":
-        assert invariantes == ["ok"] * 4, (
-            f"Regla 3b rota: etiqueta Alta con segmentos pendientes {invariantes}")
+        assert invariantes == ["ok"] * 3, (
+            f"Regla 3b rota ({residencia}): etiqueta Alta con segmentos pendientes "
+            f"{invariantes}")
     else:
         assert "pendiente" in invariantes, (
-            f"Regla 3b rota: etiqueta {nivel} con los 4 segmentos verdes")
+            f"Regla 3b rota ({residencia}): etiqueta {nivel} con los 3 segmentos verdes")
+
+
+@pytest.mark.parametrize("nombre", sorted(_CASOS_SENAL_FISCAL))
+@pytest.mark.parametrize("residencia", ("con_pais", "sin_pais"))
+def test_senal_fiscal_baja_la_etiqueta_y_pinta_solo_el_segmento_fiscal(
+        sesion, monkeypatch, nombre, residencia):
+    """Los dos casos cuya señal (1042-S que no cuadra, income en alerta) la etiqueta SÍ
+    lee —baja a «Media»— pero en la dona aterriza SOLO en `fiscal`, que está fuera del
+    invariante de tres (H1). Se pinea el comportamiento MEDIDO (no deducido): etiqueta
+    «Media», los tres invariantes verdes, `fiscal` pendiente con país Y sin país.
+
+    Si mañana la etiqueta dejara de leer el 1042-S/income, o la dona moviera esa señal
+    a otro segmento, este test lo dice — el 3b de tres segmentos, solo, no se enteraría.
+    """
+    if residencia == "sin_pais":
+        monkeypatch.setattr(estado, "perfil_fiscal",
+                            lambda: {"rate_declared": False, "country": None})
+
+    mods, extra_sesion, nivel_esperado = _CASOS_SENAL_FISCAL[nombre]
+    cartera = _cartera_3b(mods)
+    sesion.update(extra_sesion)
+
+    nivel, _razones = _puntuacion_acertividad(cartera)
+    assert nivel == nivel_esperado == "Media", (
+        f"la fixture {nombre!r} ya no produce Media: la etiqueta cambió")
+
+    d = cobertura_data(cartera)
+    assert [_seg(d, c)["estado"] for c in
+            ("movimientos", "posiciones", "excluidos")] == ["ok"] * 3, (
+        f"la señal de {nombre!r} se filtró a un segmento del invariante")
+    assert _seg(d, "fiscal")["estado"] == "pendiente"
 
 
 # ── Capa 3 · RENDER — datos, tema y decisiones cerradas (§5.2) ──────────────────────
@@ -388,6 +455,73 @@ def test_movimiento_apagado_con_prefers_reduced_motion():
     assert "@media (prefers-reduced-motion: reduce)" in src
     bloque = src.split("@media (prefers-reduced-motion: reduce)")[1][:200]
     assert "animation: none" in bloque
+
+
+# ── Guards U4bis H2/H3 — el dibujo DEPENDE de los datos (mutantes de Opus, 22-sep) ──
+
+_SCRIPT_RE = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S)
+
+
+def _script_principal_de_cobertura():
+    """El script que dibuja la dona (el primero; el segundo es el auto-alto del iframe).
+    Patrón de extracción de `test_contrato_componentes.py`."""
+    ruta = os.path.join(BASE, "ui", "componentes", "cobertura.html")
+    with open(ruta, encoding="utf-8") as f:
+        src = f.read()
+    cuerpos = _SCRIPT_RE.findall(src)
+    assert len(cuerpos) == src.count("<script"), (
+        "el regex no extrajo todos los <script>: el guard estaría mirando de menos")
+    principal = next((js for js in cuerpos if "function tono" in js), None)
+    assert principal is not None, "no encuentro el script que define `tono`"
+    return principal
+
+
+def test_el_tono_de_cada_segmento_depende_de_su_estado():
+    """U4bis H2 — el mutante que corrió Opus (`function tono(seg) { return "ok"; }`)
+    pintaba los 5 segmentos verdes pase lo que pase y la suite entera seguía en
+    `2 failed, 973 passed`: ningún test miraba que el dibujo dependiera de `estado`.
+
+    Guard sobre la fuente: la función que decide el tono (a) LEE `estado`, y (b) no
+    tiene ningún camino que devuelva un tono constante (todo `return` de su cuerpo
+    referencia el estado del segmento, no un literal suelto).
+    """
+    js = _script_principal_de_cobertura()
+    # Sin cadenas ni comentarios: el cuerpo estructural, no lo que dice la prosa.
+    limpio = re.sub(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\n]*|/\*.*?\*/",
+                    "", js, flags=re.S)
+    m = re.search(r"function\s+tono\s*\([^)]*\)\s*\{([^}]*)\}", limpio)
+    assert m, "no encuentro la definición de `tono` en el script"
+    cuerpo = m.group(1)
+    assert "estado" in cuerpo, (
+        "H2: `tono` no lee el `estado` del segmento — la dona pintaría lo mismo con "
+        "datos sanos que rotos (mutante `return \"ok\"`)")
+    returns = re.findall(r"return\s*([^;]+);", cuerpo)
+    assert returns, "H2: `tono` no devuelve nada"
+    for expr in returns:
+        assert "estado" in expr, (
+            f"H2: camino de `tono` con tono constante: `return {expr.strip()}` no "
+            "referencia el estado — pinta igual pase lo que pase")
+
+
+def test_el_centro_de_la_dona_no_recalcula_el_contador():
+    """U4bis H3 — `verificados` era un campo muerto: el centro N/5 se recalculaba en JS
+    contando tonos, contradiciendo la regla «nada se calcula en JS» (U4 §4) y dejando
+    cinco tests que parecían vigilar la cifra del centro sin vigilarla.
+
+    Guard: el contador del centro se LEE de `DATA.verificados` y no existe ningún
+    camino que lo derive de los segmentos (nada de `count++`/`count +=`).
+    """
+    js = _script_principal_de_cobertura()
+    assert "DATA.verificados" in js, (
+        "H3: el componente no lee `DATA.verificados` — el centro volvió a derivarse "
+        "en JS")
+    m = re.search(r"var count\s*=\s*([^;]+);", js)
+    assert m, "no encuentro la asignación del contador del centro (`var count = …`)"
+    assert m.group(1).strip() == "DATA.verificados", (
+        f"H3: el centro deriva el contador de los segmentos (`var count = "
+        f"{m.group(1).strip()}`) en vez de leer `DATA.verificados`")
+    for patron in ("count++", "count += 1", "count+=1", "count = count +"):
+        assert patron not in js, f"H3: el contador vuelve a incrementarse en JS ({patron!r})"
 
 
 # ── Capa 4 · FLUJO (AppTest) — dona arriba, pendientes, residencia, editar ────────────

@@ -233,10 +233,10 @@
 
   function dibujar() {
     svg.replaceChildren();
-    var count = 0;
-    for (var i = 0; i < segs.length; i++) {
-      if (tono(segs[i]) === "ok") { count++; }
-    }
+    /* U4bis H3: el contador del centro se LEE del adapter (`DATA.verificados`), no se
+       recalcula contando tonos. Regla 3 de U4: nada se calcula en JS; si el adapter
+       cambiara su forma de contar, el centro seguiría su cifra, no la suya propia. */
+    var count = DATA.verificados;
     /* aria-label propio, sin la frase de estado del prototipo (§3B.7). */
     svg.setAttribute("aria-label",
       "Verificación de los datos: " + count + " de " + segs.length + " controles completos.");
