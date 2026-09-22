@@ -13,7 +13,6 @@ recalcularlo y luego se descarta.
 | Google Gemini | Tus capturas del bróker y la lista de tus ETFs | Solo si subes capturas en el paso 2 |
 | Yahoo Finance | Los símbolos de tus ETFs y la fecha de tu primera compra, enviados desde el servidor (sin tu nombre ni tu correo) | En cada análisis |
 | Auth0 | Tu correo, para enviarte el código de acceso | Al entrar |
-| Telegram (aviso interno al administrador) | Tu correo, para verificar manualmente tu acceso si no apareces en la lista de miembros | Mientras la verificación de acceso esté en modo de prueba |
 | Streamlit Community Cloud | Aloja la app | Siempre |
 
 **Tu 1042-S no sale del servidor:** se lee con un lector propio y no se envía a ningún servicio externo.
