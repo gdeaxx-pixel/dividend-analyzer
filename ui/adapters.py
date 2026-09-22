@@ -2420,3 +2420,158 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
         for f in g["fondos"]:
             f["pct"] = f["mv"] / total_mv * 100 if total_mv else 0.0
     return {"total_mv": total_mv, "grupos": grupos}
+
+
+# ── U4 · Cobertura integrada — la dona de 5 segmentos del flujo de carga ──────────────
+#
+# Textos «qué falta» / «cómo se resuelve» por segmento. Los cuatro primeros salen de la
+# referencia visual congelada (`referencia-carga-cobertura-integrada-v2.html`, covMissing
+# y notas); «Excluidos» no existe en el prototipo (su hueco lo ocupaba «Periodo», que se
+# cayó por falta de productor — spec U4 §4.1) y su redacción reuse la acción que ya
+# publica `logic.assess_ticker_quality` para `held_less_than_14_days`.
+# PENDIENTE DE APROBACIÓN (Daniel, 21-sep): redacción literal de falta/como.
+_COBERTURA_TEXTOS = {
+    "movimientos": (
+        "El archivo aún no se ha interpretado ni contrastado.",
+        "Seleccionar un archivo no confirma que todas sus filas sean válidas.",
+    ),
+    "posiciones": (
+        "Las cantidades aún requieren confirmación.",
+        "Puedes revisar la captura o utilizar el ingreso manual.",
+    ),
+    "fiscal": (
+        "Falta revisar las fuentes fiscales aplicables a tu caso.",
+        "Añade solo lo que corresponda: no todos los documentos aplican a todos los "
+        "clientes.",
+    ),
+    "valoracion": (
+        "Falta verificar los precios para la fecha de valoración.",
+        "Este control depende de la fuente de precios; no exige otro documento al "
+        "cliente.",
+    ),
+    "excluidos": (
+        "Hay posiciones tuyas excluidas del análisis por datos insuficientes.",
+        "Exporta el historial completo del ticker desde la apertura de la posición y "
+        "vuelve a subir el archivo.",
+    ),
+}
+
+# Orden y nombre de los 5 segmentos — cerrado en spec U4 §4.1 («Periodo» se cae: no tiene
+# productor en el repo; su hueco lo ocupa «Excluidos»). La dona dibuja en este orden.
+COBERTURA_SEGMENTOS = (
+    ("movimientos", "Movimientos"),
+    ("posiciones", "Posiciones"),
+    ("fiscal", "Información fiscal"),
+    ("valoracion", "Valoración"),
+    ("excluidos", "Excluidos"),
+)
+
+
+def cobertura_data(resultados: dict) -> dict:
+    """Única fuente de los 5 estados de la dona de cobertura (spec U4 §4.1).
+
+    Devuelve `{"segmentos": [{clave, nombre, estado, falta, como}], "verificados": 0-5}`.
+    `estado` es `"ok"` | `"pendiente"`; el componente (`ui/componentes/cobertura.html`)
+    solo dibuja lo que recibe aquí — ninguna cifra ni estado se calcula en JS. No se
+    publican porcentajes ni cifras del portafolio: la dona mide verificación, no dinero.
+
+    Sin resultados (`analyze_portfolio` no ha corrido — es el estado natural mientras el
+    cliente llena el paso 2, ver spec U4 §4.3) los 5 segmentos van pendientes: decisión
+    de Daniel del 18-sep. Esta función NUNCA dispara `analyze_portfolio` por su cuenta.
+
+    Señal por segmento (tabla de §4.1, productores medidos por Opus sobre `a61e77f`):
+
+    1. Movimientos  — ningún ticker en `level == "unreliable"`
+                      (`logic.assess_data_quality` sobre `logic.classify_tickers`, igual
+                      que `ui/validacion.py:268-271`).
+    2. Posiciones   — `_wizard_pos_confirmed` es `True` Y ningún ticker en `level`
+                      ∉ ("ok", "unreliable"). OJO: `unreliable` no pone rojo ESTE
+                      segmento (lo cubre Movimientos); `reconciled`/`partial` sí.
+    3. Información fiscal — residencia declarada (`ui.estado.perfil_fiscal`) Y, si hay
+                      1042-S, `build_1042s_validation` sin `portfolio_higher`/
+                      `form_higher` Y, si hay income, `reconcile_income` sin
+                      `badge == "warn"`.
+    4. Valoración   — hay resultados, TODOS los tickers analizados publican
+                      `valuation_date` no nulo y todos la misma, y ninguno trae
+                      `current_price` nulo (`logic.py:2250`, F5).
+    5. Excluidos    — `_separar_excluidos(resultados)[0]` (`tuyos`) vacío. El `ruido`
+                      (segundo elemento) NO pone en rojo nada: son tickers que nunca
+                      fueron del portafolio; confundirlos con `tuyos` pintaría 4/5 en
+                      carteras sanas.
+
+    Regla 3b (spec U4 §4.2): estos estados y la etiqueta Alta/Media/Baja de
+    `ui/validacion.py::_puntuacion_acertividad` leen las mismas señales y no pueden
+    contradecirse — lo pina `test_carga_cobertura.py`.
+    """
+    # Importación DENTRO de la función: `ui.adapters` no importa streamlit a nivel de
+    # módulo (lo importan decenas de tests puros), y `ui.validacion` vive detrás del
+    # import diferido por el mismo patrón de ciclo que `ui.heredadas` en
+    # `portafolios_data` (spec U4 §4.3 / §7.9).
+    import streamlit as st
+
+    from ui import estado
+    from ui.validacion import _separar_excluidos
+
+    def _segmento(clave: str, nombre: str, ok: bool) -> dict:
+        falta, como = _COBERTURA_TEXTOS[clave]
+        return {"clave": clave, "nombre": nombre,
+                "estado": "ok" if ok else "pendiente",
+                "falta": falta, "como": como}
+
+    if not resultados:
+        # Decisión de Daniel (18-sep, spec U4 §4.3): sin resultados, TODO pendiente.
+        return {"segmentos": [_segmento(c, n, False) for c, n in COBERTURA_SEGMENTOS],
+                "verificados": 0}
+
+    # Señales de calidad — mismo motor que `ui/validacion.py:268-271`.
+    classify_map = logic.classify_tickers(list(resultados.keys()))
+    dq = logic.assess_data_quality(resultados, classify_map)
+    unreliable = {t for t, q in dq.items() if q["level"] == "unreliable"}
+    parcial = {t for t, q in dq.items() if q["level"] not in ("ok", "unreliable")}
+
+    mov_ok = not unreliable
+
+    pos_confirmadas = st.session_state.get("_wizard_pos_confirmed") is True
+    pos_ok = pos_confirmadas and not parcial
+
+    fiscal_ok = bool(estado.perfil_fiscal()["rate_declared"])
+    if fiscal_ok:
+        wizard_1042s = st.session_state.get("_wizard_1042s")
+        if wizard_1042s:
+            v1042s = logic.build_1042s_validation(resultados, wizard_1042s)
+            if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
+                fiscal_ok = False
+    if fiscal_ok:
+        ingreso = st.session_state.get("_wizard_income_summary")
+        if ingreso and ingreso.get("tickers"):
+            recon = logic.reconcile_income(resultados, ingreso)
+            if any(r["badge"] == "warn" for r in recon.values()):
+                fiscal_ok = False
+
+    # Valoración: los tickers ANALIZADOS (mismo filtro que `assess_data_quality`:
+    # fuera `skipped` y `error`). Trampa 4 de la spec: `in` + no nulo para
+    # `valuation_date` — «la clave falta» y «la clave vale None» son casos distintos
+    # y los dos van pendientes; `current_price` nulo (o ausente) también.
+    analizados = [s for s in resultados.values()
+                  if isinstance(s, dict) and not s.get("skipped") and "error" not in s]
+    fechas = set()
+    val_ok = bool(analizados)
+    for stats in analizados:
+        if "valuation_date" not in stats or stats["valuation_date"] is None:
+            val_ok = False
+            break
+        if stats.get("current_price") is None:
+            val_ok = False
+            break
+        fechas.add(stats["valuation_date"])
+    if val_ok and len(fechas) != 1:
+        val_ok = False
+
+    tuyos, _ruido = _separar_excluidos(resultados)
+    excl_ok = not tuyos
+
+    estados = {"movimientos": mov_ok, "posiciones": pos_ok, "fiscal": fiscal_ok,
+               "valoracion": val_ok, "excluidos": excl_ok}
+    segmentos = [_segmento(c, n, estados[c]) for c, n in COBERTURA_SEGMENTOS]
+    return {"segmentos": segmentos,
+            "verificados": sum(1 for s in segmentos if s["estado"] == "ok")}

@@ -102,6 +102,15 @@ ALTO_IMPUESTOS = 7100
 # no cabe es inalcanzable, no solo invisible.
 ALTO_PORTAFOLIOS = 2400
 
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# componente corrige su propio alto en cuanto carga. U4 (dona de cobertura, 5 segmentos):
+# la dona (280px + padding) MÁS el pop-out abierto en su caso más alto —celular a 390px,
+# donde el pop-out (max-width 100%-24) cae DEBAJO de la dona y los textos «qué falta» y
+# «cómo resolverlo» envuelven en más líneas—: con `scrolling=False` lo que no cabe es
+# inalcanzable. Medido en el navegador con el pop-out abierto a 390px y a 1280px, en
+# claro y en oscuro. PENDIENTE DE APROBACIÓN (Daniel, 21-sep): valor final tras medición.
+ALTO_COBERTURA = 700
+
 
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
@@ -277,6 +286,21 @@ def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> 
     `_con_tema` que `render_impuestos`, sin `VISTA_ACTIVA` (es una sola pantalla).
     """
     html = _plantilla("portafolios.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_cobertura(datos: dict, tema: str, alto: int = ALTO_COBERTURA) -> None:
+    """Dibuja la dona de cobertura (U4: 5 segmentos arriba del flujo de carga).
+    `datos` viene de `ui.adapters.cobertura_data` — el componente solo RENDERIZA
+    (Regla 3): los 5 estados, el contador N/5 y los textos del pop-out ya salen
+    calculados de Python; ninguna cifra ni estado se calcula en JS. El componente vive
+    a mano (nunca existió en el artifact: la referencia es un prototipo con selector
+    «Cobertura simulada» del que se extrae el diseño, no se transcribe). Mismo patrón
+    `{{DATA_JSON}}` + `_con_tema` que `render_portafolios`.
+    """
+    html = _plantilla("cobertura.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
