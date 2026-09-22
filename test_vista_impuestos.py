@@ -531,22 +531,32 @@ def test_casilla9_respeta_el_guard_implausible(monkeypatch):
 # Si fallan por centavos tras un `chore: refresh` → actualizar número y asof; CLAUDE.md, #95.
 @pytest.mark.parametrize("alias,casilla9_esp", [
     ("schwab_1", 0.00),
-    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 77.95 -> 78.01
-    ("schwab_2", 78.01),
-    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 81.22 -> 81.29
-    ("schwab_daniel", 81.29),
+    # ACTUALIZADO 2026-09-22 (Sprint 2, fix F1: el objeto fiscal real pasó a leer el
+    # cierre ICI con precedencia sobre el 19a, Regla 4b; + refresh 19a asof 2026-09-19):
+    # 78.01 -> 95.53. No es drift de centavos: los años cerrados ahora usan el %ROC del
+    # cierre fiscal (p. ej. MSTY 2025 = 100% ICI vs ~72% de la estimación 19a), así que
+    # la casilla 9 esperada SUBE — más ROC ⇒ más retención que el bróker devuelve.
+    ("schwab_2", 95.53),
+    # ACTUALIZADO 2026-09-22 (mismo fix F1 + refresh): 81.29 -> 99.27.
+    ("schwab_daniel", 99.27),
+    # ACTUALIZADO 2026-09-22 (mismo fix F1 + refresh): 1339.96 -> 780.92. Este BAJA:
+    # el 1339.96 venía de mezclar tasas de 2025 y 2026; 780.92 es el valor año por año,
+    # el MISMO que pinea `test_r2_casilla9_igual_al_objeto_fiscal_ib_real` (actualizado
+    # por Sprint 2 el 2026-09-21) — las dos vistas del mismo número convergen (Regla 3b).
     # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 1340.21 -> 1339.96.
     # ACTUALIZADO 2026-09-02 (tolerancia del umbral del ROC): 1314.14 -> 1340.21. La
     # diferencia son los $26.07 de PLTY, que con captura caía a la ruta 'broker' por 72
     # centavos y quedaba «sin dato». Ese 1314.14 NO era la cifra buena: era la del cliente
     # que subía la foto del bróker, mientras el que no la subía veía 1340.21. El nuevo
     # valor es el de AMBAS rutas — ver `test_casilla9_converge_con_y_sin_captura`.
-    ("ib_1", 1339.96),
+    ("ib_1", 780.92),
 ])
 def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
-    """No-regresión: los 4 casos reales con Colombia declarada dan la misma casilla 9 que
-    antes del fix — el cambio solo libera el carril del ROC sin país, no toca el camino con
-    residencia."""
+    """No-regresión: los 4 casos reales con Colombia declarada pinean su casilla 9.
+    Valores re-medidos 2026-09-22 tras el fix F1 de Sprint 2 (precedencia ICI sobre 19a
+    en el objeto fiscal real, Regla 4b) + el refresh del 19-sep; el de ib_1 converge con
+    `test_r2_casilla9_igual_al_objeto_fiscal_ib_real` (Regla 3b: dos vistas del mismo
+    número, ambas a 780.92)."""
     import demo_mode
     if not demo_mode.demo_available():
         pytest.skip("real_examples/ no montado")
@@ -794,18 +804,26 @@ def test_credito_definitivo_mas_lo_que_vuelve_es_lo_retenido(monkeypatch, fixtur
 
 def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
     """GROUND TRUTH de `schwab_synth_1` (el CSV que se subió a producción el 2026-09-02):
-    retenido $60.75, de los que la casilla 9 devuelve $41.27 ⇒ crédito real **$19.48**.
-    (Los dos últimos se mueven unos centavos con cada refresh de 19a, vía el respaldo al
-    `weighted_pct` de logic.py:3509; valores del YAML `asof: 2026-09-05`.)
+    retenido $60.75, de los que la casilla 9 devuelve $56.65 ⇒ crédito real **$4.10**.
+    (Se mueve con cada refresh de 19a vía el respaldo al `weighted_pct` de logic.py:3509
+    en los años abiertos; valores del YAML `asof: 2026-09-19`.)
+
+    ACTUALIZADO 2026-09-22 (Sprint 2, fix F1 — Regla 4b): 41.27 -> 56.65 y 19.48 -> 4.10.
+    No es drift de centavos: el objeto fiscal real pasó a leer el cierre ICI con
+    precedencia sobre la estimación 19a. Las distribuciones del fixture son de 2025, año
+    cerrado cuyo MSTY es 100% ROC según el ICI (`knowledge/roc_ici.yaml`, verificado
+    contra el 1042-S real — auditoría R1): fair = 30% × bruto × (1 − 1.00) = $0 para MSTY,
+    así que toda su retención vuelve ($46.80); TSLY cae al respaldo del holder (72.97%).
+    Sonda por ticker: MSTY 33.58 -> 46.80, TSLY 7.41 -> 9.85, SCHB 0 (sin ROC).
+    El viejo 41.27 usaba la estimación 19a (~72%) sobre un año ya cerrado: subdevolvía.
 
     Antes de este arreglo la vista presentaba los $60.75 enteros como «ya pagado a EE.UU.»,
-    inflando 3.1× la cifra que el cliente llevaría a su contador."""
+    inflando 14.8× la cifra que el cliente llevaría a su contador."""
     d = _datos_f4("schwab_synth_1", monkeypatch)
     c = d["impuesto_local"]["credito_eeuu"]
     assert c["monto"] == pytest.approx(60.75, abs=0.01)
-    # ACTUALIZADO 2026-09-08 (refresh 19a asof 2026-09-05): 41.29 -> 41.27 y 19.46 -> 19.48
-    assert c["vuelve_por_roc"] == pytest.approx(41.27, abs=0.01)
-    assert c["definitivo"] == pytest.approx(19.48, abs=0.01)
+    assert c["vuelve_por_roc"] == pytest.approx(56.65, abs=0.01)
+    assert c["definitivo"] == pytest.approx(4.10, abs=0.01)
     assert c["definitivo"] < c["monto"], "el crédito no puede ser todo lo retenido"
 
 
