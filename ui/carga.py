@@ -16,7 +16,7 @@ import os
 import streamlit as st
 
 import logic
-from ui import estado
+from ui import adapters, componentes, estado
 
 
 CLAVES_CONTEXTO_CARTERA = (
@@ -283,6 +283,20 @@ def render_bloque_posiciones() -> bool:
         st.markdown(bloque_resumen("Posiciones confirmadas",
                                    f"{len(posiciones)} instrumentos"),
                     unsafe_allow_html=True)
+        # U4 §5.3.1 (§3A.1): completados resumidos con Editar. Mismo patrón que el
+        # «editar» del paso 1, pero borrando SOLO la confirmación — NO todo
+        # CLAVES_CONTEXTO_CARTERA: eso tiraría también el CSV del paso 1.
+        _, col = st.columns([5, 1])
+        with col:
+            if st.button("editar", key="_vd_edit_pos", type="tertiary",
+                         use_container_width=True):
+                st.session_state["_wizard_pos_confirmed"] = False
+                st.session_state["_wizard_listo"] = False
+                # `_vd_resultados` va: `analyze_portfolio` corrió con la captura
+                # confirmada; si el cliente edita los importes, el caché ya no
+                # corresponde a lo que ve (mismo motivo que en el editar del paso 1).
+                st.session_state.pop("_vd_resultados", None)
+                st.rerun()
         return True
 
     st.markdown(bloque_header(2, "Posiciones del portafolio", "activo",
@@ -367,7 +381,9 @@ def render_bloque_posiciones() -> bool:
         'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
         'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
 
-    _render_residencia_fiscal()
+    # U4 §5.3.2: la residencia fiscal se muda del paso 2 al paso 3
+    # (`render_bloque_1042s`). Aquí desaparecía al confirmar posiciones — la rama
+    # confirmada retorna antes— y un cliente de IBKR nunca podía declararla.
 
     # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
     # el bloque. Mismo tratamiento que `app_old.py:6289`.
@@ -518,61 +534,82 @@ def _render_income_resumen() -> None:
 
 def _render_income_uploader() -> None:
     """Sube y parsea el Investment Income de Schwab. Literal de `app_old.py:1676-1724`
-    (fila 5: restaura el income CSV, que convive con el 1042-S sin sustituirlo)."""
-    with st.expander("¿Tienes también el Investment Income? (opcional)", expanded=False):
-        st.caption("Añade la validación dividendo por dividendo y la proyección de ingresos.")
-        archivo = st.file_uploader(
-            "Archivo de ingresos (Investment Income)",
-            type=["csv", "xlsx"], key="_vd_upload_inc", label_visibility="collapsed")
-        if archivo is None:
-            return
-        try:
-            with st.spinner("Leyendo ingresos…"):
-                inc_df = logic.parse_schwab_income_csv(archivo.getvalue())
-            if inc_df is None:
-                st.session_state["_wizard_income_summary"] = None
-                st.session_state["_wizard_income_df"] = None
-                st.error(
-                    "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
-                st.caption(
-                    "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
-                    "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
-                    "ni un Excel (.xls/.xlsx), ni un PDF.")
-            elif len(inc_df) == 0:
-                st.session_state["_wizard_income_summary"] = None
-                st.session_state["_wizard_income_df"] = None
-                st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
-                st.caption(
-                    "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
-                    "Revisa que el export incluya las distribuciones de tus ETFs.")
-            else:
-                inc_summ = logic.summarize_income(inc_df)
-                nrec_chk = sum(1 for d in (inc_summ.get("tickers") or {}).values()
-                               if d.get("received_total"))
-                if nrec_chk == 0:
-                    # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
-                    st.session_state["_wizard_income_summary"] = None
-                    st.session_state["_wizard_income_df"] = None
-                    st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
-                    st.caption(
-                        "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
-                        "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
-                        "viene primero y se ignora).")
-                else:
-                    st.session_state["_wizard_income_summary"] = inc_summ
-                    st.session_state["_wizard_income_df"] = inc_df
-                    st.session_state["_wizard_income_multi"] = bool(inc_summ.get("multi_account"))
-                    st.rerun()
-        except Exception as error:                                    # noqa: BLE001
+    (fila 5: restaura el income CSV, que convive con el 1042-S sin sustituirlo).
+
+    U4 §5.3.3: ya no trae su propio expander — vive dentro del desplegable único
+    «Añadir documentos» del paso 3, y Streamlit no permite anidar expanders (lanza
+    `StreamlitAPIException`). El uploader y su lógica de parseo no cambian."""
+    st.caption("Investment Income (opcional): añade la validación dividendo por "
+               "dividendo y la proyección de ingresos.")
+    archivo = st.file_uploader(
+        "Archivo de ingresos (Investment Income)",
+        type=["csv", "xlsx"], key="_vd_upload_inc", label_visibility="collapsed")
+    if archivo is None:
+        return
+    try:
+        with st.spinner("Leyendo ingresos…"):
+            inc_df = logic.parse_schwab_income_csv(archivo.getvalue())
+        if inc_df is None:
             st.session_state["_wizard_income_summary"] = None
             st.session_state["_wizard_income_df"] = None
-            st.error("No pudimos leer el archivo de ingresos.")
-            st.caption(f"Detalle técnico: {error}")
+            st.error(
+                "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
+            st.caption(
+                "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
+                "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
+                "ni un Excel (.xls/.xlsx), ni un PDF.")
+        elif len(inc_df) == 0:
+            st.session_state["_wizard_income_summary"] = None
+            st.session_state["_wizard_income_df"] = None
+            st.error("Leímos el archivo, pero no quedó ninguna fila de dividendos por ticker.")
+            st.caption(
+                "Puede que solo tuviera interés de cash o filas con montos/fechas vacíos. "
+                "Revisa que el export incluya las distribuciones de tus ETFs.")
+        else:
+            inc_summ = logic.summarize_income(inc_df)
+            nrec_chk = sum(1 for d in (inc_summ.get("tickers") or {}).values()
+                           if d.get("received_total"))
+            if nrec_chk == 0:
+                # Parseó bien pero solo trae proyecciones "Estimated", sin "Received".
+                st.session_state["_wizard_income_summary"] = None
+                st.session_state["_wizard_income_df"] = None
+                st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
+                st.caption(
+                    "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
+                    "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
+                    "viene primero y se ignora).")
+            else:
+                st.session_state["_wizard_income_summary"] = inc_summ
+                st.session_state["_wizard_income_df"] = inc_df
+                st.session_state["_wizard_income_multi"] = bool(inc_summ.get("multi_account"))
+                st.rerun()
+    except Exception as error:                                    # noqa: BLE001
+        st.session_state["_wizard_income_summary"] = None
+        st.session_state["_wizard_income_df"] = None
+        st.error("No pudimos leer el archivo de ingresos.")
+        st.caption(f"Detalle técnico: {error}")
 
 
 def render_bloque_1042s() -> None:
-    """Bloque 3 — opcional. 1042-S y/o income CSV (Investment Income) de Schwab; las dos
-    fuentes conviven, ninguna sustituye a la otra (fila 5, Fase 5b)."""
+    """Bloque 3 — opcional. Residencia fiscal + 1042-S y/o income CSV (Investment
+    Income) de Schwab; las dos fuentes conviven, ninguna sustituye a la otra (fila 5,
+    Fase 5b).
+
+    U4 §5.3.2 (§6›9 B C): la residencia fiscal se muda aquí desde el paso 2 y va
+    ANTES de los dos retornos tempranos (documentos ya cargados, e IBKR). Si quedara
+    después, un cliente de IBKR NUNCA podría declarar su país y todas sus cifras
+    fiscales correrían al 30%. Persiste por `ui/estado.py::declarar_pais`, no por la
+    clave del widget.
+    U4 §5.3.3 (§3A.5): los dos documentos quedan bajo un único desplegable «Añadir
+    documentos»; los uploaders y su lógica no cambian, solo se envuelven."""
+    st.markdown(bloque_header(3, "Información fiscal · opcional", "activo",
+                              "Tu residencia y, si los tienes, tus documentos fiscales."),
+                unsafe_allow_html=True)
+    # PENDIENTE DE APROBACIÓN (Daniel, 21-sep): título del bloque — antes decía
+    # «Formulario 1042-S · opcional»; el paso ahora empieza por la residencia.
+
+    _render_residencia_fiscal()
+
     tiene_1042s = st.session_state.get("_wizard_1042s") is not None
     tiene_income = st.session_state.get("_wizard_income_summary") is not None
 
@@ -582,10 +619,6 @@ def render_bloque_1042s() -> None:
         if tiene_income:
             _render_income_resumen()
         return
-
-    st.markdown(bloque_header(3, "Formulario 1042-S · opcional", "activo",
-                              "Validación fiscal: confirma retención y ROC del año."),
-                unsafe_allow_html=True)
 
     es_ibkr = st.session_state.get("_wizard_broker") == "ibkr"
 
@@ -605,8 +638,11 @@ def render_bloque_1042s() -> None:
             unsafe_allow_html=True)
         return
 
-    _render_1042s_uploader()
-    _render_income_uploader()
+    # PENDIENTE DE APROBACIÓN (Daniel, 21-sep): etiqueta del desplegable — literal de
+    # la referencia (§3A.5: «Añadir documentos» + micro «1042-S / Investment Income»).
+    with st.expander("Añadir documentos · 1042-S / Investment Income", expanded=False):
+        _render_1042s_uploader()
+        _render_income_uploader()
 
 
 _ANEXO = "## Anexo"
@@ -629,6 +665,34 @@ def _privacy_visible(texto: str) -> str:
     return "\n".join(lineas).strip()
 
 
+def _resultados_para_cobertura() -> dict:
+    """Resultados que lee la dona de cobertura, SIN disparar `analyze_portfolio` antes
+    de confirmar posiciones (spec U4 §4.3, decisión de Daniel del 18-sep).
+
+    Antes de confirmar, `analyze_portfolio` no ha corrido — `ui/vistas.py::_resultados`
+    lo calcula perezosamente y `ui/carga.py` borra `_vd_resultados` justo al confirmar—:
+    la dona lee solo el caché si existiera (normalmente `None` → los 5 segmentos van
+    pendientes). Llamar a `obtener_resultados()` aquí sería una llamada de red de varios
+    segundos en mitad de un formulario. Después de confirmar, la dona SÍ lee el caché
+    vía `obtener_resultados` — importación DENTRO de la función: `ui.vistas` ya importa
+    `ui.componentes`, y una importación a nivel de módulo crea un ciclo y rompe la app
+    (mismo patrón que `ui/impuestos.py` y `ui/heredadas.py`).
+    """
+    if st.session_state.get("_wizard_pos_confirmed") is True:
+        from ui.vistas import obtener_resultados
+        return obtener_resultados()
+    return st.session_state.get("_vd_resultados") or {}
+
+
+def _render_cobertura() -> None:
+    """La dona de 5 segmentos (U4 · integrada v2): arriba del flujo de carga, debajo del
+    wordmark. Mide verificación REAL — los estados salen de `ui.adapters.cobertura_data`,
+    el componente no calcula nada (Regla 3)."""
+    tema = st.session_state.get("vd_tema", "Claro")
+    componentes.render_cobertura(
+        adapters.cobertura_data(_resultados_para_cobertura()), tema)
+
+
 def render_carga() -> bool:
     """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
 
@@ -641,6 +705,10 @@ def render_carga() -> bool:
         '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
         'la lectura.</p>',
         unsafe_allow_html=True)
+
+    # La dona de cobertura va ARRIBA de los tres bloques (integrada v2: antes vivía al
+    # final; ver spec U4 §5.1.4 y referencia-carga-cobertura-integrada-v2.html).
+    _render_cobertura()
 
     with st.expander("Cómo tratamos tus datos"):
         ruta_privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
