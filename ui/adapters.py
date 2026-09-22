@@ -376,10 +376,11 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
         # Lo retenido al cobro NO es todo acreditable: la porción que el bróker devuelve al
         # reclasificar el ROC nunca llegó a ser impuesto, y lo que no se pagó no se puede
         # descontar en el país de residencia. Publicar el total como «crédito» lo infla — en
-        # el CSV sintético de Schwab, $41.29 de $60.75 (68%) vuelven, así que el crédito real
-        # es $19.46. Es la Regla 2 aplicada al crédito: `retenido` es *al cobro* y un crédito
-        # fiscal vive *tras la reclasificación anual*; presentarlos como el mismo número
-        # mezcla dos momentos.
+        # el CSV sintético de Schwab, $56.65 de $60.75 (93%) vuelven con el cierre ICI de
+        # 2025 (MSTY 100% ROC; antes del fix F1 la estimación 19a devolvía $41.29, 68%),
+        # así que el crédito real es $4.10. Es la Regla 2 aplicada al crédito: `retenido`
+        # es *al cobro* y un crédito fiscal vive *tras la reclasificación anual*;
+        # presentarlos como el mismo número mezcla dos momentos.
         #
         # `vuelve_por_roc` sale de `ruta_a.casilla9_esperada` (el objeto del #102, que ya la
         # publica SIN país declarado); aquí no se recalcula nada (Regla 3).
