@@ -605,8 +605,8 @@ def render_bloque_1042s() -> None:
     st.markdown(bloque_header(3, "Información fiscal · opcional", "activo",
                               "Tu residencia y, si los tienes, tus documentos fiscales."),
                 unsafe_allow_html=True)
-    # PENDIENTE DE APROBACIÓN (Daniel, 21-sep): título del bloque — antes decía
-    # «Formulario 1042-S · opcional»; el paso ahora empieza por la residencia.
+    # Título del bloque — antes decía «Formulario 1042-S · opcional»; el paso ahora
+    # empieza por la residencia. Aprobado por Daniel el 23-sep.
 
     _render_residencia_fiscal()
 
@@ -638,8 +638,8 @@ def render_bloque_1042s() -> None:
             unsafe_allow_html=True)
         return
 
-    # PENDIENTE DE APROBACIÓN (Daniel, 21-sep): etiqueta del desplegable — literal de
-    # la referencia (§3A.5: «Añadir documentos» + micro «1042-S / Investment Income»).
+    # Etiqueta del desplegable — literal de la referencia (§3A.5: «Añadir documentos»
+    # + micro «1042-S / Investment Income»). Aprobada por Daniel el 23-sep.
     with st.expander("Añadir documentos · 1042-S / Investment Income", expanded=False):
         _render_1042s_uploader()
         _render_income_uploader()

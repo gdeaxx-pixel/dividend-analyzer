@@ -2429,7 +2429,7 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
 # y notas); «Excluidos» no existe en el prototipo (su hueco lo ocupaba «Periodo», que se
 # cayó por falta de productor — spec U4 §4.1) y su redacción reuse la acción que ya
 # publica `logic.assess_ticker_quality` para `held_less_than_14_days`.
-# PENDIENTE DE APROBACIÓN (Daniel, 21-sep): redacción literal de falta/como.
+# Redacción literal de falta/como aprobada por Daniel el 23-sep.
 _COBERTURA_TEXTOS = {
     "movimientos": (
         "El archivo aún no se ha interpretado ni contrastado.",

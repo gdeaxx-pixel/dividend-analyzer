@@ -108,7 +108,14 @@ ALTO_PORTAFOLIOS = 2400
 # donde el pop-out (max-width 100%-24) cae DEBAJO de la dona y los textos «qué falta» y
 # «cómo resolverlo» envuelven en más líneas—: con `scrolling=False` lo que no cabe es
 # inalcanzable. Medido en el navegador con el pop-out abierto a 390px y a 1280px, en
-# claro y en oscuro. PENDIENTE DE APROBACIÓN (Daniel, 21-sep): valor final tras medición.
+# claro y en oscuro.
+#
+# NO LO BAJES al alto que ves en reposo. Medido por Opus el 23-sep en contenedor real de
+# Streamlit, sobre el caso IB real: el iframe se auto-dimensiona a **336 px a 1024px** y a
+# **284 px a 375px**, pero con el pop-out ABIERTO el peor caso medido es **505 px**. 700 es
+# cota superior, no hueco muerto: `window.frameElement` corrige el alto en cuanto carga, así
+# que sobrar aquí no cuesta nada y quedarse corto vuelve inalcanzable el pop-out
+# (`scrolling=False`). Valor aprobado por Daniel el 23-sep.
 ALTO_COBERTURA = 700
 
 
