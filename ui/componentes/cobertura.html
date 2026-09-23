@@ -1,0 +1,334 @@
+<!-- Escrito y mantenido A MANO (U4 · carga + cobertura integrada v2, sep-2026). Dona de
+     5 segmentos ARRIBA del flujo de carga: mide verificación real de los datos.
+     Fuente de diseño: `Obsidian/IA/traspasos/referencia-carga-cobertura-integrada-v2.html`
+     (prototipo congelado; de él se EXTRAE el diseño, no se transcribe — sin selector
+     «Cobertura simulada», sin barra de laboratorio, sin botones de acción en el pop-out,
+     pérdida deliberada registrada en la spec U4 §5.2). Los 5 estados, el contador N/5 y
+     los textos «qué falta / cómo se resuelve» llegan ya calculados desde
+     `ui/adapters.py::cobertura_data`: aquí no se calcula ninguna cifra ni ningún estado
+     (Regla 3). El pop-out vive DENTRO del iframe (`components.html` no puede navegar ni
+     devolver estado a Python): posición absoluta sobre la dona, que no se desplaza al
+     abrirlo. El bloque de auto-alto del final es el de `tools/_auto_alto.py`, igual que
+     los demás componentes. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:     #f4f7fa;
+    --panel:      #ffffff;
+    --ink:        #021C36;
+    --ink-2:      #33475a;
+    --ink-mut:    #6a7b8a;
+    --hair:       #d5e0ea;
+    --accent:     #006497;
+    /* Pendientes: gris azulado, NUNCA ámbar (decisión de Daniel; referencia v2 :40). */
+    --seg-warn:   #a9bfd0;
+    --pop-panel:  #ffffff;
+    --pop-shadow: 0 8px 32px rgb(2 28 54 / 9%), 0 2px 6px rgb(2 28 54 / 4%);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --ink:#eaf1f7; --ink-2:#c3d1de;
+      --ink-mut:#8598a9; --hair:#26394c; --accent:#3ea0d6;
+      --seg-warn:#46617a; --pop-panel:#192c3d;
+      --pop-shadow: 0 8px 32px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 12%);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --accent:#006497;
+    --seg-warn:#a9bfd0; --pop-panel:#ffffff;
+    --pop-shadow: 0 8px 32px rgb(2 28 54 / 9%), 0 2px 6px rgb(2 28 54 / 4%);
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --accent:#3ea0d6;
+    --seg-warn:#46617a; --pop-panel:#192c3d;
+    --pop-shadow: 0 8px 32px rgb(0 0 0 / 24%), 0 2px 6px rgb(0 0 0 / 12%);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  [hidden] { display: none !important; }
+
+  /* §3B.7: sin titular de cobertura repetido ni estado de simulación visible —
+     el encabezado de la pantalla ya lo dice. */
+  .coverage { background: var(--ground); }
+  .detail { position: relative; display: flex; justify-content: center; padding: 30px 22px 26px; }
+  #dona { width: 280px; height: 280px; max-width: 100%; }
+
+  .seg { fill: none; stroke-width: 17; transition: opacity .15s; }
+  .seg[data-tone="ok"] { stroke: var(--accent); cursor: default; }
+  .seg[data-tone="warn"] { stroke: var(--seg-warn); cursor: pointer; }
+  /* §3B.3 — pendientes flotan (vaivén vertical desfasado, 3 pulsos de entrada);
+     completos firmes. Todo se apaga con prefers-reduced-motion (abajo). */
+  @keyframes cov-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.2px); } }
+  @keyframes cov-pulse { 0%, 100% { stroke-width: 17; } 50% { stroke-width: 24; } }
+  .seg[data-tone="warn"] { animation: cov-pulse 2.8s ease-in-out 3, cov-float 5.6s ease-in-out infinite alternate; }
+  .seg.lit { stroke-width: 22; animation: none; }
+  #dona.focus .seg:not(.lit) { opacity: .3; }
+  #dona .seg, #dona .seg:focus, #dona .seg:focus-visible { outline: none !important; box-shadow: none !important; }
+  .seg:focus-visible { stroke-width: 24; animation: none; }
+
+  /* §3B.2 — centro: solo N/5, sin texto adicional. */
+  .dona-num { font-family: var(--font-mono); font-weight: 700; font-size: 30px; fill: var(--ink); }
+
+  /* §3B.4 — pop-out: nota flotante ligera, esquinas suaves, sin borde, sombra discreta.
+     Solo qué falta y cómo resolverlo (los botones de acción del prototipo NO se portan,
+     pérdida deliberada — spec U4 §5.2). Vive DENTRO del iframe: absolute sobre .detail,
+     no fixed — el iframe no hace scroll y la dona no se desplaza al abrirlo (§3B.6,
+     cumplido dentro del iframe). */
+  .pop {
+    position: absolute; z-index: 5; width: 292px; max-width: calc(100% - 24px);
+    padding: 18px 22px 22px; border: 0; border-radius: 18px;
+    background: var(--pop-panel); color: var(--ink-2); box-shadow: var(--pop-shadow);
+    font-size: 13px; line-height: 1.6;
+  }
+  .pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .pop-head strong { flex: 1; font-size: 15px; line-height: 1.3; font-weight: 600; letter-spacing: -.2px; color: var(--ink); }
+  .pop-close {
+    flex-shrink: 0; min-width: 44px; min-height: 44px; margin: -8px -12px -8px 0; padding: 0;
+    border: 0; border-radius: 50%; background: none; color: var(--ink-mut); cursor: pointer;
+    font-family: var(--font-sans); font-size: 22px; font-weight: 300; line-height: 1;
+  }
+  .pop-close:hover { color: var(--ink); }
+  .pop-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .pop p { margin: 0; }
+  .pop .miss { color: var(--ink); }
+  .pop .fix { margin-top: 10px; color: var(--ink-mut); font-size: 12px; }
+
+  @media (max-width: 620px) {
+    #dona { width: 240px; height: 240px; }
+    .detail { padding: 24px 16px 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .seg { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<section class="coverage" id="cov-root" aria-label="Cobertura de los datos">
+  <div class="detail" id="detail">
+    <svg id="dona" viewBox="0 0 150 150" role="group"></svg>
+    <div class="pop" id="pop" role="dialog" aria-label="Información pendiente" hidden></div>
+  </div>
+</section>
+
+<script>
+(function () {
+  "use strict";
+  var DATA = {{DATA_JSON}};
+  var root = document.getElementById("cov-root");
+  if (!DATA || !Array.isArray(DATA.segmentos) || !DATA.segmentos.length) {
+    root.hidden = true;
+    return;
+  }
+
+  var NS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("dona");
+  var pop = document.getElementById("pop");
+  var detail = document.getElementById("detail");
+  var segs = DATA.segmentos;
+  var seleccionado = null;
+  var opener = null;
+
+  function tono(seg) { return seg.estado === "ok" ? "ok" : "warn"; }
+  function ajustarAlto() { if (window.__vdAjustarAlto) { window.__vdAjustarAlto(); } }
+
+  function arco(i) {
+    var rad = function (deg) { return deg * Math.PI / 180; };
+    var a = rad(-90 + i * 72 + 2.5);
+    var b = rad(-90 + (i + 1) * 72 - 2.5);
+    var x1 = (75 + 58 * Math.cos(a)).toFixed(2);
+    var y1 = (75 + 58 * Math.sin(a)).toFixed(2);
+    var x2 = (75 + 58 * Math.cos(b)).toFixed(2);
+    var y2 = (75 + 58 * Math.sin(b)).toFixed(2);
+    return "M " + x1 + " " + y1 + " A 58 58 0 0 1 " + x2 + " " + y2;
+  }
+
+  function cerrar(restore) {
+    pop.hidden = true;
+    seleccionado = null;
+    svg.classList.remove("focus");
+    var nodos = svg.querySelectorAll(".seg");
+    for (var i = 0; i < nodos.length; i++) {
+      nodos[i].classList.remove("lit");
+      nodos[i].setAttribute("aria-expanded", "false");
+    }
+    if (restore && opener && opener.isConnected) { opener.focus(); }
+    opener = null;
+    ajustarAlto();
+  }
+
+  function colocar() {
+    if (seleccionado === null) { return; }
+    var caja = detail.getBoundingClientRect();
+    var dona = svg.getBoundingClientRect();
+    var w = pop.offsetWidth;
+    var h = pop.offsetHeight;
+    var izqDona = dona.left - caja.left;
+    var derDona = dona.right - caja.left;
+    var topDona = dona.top - caja.top;
+    var x = derDona + 16;
+    var y = topDona + 12;
+    if (caja.width < 650 || x + w > caja.width - 12) {
+      x = izqDona - w - 16;
+      if (x < 12 || caja.width < 650) {
+        x = (caja.width - w) / 2;
+        y = (dona.bottom - caja.top) + 10;
+      }
+    }
+    if (x < 12) { x = 12; }
+    if (x + w > caja.width - 12) { x = Math.max(12, caja.width - w - 12); }
+    pop.style.left = Math.round(x) + "px";
+    pop.style.top = Math.round(y) + "px";
+  }
+
+  function abrir(i) {
+    if (tono(segs[i]) === "ok") { return; }        /* §3B.5 — verde no abre nada */
+    if (seleccionado === i) { cerrar(true); return; }
+    var seg = segs[i];
+    pop.replaceChildren();
+    var head = document.createElement("div");
+    head.className = "pop-head";
+    var titulo = document.createElement("strong");
+    titulo.textContent = seg.nombre;
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "pop-close";
+    close.textContent = "\u00d7";
+    close.setAttribute("aria-label", "Cerrar detalle");
+    close.addEventListener("click", function () { cerrar(true); });
+    head.appendChild(titulo);
+    head.appendChild(close);
+    var miss = document.createElement("p");
+    miss.className = "miss";
+    miss.textContent = seg.falta;
+    var fix = document.createElement("p");
+    fix.className = "fix";
+    fix.textContent = seg.como;
+    pop.appendChild(head);
+    pop.appendChild(miss);
+    pop.appendChild(fix);
+    pop.hidden = false;
+    seleccionado = i;
+    opener = svg.querySelector('[data-index="' + i + '"]');
+    if (opener) {
+      opener.classList.add("lit");
+      opener.setAttribute("aria-expanded", "true");
+    }
+    svg.classList.add("focus");
+    colocar();
+    close.focus({ preventScroll: true });
+    ajustarAlto();
+    /* El pop-out absolute no cambia el layout del body: el ResizeObserver del auto-alto
+       no se entera. Segunda pasada tras asentar el DOM. */
+    setTimeout(ajustarAlto, 60);
+  }
+
+  function dibujar() {
+    svg.replaceChildren();
+    /* U4bis H3: el contador del centro se LEE del adapter (`DATA.verificados`), no se
+       recalcula contando tonos. Regla 3 de U4: nada se calcula en JS; si el adapter
+       cambiara su forma de contar, el centro seguiría su cifra, no la suya propia. */
+    var count = DATA.verificados;
+    /* aria-label propio, sin la frase de estado del prototipo (§3B.7). */
+    svg.setAttribute("aria-label",
+      "Verificación de los datos: " + count + " de " + segs.length + " controles completos.");
+    for (var j = 0; j < segs.length; j++) {
+      (function (i) {
+        var seg = segs[i];
+        var t = tono(seg);
+        var p = document.createElementNS(NS, "path");
+        p.setAttribute("class", "seg");
+        p.setAttribute("d", arco(i));
+        p.setAttribute("data-index", String(i));
+        p.setAttribute("data-tone", t);
+        p.setAttribute("data-clave", seg.clave);
+        p.style.animationDelay = "0s," + (-i * 1.2) + "s";
+        var etiqueta = seg.nombre + (t === "ok" ? " · Sin alertas" : " · Pendiente");
+        var title = document.createElementNS(NS, "title");
+        title.textContent = etiqueta;
+        p.appendChild(title);
+        p.setAttribute("aria-label", etiqueta);
+        if (t !== "ok") {
+          p.setAttribute("role", "button");
+          p.setAttribute("tabindex", "0");
+          p.setAttribute("aria-expanded", "false");
+          p.setAttribute("aria-controls", "pop");
+          p.addEventListener("click", function () { abrir(i); });
+          p.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrir(i); }
+          });
+        }
+        svg.appendChild(p);
+      })(j);
+    }
+    var num = document.createElementNS(NS, "text");
+    num.setAttribute("class", "dona-num");
+    num.setAttribute("x", "75");
+    num.setAttribute("y", "83");
+    num.setAttribute("text-anchor", "middle");
+    num.textContent = count + "/" + segs.length;
+    svg.appendChild(num);
+  }
+
+  document.addEventListener("click", function (e) {
+    if (seleccionado === null) { return; }
+    if (!e.target.closest || !e.target.closest("#pop, #dona .seg")) { cerrar(false); }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && seleccionado !== null) { cerrar(true); }
+  });
+  window.addEventListener("resize", function () { colocar(); });
+
+  /* Gancho de medición/verificación (mismo patrón que `__impSelect` de impuestos_v2):
+     abre el segmento i desde fuera — tests en navegador y medición del ALTO. */
+  window.__covAbrir = abrir;
+  window.__covCerrar = function () { cerrar(true); };
+
+  dibujar();
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h || Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>

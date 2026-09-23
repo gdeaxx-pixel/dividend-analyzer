@@ -162,36 +162,43 @@ def test_estados_unidos_esta_en_la_tabla():
     assert logic.NRA_COUNTRY_RATES["Estados Unidos"][0] == 0.0
 
 
-def test_el_selector_vive_en_el_paso_2_y_escribe_el_perfil():
+def test_el_selector_vive_en_el_paso_3_y_escribe_el_perfil():
     """El control tiene que estar donde el cliente carga sus datos, no enterrado en una
     sub-vista. Antes vivía en Detalle → Proyección, dentro de un expander colapsado, y su
     valor no salía de esa función.
 
-    Se ejercita `render_bloque_posiciones` con `AppTest` (mismo patrón que
-    `test_carga_1042s.py`): el selectbox debe existir, y elegir un país debe dejar el perfil
-    declarado con la tasa del tratado."""
+    U4 §5.3.2 (§6›9 B C): la residencia se mudó del paso 2 al paso 3. En el paso 2
+    desaparecía al confirmar posiciones (la rama confirmada retorna antes) y un cliente
+    de IBKR nunca podía declararla. Se ejercita `render_bloque_1042s` con `AppTest`
+    (mismo patrón que `test_carga_1042s.py`): el selectbox debe existir, y elegir un país
+    debe dejar el perfil declarado con la tasa del tratado. Persiste por
+    `ui/estado.py::declarar_pais`, no por la clave del widget.
+
+    (Este test se llamaba `..._en_el_paso_2_...` y ejercitaba `render_bloque_posiciones`;
+    se actualizó —no se borró— al mandato de U4 de mover la residencia al paso 3.)"""
     import pandas as pd
     from streamlit.testing.v1 import AppTest
 
     script = """
 import sys
 sys.path.insert(0, {path!r})
-from ui.carga import render_bloque_posiciones
-render_bloque_posiciones()
+from ui.carga import render_bloque_1042s
+render_bloque_1042s()
 """.format(path=BASE)
 
     ruta = os.path.join(BASE, "fixtures", "schwab_synth_1", "synthetic_transactions.csv")
     if not os.path.exists(ruta):
         pytest.skip("falta el fixture schwab_synth_1")
 
-    at = AppTest.from_string(script)
+    at = AppTest.from_string(script, default_timeout=25)
     at.session_state["_wizard_df_clean"] = logic.normalize_csv(pd.read_csv(ruta))
     at.session_state["_wizard_csv_ticker_data"] = {}
+    at.session_state["_wizard_broker"] = "schwab"
     at.run()
 
     etiquetas = [s.label for s in at.selectbox]
     assert any("residencia fiscal" in (l or "").lower() for l in etiquetas), (
-        f"el selector de residencia no está en el Paso 2; selectboxes presentes: {etiquetas}")
+        f"el selector de residencia no está en el Paso 3; selectboxes presentes: {etiquetas}")
 
     sel = next(s for s in at.selectbox if "residencia fiscal" in (s.label or "").lower())
     assert sel.value.startswith("—"), "el default tiene que ser «sin declarar»"

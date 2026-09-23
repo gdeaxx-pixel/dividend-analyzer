@@ -35,9 +35,14 @@ def _df_schwab():
 
 
 def _at_con_posiciones_confirmadas(broker="schwab"):
-    """AppTest con Bloque 1 y Bloque 2 ya resueltos, listo para ejercitar el Bloque 3."""
+    """AppTest con Bloque 1 y Bloque 2 ya resueltos, listo para ejercitar el Bloque 3.
+
+    `default_timeout=25`: con posiciones confirmadas, la dona de cobertura (U4) lee los
+    resultados vía `obtener_resultados`, que dispara `analyze_portfolio` (~2.5 s la
+    primera vez en el proceso; después pega el caché). El timeout por defecto (3 s) se
+    queda corto y el fallo sale como `RuntimeError: AppTest timed out`."""
     limpio = _df_schwab()
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.session_state["_wizard_df_clean"] = limpio
     at.session_state["_wizard_csv_ticker_data"] = {}
     at.session_state["_wizard_broker"] = broker
