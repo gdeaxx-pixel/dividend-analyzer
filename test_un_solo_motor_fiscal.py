@@ -176,7 +176,8 @@ class TestPoliticaQueRecibeElMotor:
     plausibles."""
 
     @pytest.fixture(scope="class")
-    def llamadas(self):
+    @classmethod
+    def llamadas(cls):
         registro = []
         original = backtest.run_backtest
 
@@ -229,7 +230,8 @@ class TestLaTasaDelPaisMandaDeVerdad:
     cosas distintas: la primera se puede satisfacer pasando el parámetro y no usándolo."""
 
     @pytest.fixture(scope="class")
-    def por_tasa(self):
+    @classmethod
+    def por_tasa(cls):
         return {pct: trg_real_data(_CARTERA, tasa_pct=pct, pais="México" if pct == 10 else None)
                 for pct in (10.0, 30.0)}
 
