@@ -1,5 +1,5 @@
 # Aviso de privacidad — Calculadora de Dividendos
-*Actualizado: 2026-09-18*
+*Actualizado: 2026-09-22*
 
 **Tus archivos.** El archivo de transacciones, las capturas y el 1042-S se procesan en la
 memoria del servidor mientras dura tu sesión. La app no los escribe a disco ni los guarda en
