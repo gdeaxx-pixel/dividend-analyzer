@@ -24,6 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import backtest  # noqa: E402
+from conftest import frozen_price_cache  # noqa: E402
 import logic  # noqa: E402
 import price_cache  # noqa: E402
 from ui.adapters import (  # noqa: E402
@@ -653,3 +654,144 @@ class TestDobleConteoDeEfectivo:
         tri_recortado = r_sin.daily["total_value"].iloc[5:]  # empieza después que r_sin
         assert _serie_cosecha(r_sin, tri_recortado) is None
 
+
+
+# ── Q5 (2026-09-24): guards del dato nuevo `idxDesde` ───────────────────────────────────
+# `series()` (Con DRIP, modo roc) ya no divide entre `tot[t0]` —que arrastra el
+# `roc_receivable` devengado antes del inicio elegido— sino que lee la corrida limpia que
+# este adapter precalcula. Si falta una entrada que el componente puede pedir, el componente
+# cae EN SILENCIO a la fórmula vieja: por eso el guard de cobertura es el importante.
+
+class TestQ5IdxDesde:
+
+    def test_q5_idxdesde_cubre_todos_los_t0_que_el_componente_puede_pedir(self, datos):
+        """El guard que importa. Reconstruye en Python lo que hace `ventanaComun()`: el
+        inicio es el máximo `incep` de los tickers en pantalla, así que para cualquier par
+        (base, comparador) el componente pedirá `idxDesde[base][max(incep)]`. Si falta uno
+        solo, esa combinación cae en silencio a la fórmula mala — que es justo el bug.
+
+        El máximo sobre un conjunto cualquiera de tickers coincide siempre con el máximo de
+        algún par, así que recorrer los pares agota los `t0` alcanzables.
+        """
+        incep, idx_desde = datos["incep"], datos["idxDesde"]
+        comprobados, faltan = 0, []
+        for base in incep:
+            for comparador in incep:
+                t0 = max(incep[base], incep[comparador])
+                if t0 <= incep[base]:
+                    continue        # t0 == su propia incepción: la fórmula vieja es exacta
+                comprobados += 1
+                if str(t0) not in idx_desde.get(base, {}):
+                    faltan.append((base, comparador, t0))
+        assert not faltan, (
+            "pares (base, comparador) sin entrada en idxDesde — el componente caería en "
+            f"silencio a la fórmula vieja: {sorted(set(faltan))}")
+        # No-vacuidad: con un universo de una sola incepción este test pasaría sin mirar
+        # nada. Exigimos que haya habido pares reales que comprobar.
+        assert comprobados > 0, (
+            "ningún par tenía t0 > incep[base]: el universo colapsó a una sola incepción y "
+            "este guard no está vigilando nada")
+
+    def test_q5_fecha_por_mes_y_mensualizar_comparten_claves(self, datos):
+        """La corrida limpia tiene que arrancar en la MISMA fecha real a la que apunta
+        `idx[modo][tk][t0]`, o el 0% del gráfico y el 0% del oráculo no serían el mismo día.
+        `_fecha_por_mes` lo garantiza recorriendo el mismo `mensual.index` que
+        `_mensualizar_desde`: mismas claves, y el primer mes apunta al primer día real."""
+        from ui.adapters import _fecha_por_mes, _mensualizar_desde
+
+        with frozen_price_cache():
+            serie = price_cache.load_history("NVDY").history.sort_index()["Close"]
+        origen = [int(serie.index.min().year), int(serie.index.min().month) - 1]
+
+        fechas = _fecha_por_mes(serie, origen)
+        valores = _mensualizar_desde(serie, origen)
+        assert set(fechas) == set(valores), (
+            "`_fecha_por_mes` y `_mensualizar_desde` dejaron de compartir claves: la corrida "
+            "limpia arrancaría en un mes que el índice no tiene")
+
+        primer_mes = min(fechas, key=int)
+        assert fechas[primer_mes] == serie.index.min(), (
+            "el primer bin no apunta al primer día real — misma excepción de primer-bin que "
+            "`_mensualizar_desde`, que sustituye ese valor por `serie.iloc[0]`")
+
+    @pytest.mark.parametrize("modo", ["bruto", "plano"])
+    def test_q5_bruto_y_plano_no_necesitan_idxdesde(self, modo):
+        """Lo que justifica que el arreglo se limite a `roc`: en bruto y plano el motor no
+        devenga NADA de `roc_receivable`, así que `total_value == portfolio_value` y la
+        fórmula de siempre ya es exacta. Afirma sobre la COLUMNA DEL MOTOR, no sobre
+        `nra_rate`: si un día esos modos empiezan a devengar, este test cae y avisa de que
+        el alcance de Q5 hay que ampliarlo.
+
+        Se corre sobre un fondo que SÍ tiene avisos 19(a) (el escudo existe en modo roc),
+        para que el verde signifique «la política de este modo no devenga» y no «este
+        ticker no tiene ROC».
+        """
+        roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+        pol_roc = _politica_fiscal("NVDY", "roc", roc19a, roc_ici)
+        assert pol_roc.roc_pct_by_year, (
+            "NVDY dejó de tener avisos 19(a): este guard perdió su control positivo")
+
+        pol = _politica_fiscal("NVDY", modo, roc19a, roc_ici)
+        with frozen_price_cache():
+            history = price_cache.load_history("NVDY").history.sort_index()
+        r = backtest.run_backtest("NVDY", start_date=history.index.min(),
+                                  initial_capital=_INDICE_CAPITAL, drip=True,
+                                  nra_rate=pol.rate, history=history,
+                                  roc_pct_by_year=pol.roc_pct_by_year)
+        assert (r.daily["roc_receivable"] == 0).all(), (
+            f"modo={modo}: el motor devengó roc_receivable — `tot[t0] != precio[t0]` y "
+            "`series()` necesita `idxDesde` también en este modo")
+        assert (r.daily["total_value"] == r.daily["portfolio_value"]).all(), (
+            f"modo={modo}: total_value dejó de ser solo portfolio_value con DRIP")
+
+    @pytest.mark.parametrize("tk", ["TSLY", "NVDY", "CONY", "MSTY"])
+    def test_q5_idxdesde_reproduce_una_compra_nueva(self, datos, tk):
+        """El oráculo del dato, no de su presencia. Los guards de arriba comprueban que
+        `idxDesde` **está** y que las claves cuadran; ninguno comprobaba que el número sea
+        el correcto. Sin esto, el adapter puede correr el motor con la política fiscal
+        equivocada o desde la fecha equivocada y toda la suite sigue verde — medido:
+        los mutantes M5 (`roc_pct_by_year=None`) y M6 (`start_date=history.index.min()`)
+        SOBREVIVÍAN, porque el test del renderer construye `idxDesde` a mano y nunca toca
+        el adapter.
+
+        Se re-corre el motor aquí, no se transcribe la fórmula del adapter: el esperado es
+        una compra nueva en la fecha real de t0, con la cuenta por cobrar en cero.
+        """
+        from ui.adapters import _fecha_por_mes, _mensualizar_desde
+
+        origen, last = datos["origen"], str(datos["last"])
+        entradas = datos["idxDesde"].get(tk, {})
+        assert entradas, f"{tk} no tiene ninguna entrada en idxDesde"
+        t0 = max(entradas, key=int)      # el inicio más movido = la mayor divergencia
+
+        roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+        pol = _politica_fiscal(tk, "roc", roc19a, roc_ici)
+        assert pol.roc_pct_by_year, (
+            f"{tk} dejó de tener avisos 19(a): sin escudo ROC no hay receivable que "
+            "arrastrar y este test pierde su control positivo")
+
+        with frozen_price_cache():
+            history = price_cache.load_history(tk).history.sort_index()
+        fecha_t0 = _fecha_por_mes(history["Close"], origen)[t0]
+        r_nueva = backtest.run_backtest(tk, start_date=fecha_t0,
+                                        initial_capital=_INDICE_CAPITAL, drip=True,
+                                        nra_rate=pol.rate, history=history,
+                                        roc_pct_by_year=pol.roc_pct_by_year)
+        esperado = _mensualizar_desde(r_nueva.daily["total_value"], origen)
+
+        assert set(entradas[t0]) == set(esperado), (
+            f"{tk} t0={t0}: la serie precalculada no cubre los mismos meses que una "
+            "compra nueva corrida desde t0 — ¿arrancó en otra fecha?")
+        for m in esperado:
+            assert entradas[t0][m] == pytest.approx(esperado[m], abs=1e-4), (
+                f"{tk} t0={t0} m={m}: idxDesde dice {entradas[t0][m]}, una compra nueva "
+                f"en {fecha_t0.date()} da {esperado[m]}")
+
+        # Control de que la fixture muerde: si la corrida limpia coincidiera con la vieja
+        # rebasada, este ticker no tendría receivable pre-t0 y el test no vigilaría nada.
+        viejo = datos["idx"]["roc"][tk]
+        ret_limpio = entradas[t0][last] / entradas[t0][t0] - 1
+        ret_viejo = viejo[last] / viejo[t0] - 1
+        assert ret_limpio != pytest.approx(ret_viejo, abs=1e-6), (
+            f"{tk} t0={t0}: la corrida limpia da lo mismo que la fórmula vieja "
+            "({ret_limpio:.6f}) — sin receivable pre-t0 este caso no prueba nada")

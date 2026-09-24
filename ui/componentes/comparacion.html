@@ -1108,9 +1108,26 @@
       state.cmp.forEach(function(t){ if (F[t] && F[t].incep > t0) t0 = F[t].incep; });
       return t0;
     }
+    // Q5: en modo «roc» el índice `idx` incluye `roc_receivable`, que en t0 arrastra lo
+    // devengado ANTES del inicio elegido y desplaza el retorno hasta 2.94 pp sobre el
+    // universo real — y el signo CAMBIA según el fondo: el tramo pendiente está en efectivo
+    // hasta el 1042-S, lastre en un fondo que sube y protección en uno que cae. No se puede
+    // arreglar con una fórmula: con DRIP el reembolso compra acciones después de t0 (ver la
+    // tabla de refutación en la spec Q5 §3 y la prueba por superposición en §14). Python
+    // precalcula la corrida limpia desde t0 en `DATA.idxDesde` (solo roc, solo t0 >
+    // incepción del ticker) y aquí solo se normaliza. Sin entrada aplicable, la fórmula de
+    // siempre — que en bruto, plano y en t0 == incepción es exacta.
     function series(tk, t0, mode){
-      var base0 = idxAt(tk, t0, mode), out = {};
-      for (var m = t0; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
+      var desde = (mode === "roc" && DATA.idxDesde && DATA.idxDesde[tk])
+                  ? DATA.idxDesde[tk][t0] : null;
+      var out = {};
+      if (desde && desde[t0] != null){
+        var b0 = desde[t0];
+        for (var m = t0; m <= LAST; m++) out[m] = desde[m]/b0 - 1;
+      } else {
+        var base0 = idxAt(tk, t0, mode);
+        for (var m = t0; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
+      }
       return { tk:tk, startM:t0, data:out };
     }
     // "Sin DRIP" (efectivo) solo se ofrece para el fondo base: los dividendos salen del
