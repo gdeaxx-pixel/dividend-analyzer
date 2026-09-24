@@ -72,3 +72,6 @@ design/
 # Traen TIN, fecha de nacimiento, dirección y número de cuenta — NUNCA versionar.
 tests/daniel_zambrano/
 .evidence/
+
+# Plugin anti-deriva (estado local no versionado)
+.deriva/
