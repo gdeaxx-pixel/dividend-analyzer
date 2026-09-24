@@ -160,7 +160,12 @@ def decidir(
     lista: Optional[dict],
     clave: str,
     admins: frozenset = frozenset(),
+    lista_esperada: bool = False,
 ) -> Decision:
+    """`lista_esperada` distingue los dos motivos por los que `lista` puede ser None, que
+    antes se trataban igual: (a) no hay allowlist configurada —sin PAT ni hmac_key— y no hay
+    nada que verificar; (b) SÍ estaba configurada y no se pudo obtener ninguna, ni fresca ni
+    en caché. Solo (b) cierra la puerta, y solo en `aplicar`."""
     if modo == "apagado":
         return Decision(accion="pasar")
 
@@ -176,6 +181,18 @@ def decidir(
         return Decision(accion="pasar")
 
     if lista is None:
+        # Fail-CLOSED (Daniel, 2026-09-23). Antes esto devolvía «pasar» siempre: con la
+        # allowlist ilegible entraba cualquiera aunque el modo fuera `aplicar`.
+        #
+        # Va DESPUÉS de los chequeos de sesión y de admin, a propósito: quien no ha entrado
+        # sigue viendo la pantalla de login (no «no pudimos verificarte»), y un admin sigue
+        # pasando — es quien tiene que ir a arreglar el PAT.
+        #
+        # No se dispara por un apagón de GitHub: `ListaCache` sirve `_ultima_buena`
+        # indefinidamente (:124-128). Se dispara en arranque en frío + fetch fallido, o sea
+        # cuando no se puede verificar a NADIE. El caso permanente es el PAT expirado.
+        if modo == "aplicar" and lista_esperada:
+            return Decision(accion="sin_verificar")
         return Decision(accion="pasar")
 
     correo = usuario.get("email", "")
@@ -318,6 +335,15 @@ def _pantalla_no_verificado() -> None:
         st.logout()
 
 
+def _pantalla_sin_verificar() -> None:
+    """Hay allowlist configurada, el modo es `aplicar` y no se pudo obtener ninguna lista.
+    Es temporal por definición —el siguiente arranque con la lista legible lo resuelve—, así
+    que el mensaje pide reintentar en vez de acusar al cliente de no tener acceso."""
+    st.error("No pudimos verificar tu acceso en este momento. Inténtalo en unos minutos.")
+    st.write("Si el problema sigue, escríbenos y lo resolvemos.")
+    st.markdown(f"[Escríbenos por WhatsApp]({WHATSAPP_URL})")
+
+
 def _aviso_gracia(gracia_hasta: str) -> None:
     st.warning(
         f"Tu último pago no se procesó. Actualízalo antes del {fecha_es(gracia_hasta)} "
@@ -340,6 +366,22 @@ def puerta() -> bool:
             ).puerta_abierta_por_error(type(e).__name__)
         except Exception:
             pass
+        # Fail-CLOSED (Daniel, 2026-09-23), pero SOLO en `aplicar`. Si aquí se abriera, un
+        # error residual daría acceso a cualquiera; si se cerrara siempre, se rompen los casos
+        # en que la app debe correr sin puerta —sin `secrets.toml` el modo efectivo es
+        # `apagado`, que es desarrollo local (`test_sin_secrets_toml_es_apagado`)—. Por eso se
+        # vuelve a preguntar el modo con su propio `try`: si ni el modo se puede leer, no hay
+        # puerta que cerrar.
+        try:
+            cerrar = resolver_modo(st.secrets) == "aplicar"
+        except Exception:
+            cerrar = False
+        if cerrar:
+            try:
+                _pantalla_sin_verificar()
+            except Exception:
+                pass
+            return False
         return True
 
 
@@ -374,7 +416,8 @@ def _puerta() -> bool:
     elif lista is not None and lista_vieja(lista, datetime.now(timezone.utc)):
         avisador.lista_vieja()
 
-    decision = decidir(modo, usuario, lista, clave, admins=admins)
+    decision = decidir(modo, usuario, lista, clave, admins=admins,
+                       lista_esperada=bool(pat and clave))
 
     if _debe_avisar_rechazo(modo, decision):
         avisador.rechazo_observar(decision.correo_rechazado)
@@ -387,6 +430,9 @@ def _puerta() -> bool:
         return False
     if decision.accion == "rechazar":
         _pantalla_rechazo(usuario.get("email"))
+        return False
+    if decision.accion == "sin_verificar":
+        _pantalla_sin_verificar()
         return False
 
     if decision.gracia_hasta is not None:
