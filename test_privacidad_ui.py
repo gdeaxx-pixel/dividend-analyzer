@@ -11,6 +11,14 @@ es el reloj del arnes. Mismo diagnostico y mismo valor que
 `test_carga_1042s._at_con_posiciones_confirmadas`; este archivo era el unico con
 `AppTest` que no lo llevaba.
 
+Cuanto tarda, y de que (medido el 2026-09-24 sobre `febcd08`, cronometrando el `.run()`
+con un guard sobre `socket.socket.connect`): el `run()` inicial tarda **0.13 s** y el de
+despues del clic **3.55 - 6.87 s**, con **CERO conexiones de red**. O sea el coste es
+render local del rerun, no I/O: si esto vuelve a enrojecer, no busques una llamada a
+Yahoo. Eso tambien explica por que el archivo corrido SOLO fallaba 5 de 5 veces y dentro
+de la suite completa pasaba — ahi los modulos ya estan calientes. Con el default de 3 s
+no cabia ni en el mejor caso; los 25 s dejan ~3.6x de margen sobre el peor medido.
+
 Importa porque un rojo intermitente aqui no se distingue de una regresion: los
 workflows de refresco corren la suite y avisan por Telegram si queda roja (#117), y un
 rojo que aparece y desaparece solo es exactamente lo que el mecanismo anti-deriva (B1)
