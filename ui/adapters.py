@@ -1275,6 +1275,36 @@ def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
     return out
 
 
+def _fecha_por_mes(serie, origen) -> dict:
+    """Fecha REAL de trading (no el label de calendario de `.resample("ME")`, que puede caer
+    en fin de semana) del último día de cada mes, indexada por el mismo índice de mes que
+    `_mensualizar_desde`. El mes de la incepción apunta al primer día, con la misma
+    excepción de primer-bin que `_mensualizar_desde`.
+
+    Por construcción recorre el MISMO `mensual.index` que `_mensualizar_desde`, así que los
+    dos dicts tienen exactamente las mismas claves (`str`, porque el destino es JSON) — lo
+    vigila `test_q5_fecha_por_mes_y_mensualizar_comparten_claves`.
+
+    Estaba inline dentro de `test_q4_rebase_reproduce_el_motor_en_los_tres_modos`. Subió a
+    nivel de módulo cuando Q5 necesitó arrancar la corrida limpia en esa misma fecha exacta:
+    dos copias de la excepción de primer-bin es justo el duplicado que después diverge en una
+    sola de las dos y nadie lo nota (mismo motivo por el que subió `_mensualizar_desde`).
+    """
+    serie = serie.sort_index()
+    mensual = serie.resample("ME").last().dropna()
+    validos = serie.dropna()
+    out = {}
+    for i, etiqueta in enumerate(mensual.index):
+        m = (int(etiqueta.year) - origen[0]) * 12 + (int(etiqueta.month) - 1 - origen[1])
+        if i == 0:
+            out[str(m)] = serie.index.min()
+            continue
+        del_mes = validos.index[(validos.index.year == etiqueta.year)
+                                & (validos.index.month == etiqueta.month)]
+        out[str(m)] = del_mes.max()
+    return out
+
+
 def _serie_cosecha(r_sin, tri_destino: pd.Series) -> pd.Series | None:
     """Tercera línea de «Sin DRIP»: en vez de dejar el efectivo cobrado quieto, lo pone a
     comprar `CMP_COSECHA_DESTINO` (DRIP dentro del destino) el mismo día ex-dividendo en que
@@ -1482,6 +1512,44 @@ def comparacion_data() -> dict | None:
                     cosecha_usd[modo][tk] = {
                         "cash": round(_cash_final, 2), "destino": round(_destino_final, 2)}
 
+    # Q5: «Con DRIP» en modo roc no se puede rebasar con una fórmula. `total_value` incluye
+    # `roc_receivable` (backtest.py:443), y con DRIP ese reembolso COMPRA ACCIONES cuando se
+    # cobra (backtest.py:414), así que la cuenta de quien compra nuevo en t0 diverge de la
+    # vieja durante todo el tramo posterior — no solo en t0. Probado en la spec Q5 §14: la
+    # dinámica del motor es homogénea de grado 1 en `(shares, receivable_by_year)`, luego
+    # `tot_viejo = tot_limpio + tot_receivable_pre_t0` por superposición, y ese segundo término
+    # exige el receivable POR AÑO y su fecha de reembolso. Ninguna fórmula de dos ni de tres
+    # términos lo cierra: la única forma exacta es correr el motor otra vez desde t0 con la
+    # cuenta limpia.
+    #
+    # Solo modo «roc»: en bruto y plano `roc_receivable` es 0, `tot[t0] == precio[t0]` y la
+    # fórmula de siempre ya es exacta (medido: 0.00 pp en las cuatro combinaciones). El guard
+    # `test_q5_bruto_y_plano_no_necesitan_idxdesde` vigila que eso siga siendo cierto.
+    #
+    # Solo los t0 que el componente puede pedir: `ventanaComun()` devuelve el máximo
+    # `incep` de los tickers en pantalla, así que t0 ∈ set(incep.values()) — 5 valores, no 46.
+    #
+    # Limitación preexistente que esto NO arregla: el índice es mensual, así que cuando t0 es
+    # el mes de incepción de OTRO ticker, ese ticker arranca en su día de incepción y los
+    # demás en el cierre de mes. Es aproximación de la rejilla mensual, no de Q5.
+    idx_desde: dict = {}
+    t0_candidatos = sorted(set(incep.values()))
+    for tk, hr in historias.items():
+        history = hr.history.sort_index()
+        pol = _politica_fiscal(tk, "roc", roc19a, roc_ici)
+        fecha_de_mes = _fecha_por_mes(history["Close"], origen)
+        for t0 in t0_candidatos:
+            # Las claves de `fecha_de_mes` son `str` (mismo juego que `_mensualizar_desde`);
+            # comparar con el `int` dejaría `idx_desde` vacío y la vista caería en silencio.
+            if t0 <= incep[tk] or str(t0) not in fecha_de_mes:
+                continue          # t0 == su propia incepción: la fórmula de hoy ya es exacta
+            r = backtest.run_backtest(tk, start_date=fecha_de_mes[str(t0)],
+                                      initial_capital=_INDICE_CAPITAL, drip=True,
+                                      nra_rate=pol.rate, history=history,
+                                      roc_pct_by_year=pol.roc_pct_by_year)
+            idx_desde.setdefault(tk, {})[str(t0)] = _mensualizar_desde(
+                r.daily["total_value"], origen)
+
     fuente = {tk: hr.source for tk, hr in historias.items()}
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
     faltantes = sorted(t for t in TRG_UNIVERSO if t not in historias)
@@ -1520,6 +1588,7 @@ def comparacion_data() -> dict | None:
         "grp": grp,
         "col": {tk: TRG_COLORES[tk] for tk in historias if tk in TRG_COLORES},
         "idx": idx,
+        "idxDesde": idx_desde,
         "idxSin": idx_sin,
         "precioSin": precio_sin,
         "fuente": fuente,
