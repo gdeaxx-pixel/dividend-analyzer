@@ -349,3 +349,72 @@ def test_entorno_actual_distingue_por_los_datos_privados(tmp_path):
     (tmp_path / "real_examples").unlink()
     (tmp_path / "real_examples").symlink_to(tmp_path / "no-existe", target_is_directory=True)
     assert deriva_oraculos.entorno_actual(str(tmp_path)) == "sin-datos-privados"
+
+
+# ── la huella no depende de la versión de Python ──────────────────────────────
+
+_LONGREPR_39 = """    def test_con_traceback():
+>       assert _nivel1(3.5) == 1.0
+
+test_muestras.py:14:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    def _nivel2(x):
+>       return x / 0
+E       ZeroDivisionError: float division by zero
+
+test_muestras.py:6: ZeroDivisionError
+"""
+
+# lo mismo en 3.11: idéntico salvo las líneas de cursores que añade PEP 657
+_LONGREPR_311 = """    def test_con_traceback():
+>       assert _nivel1(3.5) == 1.0
+               ~~~~~~~^^^^^
+
+test_muestras.py:14:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    def _nivel2(x):
+>       return x / 0
+           ~~^~~
+E       ZeroDivisionError: float division by zero
+
+test_muestras.py:6: ZeroDivisionError
+"""
+
+
+def test_la_huella_no_cambia_entre_python_39_y_311():
+    """Mismo fallo, distinto intérprete → MISMA huella.
+
+    Medido el 2026-09-24 con dos intérpretes reales (3.9.6 y 3.11.15) corriendo el plugin
+    sobre el mismo test: un fallo con traceback daba huellas distintas y un `assert` plano
+    la misma. La única diferencia del texto son los cursores de PEP 657.
+
+    Importa porque el baseline se midió en 3.9 y CI corre 3.11 (y producción 3.11.16): sin
+    esto, el primer rojo con traceback se canta 🔴 MOVIDO sin que nada se haya movido.
+    """
+    import deriva_oraculos
+
+    nodeid = "test_muestras.py::test_con_traceback"
+    assert deriva_oraculos.huella(nodeid, _LONGREPR_39) == \
+           deriva_oraculos.huella(nodeid, _LONGREPR_311)
+
+
+def test_no_se_come_lineas_de_codigo_que_contienen_cursores():
+    """Control de sobre-borrado: la regla solo puede tragarse líneas que SEAN cursores.
+
+    Sin este control, un filtro demasiado goloso («quita todo lo que tenga ^ o ~») pasaría
+    el test de arriba y a la vez borraría código real, haciendo que dos fallos DISTINTOS
+    compartieran huella — un 🔴 MOVIDO que nunca se reportaría.
+    """
+    import deriva_oraculos
+
+    con_xor = "E       assert 6 ^ 3 == 5\n"
+    con_tilde = "E       assert ~x == y\n"
+    # y el ancla del final: una línea que EMPIEZA por cursores pero sigue con texto no es
+    # un cursor. Sin el `$` de la regex, esta se borraría (mutante M3).
+    empieza_con_cursor = "E       ^^^ este texto importa\n"
+    for texto in (con_xor, con_tilde, empieza_con_cursor):
+        assert "importa" in deriva_oraculos.normalizar(texto) or \
+               "assert" in deriva_oraculos.normalizar(texto), texto
+
+    # y dos fallos que solo se diferencian en esa línea NO pueden compartir huella
+    assert deriva_oraculos.huella("t::x", con_xor) != deriva_oraculos.huella("t::x", con_tilde)
