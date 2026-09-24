@@ -173,9 +173,31 @@ def test_email_verified_estricto():
 
 # --- M5: fail-open sin lista en modo aplicar ---
 
-def test_fail_open_sin_lista():
+def test_sin_lista_no_entra_nadie_en_aplicar():
+    """FAIL-CLOSED (Daniel, 2026-09-23). Este test decía lo contrario —se llamaba
+    `test_fail_open_sin_lista` y fijaba `accion == "pasar"`— porque el fail-open era
+    deliberado. Dejó de serlo cuando el modo pasó a `aplicar` con clientes reales: con la
+    allowlist ilegible no se puede verificar a NADIE, y eso no puede significar que entre
+    cualquiera. El caso permanente es el PAT `calculadora-lee-allowlist` al expirar."""
     usuario = {"is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"}
-    decision = acceso.decidir("aplicar", usuario, None, CLAVE)
+    decision = acceso.decidir("aplicar", usuario, None, CLAVE, lista_esperada=True)
+    assert decision.accion == "sin_verificar"
+
+
+def test_sin_lista_observar_sigue_sin_bloquear():
+    """`observar` significa medir sin bloquear: el fail-closed NO le aplica. Si este test se
+    pone rojo, el cambio se pasó de modo y rompió el sentido de `observar`."""
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"}
+    assert acceso.decidir("observar", usuario, None, CLAVE,
+                          lista_esperada=True).accion == "pasar"
+
+
+def test_sin_lista_el_admin_sigue_entrando():
+    """El chequeo de admins va ANTES que el de la lista, así que el fail-closed no puede
+    dejar fuera a Daniel — que es quien tendría que ir a arreglar el PAT."""
+    usuario = {"is_logged_in": True, "email_verified": True, "email": "jefe@ejemplo.com"}
+    decision = acceso.decidir("aplicar", usuario, None, CLAVE,
+                              admins=frozenset({"jefe@ejemplo.com"}), lista_esperada=True)
     assert decision.accion == "pasar"
 
 
@@ -646,10 +668,24 @@ def _script_puerta_error_interno():
     st.session_state["resultado"] = acceso.puerta()
 
 
-def test_puerta_error_interno_abre():
+def test_puerta_error_interno_cierra_en_aplicar():
+    """FAIL-CLOSED (Daniel, 2026-09-23). Este test se llamaba `..._abre` y fijaba
+    `resultado is True`: un error residual daba acceso a cualquiera. En `aplicar` con
+    clientes reales eso deja de ser aceptable."""
     at = AppTest.from_function(_script_puerta_error_interno)
     at.secrets["auth"] = {}
     at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert len(at.exception) == 0
+    assert at.session_state["resultado"] is False
+
+
+def test_puerta_error_interno_no_cierra_en_observar():
+    """`observar` mide sin bloquear, también cuando algo revienta. Si este test se pone rojo,
+    el fail-closed se pasó de modo."""
+    at = AppTest.from_function(_script_puerta_error_interno)
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": "observar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
     at.run()
     assert len(at.exception) == 0
     assert at.session_state["resultado"] is True
@@ -811,14 +847,19 @@ def _script_puerta_error_avisa(lanza):
 
 @pytest.mark.parametrize("lanza", [False, True])
 def test_puerta_abierta_por_error_avisa_sin_datos(lanza):
-    """El fail-open del resto de errores se conserva (decisión 3), pero deja de ser mudo: avisa
-    por Telegram con el nombre de la excepción y nada más (el mensaje puede traer un correo)."""
+    """FAIL-CLOSED (Daniel, 2026-09-23). Antes este test fijaba `resultado is True`: el
+    fail-open del resto de errores era deliberado («decisión 3»). Se cerró al pasar el modo a
+    `aplicar` con clientes reales — en el `except` no se puede confiar en nada, ni siquiera se
+    sabe el modo, porque la excepción puede venir de leer los propios secrets. Lo que se
+    conserva es que NO sea mudo: avisa por Telegram con el nombre de la excepción y nada más
+    (el mensaje puede traer un correo). Ese aviso es ahora la única alarma de que los clientes
+    están bloqueados."""
     at = AppTest.from_function(_script_puerta_error_avisa, args=(lanza,))
     at.secrets["auth"] = {}
     at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
     at.run()
     assert len(at.exception) == 0
-    assert at.session_state["resultado"] is True
+    assert at.session_state["resultado"] is False
     assert at.session_state["avisos"] == ["RuntimeError"]
 
 
