@@ -151,9 +151,31 @@
     return "M " + x1 + " " + y1 + " A 58 58 0 0 1 " + x2 + " " + y2;
   }
 
+  /* Holgura para la sombra del pop-out. El auto-alto fija el iframe en
+     `body.scrollHeight`, que llega EXACTAMENTE al borde inferior del pop-out: `box-shadow`
+     no ocupa layout, así que la sombra se pintaba fuera del iframe y el panel salía con un
+     corte seco abajo (medido 2026-09-24 en los tres anchos; se nota en CLARO, donde la
+     sombra es visible). Se estira el `padding-bottom` de `.detail` para que el scrollHeight
+     incluya la sombra; el pop-out es `absolute` y no se mueve. */
+  var SOMBRA_POP = 40;   /* 8px de offset + 32px de blur de `--pop-shadow` */
+
+  function holgura() {
+    /* Resetear ANTES de medir: el padding de la pasada anterior forma parte de la caja, y
+       sin el reset cada `colocar()` sumaría sobre el de la vez pasada. El padding en reposo
+       se lee del computado en cada pasada y no se cachea: el media query de 620px lo cambia
+       de 26 a 20 y un valor cacheado quedaría viejo al redimensionar. */
+    detail.style.paddingBottom = "";
+    if (seleccionado === null) { return; }
+    var base = parseFloat(getComputedStyle(detail).paddingBottom) || 0;
+    var sobra = pop.getBoundingClientRect().bottom - detail.getBoundingClientRect().bottom;
+    var extra = Math.ceil(sobra) + SOMBRA_POP;
+    if (extra > 0) { detail.style.paddingBottom = (base + extra) + "px"; }
+  }
+
   function cerrar(restore) {
     pop.hidden = true;
     seleccionado = null;
+    holgura();
     svg.classList.remove("focus");
     var nodos = svg.querySelectorAll(".seg");
     for (var i = 0; i < nodos.length; i++) {
@@ -187,6 +209,7 @@
     if (x + w > caja.width - 12) { x = Math.max(12, caja.width - w - 12); }
     pop.style.left = Math.round(x) + "px";
     pop.style.top = Math.round(y) + "px";
+    holgura();
   }
 
   function abrir(i) {
