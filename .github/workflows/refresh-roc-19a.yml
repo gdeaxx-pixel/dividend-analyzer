@@ -90,6 +90,7 @@ jobs:
           echo "rc=$RC" >> "$GITHUB_OUTPUT"
           tail -40 suite.log
           grep -E "^(FAILED|ERROR)" suite.log | head -15 > suite_failures.txt || true
+          sed -n '/Deriva de oráculos/,/fin deriva/p' suite.log > suite_deriva.txt || true
 
       - name: Avisar por Telegram si la suite quedó roja
         if: always()
@@ -102,7 +103,11 @@ jobs:
           if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then echo "Sin secrets de Telegram, omito."; exit 0; fi
           RUN="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           BODY=$(head -c 1200 suite_failures.txt)
-          MSG=$(printf '🔴 <b>Dividend Analyzer</b>: el refresco automático dejó la suite en rojo sobre <b>main</b> (y main ya está desplegado).\n\n<pre>%s</pre>\nSuele ser una expectativa hardcodeada que el dato fresco movió unos centavos, no un bug — mirá el <code>asof</code> del YAML / la última fila de los parquets. Run: %s' "$BODY" "$RUN")
+          DERIVA=""
+          if [ -s suite_deriva.txt ]; then
+            DERIVA=$(printf '\n\n<pre>%s</pre>' "$(head -c 800 suite_deriva.txt)")
+          fi
+          MSG=$(printf '🔴 <b>Dividend Analyzer</b>: el refresco automático dejó la suite en rojo sobre <b>main</b> (y main ya está desplegado).\n\n<pre>%s</pre>%s\nSuele ser una expectativa hardcodeada que el dato fresco movió unos centavos, no un bug — mirá el <code>asof</code> del YAML / la última fila de los parquets. Run: %s' "$BODY" "$DERIVA" "$RUN")
           curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
             -d chat_id="${CHAT}" -d parse_mode=HTML --data-urlencode "text=${MSG}" >/dev/null
 

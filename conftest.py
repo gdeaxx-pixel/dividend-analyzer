@@ -5,6 +5,8 @@
 Los tests que clavan cifras contra una entrada fija lo usan para que su entrada deje de moverse
 con el refresh semanal del caché vivo — ver traspaso 2026-08-23 y Regla 6 del contrato.
 """
+pytest_plugins = ["deriva_oraculos", "pytester"]
+
 import contextlib
 import os
 
