@@ -805,15 +805,21 @@ def test_credito_definitivo_mas_lo_que_vuelve_es_lo_retenido(monkeypatch, fixtur
 def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
     """GROUND TRUTH de `schwab_synth_1` (el CSV que se subió a producción el 2026-09-02):
     retenido $60.75, de los que la casilla 9 devuelve $56.65 ⇒ crédito real **$4.10**.
-    (Se mueve con cada refresh de 19a vía el respaldo al `weighted_pct` de logic.py:3509
-    en los años abiertos; valores del YAML `asof: 2026-09-19`.)
+
+    **Estas cifras NO se mueven con el refresco semanal de 19a** (corregido 2026-09-23; la
+    versión anterior de este docstring decía lo contrario y ya no era cierta). Las 20 filas
+    del fixture son de **2025**, año cerrado: `roc_pct_by_year` da precedencia al cierre ICI
+    y para 2025 las dos fuentes salen de `knowledge/roc_ici.yaml` — MSTY 100.0 y TSLY 72.97,
+    ambas marcadas `cierre`, ninguna `estimacion`. Medido: con `weighted_pct` +0.5 pp y
+    `roc_pct` +2 pp en TODO `roc_19a.yaml`, este test pasa igual.
+    Si algún día el fixture incorpora distribuciones de un año todavía abierto, vuelve a ser
+    sensible al 19a y esta nota deja de valer.
 
     ACTUALIZADO 2026-09-22 (Sprint 2, fix F1 — Regla 4b): 41.27 -> 56.65 y 19.48 -> 4.10.
     No es drift de centavos: el objeto fiscal real pasó a leer el cierre ICI con
-    precedencia sobre la estimación 19a. Las distribuciones del fixture son de 2025, año
-    cerrado cuyo MSTY es 100% ROC según el ICI (`knowledge/roc_ici.yaml`, verificado
-    contra el 1042-S real — auditoría R1): fair = 30% × bruto × (1 − 1.00) = $0 para MSTY,
-    así que toda su retención vuelve ($46.80); TSLY cae al respaldo del holder (72.97%).
+    precedencia sobre la estimación 19a. MSTY es 100% ROC según el ICI (verificado contra el
+    1042-S real — auditoría R1): fair = 30% × bruto × (1 − 1.00) = $0, así que toda su
+    retención vuelve ($46.80); TSLY usa su cierre ICI de 2025 (72.97%).
     Sonda por ticker: MSTY 33.58 -> 46.80, TSLY 7.41 -> 9.85, SCHB 0 (sin ROC).
     El viejo 41.27 usaba la estimación 19a (~72%) sobre un año ya cerrado: subdevolvía.
 
