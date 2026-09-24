@@ -129,6 +129,44 @@ def test_segmento_posiciones_pendiente_sin_confirmar(sesion):
     assert _seg(cobertura_data(cartera), "movimientos")["estado"] == "ok"
 
 
+def test_posiciones_pendiente_dice_la_causa_correcta(sesion):
+    """Las DOS causas del pendiente de Posiciones no se leen igual.
+
+    Sin confirmar, el pop-out pide confirmar. Ya confirmado y con un ticker
+    `reconciled`/`partial`, lo que falta es el HISTORIAL: el texto de «confirma las
+    cantidades» pediría algo que el cliente acaba de hacer, y el título «Posiciones»
+    contradice al chip «✓ POSICIONES CONFIRMADAS» del propio flujo. La `clave` no cambia
+    en ningún caso — es la identidad del segmento.
+    """
+    cartera = _cartera_limpia()
+
+    # (a) sin confirmar: el texto original, y el nombre del catálogo.
+    sesion["_wizard_pos_confirmed"] = False
+    seg = _seg(cobertura_data(cartera), "posiciones")
+    assert seg["estado"] == "pendiente"
+    assert seg["nombre"] == "Posiciones"
+    assert "confirmaci" in seg["falta"]
+
+    # (b) confirmado Y reconciliado: variante de historial.
+    sesion["_wizard_pos_confirmed"] = True
+    cartera["SCHB"]["reconciled_from_snapshot"] = True
+    cartera["SCHB"]["reconciled_fields"] = ["shares"]
+    seg = _seg(cobertura_data(cartera), "posiciones")
+    assert seg["estado"] == "pendiente"
+    assert seg["clave"] == "posiciones"
+    assert seg["nombre"] == "Historial de posiciones"
+    # No puede seguir pidiendo confirmar lo ya confirmado.
+    assert "requieren confirmaci" not in seg["falta"]
+    assert "no cubre toda la vida" in seg["falta"]
+
+    # (c) sin confirmar Y reconciliado: manda la falta de confirmación, que es el paso
+    #     que el cliente tiene delante.
+    sesion["_wizard_pos_confirmed"] = False
+    seg = _seg(cobertura_data(cartera), "posiciones")
+    assert seg["nombre"] == "Posiciones"
+    assert "confirmaci" in seg["falta"]
+
+
 def test_segmento_fiscal_pendiente_sin_residencia(sesion, monkeypatch):
     """Seg 3 — necesita residencia declarada (`rate_declared`)."""
     cartera = _cartera_limpia()

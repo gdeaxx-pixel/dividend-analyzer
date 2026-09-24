@@ -2440,6 +2440,20 @@ _COBERTURA_TEXTOS = {
         "Las cantidades aún requieren confirmación.",
         "Puedes revisar la captura o utilizar el ingreso manual.",
     ),
+    # Segunda causa del MISMO segmento: las posiciones YA se confirmaron y aun así queda
+    # pendiente, porque algún ticker viene `reconciled`/`partial` — la cabecera es buena
+    # pero el historial del CSV no cubre toda la vida de la posición
+    # (`logic.assess_ticker_quality`). Con el texto de arriba el pop-out pedía confirmar lo
+    # que el cliente acababa de confirmar, y su título choca con el chip «✓ POSICIONES
+    # CONFIRMADAS» del propio flujo: dos señales opuestas con el mismo nombre. Se cambia
+    # también el NOMBRE en este caso, porque lo que falta no son las posiciones sino su
+    # historial (medido 2026-09-24 en el check visual de la dona).
+    "posiciones_historial": (
+        "Las cantidades que confirmaste están bien, pero el archivo no cubre toda la "
+        "vida de estas posiciones.",
+        "El costo sale de tu captura, no del historial. Exporta el movimiento del ticker "
+        "desde que abriste la posición y vuelve a subirlo.",
+    ),
     "fiscal": (
         "Falta revisar las fuentes fiscales aplicables a tu caso.",
         "Añade solo lo que corresponda: no todos los documentos aplican a todos los "
@@ -2459,6 +2473,12 @@ _COBERTURA_TEXTOS = {
 
 # Orden y nombre de los 5 segmentos — cerrado en spec U4 §4.1 («Periodo» se cae: no tiene
 # productor en el repo; su hueco lo ocupa «Excluidos»). La dona dibuja en este orden.
+# Nombre visible alternativo por variante de texto (ver `_segmento`). La clave del
+# segmento NO cambia; solo el título del pop-out y el `aria-label`.
+_COBERTURA_NOMBRE_ALT = {
+    "posiciones_historial": "Historial de posiciones",
+}
+
 COBERTURA_SEGMENTOS = (
     ("movimientos", "Movimientos"),
     ("posiciones", "Posiciones"),
@@ -2488,6 +2508,12 @@ def cobertura_data(resultados: dict) -> dict:
     2. Posiciones   — `_wizard_pos_confirmed` es `True` Y ningún ticker en `level`
                       ∉ ("ok", "unreliable"). OJO: `unreliable` no pone rojo ESTE
                       segmento (lo cubre Movimientos); `reconciled`/`partial` sí.
+                      Las DOS causas de este pendiente se leen distinto: sin confirmar
+                      va el texto de `"posiciones"`; ya confirmado y con `parcial` va la
+                      variante `"posiciones_historial"`, que además se titula «Historial
+                      de posiciones» — si no, el pop-out pide confirmar lo que el cliente
+                      acaba de confirmar y su título contradice al chip «✓ POSICIONES
+                      CONFIRMADAS» del flujo.
     3. Información fiscal — residencia declarada (`ui.estado.perfil_fiscal`) Y, si hay
                       1042-S, `build_1042s_validation` sin `portfolio_higher`/
                       `form_higher` Y, si hay income, `reconcile_income` sin
@@ -2513,8 +2539,14 @@ def cobertura_data(resultados: dict) -> dict:
     from ui import estado
     from ui.validacion import _separar_excluidos
 
-    def _segmento(clave: str, nombre: str, ok: bool) -> dict:
-        falta, como = _COBERTURA_TEXTOS[clave]
+    def _segmento(clave: str, nombre: str, ok: bool,
+                  variante: str | None = None) -> dict:
+        """`variante` elige otro texto (y otro nombre visible) para la MISMA clave cuando
+        el segmento está pendiente por una causa distinta. `clave` no cambia: es la
+        identidad del segmento para el componente y para los tests."""
+        falta, como = _COBERTURA_TEXTOS[variante or clave]
+        if variante:
+            nombre = _COBERTURA_NOMBRE_ALT[variante]
         return {"clave": clave, "nombre": nombre,
                 "estado": "ok" if ok else "pendiente",
                 "falta": falta, "como": como}
@@ -2573,6 +2605,12 @@ def cobertura_data(resultados: dict) -> dict:
 
     estados = {"movimientos": mov_ok, "posiciones": pos_ok, "fiscal": fiscal_ok,
                "valoracion": val_ok, "excluidos": excl_ok}
-    segmentos = [_segmento(c, n, estados[c]) for c, n in COBERTURA_SEGMENTOS]
+    # La variante solo aplica cuando la causa es el historial y NO la falta de
+    # confirmación: si el cliente todavía no confirmó, el texto original es el correcto.
+    variantes = {}
+    if pos_confirmadas and parcial:
+        variantes["posiciones"] = "posiciones_historial"
+    segmentos = [_segmento(c, n, estados[c], variantes.get(c))
+                 for c, n in COBERTURA_SEGMENTOS]
     return {"segmentos": segmentos,
             "verificados": sum(1 for s in segmentos if s["estado"] == "ok")}
