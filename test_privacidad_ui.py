@@ -1,5 +1,20 @@
 """Tests de UI de privacidad (F2, F4): `streamlit.testing.v1.AppTest` sobre `ui/carga.py`
 y guards de contenido sobre `PRIVACY.md`.
+
+`default_timeout=25` en cada `AppTest.from_string`: el default de AppTest son 3 s y
+`render_carga()` no siempre cabe ahí. Medido el 2026-09-23 sobre
+`test_s1_confirmar_posiciones_conserva_la_captura`: en serie y con la maquina ociosa
+falla ~1 de cada 11 corridas, pero con cuatro pytest compitiendo por CPU falla 4 de 4,
+siempre en el segundo `.run()` (el de despues del clic) y siempre con
+`RuntimeError: AppTest script run timed out after 3(s)`. No es un fallo del producto:
+es el reloj del arnes. Mismo diagnostico y mismo valor que
+`test_carga_1042s._at_con_posiciones_confirmadas`; este archivo era el unico con
+`AppTest` que no lo llevaba.
+
+Importa porque un rojo intermitente aqui no se distingue de una regresion: los
+workflows de refresco corren la suite y avisan por Telegram si queda roja (#117), y un
+rojo que aparece y desaparece solo es exactamente lo que el mecanismo anti-deriva (B1)
+tendria que poder descartar.
 """
 import os
 import sys
@@ -32,7 +47,7 @@ def _df_schwab():
 def test_f2_uploader_avisa_de_gemini(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "falsa")
     limpio = _df_schwab()
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.session_state["_wizard_df_clean"] = limpio
     at.session_state["_wizard_csv_ticker_data"] = {}
     at.session_state["_wizard_broker"] = "schwab"
@@ -49,7 +64,7 @@ def test_f2_uploader_avisa_de_gemini(monkeypatch):
 
 
 def test_f4_expander_privacidad_en_la_carga():
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.run()
     assert at.exception == []
 
@@ -66,7 +81,7 @@ def test_f4_expander_oculta_el_anexo_tecnico():
     assert "## Anexo" in texto
     assert "upload_case" in texto
 
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.run()
     assert at.exception == []
 
@@ -82,7 +97,7 @@ def test_f4_expander_sin_titulo_duplicado():
     assert texto.startswith("# Aviso de privacidad")
     assert "Actualizado:" in texto
 
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.run()
     assert at.exception == []
 
@@ -137,7 +152,7 @@ def test_s1_editar_csv_borra_el_contexto_de_captura():
     ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
     sig_a = (("captura_A.png", 100),)
 
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
     at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
     at.session_state["_wizard_broker"] = "schwab"
@@ -221,7 +236,7 @@ def test_s1_confirmar_posiciones_conserva_la_captura():
     st.session_state.pop("_vd_resultados")) no borra _wizard_ocr_positions. Sin este
     control, borrar la captura en cualquier rerun también pondría verdes los otros tres."""
     ocr_a = {"MSTY": {"shares": 999.0, "cost_basis": 12345.0}}
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
     at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
     at.session_state["_wizard_broker"] = "schwab"
@@ -279,7 +294,7 @@ def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypa
     monkeypatch.setattr(logic, "extract_positions_from_images",
                         lambda *a, **k: next(resultados_ocr))
 
-    at = AppTest.from_string(_SCRIPT)
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
     at.session_state["_wizard_df_clean"] = _df("schwab_synth_1")
     at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
     at.session_state["_wizard_broker"] = "schwab"
