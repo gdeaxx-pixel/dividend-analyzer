@@ -35,6 +35,10 @@ import pytest
 NOMBRE_BASELINE = "deriva_baseline.json"   # en la raíz del repo (junto a conftest.py)
 CARPETA_LOCAL = ".deriva"                  # estado local, gitignored
 VERSION_BASELINE = 2                       # v2 = rojos separados por entorno
+# Línea de cursores de PEP 657: canalón de pytest opcional, y a partir de ahí solo ~ ^ y
+# espacios, con al menos un cursor. `[\sE>|]*` no puede tragarse código porque el resto de
+# la línea tiene que ser cursores hasta el final.
+_ES_CURSOR = re.compile(r'^[\sE>|]*[~^][~^\s]*$')
 DIR_DATOS_PRIVADOS = "real_examples"       # symlink a datos de bróker, no versionado
 
 
@@ -58,7 +62,9 @@ def normalizar(texto: str) -> str:
     2. quita direcciones de memoria (`0x[0-9a-fA-F]+` → `<addr>`);
     3. quita rutas absolutas: de cualquier token con `/` conserva solo el basename
        (`/Users/x/repo/test_a.py` → `test_a.py`; `/home/runner/...` igual);
-    4. quita números de línea de referencias `archivo.py:123` → `archivo.py`.
+    4. quita números de línea de referencias `archivo.py:123` → `archivo.py`;
+    5. quita las líneas de cursores de PEP 657 (`~~^~~`), que Python >= 3.11 añade bajo la
+       expresión que falló y 3.9/3.10 no emiten.
     Devuelve el texto en minúsculas."""
     # 1. ANSI
     texto = re.sub(r'\x1b\[[0-9;]*m', '', texto)
@@ -72,6 +78,13 @@ def normalizar(texto: str) -> str:
     texto = re.sub(r'/[^\s:]+', _basename_token, texto)
     # 4. números de línea: archivo.py:123 → archivo.py
     texto = re.sub(r'(\S+\.py):\d+', r'\1', texto)
+    # 5. cursores de PEP 657. Medido el 2026-09-24 con dos intérpretes reales: un fallo con
+    #    traceback da huellas DISTINTAS en 3.9 y 3.11 solo por estas líneas, y un `assert`
+    #    plano da la misma. Importa porque el baseline se midió en 3.9 y CI corre 3.11: sin
+    #    esto, el primer rojo con traceback se cantaría 🔴 MOVIDO sin que nada se moviera.
+    #    Solo cae la línea cuyo contenido, quitado el canalón de pytest (`E`, `>`, `|`), son
+    #    únicamente cursores — nunca una línea con código que además lleve `^` o `~`.
+    texto = '\n'.join(l for l in texto.split('\n') if not _ES_CURSOR.match(l))
     return texto.lower()
 
 
