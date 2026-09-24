@@ -743,3 +743,55 @@ class TestQ5IdxDesde:
             "`series()` necesita `idxDesde` también en este modo")
         assert (r.daily["total_value"] == r.daily["portfolio_value"]).all(), (
             f"modo={modo}: total_value dejó de ser solo portfolio_value con DRIP")
+
+    @pytest.mark.parametrize("tk", ["TSLY", "NVDY", "CONY", "MSTY"])
+    def test_q5_idxdesde_reproduce_una_compra_nueva(self, datos, tk):
+        """El oráculo del dato, no de su presencia. Los guards de arriba comprueban que
+        `idxDesde` **está** y que las claves cuadran; ninguno comprobaba que el número sea
+        el correcto. Sin esto, el adapter puede correr el motor con la política fiscal
+        equivocada o desde la fecha equivocada y toda la suite sigue verde — medido:
+        los mutantes M5 (`roc_pct_by_year=None`) y M6 (`start_date=history.index.min()`)
+        SOBREVIVÍAN, porque el test del renderer construye `idxDesde` a mano y nunca toca
+        el adapter.
+
+        Se re-corre el motor aquí, no se transcribe la fórmula del adapter: el esperado es
+        una compra nueva en la fecha real de t0, con la cuenta por cobrar en cero.
+        """
+        from ui.adapters import _fecha_por_mes, _mensualizar_desde
+
+        origen, last = datos["origen"], str(datos["last"])
+        entradas = datos["idxDesde"].get(tk, {})
+        assert entradas, f"{tk} no tiene ninguna entrada en idxDesde"
+        t0 = max(entradas, key=int)      # el inicio más movido = la mayor divergencia
+
+        roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+        pol = _politica_fiscal(tk, "roc", roc19a, roc_ici)
+        assert pol.roc_pct_by_year, (
+            f"{tk} dejó de tener avisos 19(a): sin escudo ROC no hay receivable que "
+            "arrastrar y este test pierde su control positivo")
+
+        with frozen_price_cache():
+            history = price_cache.load_history(tk).history.sort_index()
+        fecha_t0 = _fecha_por_mes(history["Close"], origen)[t0]
+        r_nueva = backtest.run_backtest(tk, start_date=fecha_t0,
+                                        initial_capital=_INDICE_CAPITAL, drip=True,
+                                        nra_rate=pol.rate, history=history,
+                                        roc_pct_by_year=pol.roc_pct_by_year)
+        esperado = _mensualizar_desde(r_nueva.daily["total_value"], origen)
+
+        assert set(entradas[t0]) == set(esperado), (
+            f"{tk} t0={t0}: la serie precalculada no cubre los mismos meses que una "
+            "compra nueva corrida desde t0 — ¿arrancó en otra fecha?")
+        for m in esperado:
+            assert entradas[t0][m] == pytest.approx(esperado[m], abs=1e-4), (
+                f"{tk} t0={t0} m={m}: idxDesde dice {entradas[t0][m]}, una compra nueva "
+                f"en {fecha_t0.date()} da {esperado[m]}")
+
+        # Control de que la fixture muerde: si la corrida limpia coincidiera con la vieja
+        # rebasada, este ticker no tendría receivable pre-t0 y el test no vigilaría nada.
+        viejo = datos["idx"]["roc"][tk]
+        ret_limpio = entradas[t0][last] / entradas[t0][t0] - 1
+        ret_viejo = viejo[last] / viejo[t0] - 1
+        assert ret_limpio != pytest.approx(ret_viejo, abs=1e-6), (
+            f"{tk} t0={t0}: la corrida limpia da lo mismo que la fórmula vieja "
+            "({ret_limpio:.6f}) — sin receivable pre-t0 este caso no prueba nada")
