@@ -1690,11 +1690,18 @@ def test_dividend_events_excludes_reinvest_shares_and_tax():
 
 
 # ── Invariante cruzado de la familia `_dividend_*` (Regla 3b del contrato ROC/NRA) ──────────
-# Tres fuentes genuinamente independientes del MISMO número (el bruto): dos recorren filas
-# del CSV (`_dividend_events`, `_csv_dividends_in_window`/`_by_year`) y la tercera construye
-# el objeto fiscal (`build_dividend_tax_totals`). Antes del fix, IB MSTY daba 12,877.59 vs
-# 7,224.59 — con la suite en verde, porque ningún test cruzaba las fuentes con la convención
-# IB. Se prueba por ticker sobre el caso real ib_1 Y sobre el fixture sintético Schwab.
+# Cruza las tres hermanas que recorren filas del CSV (`_dividend_events`,
+# `_csv_dividends_in_window`, `_csv_dividends_by_year`) contra el objeto fiscal
+# (`build_dividend_tax_totals`). Antes del fix, IB MSTY daba 12,877.59 vs 7,224.59 — con la
+# suite en verde, porque ningún test cruzaba las fuentes con la convención IB.
+#
+# NO son fuentes independientes (auditoría M4, H3): `gross` ES
+# `round(_csv_dividends_in_window(...), 2)`, y las tres hermanas excluyen las filas de
+# impuesto con el MISMO predicado (`_is_tax_row_action`). El cruce caza que UNA se despegue;
+# un fallo del predicado las mueve a las cuatro juntas y cuadra por construcción. Ese caso lo
+# muerde el ANCLA externa —el literal $462.00 de Schwab y los de `ib_synth_1`, derivados a
+# mano de las filas del CSV—, no el cruce. Medido con el predicado ciego a la retención de
+# IB: la variante `ib_synth_1` cae y la de Schwab no (no tiene filas IB).
 
 def _assert_familia_cuadra_con_bruto(df_sub, etiqueta):
     esperado = logic.build_dividend_tax_totals(df_sub)['gross']
@@ -1730,6 +1737,40 @@ def test_familia_dividend_declara_bruto_schwab():
     tt = logic.build_dividend_tax_totals(sub)
     assert tt["gross"] == pytest.approx(462.00, abs=0.01)
     _assert_familia_cuadra_con_bruto(sub, "Schwab MSTY")
+
+
+_IB_SYNTH_1 = os.path.join(os.path.dirname(__file__), "fixtures", "ib_synth_1",
+                           "synthetic_transactions.csv")
+
+
+def _ib_synth_1_normalizado():
+    with open(_IB_SYNTH_1, "rb") as f:
+        df, broker = logic.load_and_detect_csv(FakeFile(f.read(), "ib_synth_1.csv"))
+    assert broker == "ibkr"
+    return logic.normalize_csv(df)
+
+
+@pytest.mark.parametrize("ticker,bruto", [
+    ("NVDY", 61.20),   # Dividend $60.00 + Payment in Lieu $1.20
+    ("CONY", 60.00),
+    ("SMH", 2.00),
+])
+def test_familia_dividend_declara_bruto_ib_sintetico(ticker, bruto):
+    """El ancla que le falta a la variante IB real, sobre un fixture que corre sin
+    `real_examples/`: el bruto por ticker, derivado A MANO de las filas del CSV.
+
+    NVDY incluye el pago sustitutivo de $1.20: `parse_ibkr_csv` mapea 'Payment in Lieu' a
+    'Dividend' y el bruto fiscal lo cuenta. `income_expected.received` del fixture lo EXCLUYE
+    a propósito —es otra definición de «bruto», ver la nota en `fixtures/verify_fixtures.py`—,
+    así que no sirve de ancla aquí. Si algún día se decide que el pago sustitutivo no es
+    dividendo, este literal cambia con esa decisión."""
+    dfc = _ib_synth_1_normalizado()
+    sub = dfc[dfc["Ticker"] == ticker]
+    tt = logic.build_dividend_tax_totals(sub)
+    assert tt["gross"] == pytest.approx(bruto, abs=0.01), (
+        f"IB sintético {ticker}: bruto {tt['gross']} ≠ {bruto} de las filas del CSV")
+    assert tt["netted"] is True, "el fixture debe ejercer la convención IB (retención plegada)"
+    _assert_familia_cuadra_con_bruto(sub, f"IB sintético {ticker}")
 
 
 def test_withheld_tax_total_reads_nra_rows():
@@ -3230,6 +3271,27 @@ def test_tax_summary_no_toca_capital_ni_roc_dollars(monkeypatch):
     # ...pero sin país NO corre la aritmética fiscal: nada de devolución.
     assert ts_sin["refund_estimated"] == 0.0
     assert ts_sin["method"] is None
+
+
+@pytest.mark.parametrize("ticker,capital", [
+    ("NVDY", 770.00),    # compra 60 × $15.00 = $900.00, venta 10 × $13.00 = $130.00
+    ("CONY", 800.00),    # compra 80 × $10.00, sin venta
+    ("SMH", 1000.00),    # compra 4 × $250.00, sin venta
+])
+def test_capital_aportado_resta_lo_que_devuelve_una_venta(monkeypatch, ticker, capital):
+    """Regla 1 con ventas: el capital aportado es flujo de caja neto del bolsillo, así que
+    una venta RESTA su importe. Anclado a las filas del CSV (`Gross Amount`; las comisiones
+    de $1 no entran), no al motor.
+
+    Auditoría M4 (H1): invertir el signo de la venta (`pocket_investment += abs(amount)`)
+    sobrevivía a la suite completa aunque 18 tests ejecutaban esa línea — los que la
+    recorren comparan vistas que derivan del MISMO `pocket_investment` y cuadran entre sí
+    con el capital mal. Medido en NVDY: $770 → $1,030, ROI 35.48% → 1.28%."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(_ib_synth_1_normalizado(), version="TEST_CAPITAL_TRAS_VENTA")
+    assert res[ticker]["pocket_investment"] == pytest.approx(capital, abs=0.01), (
+        f"{ticker}: capital aportado {res[ticker]['pocket_investment']} ≠ {capital} "
+        f"(compras − importe de las ventas, leído de las filas del CSV)")
 
 
 def test_build_tax_summaries_respeta_tasa_de_tratado(monkeypatch):

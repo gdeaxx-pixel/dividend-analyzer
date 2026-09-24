@@ -24,7 +24,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import logic  # noqa: E402
-from ui.adapters import cashflow_data, hoja_data, impuestos_data  # noqa: E402
+from ui.adapters import (  # noqa: E402
+    _bruto_independiente_del_csv, cashflow_data, hoja_data, impuestos_data)
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -70,8 +71,18 @@ def test_peldano1_bruto_coincide_con_cashflow_y_hoja(monkeypatch, fixture):
         tk = fondo["ticker"]
         cf = cashflow_data(res[tk], tk)
         hj = hoja_data(res[tk], tk, dfc)
+        # Ancla EXTERNA (auditoría M4, H2). Las tres vistas leen el mismo
+        # `dividends_gross_total`: cuadrar entre ellas no ve un error del objeto compartido
+        # —con el bug histórico de Schwab reintroducido (bruto = neto + retenido) este test
+        # seguía verde—. `_bruto_independiente_del_csv` relee las filas sin pasar por el
+        # predicado ni por la convención que se auditan.
+        independiente = _bruto_independiente_del_csv(dfc[dfc["Ticker"] == tk])
+        assert fondo["bruto"] == pytest.approx(independiente, abs=0.01), (
+            f"{tk}: peldaño 1 ({fondo['bruto']}) ≠ CSV releído independiente ({independiente})")
         assert fondo["bruto"] == pytest.approx(cf["BRUTO"], abs=0.01), (
             f"{tk}: peldaño 1 ({fondo['bruto']}) ≠ cashflow BRUTO ({cf['BRUTO']})")
+        # Hoy por construcción: `hoja_data` envuelve `cashflow_data`. Se queda por si alguien
+        # la reescribe con su propia cuenta, pero NO cuenta como fuente independiente.
         assert fondo["bruto"] == pytest.approx(hj["BRUTO"], abs=0.01), (
             f"{tk}: peldaño 1 ({fondo['bruto']}) ≠ hoja BRUTO ({hj['BRUTO']})")
 
@@ -153,6 +164,47 @@ def test_bucket_gris_no_negativo_con_reembolso():
     assert R["monto"] == pytest.approx(105.0, abs=0.02)      # al cobro, no los 30 neteados
     assert R["ya_devuelto"]["monto"] == pytest.approx(75.0, abs=0.02)
     assert R["estado"] == "ok"
+
+
+def test_impuesto_de_cashflow_es_lo_retenido_al_cobro_menos_lo_devuelto(monkeypatch):
+    """Regla 3b con momentos distintos (auditoría M4, H4). La retención aparece en Cash flow
+    y Hoja Excel (`IMPUESTO`, NETEADO tras el reembolso) y en Impuestos (`retenido` AL COBRO,
+    y `ya_devuelto` aparte). Ningún test las cruzaba con un reembolso presente: los fixtures
+    de los otros cruces no traen ninguno.
+
+    Cada cifra se ancla a las filas del CSV. La relación sola
+    (`IMPUESTO == retenido − ya_devuelto`) sale casi por construcción —`impuestos_data` ya
+    reconcilia `withheld_at_payment` contra el mismo neteado que lee `cashflow_data`—, así
+    que lo que muerde son los anclajes.
+
+    Filas: dos cobros de $1,000 con −$300 al cobro cada uno, y +$240 devueltos en feb-2026 al
+    reclasificar. Al cobro $600, devuelto $240, neteado $360."""
+    df = pd.DataFrame([
+        {"Date": pd.Timestamp(d), "Action": a, "Ticker": "MSTY", "Quantity": q, "Amount": amt}
+        for d, a, q, amt in [
+            ("2025-01-02", "Buy", 100, -2000.0),
+            ("2025-03-03", "Cash Dividend", 0, 1000.0),
+            ("2025-03-03", "NRA Tax Adj", 0, -300.0),
+            ("2025-06-02", "Cash Dividend", 0, 1000.0),
+            ("2025-06-02", "NRA Tax Adj", 0, -300.0),
+            ("2026-02-16", "NRA Tax Adj", 0, 240.0),    # reembolso de la reclasificación
+        ]])
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    # Sin esto, el 19(a) y el cierre fiscal REALES de MSTY entrarían al fixture sintético.
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    res = logic.analyze_portfolio(df, version="IMP_IMPUESTO_XVIEW_REEMBOLSO")
+
+    datos = impuestos_data(res, logic.build_fiscal_profile("México"), [])
+    f = datos["fondos"][0]
+    cf = cashflow_data(res["MSTY"], "MSTY")
+
+    assert f["retenido"] == pytest.approx(600.0, abs=0.01), "Impuestos: retenido AL COBRO"
+    assert f["ya_devuelto"] == pytest.approx(240.0, abs=0.01), "Impuestos: lo ya devuelto"
+    assert cf["IMPUESTO"] == pytest.approx(360.0, abs=0.01), "Cash flow: NETEADO"
+    assert cf["IMPUESTO"] == pytest.approx(f["retenido"] - f["ya_devuelto"], abs=0.02)
+    # Hoy por construcción (`hoja_data` envuelve `cashflow_data`), igual que en el peldaño 1.
+    assert hoja_data(res["MSTY"], "MSTY", df)["IMPUESTO"] == pytest.approx(cf["IMPUESTO"], abs=0.01)
 
 
 def test_ib_split_reversal_no_reconcilia_desglose_parcial():
