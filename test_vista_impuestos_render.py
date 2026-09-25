@@ -1153,3 +1153,28 @@ def test_titular_y_tarjeta_de_w8ben_no_se_contradicen(gap):
     assert not (muestra_resto and absoluto), (
         f"gap={gap}: la tarjeta muestra {monto_tarjeta} y el titular dice {big!r} — "
         "las dos vistas del mismo número se contradicen")
+
+
+@_node
+@pytest.mark.parametrize("roc", [0.0, 0.004, 0.005, 0.01, 0.02, 41.29])
+def test_titular_y_tarjeta_del_roc_no_se_contradicen(roc):
+    """La hermana del test de arriba, sobre la tarjeta ÁMBAR («Vuelve solo»). Auditoría M4,
+    ronda 2 (R2-H4): con un ROC recuperable de EXACTAMENTE $0.01 el titular decía «justo lo
+    que te tocaba» mientras la tarjeta mostraba $0.01 — el mismo borde del centavo que el
+    #115 cerró para el W-8BEN, en la rama de al lado (`roc > 0.01`).
+
+    Tampoco conoce el umbral: exige que las dos superficies cuenten lo mismo en los dos
+    sentidos. Si la tarjeta muestra dinero que vuelve, el titular no puede decir que te
+    retuvieron «justo» lo tuyo; si la tarjeta muestra $0.00, el titular no puede anunciar un
+    exceso que vuelve."""
+    html = _corte(_D_gap(0.0, roc))
+    big, _ = _titular_y_sub(html)
+    tarjeta = re.search(r'imp-bucket ambar".*?imp-bucket-money">([^<]+)<', html, re.S)
+    assert tarjeta, "no encontré la tarjeta ámbar («Vuelve solo») en la barra 3"
+    monto_tarjeta = tarjeta.group(1)
+    if monto_tarjeta != "$0.00":
+        assert "justo lo que te tocaba" not in big, (
+            f"roc={roc}: la tarjeta muestra {monto_tarjeta} que vuelven y el titular dice {big!r}")
+    else:
+        assert "vuelve solo" not in big, (
+            f"roc={roc}: la tarjeta muestra $0.00 y el titular dice {big!r}")
