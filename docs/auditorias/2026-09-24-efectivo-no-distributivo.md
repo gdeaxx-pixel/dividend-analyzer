@@ -120,9 +120,18 @@ SCHB       6.31     3.55     2.76   True
 XLK       11.99     8.47     3.52   True
 ```
 
-**VEREDICTO** · ACEPTABLE CON NOTA, fuera de alcance. El guard bloquea con razón (los datos están
-incompletos de verdad), pero el usuario solo lee «no cuadran»: merece un mensaje que nombre lo que
-le falta al export. Requiere su propio PR.
+**VEREDICTO** · el bloqueo se mantiene (los datos están incompletos de verdad); **el mensaje se
+corrigió en el PR siguiente**. Medición que lo sostiene: el importe de las compras DRIP sin su
+fila fuente el mismo día coincide **exactamente** con el descuadre en **8 de las 9** posiciones
+(SCHB $2.76, XLK $3.52 y $22.84, SCHB $30.20, SVOL $78.31, QYLD $446.47, SCHB $3.26, XLK $3.97).
+La novena, TSLY del caso 1, no coincide —$260.16 de huérfanas contra $232.77 de descuadre— porque
+en los días sí emparejados la compra puede diferir de la distribución; por eso el aviso publica
+las dos cifras por separado en vez de afirmar que una explica la otra.
+
+El bolsillo negativo tiene su propia causa, también medida: `compras = $0.00` contra
+`ventas = $2,439.63` en QYLD y `$0.00 / $100.46` en SCHB — el archivo empieza después de las
+compras. Ojo: `history_incomplete` **no** lo captura (`False` en SVOL y QYLD), así que el aviso se
+apoya en `POCKET < 0`, no en ese flag.
 
 ---
 

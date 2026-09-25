@@ -5696,6 +5696,42 @@ def withheld_tax_total(history_df) -> float:
     return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
 
 
+def drip_huerfanas(history_df) -> dict:
+    """Compras del DRIP (`Reinvest Shares`) que no tienen su fila fuente (`Reinvest
+    Dividend`) el mismo día, con su importe. Es lo que hace que el bruto declarado por el
+    CSV no cubra lo reinvertido — el descuadre que `verificar_identidades` bloquea.
+
+    **No es el mismo criterio que `drip_sin_fuente`**, y por eso no se deriva de él:
+    aquel compara los CONTEOS globales de los dos tipos de fila (barato, sirve de bandera);
+    éste empareja POR DÍA, que es lo único que permite decir cuánto dinero queda sin
+    respaldo. Los dos coinciden en 8 de las 9 posiciones reales medidas el 2026-09-24, y
+    discrepan en TSLY del caso 1 (62 compras contra 50 fuentes = 12 por conteo, pero 14
+    huérfanas por día: hay días con dos compras y una sola distribución).
+
+    El importe **no tiene por qué igualar al descuadre al centavo**: en los días que sí
+    están emparejados la compra puede diferir de la distribución (TSLY: $260.16 de
+    huérfanas contra un descuadre de $232.77). Por eso el mensaje que lo usa declara las
+    dos cifras por separado en vez de afirmar que una explica la otra.
+
+    Devuelve `{'compras': n, 'fuentes': m, 'huerfanas': k, 'importe': x}`.
+    """
+    vacio = {'compras': 0, 'fuentes': 0, 'huerfanas': 0, 'importe': 0.0}
+    if history_df is None or len(history_df) == 0 or not {'Action', 'Date'} <= set(history_df.columns):
+        return vacio
+    accion = history_df['Action'].astype(str).str.lower()
+    fechas = pd.to_datetime(history_df['Date'], errors='coerce').dt.normalize()
+    es_drip = accion.str.contains('reinvest|reinversión|drip', na=False)
+    es_compra = es_drip & accion.str.contains('share|acciones', na=False)
+    es_fuente = (es_drip & accion.str.contains('dividend|dividendo', na=False)
+                 & ~accion.map(_is_tax_row_action))
+    dias_fuente = set(fechas[es_fuente].dropna())
+    sin_respaldo = es_compra & ~fechas.isin(dias_fuente)
+    importe = sum(abs(_clean_money(v)) for v in history_df.loc[sin_respaldo.values, 'Amount']
+                  if _clean_money(v) == _clean_money(v))
+    return {'compras': int(es_compra.sum()), 'fuentes': int(es_fuente.sum()),
+            'huerfanas': int(sin_respaldo.sum()), 'importe': round(float(importe), 2)}
+
+
 def _withheld_on_reinvested(history_df) -> float:
     """Retención NRA de las distribuciones REINVERTIDAS (≥0): la de las filas de impuesto
     fechadas el mismo día que una fila fuente 'Reinvest Dividend' del mismo historial.

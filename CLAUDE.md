@@ -96,7 +96,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1118 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
+Línea base: **1124 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la rama
+`fix/mensaje-de-bloqueo-dice-que-le-falta-al-csv`, base `main` = `af6bf1f`, tras hacer que el
+aviso del guard diga QUÉ le falta al export en vez de «las cifras no cuadran entre sí»:
+`logic.drip_huerfanas` cuenta las compras del DRIP sin su fila fuente el mismo día y
+`ui.adapters.diagnosticar_bloqueo` lo traduce con cifras del propio CSV. Medido: ese importe
+coincide con el descuadre en 8 de las 9 posiciones bloqueadas (TSLY del caso 1 es la excepción,
+$260.16 contra $232.77 — por eso el aviso publica las dos cifras por separado). Cuando el que
+falla es el guard independiente, el aviso dice que el fallo es NUESTRO y no manda al cliente a
+pedirle nada a su bróker. 4 sabotajes M4 verificados. +6 tests.
+
+> **Un rojo de la primera corrida fue flake, no regresión**:
+> `test_capital_aportado_resta_lo_que_devuelve_una_venta[NVDY-770.0]` falló con la app de
+> Streamlit corriendo en paralelo y pasó aislado y en la segunda corrida completa. Se anota en vez
+> de callarlo: si reaparece sin un servidor compitiendo, es otra cosa.
+
+Antes: **1118 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
 rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos` **ya fusionada** con `main` =
 `5714469` — en la rama sola, antes de traerse el #141 y el #142, daban 1107; el número que vale
 es el del árbol que existirá tras el merge. Tras
