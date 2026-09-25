@@ -459,3 +459,77 @@ def test_el_titular_nombra_lo_que_no_se_dibuja(monkeypatch):
     fallos = verificar_identidades(datos, s)
     assert diagnosticar_bloqueo(datos, s, fallos)["titular"].startswith("Este recorrido")
     assert diagnosticar_bloqueo(datos, s, fallos, sujeto="Esta hoja")["titular"].startswith("Esta hoja")
+
+
+# ── Auditoría M4, ronda 2: huecos del #143 y del #145 ───────────────────────────────────────
+
+def test_el_efectivo_del_split_sigue_en_el_cronograma_del_irr(monkeypatch):
+    """Sacar el Cash In Lieu del balde del dividendo no puede sacarlo del IRR: es dinero que
+    entró a la cuenta en una fecha, y el IRR es justo la cifra que depende de CUÁNDO.
+
+    Mutante O-4 (quitar el `irr_flows_dated.append` de la rama `is_misc_cash`): sobrevivía a la
+    suite completa. `test_i5_…` mira los acumuladores y `gross_value`, no el cronograma.
+    Medido con este CSV: el IRR anual pasaba de 5.66% a 4.52%."""
+    s = _stats_lieu(monkeypatch, version="TEST_ADAPTERS_LIEU_IRR")
+    flujos = [(str(d)[:10], round(a, 2)) for d, a in s["cash_flows_dated"]]
+    assert ("2025-06-06", 18.32) in flujos, flujos
+
+
+def test_las_huerfanas_no_explican_un_fallo_que_no_es_el_suyo(monkeypatch):
+    """Las compras del DRIP sin su distribución explican UN fallo concreto —«neto =
+    reinvertido + efectivo»—, no cualquiera. Si lo que no cuadra es otra identidad, culpar al
+    export por las huérfanas es atribuir la causa por coincidencia: el CSV las trae, pero no
+    son lo que rompió esta cifra.
+
+    Mutante H-4 (quitar `and "reinvertido + efectivo" in texto`): sobrevivía a la suite
+    completa, porque el único fixture con huérfanas siempre rompe también esa identidad."""
+    from ui.adapters import diagnosticar_bloqueo
+    s = _stats_drip_sin_fuente(monkeypatch, version="TEST_ADAPTERS_HUERF_OTRO")
+    datos = cashflow_data(s, "MSTY")
+    dx = diagnosticar_bloqueo(datos, s, ["capital actual = valor hoy + efectivo + otros: 1.00 ≠ 2.00"])
+    assert dx["nuestro"] is True
+    assert "le faltan filas" not in dx["titular"]
+    assert "Reinvest Shares" not in " ".join(dx["cuerpo"])
+
+
+def test_si_falla_el_csv_releido_manda_el_motor_aunque_haya_huerfanas(monkeypatch):
+    """Versión SINTÉTICA de `test_el_aviso_no_culpa_al_export_cuando_la_culpa_es_del_motor`,
+    que depende de `real_examples/` y en la nube se salta. Cuando falla el guard independiente
+    (el bruto contra el CSV releído), el descuadre es nuestro AUNQUE el CSV también traiga
+    compras huérfanas y falle la identidad del neto: la relectura del CSV manda.
+
+    Mutante H-3 (`if "CSV releído" in texto:` → `if False:`): en la nube no lo medía nada."""
+    from ui.adapters import diagnosticar_bloqueo
+    s = _stats_drip_sin_fuente(monkeypatch, version="TEST_ADAPTERS_CSV_RELEIDO")
+    datos = cashflow_data(s, "MSTY")
+    fallos = ["neto = reinvertido + efectivo: 100.00 ≠ 170.00",
+              "BRUTO vs CSV releído independiente: 100.00 ≠ 170.00"]
+    dx = diagnosticar_bloqueo(datos, s, fallos)
+    assert dx["nuestro"] is True
+    assert "fallo nuestro" in dx["titular"]
+
+
+_CSV_HUERFANA_CON_EFECTIVO = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/11/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","100.00"\n'
+    b'"04/11/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","5","20.00","","-100.00"\n'
+    # El mismo día hay un dividendo en EFECTIVO, pero ninguna fila que pague esta compra.
+    b'"05/09/2025","Cash Dividend","MSTY","YIELDMAX MSTY","","","","25.00"\n'
+    b'"05/09/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+)
+
+
+def test_un_dividendo_en_efectivo_no_respalda_una_compra_del_drip():
+    """La fila que paga una compra del DRIP es la «Reinvest Dividend», no cualquier
+    dividendo del mismo día: un «Cash Dividend» entró a la cuenta como efectivo y no compró
+    nada. Si cuenta como fuente, el aviso dice «2 distribuciones» cuando el archivo trae una
+    sola «Reinvest Dividend», y la compra del 05/09 desaparece de las huérfanas.
+
+    Mutante H-6 (quitar `es_drip &` del predicado de la fuente): sobrevivía a la suite
+    completa. Los fixtures del #145 no mezclan dividendos en efectivo con el DRIP."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_HUERFANA_CON_EFECTIVO, "huercash.csv"))
+    dfc = logic.normalize_csv(df)
+    h = logic.drip_huerfanas(dfc[dfc["Ticker"] == "MSTY"])
+    assert h == {"compras": 2, "fuentes": 1, "huerfanas": 1, "importe": 40.00}, h

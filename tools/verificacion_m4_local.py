@@ -4,19 +4,22 @@ Corre en la máquina donde está montado `real_examples/` (datos privados de br�
 cosas y al final imprime un bloque para pegar de vuelta en la conversación:
 
   1. Mide la línea base de la suite completa, la que `CLAUDE.md` pide volver a medir en local.
-  2. Aplica, uno a la vez, los dos mutantes que en la nube sobrevivieron o no se pudieron
-     medir: G1-d (el predicado de filas de impuesto, ciego a la retención de IB) y G5-b (una
-     venta SUMA al capital aportado). Para cada uno comprueba que sus tests sobre datos REALES
-     estaban verdes antes, corre esos tests y la suite completa, y clasifica cada fallo en
+  2. Aplica, uno a la vez, los mutantes de `MUTANTES` que en la nube sobrevivieron o no se
+     pudieron medir. Ronda 1: G1-d (el predicado de filas de impuesto, ciego a la retención
+     de IB) y G5-b (una venta SUMA al capital aportado). Ronda 2: H-3 (el aviso de bloqueo
+     culpa al export de un fallo nuestro) y CG-1/CG-4/CG-6 (antigüedad y ROC fechado de las
+     ganancias de capital). Para cada uno comprueba que sus tests sobre datos REALES estaban
+     verdes antes, corre esos tests y la suite completa, y clasifica cada fallo en
      «aserción» o «excepción» leyendo el junitxml.
-  3. Restaura `logic.py` byte a byte (compara el hash) pase lo que pase.
+  3. Restaura cada archivo mutado byte a byte (compara el hash) pase lo que pase.
 
 Uso:
     ./.venv/bin/python tools/verificacion_m4_local.py
 
-Exige `logic.py` sin cambios en git, así que si lo interrumpes a la fuerza a mitad de un
-mutante, `git checkout -- logic.py` lo deja como estaba. Tarda unas tres corridas de la suite.
-Contexto: docs/auditorias/2026-09-24-m4-298ae66.md.
+Exige `logic.py` y `ui/adapters.py` sin cambios en git, así que si lo interrumpes a la fuerza
+a mitad de un mutante, `git checkout -- logic.py ui/adapters.py` los deja como estaban. Tarda
+una corrida de la suite por mutante, más la línea base.
+Contexto: docs/auditorias/2026-09-24-m4-298ae66.md y docs/auditorias/2026-09-25-m4-ronda2-e53bd97.md.
 """
 
 import argparse
@@ -30,7 +33,9 @@ import xml.etree.ElementTree as ET
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
-LOGIC = os.path.join(REPO, "logic.py")
+def _ruta(m):
+    """Archivo que muta cada entrada: `logic.py` salvo que declare otro en `archivo`."""
+    return os.path.join(REPO, m.get("archivo", "logic.py"))
 
 _VENTA = ("                pocket_investment -= abs(amount)\n"
           "                shares_owned -= _adj_qty\n")
@@ -56,6 +61,46 @@ MUTANTES = [
         # H1: el único cruce que podía cazarlo con datos reales se saltaba en la nube.
         "objetivo": ["test_ganancias_capital.py::"
                      "test_cruce_contra_analyze_portfolio_sobre_los_casos_reales"],
+    },
+    # ── Ronda 2 (docs/auditorias/2026-09-25-m4-ronda2-e53bd97.md) ──────────────────────────
+    {
+        "id": "H-3",
+        "archivo": "ui/adapters.py",
+        "que": "un fallo del guard independiente (CSV releído) se atribuye al export",
+        "viejo": '    if "CSV releído" in texto:\n',
+        "nuevo": "    if False:\n",
+        # El único test que lo cubría con el predicado saboteado sobre el CSV REAL de IB. En
+        # la nube se salta; la ronda 2 añadió una versión sintética que sí corre allí.
+        "objetivo": ["test_adapters.py::"
+                     "test_el_aviso_no_culpa_al_export_cuando_la_culpa_es_del_motor"],
+    },
+    {
+        "id": "CG-1",
+        "que": "la fila de split del CSV no reescala la antigüedad de las acciones",
+        "viejo": ("            if shares > 0:\n"
+                  "                dias_wsum *= qty / shares\n"
+                  "            shares = qty\n"),
+        "nuevo": "            shares = qty\n",
+        # Sobrevivía a toda la suite en la nube. ¿La ve el cruce sobre los demos reales?
+        "objetivo": ["test_ganancias_capital.py::"
+                     "test_cruce_contra_analyze_portfolio_sobre_los_casos_reales"],
+    },
+    {
+        "id": "CG-4",
+        "que": "la venta no se lleva su parte de la antigüedad ponderada",
+        "viejo": ("            basis_roc -= base_roc_vendida\n"
+                  "            dias_wsum -= dias_wsum * prop\n"),
+        "nuevo": "            basis_roc -= base_roc_vendida\n",
+        "objetivo": ["test_ganancias_capital.py::"
+                     "test_cruce_contra_analyze_portfolio_sobre_los_casos_reales"],
+    },
+    {
+        "id": "CG-6",
+        "que": "el ROC del mismo día que la venta no le toca a lo vendido",
+        "viejo": "_roc_pend[_roc_i][0] <= dia_limite",
+        "nuevo": "_roc_pend[_roc_i][0] < dia_limite",
+        "objetivo": ["test_ganancias_capital.py::"
+                     "test_el_roc_aplicado_cuadra_con_el_acumulado_del_motor"],
     },
 ]
 
@@ -134,11 +179,14 @@ def main():
     if not montado and not opts.sin_real_examples:
         sys.exit("real_examples/ no está montado: este script existe justo para lo que sin esos "
                  "datos no se puede medir. Móntalo y vuelve a correrlo.")
-    if git("status", "--porcelain", "--", "logic.py"):
-        sys.exit("logic.py tiene cambios sin commitear: no lo muto encima de trabajo tuyo.")
+    archivos = sorted({m.get("archivo", "logic.py") for m in MUTANTES})
+    if git("status", "--porcelain", "--", *archivos):
+        sys.exit(f"{', '.join(archivos)}: hay cambios sin commitear y no muto encima de "
+                 "trabajo tuyo.")
 
-    print("Durante unos 12 minutos logic.py va a estar MUTADO a ratos: ninguna otra sesión "
-          "debe correr tests ni editar en esta carpeta mientras tanto.", flush=True)
+    print(f"Durante unas {len(MUTANTES) + 1} corridas de la suite {', '.join(archivos)} van a "
+          "estar MUTADOS a ratos: ninguna otra sesión debe correr tests ni editar en esta "
+          "carpeta mientras tanto.", flush=True)
     inicial = estado_arbol()
     informe = [
         f"HEAD: {git('rev-parse', 'HEAD')} ({git('rev-parse', '--abbrev-ref', 'HEAD')})",
@@ -157,22 +205,23 @@ def main():
         print(f"Mutante {m['id']}: {m['que']}…", flush=True)
         informe.append(f"\n{m['id']} — {m['que']}")
         # En binario: la restauración tiene que ser byte a byte, sin normalizar saltos de línea.
-        with open(LOGIC, "rb") as f:
+        ruta = _ruta(m)
+        with open(ruta, "rb") as f:
             original = f.read()
         firma = hashlib.sha256(original).hexdigest()
         texto = original.decode("utf-8")
         n = texto.count(m["viejo"])
         if n != 1:
             informe.append(f"   NO APLICA: el trozo a mutar aparece {n} veces "
-                           "(¿cambió logic.py desde la auditoría?)")
+                           "(¿cambió el archivo desde la auditoría?)")
             continue
         antes = por_test(m["objetivo"])
         informe.append("   antes del mutante: " + ", ".join(
             f"{nodo.split('::')[-1]}={estado.split(' |')[0]}" for nodo, estado in antes.items()))
         try:
-            with open(LOGIC, "wb") as f:
+            with open(ruta, "wb") as f:
                 f.write(texto.replace(m["viejo"], m["nuevo"]).encode("utf-8"))
-            if sh([PY, "-m", "py_compile", LOGIC]).returncode != 0:
+            if sh([PY, "-m", "py_compile", ruta]).returncode != 0:
                 informe.append("   el mutante NO compila: no mide nada")
                 continue
             for nodo, estado in por_test(m["objetivo"]).items():
@@ -182,15 +231,17 @@ def main():
             informe.append(f"   suite completa: {linea}")
             informe.append(f"   rojos nuevos ({len(nuevos)}): {nuevos}")
         finally:
-            with open(LOGIC, "wb") as f:
+            with open(ruta, "wb") as f:
                 f.write(original)
-            with open(LOGIC, "rb") as f:
+            with open(ruta, "rb") as f:
                 restaurado = hashlib.sha256(f.read())
             if restaurado.hexdigest() != firma:
-                sys.exit("¡logic.py NO quedó como estaba! Corre: git checkout -- logic.py")
+                rel = os.path.relpath(ruta, REPO)
+                sys.exit(f"¡{rel} NO quedó como estaba! Corre: git checkout -- {rel}")
 
     exigir_arbol_intacto(inicial, "durante el último mutante")
-    informe.append(f"\nlogic.py restaurado: {'sí' if not git('status', '--porcelain', '--', 'logic.py') else 'NO'}")
+    informe.append(f"\n{', '.join(archivos)} restaurados: "
+                   f"{'sí' if not git('status', '--porcelain', '--', *archivos) else 'NO'}")
     print("\n===== VERIFICACIÓN LOCAL M4 — pega esto en la conversación =====")
     print("\n".join(informe))
     print("=================================================================")
