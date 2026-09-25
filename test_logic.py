@@ -1040,6 +1040,51 @@ def test_net_transfer_pairs_keeps_unpaired_journal_out():
     assert (out["Action"] == "Journaled Shares").any()
 
 
+def test_net_transfer_pairs_no_empareja_una_salida_con_una_entrada_de_otro_dia():
+    """M4 ronda 3 (TP-1): el par de migración es del MISMO día. Una salida real en mayo y una
+    entrada en junio con las mismas acciones son dos movimientos: borrar la salida deja la
+    posición con 7 acciones de más."""
+    df = pd.DataFrame({
+        "Date": pd.to_datetime(["2024-05-13", "2024-06-20"]),
+        "Action": ["Journaled Shares", "Internal Transfer"],
+        "Ticker": ["SCHB", "SCHB"],
+        "Quantity": [-7.0, 7.0],
+    })
+    out = logic._net_transfer_pairs(df)
+    assert list(out["Action"]) == ["Journaled Shares", "Internal Transfer"]
+
+
+def test_net_transfer_pairs_una_entrada_empareja_con_una_sola_salida():
+    """M4 ronda 3 (TP-2): dos salidas iguales el mismo día y una sola entrada gemela. Solo
+    una de las salidas es la pata de la migración; la otra es una salida real."""
+    df = pd.DataFrame({
+        "Date": pd.to_datetime(["2024-05-13", "2024-05-13", "2024-05-13"]),
+        "Action": ["Journaled Shares", "Journaled Shares", "Internal Transfer"],
+        "Ticker": ["SCHB", "SCHB", "SCHB"],
+        "Quantity": [-7.0, -7.0, 7.0],
+    })
+    out = logic._net_transfer_pairs(df)
+    assert (out["Action"] == "Journaled Shares").sum() == 1
+    assert out["Quantity"].sum() == pytest.approx(0.0)
+
+
+def test_split_factor_multiplica_todos_los_splits_posteriores():
+    """M4 ronda 3 (SF-2): una acción comprada antes de dos splits (4:1 y luego 10:1) cuenta
+    hoy como 40. Con solo el último contaría 10: tres cuartas partes de la posición perdidas."""
+    splits = pd.Series([4.0, 10.0], index=pd.to_datetime(["2021-07-20", "2024-06-10"]))
+    assert logic._cumul_split_factor("2020-01-15", splits) == pytest.approx(40.0)
+    assert logic._cumul_split_factor("2022-01-15", splits) == pytest.approx(10.0)
+    assert logic._cumul_split_factor("2025-01-15", splits) == pytest.approx(1.0)
+
+
+def test_split_factor_corte_por_un_dia_a_cada_lado():
+    """M4 ronda 3 (SF-1): la compra del mismo día del split ya viene en unidades nuevas y no
+    se reescala; la del día anterior sí (docstring: XLK 2:1 del 2025-12-05)."""
+    splits = pd.Series([2.0], index=pd.to_datetime(["2025-12-05"]))
+    assert logic._cumul_split_factor("2025-12-04", splits) == pytest.approx(2.0)
+    assert logic._cumul_split_factor("2025-12-05", splits) == pytest.approx(1.0)
+
+
 # ── Sortino con downside deviation estándar ─────────────────────────────────────
 
 def test_sortino_ratio_downside_deviation():
