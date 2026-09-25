@@ -297,6 +297,11 @@
   .seg.s-drip    { background: var(--drip); }
   .seg.s-transito{ background: var(--accent-tint); border: 2px solid var(--accent); }
   .seg.s-cash    { background: var(--cash); }
+  /* Efectivo que NO viene del dividendo (Cash In Lieu de un split inverso, ADR Mgmt
+     Fee…): mismo verde —es efectivo de verdad, está en la cuenta— pero rayado, para
+     que no se lea como parte de la distribución. Su base es otra (logic.py:
+     `misc_cash_total`), y el contrato prohíbe sumarlas en un mismo total. */
+  .seg.s-otros   { background: repeating-linear-gradient(45deg, var(--cash) 0 3px, transparent 3px 6px); border: 1px solid var(--cash); }
   .seg.s-loss    { background: var(--loss); }
   /* Mismo azul que `.cap-amt.up` (abajo): "Impacto del mercado" puede ser positivo
      (el precio subió) — antes ese segmento SIEMPRE se pintaba de rojo (s-loss). */
@@ -353,6 +358,7 @@
   .sq.q-anchor { background: var(--anchor); }
   .sq.q-drip   { background: var(--drip); }
   .sq.q-cash   { background: var(--cash); }
+  .sq.q-otros  { background: repeating-linear-gradient(45deg, var(--cash) 0 3px, transparent 3px 6px); border: 1px solid var(--cash); }
   .sq.q-off    { background: var(--sq-off); }
   .sq.q-sd, .sq.q-sl { position: relative; border: 1px solid var(--loss-soft); }
   .sq.q-sd { background: var(--loss-bg); }
@@ -375,6 +381,7 @@
   .sw-anchor { background: var(--anchor); }
   .sw-drip { background: var(--drip); }
   .sw-cash { background: var(--cash); }
+  .sw-otros { background: repeating-linear-gradient(45deg, var(--cash) 0 3px, transparent 3px 6px); border: 1px solid var(--cash); }
   .sw-struck { border: 1px solid var(--loss-soft); position: relative; background: var(--loss-bg); }
   .sw-struck::after { content:""; position:absolute; inset:0; background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px)); }
   .leg-txt strong { font-size: 13.5px; color: var(--ink); font-weight: 600; }
@@ -1110,6 +1117,14 @@
   // ---------- constants (Schwab caso 2 · MSTY) ----------
   var D = {{DATA_JSON}};
   var POCKET = D.POCKET, BRUTO = D.BRUTO, IMPUESTO = D.IMPUESTO, NETO = D.NETO, DRIP = D.DRIP, CASH = D.CASH, TOTAL_TRABAJANDO = D.TOTAL_TRABAJANDO, MERCADO = D.MERCADO, VALOR_HOY = D.VALOR_HOY, CAPITAL_ACTUAL = D.CAPITAL_ACTUAL, RESULTADO = D.RESULTADO, PICO = D.PICO;
+  // Efectivo no distributivo (`misc_cash_total`). Fallback a 0 para los datos viejos
+  // que no traen la clave: sin él, un `undefined` se propagaría a cada suma.
+  var OTROS = (typeof D.OTROS === "number" && isFinite(D.OTROS)) ? D.OTROS : 0;
+  var HAY_OTROS = Math.abs(OTROS) > 0.005;
+  // Etiqueta del concepto: si el CSV trae un solo tipo (lo normal: un Cash In Lieu de
+  // un split inverso), se nombra ese; si trae varios, el genérico.
+  var OTROS_TIPOS = Object.keys(D.OTROS_DETALLE || {});
+  var OTROS_LABEL = OTROS_TIPOS.length === 1 ? OTROS_TIPOS[0] : "Otros movimientos";
 
   // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Etiquetas
   // abreviadas para columnas de ancho igual — el nombre completo va en la caption.
@@ -1204,6 +1219,14 @@
   var mercadoCap = MERCADO >= 0 ? "up" : "dn";
   var mercadoSegCls = MERCADO >= 0 ? "s-gain" : "s-loss";
   var mercadoVerbo = MERCADO >= 0 ? "La subida" : "La caída";
+  // El efectivo del capital actual se dibuja en DOS franjas cuando hay efectivo no
+  // distributivo: la del dividendo cobrado y la de «otros». Apiladas, no sumadas en
+  // una sola barra verde — la barra diría que todo salió de la distribución.
+  function segsEfectivo() {
+    var out = [{cls:"s-cash", lo:VALOR_HOY, hi:VALOR_HOY + CASH}];
+    if (HAY_OTROS) out.push({cls:"s-otros", lo:VALOR_HOY + CASH, hi:CAPITAL_ACTUAL});
+    return out;
+  }
   var COLS = [
     { segs:[{cls:"s-anchor", lo:0, hi:POCKET}],
       amt:"$" + POCKET.toFixed(2), cap:"base", lab:"Tu bolsillo", run:POCKET,
@@ -1229,11 +1252,16 @@
       amt:mercadoAmt, cap:mercadoCap, lab:"Impacto del mercado", run:VALOR_HOY,
       th:"Impacto del mercado", tv:mercadoAmt,
       td:mercadoVerbo + " del precio del fondo. Tu capital de trabajo pasa de $" + TOTAL_TRABAJANDO.toFixed(2) + " a $" + VALOR_HOY.toFixed(2) + "." },
-    { segs:[{cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
-      amt:"+$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo cobrado", run:CAPITAL_ACTUAL,
+    { segs:segsEfectivo(),
+      amt:"+$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo cobrado",
+      sub:HAY_OTROS ? ((OTROS >= 0 ? "+ $" : "− $") + Math.abs(OTROS).toFixed(2) + " " + OTROS_LABEL) : null,
+      run:CAPITAL_ACTUAL,
       th:"Efectivo cobrado", tv:"+$" + CASH.toFixed(2),
-      td:"El mismo efectivo que apartaste en el paso 4 vuelve a sumar. Total: $" + CAPITAL_ACTUAL.toFixed(2) + "." },
-    { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}, {cls:"s-cash", lo:VALOR_HOY, hi:CAPITAL_ACTUAL}],
+      td:"El mismo efectivo que apartaste en el paso 4 vuelve a sumar." +
+        (HAY_OTROS ? " Aparte, " + (OTROS >= 0 ? "entraron" : "salieron") + " $" + Math.abs(OTROS).toFixed(2) +
+          " por «" + OTROS_LABEL + "»: efectivo que no viene del dividendo — por eso va en su propia franja, rayada." : "") +
+        " Total: $" + CAPITAL_ACTUAL.toFixed(2) + "." },
+    { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}].concat(segsEfectivo()),
       amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:"vs. tu bolsillo", run:null,
       th:"Resultado real", tv:resultadoAmt,
       td:"Lo que tienes hoy ($" + CAPITAL_ACTUAL.toFixed(2) + ") frente a lo que pusiste ($" + POCKET.toFixed(2) + "). La diferencia es lo que el mercado " +
@@ -1374,6 +1402,15 @@
   var MOSAIC_UNIT = PICO / 100;
   function nb(x) { return Math.max(0, Math.round(x / MOSAIC_UNIT)); }
   var N_PK = nb(POCKET), N_BR = nb(BRUTO), N_IM = nb(IMPUESTO), N_DR = nb(DRIP), N_CA = nb(CASH), N_MV = nb(VALOR_HOY);
+  var N_OT = nb(Math.abs(OTROS));
+  // Pieza de «otros» para el mosaico, o nada. Se arma una vez: los pasos 3-7 la
+  // muestran igual, y su monto real (amt) nunca se mezcla con el del efectivo.
+  function piezaOtros() {
+    if (!HAY_OTROS || N_OT <= 0) return [];
+    return [{ n: N_OT, amt: OTROS, cls: "q-otros", cat: OTROS_LABEL,
+              note: "Efectivo que no viene del dividendo — " +
+                (OTROS >= 0 ? "entró" : "salió") + " de la cuenta igual, y por eso cuenta en el capital actual." }];
+  }
 
   // Cada segmento carga su monto REAL (amt) además del conteo de cuadritos (n).
   // La leyenda usa amt, nunca n*unit — n*unit es una aproximación visual (el
@@ -1402,7 +1439,7 @@
         { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado — expuesto al mercado junto con el DRIP." },
         { n: N_DR, amt: DRIP, cls: "q-drip", cat: "DRIP", note: "Dividendos reinvertidos — la misma suerte que tu bolsillo." },
         { n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Ya cobrado, a salvo del mercado." }
-      ];
+      ].concat(piezaOtros());
     }
     // step 7 — se revela qué sobrevivió. El monto real de cada categoría (POCKET,
     // DRIP) se le asigna SOLO a la pieza "vivo" — la pieza "destruido" lleva
@@ -1424,7 +1461,7 @@
     ];
     if (nExtra > 0) out.push({ n: nExtra, amt: 0, cls: "q-cash", cat: "Apreciación", note: "Ganancia por encima de tu capital + DRIP." });
     if (N_CA > 0) out.push({ n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Dividendos ya cobrados, a salvo." });
-    return out;
+    return out.concat(piezaOtros());
   }
 
   var SWATCH = {
@@ -1432,7 +1469,8 @@
     "q-transito": '<i class="sw-anchor" style="background:var(--accent-tint);border:1px solid var(--accent);"></i>',
     "q-sd":       '<i class="sw-anchor" style="background:var(--loss-bg);border:1px solid var(--loss-soft);"></i>',
     "q-drip":     '<i class="sw-drip"></i>',
-    "q-cash":     '<i class="sw-cash"></i>'
+    "q-cash":     '<i class="sw-cash"></i>',
+    "q-otros":    '<i class="sw-otros"></i>'
   };
   var SWATCH_SPLIT = { "Tu bolsillo": '<i class="sw-anchor"></i><i class="sw-struck"></i>', "DRIP": '<i class="sw-drip"></i><i class="sw-struck"></i>' };
 
@@ -1501,6 +1539,13 @@
 
     document.getElementById("legend").innerHTML = legendHtml(segs);
 
+    // Los cuadritos de «otros» NO se suman a los del efectivo del dividendo: se
+    // nombran aparte. Sumarlos sería repetir en la frase la mezcla de bases que el
+    // recorrido acaba de separar.
+    function colaOtros() {
+      return (HAY_OTROS && N_OT > 0)
+        ? ' <span class="surv-otros">+' + N_OT + ' por ' + OTROS_LABEL + '.</span>' : "";
+    }
     var surv = document.getElementById("surv");
     if (step === 7) {
       var pctAlive = Math.round(((segs[0].n + segs[2].n) / (N_PK + N_DR)) * 100);
@@ -1510,9 +1555,9 @@
       surv.innerHTML = pctDead > 0
         ? ('De cada $100 invertidos, <b class="alive">' + pctAlive +
            ' siguen vivos</b> y <b class="dead">' + pctDead +
-           ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.')
+           ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.' + colaOtros())
         : ('De cada $100 invertidos, <b class="alive">' + pctAlive +
-           ' siguen vivos</b> — ninguno se destruyó · <b>+' + N_CA + '</b> ya en efectivo.');
+           ' siguen vivos</b> — ninguno se destruyó · <b>+' + N_CA + '</b> ya en efectivo.' + colaOtros());
     } else {
       surv.innerHTML = 'Todavía no sabemos cuánto sobrevive — eso se revela en el <b>paso 8</b>, cuando se conoce el impacto del mercado.';
     }

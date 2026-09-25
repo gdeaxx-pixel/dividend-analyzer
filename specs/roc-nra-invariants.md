@@ -69,6 +69,23 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 - **WHEN** una vista arma una fila de "Neto real" restando una cifra en base-fiscal de una cifra en base bruta
 - **THEN** la fila se rechaza en revisión — antes de publicar, cada operando debe rotularse con su base (bruto/neto/base-fiscal) y verificar que coincidan entre sí
 
+> **Actualizado (2026-09-24, el efectivo que no es dividendo).** La rama `is_misc_cash`
+> (`logic.py`) clasifica el efectivo que entra o sale de la cuenta sin ser una distribución:
+> `Cash In Lieu` (la fracción liquidada en un split inverso), `Special Qual Div`,
+> `ADR Mgmt Fee`, `Wire Received`. Sumaba a `dividends_collected_cash`, que es de donde el
+> recorrido saca el efectivo del DIVIDENDO: un mismo total con dos bases, justo lo que esta
+> regla prohíbe. Efecto medido sobre los 3 CSV reales de Schwab: `DRIP + CASH` superaba al
+> NETO del objeto fiscal en el importe exacto del Cash In Lieu (MSTY $18.32, XLK $8.47,
+> SCHB $3.55, TSLY $15.56, MSTY del caso 1 $5.17) y `verificar_identidades` bloqueaba Cash
+> flow y Hoja Excel — el guard funcionando, no fallando.
+> Hoy vive en su propio acumulador (`misc_cash_total`, con `misc_cash_breakdown` por tipo) y
+> llega a las vistas como `OTROS`, un sumando aparte del capital actual. **La caja no se
+> mueve**: `gross_value` lo suma por su cuenta, así que ROI y `net_profit` quedaron idénticos
+> al centavo en las 24 posiciones de los 4 casos reales. Lo que sí cambia —y es el punto— es
+> que `dividends_collected_cash` y `total_dividends` dejan de contener dinero que no es
+> dividendo. Gates: `test_adapters.py` (4 tests, el mutante devuelve el importe al efectivo)
+> y `test_logic.py::test_i5_cash_in_lieu_y_companeros_entran_por_su_rama`.
+
 ### Regla 2b — El mundo es la tercera dimensión (añadida 2026-08-21)
 
 **Requirement:** Cuando una cifra describe un escenario **contrafáctico** —«si no se hubiera reinvertido», «si hubiera retención», «si se hubiera vendido»— además de base y momento declara su **mundo**: la corrida de simulación de la que sale. **Una fila contrafáctica toma TODAS sus columnas de la misma corrida.** Nunca se combina una columna del mundo que ocurrió con otra del mundo que no ocurrió.
