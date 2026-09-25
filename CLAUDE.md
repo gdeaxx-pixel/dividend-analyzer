@@ -96,6 +96,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
+> **Pendiente de medir en local (ronda 2 de M4, 2026-09-25).** Ese PR suma **13 tests**, ninguno
+> depende de `real_examples/`, así que la local debería dar **1143 passed, 2 skipped** — ESTIMADO
+> (1130 + 13), no medido: esta sesión corre en la nube. La cifra de abajo sigue siendo la última
+> MEDIDA hasta que alguien corra `tools/verificacion_m4_local.py` con la carpeta para sí solo.
+
 Línea base: **1130 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
 `0600774` **fusionado**, en la máquina de Daniel con `real_examples/` montado, con
 `tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +6 respecto
@@ -141,9 +146,11 @@ reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora viv
 corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
 abajo dos veces.
 
-Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1033 passed,
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1046 passed,
 80 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
-2026-09-25 sobre `main` = `0600774`). La suite queda verde fuera de la máquina de Daniel desde el
+2026-09-25 sobre la rama de tests de la ronda 2 de M4, base `main` = `e53bd97`, que daba 1033: son
+los +13 tests que cierran los huecos de `docs/auditorias/2026-09-25-m4-ronda2-e53bd97.md`, cada uno
+verificado con el mutante que antes sobrevivía). La suite queda verde fuera de la máquina de Daniel desde el
 2026-09-25. Llegar ahí costó dos PRs de la auditoría M4:
 - **#142**: `test_spy_math.py` pasó a `tools/`, los tests que dependían de Yahoo sin medir el
   mercado lo mockean y los de splits se saltan con motivo cuando yfinance no responde.
@@ -154,10 +161,11 @@ Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo):
   por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
 El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
 **Esta cifra NO sustituye a la línea local de arriba**: los tests que aquí se saltan son los de
-datos reales. La nube recolecta 1113 tests (1033 + 80) y la local 1132 (1130 + 2). Para volver a
+datos reales. La nube recolecta 1126 tests (1046 + 80) y la local, estimado, 1145 (1143 + 2). Para volver a
 medir la local, con `real_examples/` montado y **la carpeta para ti sola**:
-`./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los dos mutantes
-de la auditoría que solo se pueden medir con los datos reales.
+`./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los mutantes de las
+dos rondas de la auditoría que solo se pueden medir con los datos reales (G1-d, G5-b, H-3, CG-1,
+CG-4, CG-6).
 
 Antes: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
