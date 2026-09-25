@@ -418,3 +418,92 @@ def test_no_se_come_lineas_de_codigo_que_contienen_cursores():
 
     # y dos fallos que solo se diferencian en esa línea NO pueden compartir huella
     assert deriva_oraculos.huella("t::x", con_xor) != deriva_oraculos.huella("t::x", con_tilde)
+
+
+# ── ✅ SANADO exige que el test haya CORRIDO y PASADO (auditoría M4, H5) ───────
+#
+# Medido el 2026-09-24 en la nube: con la colección cortada por un error de importación
+# (0 tests ejecutados), el plugin cantó ✅ SANADO por `test_s1_…`, un rojo que nadie
+# arregló; y lo repitió en una corrida filtrada (`pytest ruta::test`) que no lo incluía.
+# Seguir el consejo del aviso (`--deriva-actualizar`) lo habría borrado del baseline.
+# El control de todos estos es `test_control_en_el_mismo_entorno_si_canta_sanado`: mismo
+# baseline y mismo entorno, pero el test corre y pasa.
+
+_DOS_TESTS_QUE_PASAN = ("def test_oraculo():\n    assert True\n\n"
+                        "def test_otro():\n    assert True\n")
+
+
+def test_un_rojo_filtrado_fuera_de_la_corrida_no_se_canta_como_sanado(testdir, monkeypatch):
+    _setup_testdir(testdir, monkeypatch)
+    ruta_baseline = str(testdir.tmpdir.join("bl.json"))
+    _escribir_baseline(ruta_baseline, {"test_sample.py::test_oraculo": dict(_ENTRADA_A)})
+    testdir.makepyfile(test_sample=_DOS_TESTS_QUE_PASAN)
+
+    ret = testdir.runpytest_subprocess(
+        "-p", "deriva_oraculos", "--deriva-baseline", ruta_baseline,
+        "--deriva-entorno", "entorno-A", "-q", "test_sample.py::test_otro")
+    assert ret.ret == 0
+    assert "SANADO" not in ret.stdout.str()
+    ret.stdout.fnmatch_lines(["*1 rojo(s) del baseline no corrieron en esta sesión*"])
+
+
+def test_un_rojo_saltado_no_se_canta_como_sanado(testdir, monkeypatch):
+    _setup_testdir(testdir, monkeypatch)
+    ruta_baseline = str(testdir.tmpdir.join("bl.json"))
+    _escribir_baseline(ruta_baseline, {"test_sample.py::test_oraculo": dict(_ENTRADA_A)})
+    testdir.makepyfile(test_sample=(
+        "import pytest\n\n"
+        "@pytest.mark.skip(reason='sin datos')\n"
+        "def test_oraculo():\n    assert True\n"))
+
+    ret = testdir.runpytest_subprocess(
+        "-p", "deriva_oraculos", "--deriva-baseline", ruta_baseline,
+        "--deriva-entorno", "entorno-A", "-q")
+    assert ret.ret == 0
+    assert "SANADO" not in ret.stdout.str()
+    ret.stdout.fnmatch_lines(["*SALTADO: test_sample.py::test_oraculo*un skip no es un pass*"])
+
+
+def test_una_coleccion_cortada_no_canta_sanado(testdir, monkeypatch):
+    """El caso medido: OTRO archivo revienta al importarse y la colección se interrumpe
+    sin ejecutar un solo test."""
+    _setup_testdir(testdir, monkeypatch)
+    ruta_baseline = str(testdir.tmpdir.join("bl.json"))
+    _escribir_baseline(ruta_baseline, {"test_sample.py::test_oraculo": dict(_ENTRADA_A)})
+    testdir.makepyfile(test_sample=_TEST_QUE_PASA,
+                       test_roto="raise RuntimeError('revienta al importarse')\n")
+
+    ret = testdir.runpytest_subprocess(
+        "-p", "deriva_oraculos", "--deriva-baseline", ruta_baseline,
+        "--deriva-entorno", "entorno-A", "-q")
+    assert ret.ret != 0
+    ret.stdout.fnmatch_lines(["*Interrupted*"])
+    assert "SANADO" not in ret.stdout.str()
+    ret.stdout.fnmatch_lines(["*1 rojo(s) del baseline no corrieron en esta sesión*"])
+
+
+def test_actualizar_no_borra_un_rojo_que_no_corrio(testdir, monkeypatch):
+    """Seguir el consejo del aviso tras una corrida filtrada borraba del baseline un rojo
+    que esa corrida nunca midió. Control en la misma prueba: cuando el test SÍ corre y
+    pasa, sale del baseline."""
+    _setup_testdir(testdir, monkeypatch)
+    ruta_baseline = str(testdir.tmpdir.join("bl.json"))
+    _escribir_baseline(ruta_baseline, {"test_sample.py::test_oraculo": dict(_ENTRADA_A)})
+    testdir.makepyfile(test_sample=_DOS_TESTS_QUE_PASAN)
+
+    ret = testdir.runpytest_subprocess(
+        "-p", "deriva_oraculos", "--deriva-baseline", ruta_baseline,
+        "--deriva-entorno", "entorno-A", "--deriva-actualizar", "-q",
+        "test_sample.py::test_otro")
+    assert ret.ret == 0
+    with open(ruta_baseline, encoding='utf-8') as f:
+        conservada = json.load(f)["rojos"].get("test_sample.py::test_oraculo")
+    assert conservada == _ENTRADA_A, "la corrida filtrada borró o tocó un rojo que no midió"
+
+    ret2 = testdir.runpytest_subprocess(
+        "-p", "deriva_oraculos", "--deriva-baseline", ruta_baseline,
+        "--deriva-entorno", "entorno-A", "--deriva-actualizar", "-q")
+    assert ret2.ret == 0
+    ret2.stdout.fnmatch_lines(["*SANADO: test_sample.py::test_oraculo*"])
+    with open(ruta_baseline, encoding='utf-8') as f:
+        assert "test_sample.py::test_oraculo" not in json.load(f)["rojos"]
