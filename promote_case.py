@@ -104,7 +104,9 @@ def main():
     args = ap.parse_args()
 
     if not storage.is_enabled():
-        print("Storage desactivado. Define CAPTURE_LOCAL_DIR o configura st.secrets['gcs'].")
+        print("Storage desactivado. Define CAPTURE_LOCAL_DIR, configura st.secrets['b2'] "
+              "(o las variables CAPTURE_B2_BUCKET/ENDPOINT/KEY_ID/APP_KEY) "
+              "o configura st.secrets['gcs'].")
         return
 
     if args.delete:
