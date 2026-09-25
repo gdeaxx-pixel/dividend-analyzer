@@ -2634,6 +2634,217 @@ def test_trg_real_data_ticker_caido_se_omite_de_todas_las_claves(monkeypatch):
     assert set(datos["incep"]) == set(datos["idx"]["bruto"])
 
 
+# ── Q6 (2026-09-24): guards del dato nuevo `idxDesde` de `trg_real_data` ───────
+# Gemelo de Q5 para la vista Real. `series(tk, mode, baseIncep)` de
+# `comparacion_real.html` ya no divide entre `tot[startM]` —que en modo roc arrastra
+# el `roc_receivable` devengado antes del inicio elegido— sino que lee la corrida
+# limpia que este adapter precalcula. La diferencia de cableado con Q5: aquí
+# `startM = max(incep[base], incep[tk])` donde `baseIncep` es SOLO la incepción del
+# fondo base (no el máximo de la pantalla), así que el consultado es el COMPARADOR
+# (al revés que en Q5) y solo afecta a uno MÁS VIEJO que el base.
+
+def _q6_frames_extendidos():
+    """`_trg_real_fake_frames()` extendido a septiembre de 2026 y con SCHB pre-ancla.
+
+    Dos adiciones, las dos necesarias para que
+    `test_q6_idxdesde_reproduce_una_compra_nueva` muerda de verdad:
+
+    - **Ventana hasta septiembre.** Con la ventana original (ene–mar) `startM=2` cae
+      pegado al final: la corrida limpia cubriría UN día sin dividendos y el mutante
+      M6 (corrida limpia bajo la tasa equivocada) sobreviviría — no hay retención que
+      comparar. Extendida, la corrida limpia cruza 6 dividendos mensuales.
+    - **SCHB más viejo que el ancla** (arranca 2025-10, como los SCHB/XLK/SMH reales
+      contra TSLY). Es el único caso que ejerce el clamp de TRAMPA 1
+      (`history.loc[start:]`); sin un ticker pre-ancla en la fixture, ese clamp no lo
+      vigila nadie.
+
+    El drift y la pauta de dividendos continúan los de la fixture original (dividendo
+    el día 15 solo en los tickers que ya distribuían). Las incepciones publicadas NO
+    cambian: el ancla sigue siendo TSLY (2026-01-01) y CHPY sigue en 2 — el tramo
+    pre-ancla de SCHB no lo mueve porque `_trg_ancla` solo mira los YM y el loop
+    principal clampea igual.
+    """
+    frames = _trg_real_fake_frames()
+    idx_extra = pd.date_range("2026-03-21", "2026-09-30", freq="D")
+    for tk, df in frames.items():
+        n = len(df)
+        drift = float(df["Close"].iloc[-1] - df["Close"].iloc[0]) / (n - 1)
+        cierre = [float(df["Close"].iloc[-1]) + drift * k
+                  for k in range(1, len(idx_extra) + 1)]
+        divs = [1.0 if d.day == 15 else 0.0 for d in idx_extra] \
+            if float(df["Dividends"].sum()) > 0 else [0.0] * len(idx_extra)
+        extra = pd.DataFrame({"Close": cierre, "Dividends": divs}, index=idx_extra)
+        frames[tk] = pd.concat([df, extra])
+    # SCHB pre-ancla: prolongación hacia atrás con el mismo drift, sin dividendos
+    # (la fixture original de SCHB no los tiene).
+    idx_pre = pd.date_range("2025-10-01", "2025-12-31", freq="D")
+    schb = frames["SCHB"]
+    drift_s = float(schb["Close"].iloc[1] - schb["Close"].iloc[0])
+    pre_close = [float(schb["Close"].iloc[0]) - drift_s * k
+                 for k in range(len(idx_pre), 0, -1)]
+    pre = pd.DataFrame({"Close": pre_close, "Dividends": [0.0] * len(idx_pre)},
+                       index=idx_pre)
+    frames["SCHB"] = pd.concat([pre, schb])
+    return frames
+
+
+def test_q6_idxdesde_cubre_todos_los_startm_posibles(monkeypatch):
+    """Guard de cobertura (Q6 §5.3a). Reconstruye lo que hace `series()` del componente
+    Real: `startM = max(incep[base], incep[comparador])`, y la entrada que consulta es
+    `idxDesde[COMPARADOR][startM]` — al revés que en Q5, donde el consultado era el base.
+    Si falta una sola entrada, esa combinación cae EN SILENCIO a la fórmula mala — que
+    es justo el bug. Su mutante es M4 (`t0_candidatos[:-1]`)."""
+    _trg_real_patch(monkeypatch, _trg_real_fake_frames())
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=30.0, pais="México")
+    incep, idx_desde = datos["incep"], datos["idxDesde"]
+    comprobados, faltan = 0, []
+    for base in incep:
+        for comparador in incep:
+            start_m = max(incep[base], incep[comparador])
+            if start_m <= incep[comparador]:
+                continue        # arranca en su propia incepción: la fórmula vieja es exacta
+            comprobados += 1
+            if str(start_m) not in idx_desde.get(comparador, {}):
+                faltan.append((base, comparador, start_m))
+    assert not faltan, (
+        "pares (base, comparador) sin entrada en idxDesde — el componente caería en "
+        f"silencio a la fórmula vieja: {sorted(set(faltan))}")
+    # No-vacuidad: con un universo de una sola incepción este test pasaría sin mirar
+    # nada. Exigimos que haya habido pares reales que comprobar.
+    assert comprobados > 0, (
+        "ningún par tenía startM > incep[comparador]: el universo colapsó a una sola "
+        "incepción y este guard no está vigilando nada")
+
+
+def test_q6_idxdesde_reproduce_una_compra_nueva(monkeypatch):
+    """El oráculo del dato (Q6 §5.3b) — **el que Q5 no tenía y hacía falta**. Dos
+    mitades, una por trampa del componente Real:
+
+    1. **TRAMPA 1 / M5 (el clamp del ancla).** La serie que recibe `_fecha_por_mes`
+       dentro del bloque `idx_desde` debe estar YA recortada a
+       `max(history.index.min(), ancla_start)`. Medido antes de escribir este test
+       (`_m5_probe.py`, sobre frames sintéticos Y el universo real congelado): quitar
+       el `.loc[start:]` NO cambia ninguna CIFRA publicada —la única clave que difiere
+       es `"0"` (y las negativas del tramo pre-ancla), y el filtro `t0 <= incep[tk]`
+       las excluye siempre porque un ticker pre-ancla tiene `incep == 0`—. Es un
+       mutante observacionalmente equivalente en el output: lo único que puede matarlo
+       es vigilar la LLAMADA (espía sobre `_fecha_por_mes`, mismo género que el de
+       `test_un_solo_motor_fiscal.py` sobre `run_backtest`).
+    2. **TRAMPA 2 / M6 (el `base_rate` del país).** Las cifras publicadas se re-corren
+       aquí desde la fecha real de `startM` con la cuenta en cero y LA MISMA tasa del
+       usuario (10%, no el 30% por defecto de `_CMP_FLAT_RATE`): si la corrida limpia
+       usa otro régimen fiscal, los meses con dividendo divergen y esto cae. Lleva
+       control positivo (el ticker debe tener escudo ROC en 2026) y control de que la
+       fixture muerde (limpio ≠ fórmula vieja rebasada).
+    """
+    import ui.adapters as adapters
+    from ui.adapters import (_INDICE_CAPITAL, _fecha_por_mes, _mensualizar_desde,
+                             _politica_fiscal)
+
+    frames = _q6_frames_extendidos()
+    _trg_real_patch(monkeypatch, frames)
+    ancla_start = frames["TSLY"].index.min()          # TSLY: el YM más antiguo
+    assert frames["SCHB"].index.min() < ancla_start, (
+        "la fixture perdió su ticker pre-ancla: la mitad 1 de este test se quedó sin "
+        "caso que vigilar (el clamp sería indistinguible de no-clamp)")
+
+    # ── Mitad 1: espía sobre `_fecha_por_mes` ────────────────────────────────────
+    llamadas_fdm = []
+    original_fdm = adapters._fecha_por_mes
+
+    def espia_fdm(serie, origen):
+        llamadas_fdm.append(serie.index.min())
+        return original_fdm(serie, origen)
+
+    monkeypatch.setattr(adapters, "_fecha_por_mes", espia_fdm)
+    datos = trg_real_data({"MSTY": {"market_value": 500}}, tasa_pct=10.0, pais="México")
+
+    assert llamadas_fdm, "el bloque idx_desde dejó de llamar a `_fecha_por_mes`"
+    sin_clamp = [f for f in llamadas_fdm if f < ancla_start]
+    assert not sin_clamp, (
+        f"`_fecha_por_mes` recibió series que arrancan ANTES del ancla "
+        f"({sorted(str(f.date()) for f in sin_clamp)}): falta el clamp "
+        "`history.loc[start:]` — las claves de mes no coinciden con las de `idx` y el "
+        "primer bin apunta a otro día (TRAMPA 1 de la spec Q6 §4.2)")
+
+    # ── Mitad 2: oráculo numérico sobre TSLY (comparador más viejo que CHPY) ─────
+    tk = "TSLY"
+    roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+    pol = _politica_fiscal(tk, "roc", roc19a, roc_ici, base_rate=0.10)
+    assert pol.roc_pct_by_year and 2026 in pol.roc_pct_by_year, (
+        f"{tk} perdió el escudo ROC de 2026: sin receivable que arrastrar este oráculo "
+        "se queda sin control positivo")
+
+    incep = datos["incep"]
+    start_m = max(incep["CHPY"], incep[tk])   # CHPY (incep 2) hace de fondo base nuevo
+    assert start_m > incep[tk], "el par elegido dejó de ejercitar el caso afectado"
+    entradas = datos["idxDesde"].get(tk, {})
+    assert str(start_m) in entradas, f"{tk}: falta la entrada idxDesde[{tk}][{start_m}]"
+
+    history = frames[tk]
+    start = max(history.index.min(), ancla_start)     # el mismo clamp del adapter
+    fecha_t0 = original_fdm(history.loc[start:]["Close"], datos["origen"])[str(start_m)]
+    r_nueva = backtest.run_backtest(tk, start_date=fecha_t0,
+                                    initial_capital=_INDICE_CAPITAL, drip=True,
+                                    nra_rate=pol.rate, history=history,
+                                    roc_pct_by_year=pol.roc_pct_by_year)
+    esperado = _mensualizar_desde(r_nueva.daily["total_value"], datos["origen"])
+    publicado = entradas[str(start_m)]
+
+    assert set(publicado) == set(esperado), (
+        f"{tk} t0={start_m}: la serie precalculada cubre {sorted(publicado, key=int)}, "
+        f"una compra nueva desde {fecha_t0.date()} cubre {sorted(esperado, key=int)} — "
+        "¿arrancó en otra fecha?")
+    for m in esperado:
+        assert publicado[m] == pytest.approx(esperado[m], abs=1e-4), (
+            f"{tk} t0={start_m} m={m}: idxDesde dice {publicado[m]}, una compra nueva "
+            f"en {fecha_t0.date()} con la tasa del usuario (10%) da {esperado[m]}")
+
+    # Control de que la fixture muerde: si la corrida limpia coincidiera con la vieja
+    # rebasada, no habría receivable pre-startM y este test no vigilaría nada.
+    viejo = datos["idx"]["roc"][tk]
+    last = str(datos["last"])
+    ret_limpio = publicado[last] / publicado[str(start_m)] - 1
+    ret_viejo = viejo[last] / viejo[str(start_m)] - 1
+    assert ret_limpio != pytest.approx(ret_viejo, abs=1e-6), (
+        f"{tk} t0={start_m}: la corrida limpia da lo mismo que la fórmula vieja "
+        f"({ret_limpio:.6f}) — sin receivable pre-startM este caso no prueba nada")
+
+
+@pytest.mark.parametrize("modo", ["bruto", "plano"])
+def test_q6_bruto_y_plano_no_necesitan_idxdesde(modo):
+    """Lo que justifica que el arreglo se limite a `roc` (Q6 §5.3c): en bruto y plano
+    el motor no devenga NADA de `roc_receivable`, así que `total_value ==
+    portfolio_value` y la fórmula de siempre ya es exacta. Afirma sobre la COLUMNA DEL
+    MOTOR, no sobre `nra_rate`: si un día esos modos empiezan a devengar, este test cae
+    y avisa de que el alcance de Q6 hay que ampliarlo.
+
+    Gemelo del guard de Q5 con el `base_rate` del país (0.10), que es lo que distingue
+    la política fiscal de la vista Real. Sobre el caché congelado y un fondo que SÍ
+    tiene avisos 19(a) — para que el verde signifique «la política de este modo no
+    devenga» y no «este ticker no tiene ROC»."""
+    from conftest import frozen_price_cache
+    from ui.adapters import _INDICE_CAPITAL, _politica_fiscal
+
+    roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+    pol_roc = _politica_fiscal("NVDY", "roc", roc19a, roc_ici, base_rate=0.10)
+    assert pol_roc.roc_pct_by_year, (
+        "NVDY dejó de tener avisos 19(a): este guard perdió su control positivo")
+
+    pol = _politica_fiscal("NVDY", modo, roc19a, roc_ici, base_rate=0.10)
+    with frozen_price_cache():
+        history = price_cache.load_history("NVDY").history.sort_index()
+    r = backtest.run_backtest("NVDY", start_date=history.index.min(),
+                              initial_capital=_INDICE_CAPITAL, drip=True,
+                              nra_rate=pol.rate, history=history,
+                              roc_pct_by_year=pol.roc_pct_by_year)
+    assert (r.daily["roc_receivable"] == 0).all(), (
+        f"modo={modo}: el motor devengó roc_receivable — `tot[startM] != precio[startM]` "
+        "y `series()` necesita `idxDesde` también en este modo")
+    assert (r.daily["total_value"] == r.daily["portfolio_value"]).all(), (
+        f"modo={modo}: total_value dejó de ser solo portfolio_value con DRIP")
+
+
 # ── Auditoría del yield titular vs realidad (audit_advertised_yield) ────────────
 
 def test_audit_advertised_match_within_tolerance():

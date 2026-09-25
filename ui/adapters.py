@@ -1155,6 +1155,51 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
             if valores:
                 last = max(last, max(int(m) for m in valores))
 
+    # Q6: gemelo de Q5 para la vista Real. En modo «roc» el índice es `total_value`, que
+    # incluye `roc_receivable` (backtest.py:443): dividir entre `tot[startM]` mete en el
+    # denominador la cuenta por cobrar devengada ANTES del inicio elegido. Aquí `baseIncep`
+    # es la incepción del fondo base Y NADA MÁS (no el máximo de la pantalla como en la
+    # Simulación), así que solo afecta a un comparador MÁS VIEJO que el base — medido sobre
+    # el universo real: 10 combinaciones, peor error 2.94 pp, y el signo CAMBIA según el
+    # fondo. No se puede cerrar con una fórmula: con DRIP el reembolso compra acciones
+    # cuando se cobra (backtest.py:414) y la dinámica del motor es homogénea de grado 1,
+    # luego exigiría el receivable POR AÑO y su fecha de reembolso (spec Q6 §3, refutado
+    # en Q5 §3 y §14). El arreglo es el mismo que Q5: la corrida limpia —el motor otra vez
+    # desde startM con la cuenta por cobrar en cero— precalculada aquí y publicada como
+    # `idxDesde[tk][str(t0)]`.
+    #
+    # Las dos trampas propias de este componente:
+    #   - `start` vuelve a clampar al ancla (`history.loc[start:]`, el MISMO corte que el
+    #     loop de arriba): sin él, en un ticker más viejo que el ancla —SCHB/XLK/SMH aquí,
+    #     aunque sin avisos 19(a) su entrada no cambia cifras— las claves de mes no
+    #     coincidirían con las de `idx` y el primer bin apuntaría a otro día (mutante M5).
+    #   - `_politica_fiscal` recibe `base_rate=base_rate`: a diferencia de
+    #     `comparacion_data`, aquí la tasa sale del país del usuario y la corrida limpia
+    #     debe correr bajo el MISMO régimen fiscal que el índice (mutante M6).
+    #
+    # Solo modo «roc»: en bruto y plano `roc_receivable` es 0 y la fórmula de siempre ya
+    # es exacta — lo vigila `test_q6_bruto_y_plano_no_necesitan_idxdesde`. Solo los t0 que
+    # el componente puede pedir: `startM = max(incep[base], incep[tk])`, así que
+    # t0 ∈ set(incep.values()). Coste: ~22 corridas extra sobre el universo de hoy.
+    idx_desde: dict = {}
+    t0_candidatos = sorted(set(incep.values()))
+    for tk, history in historias.items():
+        start = max(history.index.min(), ancla_start)      # EL MISMO clamp que el loop de arriba
+        pol = _politica_fiscal(tk, "roc", roc19a, roc_ici, base_rate=base_rate)
+        fecha_de_mes = _fecha_por_mes(history.loc[start:]["Close"], origen)
+        for t0 in t0_candidatos:
+            # Las claves de `fecha_de_mes` son `str` (mismo juego que `_mensualizar_desde`);
+            # comparar con el `int` dejaría `idx_desde` vacío y la vista caería EN SILENCIO
+            # a la fórmula mala.
+            if t0 <= incep[tk] or str(t0) not in fecha_de_mes:
+                continue          # t0 == su propia incepción: la fórmula de hoy ya es exacta
+            r = backtest.run_backtest(tk, start_date=fecha_de_mes[str(t0)],
+                                      initial_capital=_INDICE_CAPITAL, drip=True,
+                                      nra_rate=pol.rate, history=history,
+                                      roc_pct_by_year=pol.roc_pct_by_year)
+            idx_desde.setdefault(tk, {})[str(t0)] = _mensualizar_desde(
+                r.daily["total_value"], origen)
+
     classify_map = logic.classify_tickers(list(resultados.keys()))
     poseidos = [t for t, m in classify_map.items()
                 if m == "mode_a" and t in TRG_YM and _tiene_datos(resultados.get(t))]
@@ -1180,6 +1225,7 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
         "degradado": sorted(tk for tk, s in fuente.items() if s != "cache"),
         "faltantes": sorted(t for t in TRG_UNIVERSO_REAL if t not in historias),
         "idx": idx,
+        "idxDesde": idx_desde,
     }
 
 

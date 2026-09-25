@@ -1093,9 +1093,24 @@
         GROWTH = ["SCHB","XLK","SMH"].filter(_presente);
 
     function idxAt(tk, m, mode){ return DATA.idx[mode][tk][m]; }
+    // Q6: gemelo de Q5 para la vista Real. En modo «roc» el índice incluye
+    // `roc_receivable`, que en startM arrastra lo devengado ANTES del inicio elegido —
+    // hasta 2.94 pp, y el signo CAMBIA según el fondo. Aquí solo afecta a un comparador
+    // MÁS VIEJO que el fondo base (el base arranca siempre en su propia incepción). No se
+    // puede arreglar con una fórmula: con DRIP el reembolso compra acciones después de
+    // startM (spec Q6 §3). Python precalcula la corrida limpia en `DATA.idxDesde`.
     function series(tk, mode, baseIncep){
-      var startM = Math.max(baseIncep, F[tk].incep), base0 = idxAt(tk, startM, mode), out = {};
-      for (var m = startM; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
+      var startM = Math.max(baseIncep, F[tk].incep);
+      var desde = (mode === "roc" && DATA.idxDesde && DATA.idxDesde[tk])
+                  ? DATA.idxDesde[tk][startM] : null;
+      var out = {};
+      if (desde && desde[startM] != null){
+        var b0 = desde[startM];
+        for (var m = startM; m <= LAST; m++) out[m] = desde[m]/b0 - 1;
+      } else {
+        var base0 = idxAt(tk, startM, mode);
+        for (var m = startM; m <= LAST; m++) out[m] = idxAt(tk, m, mode)/base0 - 1;
+      }
       return { tk:tk, startM:startM, late: F[tk].incep > baseIncep, data:out };
     }
 
