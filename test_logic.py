@@ -3286,7 +3286,7 @@ def test_capital_aportado_resta_lo_que_devuelve_una_venta(monkeypatch, ticker, c
     Auditoría M4 (H1): invertir el signo de la venta (`pocket_investment += abs(amount)`)
     sobrevivía a la suite completa aunque 18 tests ejecutaban esa línea — los que la
     recorren comparan vistas que derivan del MISMO `pocket_investment` y cuadran entre sí
-    con el capital mal. Medido en NVDY: $770 → $1,030, ROI 35.48% → 1.28%."""
+    con el capital mal. Medido en NVDY: capital $770 → $1,030."""
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     res = logic.analyze_portfolio(_ib_synth_1_normalizado(), version="TEST_CAPITAL_TRAS_VENTA")
     assert res[ticker]["pocket_investment"] == pytest.approx(capital, abs=0.01), (

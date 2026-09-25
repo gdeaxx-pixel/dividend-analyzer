@@ -196,12 +196,16 @@ def test_impuesto_de_cashflow_es_lo_retenido_al_cobro_menos_lo_devuelto(monkeypa
     res = logic.analyze_portfolio(df, version="IMP_IMPUESTO_XVIEW_REEMBOLSO")
 
     datos = impuestos_data(res, logic.build_fiscal_profile("México"), [])
+    assert [x["ticker"] for x in datos["fondos"]] == ["MSTY"]
     f = datos["fondos"][0]
     cf = cashflow_data(res["MSTY"], "MSTY")
 
-    assert f["retenido"] == pytest.approx(600.0, abs=0.01), "Impuestos: retenido AL COBRO"
-    assert f["ya_devuelto"] == pytest.approx(240.0, abs=0.01), "Impuestos: lo ya devuelto"
-    assert cf["IMPUESTO"] == pytest.approx(360.0, abs=0.01), "Cash flow: NETEADO"
+    assert f["retenido"] == pytest.approx(600.0, abs=0.01), (
+        f"Impuestos: retenido AL COBRO {f['retenido']} ≠ 600.00 de las filas")
+    assert f["ya_devuelto"] == pytest.approx(240.0, abs=0.01), (
+        f"Impuestos: ya devuelto {f['ya_devuelto']} ≠ 240.00 de las filas")
+    assert cf["IMPUESTO"] == pytest.approx(360.0, abs=0.01), (
+        f"Cash flow: IMPUESTO NETEADO {cf['IMPUESTO']} ≠ 360.00 de las filas")
     assert cf["IMPUESTO"] == pytest.approx(f["retenido"] - f["ya_devuelto"], abs=0.02)
     # Hoy por construcción (`hoja_data` envuelve `cashflow_data`), igual que en el peldaño 1.
     assert hoja_data(res["MSTY"], "MSTY", df)["IMPUESTO"] == pytest.approx(cf["IMPUESTO"], abs=0.01)
