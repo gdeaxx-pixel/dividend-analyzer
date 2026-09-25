@@ -1050,6 +1050,80 @@ def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0
     return fallos
 
 
+def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "Este recorrido") -> dict:
+    """Traduce los fallos del guard a lo que el cliente puede hacer algo con ello.
+
+    `verificar_identidades` habla en identidades contables («neto = reinvertido +
+    efectivo: 18.15 ≠ 20.91»): correcto como diagnóstico técnico, inútil como aviso — no
+    dice de quién es el problema ni qué hacer. En las 9 posiciones reales que hoy se
+    bloquean (medido 2026-09-24 sobre los 3 CSV de Schwab) la causa NO es un error de
+    cálculo: es que al export del bróker le faltan filas. Eso sí se puede decir, y con
+    cifras del propio CSV.
+
+    Devuelve `{'titular', 'cuerpo': [str, ...], 'accion', 'nuestro'}`. `nuestro=True`
+    significa que la causa apunta al motor y no al export: ahí el aviso pide que lo
+    reporten en vez de mandar al cliente a pelear con su bróker.
+    """
+    texto = " ".join(fallos)
+    huerfanas = logic.drip_huerfanas((stats or {}).get("history"))
+    pocket = _f((datos or {}).get("POCKET"))
+    cuerpo = []
+
+    # El guard independiente relee el CSV: si ESE falla, el descuadre no es del export
+    # —el CSV dice una cosa y el motor otra— y la acción es avisarnos, no pedir datos.
+    if "CSV releído" in texto:
+        return {
+            "titular": "Estas cifras no cuadran con el propio CSV — es un fallo nuestro, no de tu export.",
+            "cuerpo": ["El dividendo bruto que calculó la app no coincide con el que sale de "
+                       "releer tu archivo línea por línea."],
+            "accion": "Repórtalo con el nombre del fondo: hay que arreglarlo en la calculadora.",
+            "nuestro": True,
+        }
+    if "no numérica" in texto:
+        return {
+            "titular": "Hoy no hay precio de mercado utilizable para este fondo.",
+            "cuerpo": ["Sin precio no se puede valorar la posición, así que el recorrido no se dibuja."],
+            "accion": "Vuelve a intentarlo más tarde: es el proveedor de precios, no tus datos.",
+            "nuestro": True,
+        }
+
+    if huerfanas["huerfanas"] > 0 and "reinvertido + efectivo" in texto:
+        n_c, n_f, n_h = huerfanas["compras"], huerfanas["fuentes"], huerfanas["huerfanas"]
+        cuerpo.append(
+            f"Tu export trae **{n_c} compra{'s' if n_c != 1 else ''} de dividendo "
+            f"reinvertido** (fila{'s' if n_c != 1 else ''} «Reinvest Shares») pero solo "
+            f"**{n_f} distribuci{'ones' if n_f != 1 else 'ón'}** que las paguen "
+            f"(fila{'s' if n_f != 1 else ''} «Reinvest Dividend»). "
+            f"**{n_h}** de esas compras —${huerfanas['importe']:,.2f} de reinversión— se "
+            f"queda{'n' if n_h != 1 else ''} sin la distribución que la{'s' if n_h != 1 else ''} respalda.")
+        cuerpo.append(
+            "Con eso, el dividendo que el archivo declara no alcanza para cubrir lo que "
+            "muestra reinvertido. Dibujarlo diría que reinvertiste más de lo que el fondo "
+            "te pagó, y esa cifra no está en ningún lado: falta en el archivo.")
+    if pocket < 0:
+        cuerpo.append(
+            f"Y el capital aportado sale **negativo (${pocket:,.2f})**: hay ventas sin las "
+            "compras que las originaron, así que el archivo empieza después de que compraste.")
+
+    if not cuerpo:
+        return {
+            "titular": "Las cifras de este recorrido no cuadran entre sí.",
+            "cuerpo": ["No se dibuja para no mostrar un gráfico que miente. La causa no es "
+                       "una de las conocidas — el detalle técnico está abajo."],
+            "accion": "Repórtalo con el detalle de abajo y el nombre del fondo.",
+            "nuestro": True,
+        }
+
+    return {
+        "titular": f"{sujeto} no se dibuja: al export de tu bróker le faltan filas.",
+        "cuerpo": cuerpo,
+        "accion": "Pide el historial completo desde tu primera compra — en Schwab, "
+                  "*History › Transactions* con el rango entero (no solo el último año); "
+                  "en IBKR, el *Activity Statement* del período completo.",
+        "nuestro": False,
+    }
+
+
 def _trg_ancla(historias: dict):
     """El YM de `TRG_YM` con la incepción más antigua entre las historias YA cargadas —
     decisión 4 del traspaso 2026-08-10: el ancla NO se hardcodea (hoy es TSLY; mañana

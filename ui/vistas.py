@@ -10,9 +10,10 @@ import streamlit as st
 
 import logic
 from ui import estado, heredadas, impuestos, nav
-from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data, hoja_data,
-                         metodo_data, metodo_real_data, metodo_serie_data, salud_nav_data,
-                         trg_real_data, verificar_identidades)
+from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data,
+                         diagnosticar_bloqueo, hoja_data, metodo_data, metodo_real_data,
+                         metodo_serie_data, salud_nav_data, trg_real_data,
+                         verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodo_real,
@@ -131,6 +132,26 @@ def render_aviso_retencion(stats: dict, ticker: str) -> None:
         st.info(diag["label"])
 
 
+def render_bloqueo(datos: dict, stats: dict, fallos: list,
+                   sujeto: str = "Este recorrido") -> None:
+    """Aviso cuando el guard impide dibujar. Dice QUÉ falta y QUÉ hacer.
+
+    Antes decía solo «las cifras no cuadran entre sí» y escondía las identidades en un
+    expander: cierto, y sin embargo inútil — el cliente no puede distinguir «el archivo
+    que subiste está incompleto» de «la calculadora está rota», que es justo lo que
+    necesita saber. `diagnosticar_bloqueo` lo nombra con cifras de su propio CSV; las
+    identidades siguen abajo, que son las que sirven para reportar un fallo.
+    """
+    dx = diagnosticar_bloqueo(datos, stats, fallos, sujeto=sujeto)
+    st.error(f"**{dx['titular']}**")
+    for parrafo in dx["cuerpo"]:
+        st.markdown(parrafo)
+    st.info(dx["accion"])
+    with st.expander("Detalle técnico"):
+        for fallo in fallos:
+            st.write(f"· {fallo}")
+
+
 def render_cash_flow(ruta: Ruta) -> None:
     """El recorrido del dinero para el ETF seleccionado."""
     stats = _stats_o_aviso(ruta)
@@ -151,11 +172,7 @@ def render_cash_flow(ruta: Ruta) -> None:
     # CSV, no solo contra las identidades definitorias de `cashflow_data`.
     fallos = verificar_identidades(datos, stats)
     if fallos:
-        st.error("Las cifras de este recorrido no cuadran entre sí — no se dibuja para no "
-                 "mostrar un gráfico que miente.")
-        with st.expander("Detalle"):
-            for fallo in fallos:
-                st.write(f"· {fallo}")
+        render_bloqueo(datos, stats, fallos)
         return
 
     paso = render_rail(datos["STEP_LABELS"], activo=len(datos["STEP_LABELS"]) - 1)
@@ -177,11 +194,7 @@ def render_hoja_excel(ruta: Ruta) -> None:
 
     fallos = verificar_identidades(datos, stats)
     if fallos:
-        st.error("Las cifras de esta hoja no cuadran entre sí — no se dibuja para no "
-                 "mostrar una tabla que miente.")
-        with st.expander("Detalle"):
-            for fallo in fallos:
-                st.write(f"· {fallo}")
+        render_bloqueo(datos, stats, fallos, sujeto="Esta hoja")
         return
 
     render_hoja(datos, ruta.tema)

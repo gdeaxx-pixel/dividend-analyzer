@@ -342,3 +342,120 @@ def test_sin_efectivo_no_distributivo_otros_es_cero(monkeypatch):
     assert datos["OTROS_DETALLE"] == {}
     assert datos["CAPITAL_ACTUAL"] == pytest.approx(datos["VALOR_HOY"] + datos["CASH"], abs=0.01)
     assert verificar_identidades(datos, s) == []
+
+
+# ── el aviso de bloqueo dice QUÉ le falta al export ─────────────────────────────────────────
+#
+# Los 9 bloqueos que quedaban el 2026-09-24 tras el #143 tienen todos la misma causa, y NO es
+# un error de cálculo: al export le faltan las filas `Reinvest Dividend` que respaldan las
+# compras del DRIP. El guard tenía razón; el mensaje no servía para actuar.
+_CSV_DRIP_SIN_FUENTE = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/11/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","100.00"\n'
+    b'"04/11/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","5","20.00","","-100.00"\n'
+    # Estas dos compras no traen su distribución: el archivo empieza tarde.
+    b'"05/09/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+    b'"06/06/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","1.5","20.00","","-30.00"\n'
+)
+
+
+def _stats_drip_sin_fuente(monkeypatch, version="TEST_ADAPTERS_DRIPSF"):
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_DRIP_SIN_FUENTE, "dripsf.csv"))
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    return logic.analyze_portfolio(dfc, version=version)["MSTY"]
+
+
+def test_el_aviso_nombra_las_filas_que_faltan_y_su_importe(monkeypatch):
+    """Las dos cifras del aviso salen del CSV, no de una plantilla: 3 compras contra 1
+    distribución, 2 huérfanas, $70.00 sin respaldo."""
+    from ui.adapters import diagnosticar_bloqueo
+    s = _stats_drip_sin_fuente(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    fallos = verificar_identidades(datos, s)
+    assert fallos, "el fixture debe bloquear, si no el aviso no se prueba"
+    dx = diagnosticar_bloqueo(datos, s, fallos)
+    texto = " ".join([dx["titular"]] + dx["cuerpo"])
+    assert "le faltan filas" in dx["titular"]
+    assert "3 compras" in texto and "1 distribución" in texto   # singular, no "1 distribuciones"
+    assert "$70.00" in texto
+    assert dx["nuestro"] is False
+    assert "History" in dx["accion"]
+
+
+def test_el_aviso_no_culpa_al_export_cuando_la_culpa_es_del_motor(monkeypatch):
+    """Si lo que falla es el guard independiente (el CSV releído contra el bruto del
+    motor), el descuadre es NUESTRO: el aviso pide que lo reporten en vez de mandar al
+    cliente a pedirle datos a su bróker."""
+    from ui.adapters import diagnosticar_bloqueo
+    monkeypatch.setattr(logic, "_is_tax_row_action", lambda action: False)
+    s = _ib_msty_stats_saboteada(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    fallos = verificar_identidades(datos, s)
+    dx = diagnosticar_bloqueo(datos, s, fallos)
+    assert dx["nuestro"] is True
+    assert "fallo nuestro" in dx["titular"]
+    assert "bróker" not in " ".join(dx["cuerpo"])
+
+
+def test_el_aviso_nombra_el_bolsillo_negativo_como_historial_que_falta():
+    """Ventas sin las compras que las originaron: el capital aportado sale negativo. Es
+    otra cara del mismo archivo incompleto, y se dice aparte."""
+    from ui.adapters import diagnosticar_bloqueo
+    datos = {"POCKET": -2439.63, "DRIP": 583.76, "CASH": 0.0, "NETO": 137.29, "OTROS": 0.0}
+    fallos = ["neto = reinvertido + efectivo: 137.29 ≠ 583.76", "bolsillo negativo: -2439.63"]
+    dx = diagnosticar_bloqueo(datos, {"history": None}, fallos)
+    cuerpo = " ".join(dx["cuerpo"])
+    assert "negativo" in cuerpo and "-2,439.63" in cuerpo
+    assert "ventas sin las compras" in cuerpo
+
+
+def test_una_causa_desconocida_no_se_disfraza_de_export_incompleto():
+    """Sin filas huérfanas ni bolsillo negativo, el aviso NO inventa una causa: dice que
+    no la reconoce y manda a reportar. El mutante que hace esto fallar es cualquiera que
+    devuelva el texto del export por defecto."""
+    from ui.adapters import diagnosticar_bloqueo
+    datos = {"POCKET": 100.0, "DRIP": 0.0, "CASH": 0.0, "NETO": 50.0, "OTROS": 0.0}
+    dx = diagnosticar_bloqueo(datos, {"history": None}, ["capital actual = valor hoy + efectivo + otros: 1.00 ≠ 2.00"])
+    assert dx["nuestro"] is True
+    assert "no cuadran entre sí" in dx["titular"]
+    assert "export" not in dx["titular"]
+
+
+_CSV_DOS_COMPRAS_UN_DIA = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/11/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","100.00"\n'
+    b'"04/11/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","5","20.00","","-100.00"\n'
+    b'"05/09/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","60.00"\n'
+    b'"05/09/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+    b'"05/09/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","1","20.00","","-20.00"\n'
+    b'"06/06/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","1.5","20.00","","-30.00"\n'
+)
+
+
+def test_las_huerfanas_se_cuentan_por_dia_no_por_total_de_filas():
+    """La forma de TSLY del caso 1: un día con DOS compras y UNA distribución. Por conteo
+    global salen 2 huérfanas (4 compras − 2 fuentes); por día sale **1**, la del 06/06, y
+    su importe es $30.00, no $50.00. El criterio por día es el único que puede decir
+    cuánto dinero queda sin respaldo — que es lo que el aviso promete."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_DOS_COMPRAS_UN_DIA, "dosc.csv"))
+    dfc = logic.normalize_csv(df)
+    h = logic.drip_huerfanas(dfc[dfc["Ticker"] == "MSTY"])
+    assert h == {"compras": 4, "fuentes": 2, "huerfanas": 1, "importe": 30.00}, h
+
+
+def test_el_titular_nombra_lo_que_no_se_dibuja(monkeypatch):
+    """El mismo aviso sirve a dos vistas, así que el sujeto se pasa: «Este recorrido» en
+    Cash flow, «Esta hoja» en la Hoja Excel. (De la segunda no hay test de render: hoy
+    `ui.chrome._orden` deja las categorías de fondos con una sola sección —«viaje»—, así
+    que la Hoja Excel existe pero no es navegable en la app.)"""
+    from ui.adapters import diagnosticar_bloqueo
+    s = _stats_drip_sin_fuente(monkeypatch, version="TEST_ADAPTERS_SUJETO")
+    datos = cashflow_data(s, "MSTY")
+    fallos = verificar_identidades(datos, s)
+    assert diagnosticar_bloqueo(datos, s, fallos)["titular"].startswith("Este recorrido")
+    assert diagnosticar_bloqueo(datos, s, fallos, sujeto="Esta hoja")["titular"].startswith("Esta hoja")
