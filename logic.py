@@ -6689,7 +6689,10 @@ def filter_growth_assets(results, proj=None, min_yield_pct=INCOME_ASSET_MIN_YIEL
 
 CAPTURE_MIN_COLUMNS = ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount']
 CAPTURE_MIN_OK_TICKERS = 2          # mínimo de tickers nivel 'ok' para considerar el caso "sólido"
-CAPTURE_SCHEMA_VERSION = '1.0'
+CAPTURE_SCHEMA_VERSION = '1.1'
+CAPTURE_ORIGENES = ('captura', 'editado', 'vista_previa')
+CAPTURE_1042S_CAMPOS = ('income_code', 'gross_income', 'federal_tax_withheld',
+                        'withholding_credit', 'tax_rate')
 
 
 def _safe_round(v, nd: int = 4):
@@ -6707,6 +6710,11 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     Whitelist estricta: descarta por construcción cualquier columna del broker
     (número de cuenta, titular, dirección, descripción libre). La fecha se trunca
     a YYYY-MM-DD para no arrastrar timestamps/zona horaria identificables.
+
+    Las filas SIN ticker se conservan con Ticker vacío: dividendos sin símbolo,
+    «NRA Tax Adj», transferencias. `build_dividend_tax_totals` las lee; descartarlas
+    cambiaba el bruto y la retención por año en los 3 casos Schwab (schwab1:
+    $6,646.08 → $5,835.50, medido el 2026-09-25).
     """
     cols = [c for c in CAPTURE_MIN_COLUMNS if c in df_clean.columns]
     out = df_clean[cols].copy()
@@ -6714,11 +6722,92 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
         out['Date'] = pd.to_datetime(out['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
         out = out.dropna(subset=['Date'])
     if 'Ticker' in out.columns:
-        out['Ticker'] = out['Ticker'].astype(str).str.strip().str.upper()
-        out = out[out['Ticker'].ne('') & out['Ticker'].ne('NAN')]
+        vacio = out['Ticker'].isna()
+        t = out['Ticker'].astype(str).str.strip().str.upper()
+        out['Ticker'] = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
     if 'Action' in out.columns:
         out['Action'] = out['Action'].astype(str).str.strip()
     return out.reset_index(drop=True)
+
+
+def load_capture_fixture(src) -> pd.DataFrame:
+    """Lee un fixture capturado (`transactions_min.csv`) tal como lo escribió
+    `anonymize_to_min_rows`. Único lector: lo usan el harness y el test de fidelidad.
+
+    El Ticker vacío debe seguir vacío (no NaN) y un ticker literal «NA» no debe
+    volverse NaN; en las columnas numéricas una celda vacía sí es NaN.
+    """
+    return pd.read_csv(src, dtype={'Ticker': str, 'Action': str}, keep_default_na=False,
+                       na_values={c: [''] for c in ('Date', 'Quantity', 'Price', 'Amount')})
+
+
+def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None) -> dict:
+    """De dónde salió cada cifra confirmada en el paso 2, por ticker y campo.
+
+    Replica los valores por defecto de `ui/carga.py::render_bloque_posiciones`
+    (acciones: la captura si hay lectura, si no la vista previa; costo: la captura si
+    es distinta de cero, si no `invested` de la vista previa). Si lo confirmado es el
+    valor por defecto, el origen es 'captura' o 'vista_previa'; si no, 'editado'.
+
+    'vista_previa' sale del MISMO CSV que se va a probar: usarlo como esperado haría
+    un test que se compara consigo mismo. `promote_case.py` no lo promueve.
+    """
+    out = {}
+    for t, v in (confirmadas or {}).items():
+        v = v or {}
+        o = (ocr or {}).get(t) or {}
+        p = (previa or {}).get(t) or {}
+        res = {}
+        for campo, campo_previa, hay_lectura in (
+                ('shares', 'shares', o.get('shares') is not None),
+                ('cost_basis', 'invested', bool(o.get('cost_basis')))):
+            val = _safe_round(v.get(campo), 6)
+            defecto = _safe_round(o.get(campo) if hay_lectura else (p.get(campo_previa) or 0.0), 6)
+            if val is None:
+                res[campo] = None
+            elif defecto is not None and abs(val - defecto) <= 1e-6 * max(1.0, abs(defecto)):
+                res[campo] = 'captura' if hay_lectura else 'vista_previa'
+            else:
+                res[campo] = 'editado'
+        out[str(t).strip().upper()] = res
+    return out
+
+
+def _tickers_limpios(xs) -> list:
+    return sorted({str(x).strip().upper() for x in (xs or [])
+                   if isinstance(x, str) and re.fullmatch(r'[A-Za-z0-9.\-]{1,12}', x.strip())})
+
+
+def capture_signals(min_df: pd.DataFrame, quality: dict, bloqueos=None,
+                    indeterminados=None) -> dict:
+    """Por qué un caso es interesante para el harness. Solo tickers y conteos."""
+    acciones = min_df['Action'].str.lower() if 'Action' in min_df.columns else pd.Series(dtype=str)
+    return {
+        'bloqueos_identidades': _tickers_limpios(bloqueos),
+        'indeterminados': _tickers_limpios(indeterminados),
+        'unreliable': _tickers_limpios([t for t, q in (quality or {}).items()
+                                        if (q or {}).get('level') == 'unreliable']),
+        'n_splits': int(acciones.str.contains('split', na=False).sum()),
+        'n_traspasos': int(acciones.str.contains('journal|transfer', na=False).sum()),
+        'n_filas_sin_ticker': int(min_df['Ticker'].eq('').sum()) if 'Ticker' in min_df.columns else 0,
+    }
+
+
+def _form_1042s_min(parsed: dict):
+    """Solo los números del 1042-S. Fuera `unique_form_id` (lo emite el agente de
+    retención por formulario y lo enlaza al titular), TIN, nombre y cuenta."""
+    if not isinstance(parsed, dict) or not parsed.get('forms'):
+        return None
+    forms = []
+    for f in parsed.get('forms') or []:
+        f = f or {}
+        forms.append({k: (str(f[k]) if k == 'income_code' else _safe_round(f[k], 4))
+                      for k in CAPTURE_1042S_CAMPOS if f.get(k) is not None})
+    year = parsed.get('tax_year')
+    code = parsed.get('recipient_country_code')
+    return {'tax_year': int(year) if isinstance(year, (int, float)) or str(year).isdigit() else None,
+            'recipient_country_code': code if isinstance(code, str) and re.fullmatch(r'[A-Z]{2}', code) else None,
+            'forms': forms}
 
 
 def is_capture_worthy(quality_map: dict, overrides: dict) -> tuple:
@@ -6743,10 +6832,14 @@ def is_capture_worthy(quality_map: dict, overrides: dict) -> tuple:
 
 def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
                          quality_map: dict, gemini_raw: dict = None,
-                         app_version: str = '2.8') -> dict:
+                         app_version: str = '2.8', origen: dict = None,
+                         form_1042s: dict = None, pais: str = None,
+                         bloqueos: list = None, indeterminados: list = None) -> dict:
     """Construye el bundle anónimo de un caso de estudio (sin red, testeable).
 
     Todos los payloads son números/enums/texto genérico: cero PII por construcción.
+    A propósito NO recibe el nombre del archivo: el de IB lleva el número de cuenta.
+    `origen` es la salida de `origen_posiciones`; sin él, ninguna cifra es promovible.
     """
     import uuid
     min_df = anonymize_to_min_rows(df_clean)
@@ -6755,9 +6848,14 @@ def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
     ground_truth = {}
     for t, v in (overrides or {}).items():
         v = v or {}
-        ground_truth[str(t).strip().upper()] = {
+        t = str(t).strip().upper()
+        o = (origen or {}).get(t) or {}
+        ground_truth[t] = {
             'cost_basis': _safe_round(v.get('cost_basis'), 2),
             'shares': _safe_round(v.get('shares'), 4),
+            'origen_shares': o.get('shares') if o.get('shares') in CAPTURE_ORIGENES else None,
+            'origen_cost_basis': (o.get('cost_basis')
+                                  if o.get('cost_basis') in CAPTURE_ORIGENES else None),
         }
 
     quality = {}
@@ -6773,16 +6871,20 @@ def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
     raw = {}
     for t, v in (gemini_raw or {}).items():
         v = v or {}
-        raw[str(t)] = {k: v.get(k) for k in ('cost_basis', 'shares', 'market_value', 'price') if k in v}
+        raw[str(t)] = {k: _safe_round(v.get(k), 4) for k in ('cost_basis', 'shares', 'market_value', 'price') if k in v}
 
     meta = {
         'case_id': case_id,
         'broker': broker or 'generic',
         'app_version': app_version,
         'schema_version': CAPTURE_SCHEMA_VERSION,
-        'captured_at': datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + 'Z',
+        # Solo el día: la hora exacta se podría cruzar con el registro de acceso (Auth0).
+        'captured_at': datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
         'n_rows': int(len(min_df)),
         'tickers': sorted(ground_truth.keys()),
+        'pais': pais if isinstance(pais, str) and re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóúñÑ ]{2,40}', pais) else None,
+        'senales': capture_signals(min_df, quality_map, bloqueos, indeterminados),
+        'form_1042s': _form_1042s_min(form_1042s),
     }
 
     return {

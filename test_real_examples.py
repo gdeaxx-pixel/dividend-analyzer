@@ -85,7 +85,7 @@ def _load(case):
         paths = glob.glob(os.path.join(REAL, c["glob"]))
         if not paths:
             pytest.skip(f"real_examples no disponible: {c['glob']}")
-        return pd.read_csv(paths[0]), c.get("broker", "normalized")
+        return logic.load_capture_fixture(paths[0]), c.get("broker", "normalized")
     # Caso con manifest (expected.json en su carpeta).
     paths = [p for p in glob.glob(os.path.join(c["dir"], c.get("csv_glob", "*.csv")))
              if not p.endswith("expected.json")]
