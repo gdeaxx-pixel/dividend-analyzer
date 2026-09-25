@@ -97,22 +97,24 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
 Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1018 passed,
-77 skipped, 2 failed, 1 deselected**, con `python -m pytest -q` a secas (medido 2026-09-25
-sobre la rama `claude/hola-6x8t15`, base `main` = `7a1087f`). Antes daba 1012 passed,
-73 skipped, 8 failed y 1 error, y solo corría con `--continue-on-collection-errors`.
-El PR de infraestructura de la auditoría M4 cambió cuatro cosas:
-- movió `test_spy_math.py` (un script sin tests que descargaba VOO al importarse y cortaba la
-  colección) a `tools/spy_math_trace.py`;
-- mockeó el mercado en los tres tests que dependían de Yahoo sin medir el mercado;
-- hizo que los de splits se salten con motivo cuando yfinance no responde;
-- sumó +4 tests al plugin de deriva.
-Los 2 rojos que quedan son de entorno: `test_los_contratos_vivos_siguen_pasando_su_check` busca
-el demo en una ruta del Mac, y `test_s1_demo_no_hereda_capturas_de_la_sesion_previa` ya está
-registrado en el baseline de deriva de este entorno. El detalle está en
-`docs/auditorias/2026-09-24-m4-298ae66.md`.
+79 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
+2026-09-25 sobre la rama `claude/hola-6x8t15`, base `main` = `5714469`). Es la primera vez
+que la suite queda verde fuera de la máquina de Daniel.
+Llegar aquí costó dos PRs de la auditoría M4:
+- **#142**: `test_spy_math.py` pasó a `tools/`, los tests que dependían de Yahoo sin medir el
+  mercado lo mockean y los de splits se saltan con motivo cuando yfinance no responde.
+- **El de los rojos de entorno (2026-09-25)**: los dos se saltan **solo** cuando falta su
+  recurso privado:
+  - `test_los_contratos_vivos_siguen_pasando_su_check`, cuando falta el demo del vault;
+  - `test_s1_demo_no_hereda_capturas_de_la_sesion_previa`, cuando falta `real_examples/`.
+  Los dos fallaban también en CI y disparaban el aviso de Telegram de cada refresco semanal
+  por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
+El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
 **Esta cifra NO sustituye la línea local de abajo, y la de abajo está desfasada**: la nube
-recolecta 1097 tests (1018 + 77 + 2) contra sus 908 (906 + 2). Hay que volver a medirla en
-local, con `real_examples/` montado.
+recolecta 1097 tests (1018 + 79) contra sus 908 (906 + 2). Para volver a medirla en local,
+con `real_examples/` montado: `./.venv/bin/python tools/verificacion_m4_local.py`. Mide la
+línea base y además repite los dos mutantes de la auditoría que solo se pueden medir con los
+datos reales.
 
 Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía

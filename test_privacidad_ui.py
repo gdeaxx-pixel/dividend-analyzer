@@ -202,6 +202,12 @@ def test_s1_demo_no_hereda_capturas_de_la_sesion_previa():
     import demo_mode
     from ui.carga import CLAVES_CONTEXTO_CARTERA
 
+    if not demo_mode.demo_available():
+        # El demo solo existe donde está `real_examples/` (`demo_available()` es literalmente
+        # `isdir(REAL)`): sin datos privados no hay bundle que probar. Mismo criterio que los
+        # ~70 tests que se saltan sin `real_examples/`. Antes esto salía ROJO en CI y en la
+        # nube, y habría disparado el aviso de Telegram de cada refresco semanal (auditoría M4).
+        pytest.skip("real_examples/ no montado: sin datos privados no hay demo que cargar")
     bundle = demo_mode.load_demo_case("schwab")
     assert bundle is not None
 

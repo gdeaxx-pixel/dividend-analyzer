@@ -143,6 +143,14 @@ def test_los_contratos_vivos_siguen_pasando_su_check():
         r = subprocess.run(
             [sys.executable, os.path.join(TOOLS, f"extract_{nombre}.py"), "--check"],
             capture_output=True, text=True)
+        if r.returncode != 0 and "No encuentro el demo en" in f"{r.stdout}{r.stderr}":
+            # El --check compara contra el demo del artifact, que vive en el vault de Obsidian
+            # (ruta del Mac o `DIVIDEND_DEMO_HTML`). En CI y en la nube no está, y sin él no se
+            # mide nada. Antes esto salía ROJO y disparaba el aviso de Telegram de cada refresco
+            # semanal por un contrato que nadie rompió (auditoría M4; medido en el run del
+            # 2026-09-19). Solo se salta por ESTA causa: cualquier otro fallo sigue siendo rojo.
+            pytest.skip(f"extract_{nombre}.py --check necesita el demo del artifact, que no está "
+                        "en este entorno (DIVIDEND_DEMO_HTML): no se midió nada")
         assert r.returncode == 0, (
             f"extract_{nombre}.py --check dejó de pasar: ese contrato SÍ está vivo\n"
             f"{r.stdout}{r.stderr}")

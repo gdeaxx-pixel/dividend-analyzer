@@ -2,15 +2,6 @@
   "version": 2,
   "generado": "2026-09-23T23:02:48",
   "commit": "c8ce5f7",
-  "rojos": {
-    "test_privacidad_ui.py::test_s1_demo_no_hereda_capturas_de_la_sesion_previa": {
-      "entorno": "sin-datos-privados",
-      "huella": "6fa281388a23fd19",
-      "valores": [],
-      "primera_vez": "2026-09-23",
-      "ultima_vez": "2026-09-23",
-      "corridas": 4
-    }
-  },
+  "rojos": {},
   "migrado": "2026-09-24: v1->v2, rojos separados por entorno"
 }
