@@ -149,7 +149,7 @@ def test_bucket_gris_no_negativo_con_reembolso():
         "roc_percent": 60.0, "roc_source": "19a",
         "history": hist,
     }
-    datos = impuestos_data({"MSTY": stats}, logic.build_fiscal_profile("México"), [])
+    datos = impuestos_data({"ZZZY": stats}, logic.build_fiscal_profile("México"), [])
     f = datos["fondos"][0]
 
     assert f["retenido"] == pytest.approx(105.0, abs=0.01), "peldaño 4 = retenido AL COBRO"
@@ -528,7 +528,7 @@ def test_cruce_peldano2_estructural(alias, bruto_esp, sin_roc_min):
 def test_casilla9_no_depende_del_pais(monkeypatch):
     """Con withheld=$100 y ROC 60 % la casilla 9 es $60.00 (100 × 0.60), idéntica sin país
     y con Colombia / México / España. El primer caso —sin país— daba $0.00 antes del fix."""
-    res = {"MSTY": _stats_sinteticos("MSTY", 1000.0, 100.0, 60.0, "19a")}
+    res = {"ZZZY": _stats_sinteticos("ZZZY", 1000.0, 100.0, 60.0, "19a")}
     perfiles = {
         "sin_pais": logic.build_fiscal_profile(),
         "Colombia": logic.build_fiscal_profile("Colombia"),   # 30 %

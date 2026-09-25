@@ -96,7 +96,17 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1156 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+Línea base: **1157 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`fix/r3-h1-devolucion-un-anio-cierre-fiscal`, base `main` = `06e96c7`, en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +1: el test de R3-H1 (ronda 3 de M4). Un solo
+año cerrado con retención ya usa su cierre fiscal (Regla 4b); antes caía al 19(a) —MSTY solo
+2025: $235.20 de $300 en vez de $300—. $0 en los 3 casos reales: ninguna posición tiene un solo
+año con retención. 7 tests usaban «MSTY» como ticker de relleno con un %ROC inventado y la
+rama nueva les hacía leer el cierre real; pasan a `ZZZY` sin tocar ninguna aserción, y siguen
+verdes sobre el código de antes. **Un worktree no hereda lo ignorado por git**: sin
+`real_examples/` y `CONY_test.csv` da 1065/74 o 1155/3.)
+
+Antes: **1156 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
 `60de8ae` —tras los #148 a #151—, en la máquina de Daniel con `real_examples/` montado, con
 `tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +26
 respecto a la de abajo: 14 del #149, 6 del #150 y 6 del #151, ninguno depende de datos reales.

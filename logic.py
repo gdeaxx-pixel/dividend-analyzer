@@ -5345,9 +5345,9 @@ def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, r
     COBRO — extraído de `build_tax_summary` para que `_roc_refund_recuperable` (R2, casilla 9
     sin país) y el objeto fiscal con país compartan una sola implementación (Regla 3).
 
-    Misma rama que antes: más de un año con retención al cobro (`> 0.01`) usa el %ROC de CADA
-    año (`estimate_roc_refund_by_year`); si no, el agregado (`estimate_roc_refund`) con
-    `roc_pct` único. Devuelve {'fair_withholding', 'refund', 'refund_pct', 'method',
+    Más de un año con retención al cobro (`> 0.01`), o uno solo que ya tiene cierre fiscal
+    (Regla 4b), usa el %ROC de CADA año (`estimate_roc_refund_by_year`); si no, el agregado
+    (`estimate_roc_refund`) con `roc_pct` único. Devuelve {'fair_withholding', 'refund', 'refund_pct', 'method',
     'by_year': bool, 'refund_by_year': dict|None}.
     """
     wap_by_year = wap_by_year or {}
@@ -5359,7 +5359,15 @@ def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, r
     method = f'ROC {roc_pct:.0f}%'
     by_year = False
     refund_by_year = None
-    if len(years_wh) > 1:
+    # Regla 4b: un año ya cerrado se mide con SU cierre fiscal aunque sea el único año con
+    # retención. Antes la rama por año exigía dos años y un fondo con retención solo en 2025
+    # caía al %ROC agregado (19a): MSTY 2025, 78.40% en vez del 100% del cierre (R3-H1).
+    _cierre_unico = False
+    if len(years_wh) == 1:
+        _, _fuentes = roc_pct_by_year(str(ticker).upper(), load_roc_19a(), load_roc_ici(),
+                                      con_fuente=True)
+        _cierre_unico = _fuentes.get(years_wh[0]) == 'cierre'
+    if len(years_wh) > 1 or _cierre_unico:
         rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
                                           base_rate=rate_pct / 100.0, roc_fallback_pct=roc_pct)
         rby_total = (rby or {}).get('total')
