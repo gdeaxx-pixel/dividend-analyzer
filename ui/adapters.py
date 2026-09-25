@@ -307,7 +307,8 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
 
 
 def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
-                            resultados: dict, ruta_a: dict | None = None) -> dict | None:
+                            resultados: dict, ruta_a: dict | None = None,
+                            sin_medir: dict | None = None) -> dict | None:
     """Sexto peldaño (Fase 4): qué te toca DECLARAR en tu país por esta renta extranjera.
 
     **Publica la base y el crédito. NO publica la tarifa, y eso es la decisión de diseño,
@@ -362,6 +363,18 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
     _vuelve_medido = _c9 is not None
     _vuelve = _f(_c9) if _vuelve_medido else 0.0
 
+    # Cobertura del crédito. La casilla 9 es la suma de lo que se PUDO medir: un fondo sin % de
+    # ROC (o cuya retención al cobro no reconcilia) aporta $0, y su retención entera acaba en
+    # el definitivo. Medido en `schwab_synth_1` quitando el ROC de MSTY: el definitivo pasaba
+    # de $4.10 a $50.90 sin ningún motivo, mientras el peldaño 2 sí nombraba a MSTY en
+    # `sin_roc`. No se publica `None` —un fondo amplio como SCHB no publica 19a y caería
+    # siempre ahí—: se publica la cifra como TECHO, con los fondos y su retención, que es lo
+    # que el contribuyente necesita para saber cuánto de ese crédito está en duda.
+    _sm = sin_medir or {}
+    _sm_fondos = list(_sm.get("fondos") or [])
+    _sm_retenido = round(_f(_sm.get("retenido")), 2)
+    _completa = not _sm_fondos
+
     no_realizado = None
     if ganancias and (ganancias.get("no_realizado") or {}).get("monto") is not None:
         no_realizado = round(_f(ganancias["no_realizado"]["monto"]), 2)
@@ -407,7 +420,16 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
             # se midió, justo lo que el #101 y el #102 corrigieron en los otros peldaños.
             "definitivo": (round(retenido - _vuelve, 2) if _vuelve_medido else None),
             "definitivo_momento": "tras_reclasificacion_anual",
-            "definitivo_motivo": (None if _vuelve_medido else "sin_dato_de_roc_recuperable"),
+            "definitivo_motivo": (("sin_dato_de_roc_recuperable" if not _vuelve_medido
+                                   else (None if _completa else "cobertura_incompleta"))),
+            # True cuando el definitivo incluye retención de fondos cuya devolución no se pudo
+            # medir: la cifra es un máximo, no la final.
+            "definitivo_es_techo": bool(_vuelve_medido and not _completa),
+            "cobertura": {
+                "completa": _completa,
+                "fondos_sin_medir": _sm_fondos,
+                "retenido_sin_medir": _sm_retenido,
+            },
         },
         "realizado_por_tramo": tramos,
         "corte_tramo_dias": logic.CAPITAL_GAINS_TRAMO_DIAS,
@@ -715,6 +737,12 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     # —el guard de los reversos de split de IB—, y sin el `correcta < -0.01` de `desglose_ok`:
     # un residuo negativo invalida la partición de tres del peldaño 4, no la medición del ROC.
     refund_roc_casilla9_total = 0.0
+    # Fondos con retención cuya devolución por ROC NO se pudo medir (sin % de ROC, retención al
+    # cobro que no reconcilia, o tasa imposible). Aportan $0 a la casilla 9, así que toda su
+    # retención cae en el crédito «definitivo» del peldaño 6: ese crédito pasa a ser un TECHO y
+    # se dice (auditoría M4, ronda 2, R2-H2).
+    credito_sin_medir: list[str] = []
+    credito_retenido_sin_medir = 0.0
     foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
     fondos_sin_roc: list[str] = []   # peldaño 2: sin dato de ROC → tributan sobre el 100% del bruto
@@ -801,6 +829,10 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         foreign_tax_paid_total += _f(stats.get("foreign_tax_paid_total"))
         if reconcilia:
             refund_roc_casilla9_total += refund_roc
+        if retenido_cobro > 0.01 and (roc_pct is None or not reconcilia
+                                      or diag.get("implausible")):
+            credito_sin_medir.append(ticker)
+            credito_retenido_sin_medir += retenido_cobro
         if declarado:
             corresponde_total += corresponde
         if desglose_ok:
@@ -946,7 +978,10 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         # Peldaño 6 (Fase 4). Llena el slot que la Fase 2 dejó rotulado «PRÓXIMAMENTE» — no
         # se crea uno nuevo ni se mueven los de arriba. Publica BASE y CRÉDITO; la tarifa se
         # omite a propósito y el objeto lo dice en `tarifa_motivo` (ver el docstring).
-        "impuesto_local": _impuesto_local_cartera(peldanos, _gc_cartera, resultados, ruta_a),
+        "impuesto_local": _impuesto_local_cartera(
+            peldanos, _gc_cartera, resultados, ruta_a,
+            sin_medir={"fondos": credito_sin_medir,
+                       "retenido": round(credito_retenido_sin_medir, 2)}),
         # Ya no queda ninguna fase con slot reservado en esta vista. Se conserva la lista
         # (vacía) porque el componente la lee para pintar los «PRÓXIMAMENTE»: quitarla
         # obligaría a tocar el render sin necesidad.
