@@ -3593,6 +3593,26 @@ def _stats_roc(withheld, roc_percent, roc_source="19a", gross=1000.0):
     }
 
 
+def test_un_solo_anio_cerrado_con_retencion_usa_su_cierre_fiscal(monkeypatch):
+    """R3-H1 (Regla 4b): el cierre fiscal manda en un año cerrado aunque sea el ÚNICO año con
+    retención. Antes la rama por año exigía dos años y este caso caía al %ROC del holder
+    (19a, 78.40%): devolvía $235.20 de $300 retenidos. Con el cierre al 100% la retención
+    justa es $0 y vuelve todo lo retenido."""
+    monkeypatch.setattr(logic, "load_roc_19a", lambda: {
+        "MSTY": {"per_distribution": [{"date": "2025-06-01", "roc_pct": 78.4}]}})
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {"MSTY": {2025: {"roc_pct": 100.0}}})
+    ts = logic.build_tax_summary(_stats_roc(300.0, 78.4, "19a"), "MSTY", base_rate_pct=30.0)
+    assert ts["refund_estimated"] == pytest.approx(300.0, abs=0.01)
+    assert ts["refund_by_year"][2025]["roc_fuente"] == "cierre"
+
+    # Sin cierre para ese año, la rama agregada con el %ROC del holder sigue igual.
+    monkeypatch.setattr(logic, "load_roc_ici", lambda: {})
+    ts_abierto = logic.build_tax_summary(_stats_roc(300.0, 78.4, "19a"), "MSTY",
+                                         base_rate_pct=30.0)
+    assert ts_abierto["refund_estimated"] == pytest.approx(235.2, abs=0.01)
+    assert ts_abierto["by_year"] is False
+
+
 def test_roc_sin_pais_ni_retencion_igual_publica_el_roc():
     """El % de ROC no depende de la tasa de residencia ni de que haya habido retención NRA.
     Las dos rutas nulas de `build_tax_summary` (`_undeclared`, `withheld <= 0.01`) publican
