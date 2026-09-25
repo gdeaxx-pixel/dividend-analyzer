@@ -541,7 +541,14 @@
            + 'reclasifique el ROC</span> · <span class="c-coral">' + money(gap)
            + ' no vuelven nunca: falta tu W-8BEN</span>' };
     }
-    if (roc > 0.01) {
+    // La rama del ROC se decide con el MISMO importe que pinta la tarjeta ámbar
+    // (`money`, a centavos), no con un umbral propio. Con `roc > 0.01` un ROC de
+    // EXACTAMENTE $0.01 caía en «justo lo que te tocaba» mientras la tarjeta mostraba
+    // «Vuelve solo · $0.01» — el bug del #115, en la rama hermana (auditoría M4, ronda 2,
+    // R2-H4). Comparar el texto formateado hace que titular y tarjeta no puedan
+    // discrepar: lo que la tarjeta muestra como $0.00, el titular lo trata como cero.
+    var rocVisible = money(roc) !== money(0);
+    if (rocVisible) {
       return { borde: "warn", kick: kick,
         big: "Te retuvieron " + X + " — te tocaban " + Y + ". "
              + (gapResidual ? "Prácticamente todo" : "Todo") + " el exceso vuelve solo.",
