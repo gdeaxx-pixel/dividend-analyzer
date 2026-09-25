@@ -9,6 +9,15 @@ report.failed). Skips y errores de setup/teardown quedan fuera.
 Un test flaky entra y sale del baseline: el informe lo cantará como 🆕 NUEVO ROJO una
 corrida y ✅ SANADO la siguiente. El mecanismo no distingue flaky de deriva real.
 
+✅ SANADO exige que el test haya CORRIDO y PASADO en esta sesión (fase ``call``). Antes
+bastaba con que no apareciera entre los fallos, y eso cantaba SANADO por tests que ni se
+ejecutaron: una corrida filtrada (``pytest ruta::test``), un test saltado o una colección
+cortada por un error de importación (auditoría M4, H5 — medido el 2026-09-24 con la
+colección interrumpida y 0 tests ejecutados). Un rojo del baseline que se salta sale como
+⏭️ SALTADO; uno que no llegó a correr solo cuenta en una línea de resumen. Y
+``--deriva-actualizar`` conserva intactas las entradas de los tests que no corrieron: esta
+corrida no los midió, así que no tiene nada que decir sobre ellos.
+
 El baseline está SEPARADO POR ENTORNO (v2). Motivo, medido el 2026-09-24 en la primera
 corrida local tras el merge: el rojo `test_s1_demo_no_hereda_capturas_de_la_sesion_previa`
 solo existe SIN `real_examples/` (datos privados de bróker, no versionados). El baseline se
@@ -144,20 +153,26 @@ def rojos_del_entorno(baseline: dict, entorno: str) -> dict:
             if isinstance(previo, dict) and previo.get("entorno") == entorno}
 
 
-def clasificar(previo, fallo_actual: bool, huella_actual) -> str:
+def clasificar(previo, fallo_actual: bool, huella_actual, estado: str = "paso") -> str:
     """previo = entrada del baseline para ese nodeid, o None.
+    `estado` = qué le pasó al test en esta sesión cuando NO falló: "paso" (corrió y pasó),
+    "saltado" o "sin_correr" (filtrado, deseleccionado, colección cortada, error de setup).
     Devuelve exactamente uno de:
-    - "movido"  : previo existe, sigue fallando, huella distinta
-    - "igual"   : previo existe, sigue fallando, huella igual
-    - "nuevo"   : no hay previo, falla
-    - "sanado"  : previo existe, ya no falla
-    - "verde"   : no hay previo y no falla (no se reporta)"""
+    - "movido"     : previo existe, sigue fallando, huella distinta
+    - "igual"      : previo existe, sigue fallando, huella igual
+    - "nuevo"      : no hay previo, falla
+    - "sanado"     : previo existe, y el test CORRIÓ y PASÓ
+    - "saltado"    : previo existe, y el test se saltó — un skip no es un pass
+    - "sin_correr" : previo existe, y el test no llegó a correr — no se midió nada
+    - "verde"      : no hay previo y no falla (no se reporta)"""
     if previo is None:
         if fallo_actual:
             return "nuevo"
         return "verde"
     if not fallo_actual:
-        return "sanado"
+        if estado == "paso":
+            return "sanado"
+        return "saltado" if estado == "saltado" else "sin_correr"
     if previo.get("huella") == huella_actual:
         return "igual"
     return "movido"
@@ -203,7 +218,17 @@ class DerivaCollector:
         self.entorno = entorno
         self.baseline = leer_baseline(baseline_path)
         self.fallos = {}  # nodeid -> {huella, valores, longrepr_normalizado}
+        self.pasados = set()   # nodeids que corrieron y pasaron la fase call
+        self.saltados = set()  # nodeids saltados (en setup o dentro del test)
         self.resultados = {}  # nodeid -> clasificacion
+
+    def estado(self, nodeid) -> str:
+        """Qué le pasó en esta sesión a un test que NO está entre los fallos."""
+        if nodeid in self.pasados:
+            return "paso"
+        if nodeid in self.saltados:
+            return "saltado"
+        return "sin_correr"
 
     def add_failure(self, nodeid, longrepr):
         norm = normalizar(longrepr)
@@ -247,6 +272,10 @@ def pytest_runtest_makereport(item, call):
         if report.when == "call" and report.failed:
             longrepr = str(report.longrepr) if report.longrepr else ""
             collector.add_failure(item.nodeid, longrepr)
+        elif report.when == "call" and report.passed:
+            collector.pasados.add(item.nodeid)
+        elif report.skipped:
+            collector.saltados.add(item.nodeid)
     except Exception as ex:
         print(f"deriva_oraculos: aviso interno ({ex})")
 
@@ -270,7 +299,7 @@ def pytest_sessionfinish(session, exitstatus):
                 h_actual = collector.fallos[nodeid]["huella"]
                 cls = clasificar(previo, True, h_actual)
             else:
-                cls = clasificar(previo, False, None)
+                cls = clasificar(previo, False, None, collector.estado(nodeid))
             resultados[nodeid] = cls
 
         # Los nuevos (no en el baseline)
@@ -309,6 +338,11 @@ def pytest_sessionfinish(session, exitstatus):
             for nodeid, previo in baseline.get("rojos", {}).items():
                 if isinstance(previo, dict) and previo.get("entorno") != entorno:
                     nuevo_baseline["rojos"][nodeid] = previo
+            # Lo mismo, en ESTE entorno, para los rojos que esta corrida no midió (saltados,
+            # filtrados, colección cortada): solo un test que corrió y pasó sale del baseline.
+            for nodeid, cls in resultados.items():
+                if cls in ("saltado", "sin_correr"):
+                    nuevo_baseline["rojos"][nodeid] = rojos_previos[nodeid]
             # Conservar los que siguen fallando
             for nodeid, fallo in collector.fallos.items():
                 previo = rojos_previos.get(nodeid)
@@ -385,6 +419,17 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
                 lineas.append(f"✅ SANADO: {nodeid}")
                 lineas.append(f"   (estaba rojo en el baseline del MISMO entorno, {collector.entorno}; si el arreglo")
                 lineas.append("    fue deliberado, corre pytest --deriva-actualizar y commitea el baseline)")
+
+        # SALTADO: un rojo del baseline que ahora se salta no es un rojo resuelto.
+        for nodeid, cls in sorted(resultados.items()):
+            if cls == "saltado":
+                lineas.append(f"⏭️  SALTADO: {nodeid} (estaba rojo; un skip no es un pass)")
+
+        # SIN CORRER: una línea, no una por test — en una corrida filtrada serían ruido.
+        sin_correr = sum(1 for cls in resultados.values() if cls == "sin_correr")
+        if sin_correr:
+            lineas.append(f"⏭️  {sin_correr} rojo(s) del baseline no corrieron en esta sesión "
+                          "(filtro, deselección o colección cortada): no se comparan.")
 
         if lineas:
             # La cabecera NO lleva el entorno: `test_deriva_oraculos.py` la matchea literal

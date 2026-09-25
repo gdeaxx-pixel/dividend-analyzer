@@ -649,7 +649,7 @@ def test_antes_de_confirmar_todo_pendiente_y_analyze_no_corre(monkeypatch):
     assert llamadas == [], "la dona disparó analyze_portfolio antes de confirmar"
 
 
-def test_tras_confirmar_la_dona_lee_el_cache(monkeypatch):
+def test_tras_confirmar_la_dona_lee_el_cache(monkeypatch, request):
     """§4.3 — después de confirmar, la dona SÍ lee los resultados vía
     `ui.vistas.obtener_resultados` (importación diferida). Estados medidos A MANO sobre
     el fixture `schwab_synth_1` con la captura del wizard (`position_overrides`):
@@ -658,6 +658,21 @@ def test_tras_confirmar_la_dona_lee_el_cache(monkeypatch):
     no es unreliable). Sin residencia declarada, Fiscal pendiente. Valoración verde
     (todos los tickers publican la misma `valuation_date`) y Excluidos verde (cero
     posiciones propias excluidas; el ruido de AAPL/nan no cuenta)."""
+    # Mercado desde el snapshot CONGELADO (historia real: dividendos y splits), no desde
+    # Yahoo. Sin esto el test dependía de la red: sin ella MSTY se quedaba sin datos, no
+    # llegaba a `reconciled` y Valoración salía pendiente (auditoría M4, H6). Un precio plano
+    # tampoco sirve: medido, con él Movimientos sale pendiente — los estados de este fixture
+    # dependen de los dividendos y splits reales, no de un precio cualquiera.
+    # Mismo patrón que el espía de `analyze_portfolio` del test de arriba.
+    import conftest
+    monkeypatch.setattr(logic, "fetch_market_data", conftest.mercado_congelado)
+    # `analyze_portfolio` va cacheada (`st.cache_data`) y la app la llama con sus propios
+    # argumentos: si otro test de la sesión ya la corrió con estos mismos datos, la dona lee
+    # ESE resultado y el mock nunca se ejecuta. Medido: solo, el test pasaba; dentro de la
+    # suite completa, no. Se limpia al entrar y al salir, como `load_instruments` en
+    # test_logic.py.
+    logic.analyze_portfolio.clear()
+    request.addfinalizer(logic.analyze_portfolio.clear)
     at = _at(timeout=40)
     at.session_state["_wizard_df_clean"] = _df_schwab()
     at.session_state["_wizard_csv_ticker_data"] = {}

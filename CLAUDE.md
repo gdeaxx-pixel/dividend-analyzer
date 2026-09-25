@@ -96,8 +96,10 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1107 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
-rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos`, base `main` = `333bcc2`, tras
+Línea base: **1118 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
+rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos` **ya fusionada** con `main` =
+`5714469` — en la rama sola, antes de traerse el #141 y el #142, daban 1107; el número que vale
+es el del árbol que existirá tras el merge. Tras
 sacar el efectivo NO distributivo del balde del dividendo: `Cash In Lieu` —la fracción liquidada
 en un split inverso— sumaba a `dividends_collected_cash`, de donde el recorrido lee el efectivo
 del dividendo, y hacía que `DRIP + CASH` superara al NETO del objeto fiscal por su importe
@@ -111,7 +113,25 @@ reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora viv
 corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
 abajo dos veces.
 
-Antes: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1018 passed,
+77 skipped, 2 failed, 1 deselected**, con `python -m pytest -q` a secas (medido 2026-09-25
+sobre la rama `claude/hola-6x8t15`, base `main` = `7a1087f`). Antes daba 1012 passed,
+73 skipped, 8 failed y 1 error, y solo corría con `--continue-on-collection-errors`.
+El PR de infraestructura de la auditoría M4 cambió cuatro cosas:
+- movió `test_spy_math.py` (un script sin tests que descargaba VOO al importarse y cortaba la
+  colección) a `tools/spy_math_trace.py`;
+- mockeó el mercado en los tres tests que dependían de Yahoo sin medir el mercado;
+- hizo que los de splits se salten con motivo cuando yfinance no responde;
+- sumó +4 tests al plugin de deriva.
+Los 2 rojos que quedan son de entorno: `test_los_contratos_vivos_siguen_pasando_su_check` busca
+el demo en una ruta del Mac, y `test_s1_demo_no_hereda_capturas_de_la_sesion_previa` ya está
+registrado en el baseline de deriva de este entorno. El detalle está en
+`docs/auditorias/2026-09-24-m4-298ae66.md`.
+**Esta cifra NO sustituye la línea local de abajo, y la de abajo está desfasada**: la nube
+recolecta 1097 tests (1018 + 77 + 2) contra sus 908 (906 + 2). Hay que volver a medirla en
+local, con `real_examples/` montado.
+
+Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
 una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
 `gap > 0.01` no lo capturaba, así que decía «Todo el exceso vuelve solo» mientras la

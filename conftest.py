@@ -28,3 +28,27 @@ def frozen_price_cache():
         yield
     finally:
         pc.CACHE_DIR, pc.META_PATH, pc.SPLITS_PATH = saved
+
+
+def mercado_congelado(ticker, start_date):
+    """Sustituto de `logic.fetch_market_data` SIN red: la historia REAL del snapshot
+    congelado (precio, dividendos y splits), con la forma que devuelve `yf.download(...,
+    actions=True)` — incluida la columna 'Stock Splits'. Para los tests cuyo resultado
+    depende de los dividendos o splits reales y no de un precio cualquiera: un mock plano
+    los borra y cambia lo que se mide (medido en la dona de cobertura, auditoría M4, H6).
+
+    Un ticker que no está en el snapshot devuelve vacío con motivo, igual que
+    `fetch_market_data` cuando no encuentra datos: nunca sale a la red."""
+    import pandas as pd
+    t = str(ticker).upper()
+    if not os.path.exists(os.path.join(FROZEN_DIR, f"{t}.parquet")):
+        return pd.DataFrame(), f"{t} no está en el snapshot congelado"
+    with frozen_price_cache():
+        hist = pc.load_history(t).history.copy()
+        splits = pc.load_splits(t).splits
+    hist["Stock Splits"] = 0.0
+    for fecha, razon in splits.items():
+        if fecha in hist.index:
+            hist.loc[fecha, "Stock Splits"] = float(razon)
+    desde = pd.to_datetime(start_date) - pd.Timedelta(days=10)   # mismo margen que el real
+    return hist[hist.index >= desde], None

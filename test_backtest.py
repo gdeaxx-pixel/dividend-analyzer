@@ -210,6 +210,18 @@ def test_known_splits_match_expected(ticker):
         splits = bt.fetch_splits(ticker)
     except Exception as e:
         pytest.skip(f"yfinance no disponible (fetch_splits {ticker}): {e}")
+    if len(splits) == 0:
+        # Sin red, yfinance NO lanza: deja el error en el log y devuelve la serie vacía, así
+        # que el `except` de arriba nunca saltaba. «No tuvo splits» (NVDY) y «no respondió»
+        # se ven igual; se distinguen pidiendo la historia, que todo ticker cotizado tiene.
+        # Sin ella, esto no midió nada: MSTY/CONY/TSLY fallaban y NVDY pasaba en vacío
+        # (auditoría M4, H6).
+        try:
+            hist = bt.fetch_history(ticker)
+        except Exception as e:
+            pytest.skip(f"yfinance no disponible (fetch_history {ticker}): {e}")
+        if hist.empty:
+            pytest.skip(f"yfinance no devolvió historia para {ticker}: sin red no se midió nada")
 
     assert len(splits) == len(expected), (
         f"{ticker}: se esperaban {len(expected)} splits ({expected}), "
