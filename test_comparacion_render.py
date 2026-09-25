@@ -506,10 +506,12 @@ _Q6_ESPERADO_STARTM1 = {1: 0.0, 2: 1.0, 3: 1.5}
 def test_q6_real_degrada_y_respeta_el_modo():
     """Q6 §5.2, tres piezas en un solo test (el mutante M3 apunta a este nodeid):
 
-    (a) Sin `DATA.idxDesde`, con `idxDesde` vacío, y con `idxDesde` SIN ese `startM`:
-        `series()` da exactamente `idx[m]/idx[startM] − 1` y NUNCA `NaN` (las claves
-        vienen de JSON: un mes ausente daría `undefined` y la división un `NaN`
-        silencioso — mutante M2). Los tres casos, en modo `roc`.
+    (a) Sin `DATA.idxDesde`, con `idxDesde` vacío, con `idxDesde` SIN ese `startM`, y
+        con la entrada de ese `startM` presente pero SIN su propio mes (`{}`):
+        `series()` da exactamente `idx[m]/idx[startM] − 1` y NUNCA `NaN`. El cuarto caso
+        es el único que ejerce el guard `desde[startM] != null`: en los otros tres
+        `desde` ya sale `undefined` antes de llegar a él. El adapter lo produciría con un
+        `r.daily` vacío, que el bloque `idx_desde` no filtra. Los cuatro, en modo `roc`.
     (b) Con `idxDesde` presente y valores TRAMPA deliberadamente distintos, en `bruto`
         y `plano`: sigue dando la fórmula de siempre. Si alguien quita el
         `mode === "roc"`, esto cae (mutante M3).
@@ -524,6 +526,7 @@ def test_q6_real_degrada_y_respeta_el_modo():
         ("sin la clave", None),
         ("idxDesde vacío", {}),
         ("idxDesde sin ese startM", {"X": {"0": {"0": 9.0, "1": 9.0, "2": 9.0, "3": 9.0}}}),
+        ("entrada de ese startM sin su propio mes", {"X": {"1": {}}}),
     ]
     for etiqueta, idx_desde in trampas:
         data = {"idx": {"roc": {"X": _Q6_IDX}}}

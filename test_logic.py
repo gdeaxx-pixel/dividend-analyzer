@@ -2727,8 +2727,13 @@ def test_q6_idxdesde_reproduce_una_compra_nueva(monkeypatch):
        el `.loc[start:]` NO cambia ninguna CIFRA publicada —la única clave que difiere
        es `"0"` (y las negativas del tramo pre-ancla), y el filtro `t0 <= incep[tk]`
        las excluye siempre porque un ticker pre-ancla tiene `incep == 0`—. Es un
-       mutante observacionalmente equivalente en el output: lo único que puede matarlo
-       es vigilar la LLAMADA (espía sobre `_fecha_por_mes`, mismo género que el de
+       mutante equivalente en el output para CUALQUIER universo, no solo el de hoy (y
+       en el caché real ni siquiera hay ticker pre-ancla: todos arrancan en
+       `CACHE_START`). El clamp defiende otra cosa: si el filtro se afloja a
+       `t0 < incep[tk]` (equivalente por sí solo), el adapter publica `"0"`, y SIN el
+       clamp esa entrada arranca a fin de mes en vez del día del ancla — medido con esta
+       fixture: SCHB +13.60% → +11.92%. Ese mutante doble solo lo caza vigilar la
+       LLAMADA (espía sobre `_fecha_por_mes`, mismo género que el de
        `test_un_solo_motor_fiscal.py` sobre `run_backtest`).
     2. **TRAMPA 2 / M6 (el `base_rate` del país).** Las cifras publicadas se re-corren
        aquí desde la fecha real de `startM` con la cuenta en cero y LA MISMA tasa del
@@ -2764,8 +2769,8 @@ def test_q6_idxdesde_reproduce_una_compra_nueva(monkeypatch):
     assert not sin_clamp, (
         f"`_fecha_por_mes` recibió series que arrancan ANTES del ancla "
         f"({sorted(str(f.date()) for f in sin_clamp)}): falta el clamp "
-        "`history.loc[start:]` — las claves de mes no coinciden con las de `idx` y el "
-        "primer bin apunta a otro día (TRAMPA 1 de la spec Q6 §4.2)")
+        "`history.loc[start:]` — si además se publica `t0 == incep`, la entrada \"0\" de "
+        "un ticker pre-ancla arrancaría a fin de mes y no el día del ancla")
 
     # ── Mitad 2: oráculo numérico sobre TSLY (comparador más viejo que CHPY) ─────
     tk = "TSLY"

@@ -1170,9 +1170,11 @@ def trg_real_data(resultados: dict, tasa_pct: float, pais: str | None = None) ->
     #
     # Las dos trampas propias de este componente:
     #   - `start` vuelve a clampar al ancla (`history.loc[start:]`, el MISMO corte que el
-    #     loop de arriba): sin él, en un ticker más viejo que el ancla —SCHB/XLK/SMH aquí,
-    #     aunque sin avisos 19(a) su entrada no cambia cifras— las claves de mes no
-    #     coincidirían con las de `idx` y el primer bin apuntaría a otro día (mutante M5).
+    #     loop de arriba). Con el filtro de abajo es redundante —en un ticker pre-ancla
+    #     (solo llega así con caché vencido: el caché corta todo en `CACHE_START`) la única
+    #     clave que cambia es "0", y `t0 <= incep[tk]` la excluye siempre—, pero si ese
+    #     filtro se afloja a `<`, sin el clamp la entrada "0" arrancaría a fin de mes y no
+    #     el día del ancla. Lo vigila un espía en el test, no una cifra.
     #   - `_politica_fiscal` recibe `base_rate=base_rate`: a diferencia de
     #     `comparacion_data`, aquí la tasa sale del país del usuario y la corrida limpia
     #     debe correr bajo el MISMO régimen fiscal que el índice (mutante M6).
