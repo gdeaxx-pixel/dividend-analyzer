@@ -341,7 +341,9 @@ def test_emparejamiento_uno_a_uno_voraz():
                ("2025-12-19", "Dividend - Foreign Tax Withholding", -10.0),
                ("2025-12-19", "Dividend - Foreign Tax Withholding", 10.0)])
     cls = logic._classify_tax_rows(h)
-    assert cls["withheld_at_payment_by_year"][2025] == pytest.approx(20.0)
+    # `.get`, no `[2025]`: si el año desaparece, que falle en la CIFRA y no por KeyError
+    # (auditoría M4, H7 — el mutante «emparejamiento no voraz» caía por excepción).
+    assert cls["withheld_at_payment_by_year"].get(2025, 0.0) == pytest.approx(20.0)
     assert cls["genuine_refund_by_year"].get(2025, 0.0) == pytest.approx(0.0)
 
 
