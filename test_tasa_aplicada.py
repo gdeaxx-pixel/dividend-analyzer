@@ -487,6 +487,17 @@ def test_foreign_tax_paid_sale_de_la_tasa_aplicada():
     assert diag["verdict"] == "coincide"
 
 
+def test_la_retencion_por_anio_deja_fuera_el_impuesto_extranjero():
+    """M4 ronda 3 (WT-2): el desglose por año es el mismo eje que el total. El impuesto
+    extranjero (ZIM/Israel) no entra en ninguno, y los dos tienen que sumar lo mismo."""
+    h = _hist([("2024-12-10", "Cash Dividend", 100.0),
+               ("2024-12-10", "NRA Tax Adj", -30.0),
+               ("2024-12-10", "Foreign Tax Paid", -2.11)])
+    assert logic.withheld_tax_total_by_year(h) == {2024: pytest.approx(30.0)}
+    assert sum(logic.withheld_tax_total_by_year(h).values()) == pytest.approx(
+        logic.withheld_tax_total(h))
+
+
 def test_foreign_tax_paid_no_mueve_withheld_tax_total_de_ib():
     """Coherencia del eje: `withheld_tax_total` cae exactamente el FTP y ni un centavo más."""
     con_ftp = _hist([("2025-06-01", "Cash Dividend", 1000.0),

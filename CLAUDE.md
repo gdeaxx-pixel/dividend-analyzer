@@ -96,7 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1157 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+Línea base: **1162 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`test/m4-ronda3-huecos`, base `main` = `f0864c2` (#154), en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +5: los tests que cierran los huecos de la ronda 3
+de M4 —split posterior múltiple y corte del mismo día (SF-1, SF-2), traspasos entre brókers de
+distinto día o con dos salidas iguales (TP-1, TP-2), impuesto extranjero en la retención por año
+(WT-2)—. Ninguno mueve una cifra de los 3 casos reales; son huecos latentes.)
+
+Antes: **1157 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
 `fix/r3-h1-devolucion-un-anio-cierre-fiscal`, base `main` = `06e96c7`, en la máquina de Daniel con
 `real_examples/` y `CONY_test.csv` en el worktree. +1: el test de R3-H1 (ronda 3 de M4). Un solo
 año cerrado con retención ya usa su cierre fiscal (Regla 4b); antes caía al 19(a) —MSTY solo
