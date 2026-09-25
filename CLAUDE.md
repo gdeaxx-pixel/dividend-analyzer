@@ -96,12 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-> **Pendiente de medir en local (ronda 2 de M4, 2026-09-25).** El #149 suma **14 tests**, y el #150 y el #151
-> otros 6 cada uno; ninguno depende de `real_examples/`, así que la local debería dar **1156 passed, 2 skipped** — ESTIMADO
-> (1130 + 26), no medido: esta sesión corre en la nube. La cifra de abajo sigue siendo la última
-> MEDIDA hasta que alguien corra `tools/verificacion_m4_local.py` con la carpeta para sí solo.
+Línea base: **1156 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+`60de8ae` —tras los #148 a #151—, en la máquina de Daniel con `real_examples/` montado, con
+`tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +26
+respecto a la de abajo: 14 del #149, 6 del #150 y 6 del #151, ninguno depende de datos reales.
+La línea de la base quedó fuera de la captura; la cifra sale exacta de la misma corrida: en las
+pasadas con un solo rojo, 1155 + 1 = 1156, y en las de dos, 1154 + 2 = 1156.)
 
-Línea base: **1130 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+Antes: **1130 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
 `0600774` **fusionado**, en la máquina de Daniel con `real_examples/` montado, con
 `tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +6 respecto
 a la de abajo: los tests del #146. La línea de la base quedó fuera de la captura, pero la cifra sale
@@ -163,7 +165,7 @@ Antes, el #150 sumó +6 (crédito con cobertura incompleta, R2-H2) y el #149 +14
   por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
 El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
 **Esta cifra NO sustituye a la línea local de arriba**: los tests que aquí se saltan son los de
-datos reales. La nube recolecta 1139 tests (1059 + 80) y la local, estimado, 1158 (1156 + 2). Para volver a
+datos reales. La nube recolecta 1139 tests (1059 + 80) y la local 1158 (1156 + 2). Para volver a
 medir la local, con `real_examples/` montado y **la carpeta para ti sola**:
 `./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los mutantes de las
 dos rondas de la auditoría que solo se pueden medir con los datos reales (G1-d, G5-b, H-3, CG-1,
