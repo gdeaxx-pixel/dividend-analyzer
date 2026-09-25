@@ -1,3 +1,12 @@
+"""Script de depuración (no es un test): traza a mano la cuenta del benchmark VOO/SPY
+sobre compras mensuales sintéticas y la imprime. Descarga VOO de Yahoo al ejecutarse.
+
+Vivía en la raíz como `test_spy_math.py`: pytest lo importaba al coleccionar, y sin red
+reventaba con `IndexError` y cortaba la colección ENTERA — no corría ningún test
+(auditoría M4, H6). No tiene ni una aserción. Se corre a mano:
+
+    ./.venv/bin/python tools/spy_math_trace.py
+"""
 import pandas as pd
 import yfinance as yf
 import datetime

@@ -371,9 +371,12 @@ def test_ib_withheld_tax_neto_portafolio_completo():
         f"retención neta del portafolio completo {neto_total} != 2121.43 (escala: portafolio)")
 
 
-def test_ib_withheld_tax_no_rompe_schwab():
+def test_ib_withheld_tax_no_rompe_schwab(monkeypatch):
     """No-regresión (fixtures/schwab_synth_2, versionado): el fix de IB no debe tocar el
-    resultado ya correcto de Schwab. MSTY: withheld=138.6 (30% de 462 bruto), cash=462.0."""
+    resultado ya correcto de Schwab. MSTY: withheld=138.6 (30% de 462 bruto), cash=462.0.
+
+    Mercado mockeado: retención y efectivo salen de las filas del CSV, no del precio. Sin
+    el mock dependía de Yahoo y, sin red, MSTY desaparecía del resultado (auditoría M4, H6)."""
     raw = open(os.path.join(os.path.dirname(__file__),
                              "fixtures", "schwab_synth_2",
                              "synthetic_transactions.csv"), "rb").read()
@@ -382,6 +385,7 @@ def test_ib_withheld_tax_no_rompe_schwab():
     dfc = logic.normalize_csv(df)
     sub = dfc[dfc["Ticker"] == "MSTY"]
     assert logic.withheld_tax_total(sub) == pytest.approx(138.6, abs=0.01)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     res = logic.analyze_portfolio(dfc, version="TEST_SCHWAB_SYNTH_2")
     r = res.get("MSTY", {})
     assert r.get("withheld_tax_total") == pytest.approx(138.6, abs=0.01)
@@ -4360,13 +4364,18 @@ _I5_CSV = (
 )
 
 
-def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama():
+def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama(monkeypatch):
     """Cash In Lieu, Special Qual Div, ADR Mgmt Fee y Wire Received quedan
     clasificados (suman a `dividends_collected_cash`) en vez de caer SIN RAMA —
     control: Bond Interest sigue entrando por `is_div_payout` ('interest'), sin
-    cambiar de rama."""
+    cambiar de rama.
+
+    Mercado mockeado: `fetch_market_data` NO pasa por el caché de precios —va directo a
+    Yahoo—, así que `frozen_price_cache()` no lo cubría y, sin red, MSTY salía como error
+    sin `dividends_collected_cash` (auditoría M4, H6). Lo medido es la rama de cada fila."""
     df, _ = logic.load_and_detect_csv(FakeFile(_I5_CSV))
     df_clean = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     import conftest
     with conftest.frozen_price_cache():
         res = logic.analyze_portfolio(df_clean.copy(), version="TEST_I5")

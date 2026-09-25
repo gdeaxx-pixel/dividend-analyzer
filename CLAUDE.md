@@ -96,15 +96,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1012 passed,
-73 skipped, 8 failed, 1 error, 1 deselected** (medido 2026-09-25 sobre la rama
-`claude/hola-6x8t15`, base `main` = `333bcc2`, que daba 1005 passed: +7 de los tests que
-cierran la auditoría M4). Se corre con `--continue-on-collection-errors`: sin ese flag,
-`test_spy_math.py` descarga VOO al importarse y corta la colección, y no corre ningún test.
-Los 8 rojos y el error son de entorno (red, una ruta del Mac y un rojo ya registrado en el
-baseline de deriva); están atribuidos uno por uno en `docs/auditorias/2026-09-24-m4-298ae66.md`.
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1018 passed,
+77 skipped, 2 failed, 1 deselected**, con `python -m pytest -q` a secas (medido 2026-09-25
+sobre la rama `claude/hola-6x8t15`, base `main` = `7a1087f`). Antes daba 1012 passed,
+73 skipped, 8 failed y 1 error, y solo corría con `--continue-on-collection-errors`.
+El PR de infraestructura de la auditoría M4 cambió cuatro cosas:
+- movió `test_spy_math.py` (un script sin tests que descargaba VOO al importarse y cortaba la
+  colección) a `tools/spy_math_trace.py`;
+- mockeó el mercado en los tres tests que dependían de Yahoo sin medir el mercado;
+- hizo que los de splits se salten con motivo cuando yfinance no responde;
+- sumó +4 tests al plugin de deriva.
+Los 2 rojos que quedan son de entorno: `test_los_contratos_vivos_siguen_pasando_su_check` busca
+el demo en una ruta del Mac, y `test_s1_demo_no_hereda_capturas_de_la_sesion_previa` ya está
+registrado en el baseline de deriva de este entorno. El detalle está en
+`docs/auditorias/2026-09-24-m4-298ae66.md`.
 **Esta cifra NO sustituye la línea local de abajo, y la de abajo está desfasada**: la nube
-recolecta 1093 tests (1012 + 73 + 8) contra sus 908 (906 + 2). Hay que volver a medirla en
+recolecta 1097 tests (1018 + 77 + 2) contra sus 908 (906 + 2). Hay que volver a medirla en
 local, con `real_examples/` montado.
 
 Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
