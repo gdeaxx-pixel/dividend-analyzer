@@ -102,7 +102,7 @@ def test_tasa_aplicada_sin_bruto_no_inventa():
 def test_sin_pais_declarado_no_diagnostica():
     s = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
                         ("2025-06-01", "NRA Tax Adj", -300.0)])
-    d = logic.build_withholding_diagnosis(s, "MSTY", entitled_pct=logic.RATE_UNDECLARED)
+    d = logic.build_withholding_diagnosis(s, "ZZZY", entitled_pct=logic.RATE_UNDECLARED)
     assert d["verdict"] == "sin_declarar"
     assert d["gap_w8ben"] == 0.0 and d["refund_roc"] == 0.0
 
@@ -119,7 +119,7 @@ def test_mexico_con_retencion_del_30_delata_el_w8ben():
     """El caso que motivó todo esto: tratado del 10%, pero le retienen 30%."""
     s = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
                         ("2025-06-01", "NRA Tax Adj", -300.0)], roc=0.0)
-    d = logic.build_withholding_diagnosis(s, "MSTY", entitled_pct=10.0, country="México")
+    d = logic.build_withholding_diagnosis(s, "ZZZY", entitled_pct=10.0, country="México")
     assert d["verdict"] == "tratado_no_aplicado"
     assert d["gap_w8ben"] == pytest.approx(200.0, abs=0.01)   # 30% − 10% sobre $1000
     assert "W-8BEN" in d["label"] and "1040-NR" in d["label"]
@@ -163,7 +163,7 @@ def test_la_descomposicion_es_exacta(roc):
     bruto, retenido = 1000.0, 300.0
     s = _stats(bruto, [("2025-06-01", "Cash Dividend", bruto),
                        ("2025-06-01", "NRA Tax Adj", -retenido)], roc=roc)
-    d = logic.build_withholding_diagnosis(s, "MSTY", entitled_pct=10.0, country="México")
+    d = logic.build_withholding_diagnosis(s, "ZZZY", entitled_pct=10.0, country="México")
 
     escudo = 1.0 - roc / 100.0
     exceso_total = retenido - bruto * 0.10 * escudo
@@ -175,13 +175,13 @@ def test_los_dos_buckets_no_se_confunden():
     Los carriles no se cruzan (Regla 4)."""
     solo_roc = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
                                ("2025-06-01", "NRA Tax Adj", -300.0)], roc=80.0)
-    d1 = logic.build_withholding_diagnosis(solo_roc, "MSTY", entitled_pct=30.0,
+    d1 = logic.build_withholding_diagnosis(solo_roc, "ZZZY", entitled_pct=30.0,
                                            country="Colombia")
     assert d1["refund_roc"] > 0 and d1["gap_w8ben"] == pytest.approx(0.0, abs=0.01)
 
     solo_w8 = _stats(1000.0, [("2025-06-01", "Cash Dividend", 1000.0),
                               ("2025-06-01", "NRA Tax Adj", -300.0)], roc=0.0)
-    d2 = logic.build_withholding_diagnosis(solo_w8, "MSTY", entitled_pct=10.0,
+    d2 = logic.build_withholding_diagnosis(solo_w8, "ZZZY", entitled_pct=10.0,
                                            country="México")
     assert d2["gap_w8ben"] > 0 and d2["refund_roc"] == pytest.approx(0.0, abs=0.01)
 
@@ -207,7 +207,7 @@ def test_la_tasa_observada_no_alimenta_el_objeto_fiscal():
     s["total_dividends"] = 700.0
     s["withheld_by_year"] = {2025: 300.0}
 
-    ts = logic.build_tax_summary(s, "MSTY", base_rate_pct=10.0, country="México")
+    ts = logic.build_tax_summary(s, "ZZZY", base_rate_pct=10.0, country="México")
     assert ts["fair_withholding"] == pytest.approx(100.0, abs=0.01), (
         "la retención justa sale del 10% del tratado, no del 30% observado")
 
