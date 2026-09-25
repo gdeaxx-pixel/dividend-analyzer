@@ -507,3 +507,29 @@ def test_si_falla_el_csv_releido_manda_el_motor_aunque_haya_huerfanas(monkeypatc
     dx = diagnosticar_bloqueo(datos, s, fallos)
     assert dx["nuestro"] is True
     assert "fallo nuestro" in dx["titular"]
+
+
+_CSV_HUERFANA_CON_EFECTIVO = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/11/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","100.00"\n'
+    b'"04/11/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","5","20.00","","-100.00"\n'
+    # El mismo día hay un dividendo en EFECTIVO, pero ninguna fila que pague esta compra.
+    b'"05/09/2025","Cash Dividend","MSTY","YIELDMAX MSTY","","","","25.00"\n'
+    b'"05/09/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","2","20.00","","-40.00"\n'
+)
+
+
+def test_un_dividendo_en_efectivo_no_respalda_una_compra_del_drip():
+    """La fila que paga una compra del DRIP es la «Reinvest Dividend», no cualquier
+    dividendo del mismo día: un «Cash Dividend» entró a la cuenta como efectivo y no compró
+    nada. Si cuenta como fuente, el aviso dice «2 distribuciones» cuando el archivo trae una
+    sola «Reinvest Dividend», y la compra del 05/09 desaparece de las huérfanas.
+
+    Mutante H-6 (quitar `es_drip &` del predicado de la fuente): sobrevivía a la suite
+    completa. Los fixtures del #145 no mezclan dividendos en efectivo con el DRIP."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_HUERFANA_CON_EFECTIVO, "huercash.csv"))
+    dfc = logic.normalize_csv(df)
+    h = logic.drip_huerfanas(dfc[dfc["Ticker"] == "MSTY"])
+    assert h == {"compras": 2, "fuentes": 1, "huerfanas": 1, "importe": 40.00}, h
