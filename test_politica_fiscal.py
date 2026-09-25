@@ -225,6 +225,39 @@ class TestElCierreFiscalPisaLaEstimacion:
         with pytest.raises(TypeError):
             _politica_fiscal("MSTY", "roc", self._19A)   # ídem
 
+    def test_la_politica_roc_pasa_el_cierre_al_mapeo(self):
+        """Los tests de arriba prueban el MAPEO. Este prueba que la política lo LLAME con el
+        cierre: `_politica_fiscal` es el objeto que consumen las cuatro vistas, y un
+        `_roc_pct_by_year(ticker, roc19a, {})` en su última línea tira el ICI en todas a la vez.
+
+        Auditoría M4, ronda 2 (mutante PF-4): sobrevivía a la suite completa — todos los tests
+        de 4b van contra `_roc_pct_by_year` directamente, y los de «Comparación» sacan su
+        esperado de la misma `_politica_fiscal` que auditan."""
+        pol = _politica_fiscal("MSTY", "roc", self._19A, self._ICI)
+        assert pol.roc_pct_by_year == {2024: 0.0, 2025: 100.0}
+
+
+def test_la_politica_de_las_vistas_lleva_el_cierre_de_los_datos_vivos():
+    """Lo mismo contra `knowledge/roc_ici.yaml` y `roc_19a.yaml` vivos, con el esperado leído
+    del yaml del cierre y no de la función: todo año con cierre publicado que la política de
+    un fondo del universo de «Comparación» cubre tiene que llevar exactamente el % del cierre.
+
+    Medido con el mutante PF-4 (la política tira el ICI): el índice final de «Comparación ·
+    Simulación» en modo roc se movía en 5 fondos —TSLY 113.41 → 80.38, CONY 133.83 → 97.06,
+    NVDY 306.25 → 337.90, MSTY 159.04 → 179.97, CHPY 246.87 → 242.83— mientras `rocFuente`
+    seguía rotulando esos años como «cierre»: el número y su etiqueta en desacuerdo."""
+    from ui.adapters import TRG_UNIVERSO
+    roc19a, roc_ici = logic.load_roc_19a(), logic.load_roc_ici()
+    comprobados = 0
+    for tk in TRG_UNIVERSO:
+        pol = _politica_fiscal(tk, "roc", roc19a, roc_ici).roc_pct_by_year
+        for anio, reg in (roc_ici.get(tk) or {}).items():
+            if anio in pol and isinstance(reg, dict) and reg.get("roc_pct") is not None:
+                comprobados += 1
+                assert pol[anio] == pytest.approx(float(reg["roc_pct"]), abs=1e-9), (
+                    f"{tk} {anio}: la política usa {pol[anio]} y el cierre dice {reg['roc_pct']}")
+    assert comprobados > 0, "ningún año con cierre en el universo: el cruce no probó nada"
+
 
 # ── Contra el 1042-S real: la prueba que decidió la fuente ───────────────────────────────
 

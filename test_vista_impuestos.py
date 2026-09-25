@@ -955,6 +955,49 @@ def test_credito_definitivo_no_depende_del_pais(monkeypatch):
     assert sin["vuelve_por_roc"] == con["vuelve_por_roc"]
 
 
+def test_credito_un_cero_medido_se_publica_como_cero_no_como_sin_dato():
+    """La otra mitad de «medí cero ≠ no pude medirlo». Una casilla 9 esperada de $0.00 es un
+    dato: no vuelve nada, así que todo lo retenido es crédito. Publicarlo como `None` borraría
+    un crédito real de la vista y mandaría al cliente a buscar un dato que ya tiene.
+
+    Auditoría M4, ronda 2 (mutante CR-4, `_vuelve_medido = _c9 is not None and _c9 > 0`):
+    sobrevivía a la suite completa — el único test de esta rama es el de `ruta_a=None`, y en
+    las fixtures la casilla 9 nunca es cero."""
+    from ui import adapters
+    L = adapters._impuesto_local_cartera(
+        {"bruto": {"monto": 100.0}, "gravable": {"monto": 100.0}, "retenido": {"monto": 30.0}},
+        None, {}, ruta_a={"casilla9_esperada": 0.0})
+    c = L["credito_eeuu"]
+    assert c["vuelve_por_roc"] == 0.0
+    assert c["definitivo"] == 30.0
+    assert c["definitivo_motivo"] is None
+
+
+def test_casilla9_no_suma_el_roc_de_un_fondo_que_no_reconcilia(monkeypatch):
+    """La casilla 9 se gatea por `reconcilia` —la retención al cobro cuadra con neteado +
+    devuelto—, igual que el desglose del peldaño 4: si la cifra al cobro no es fiable, el ROC
+    medido sobre ella tampoco lo es, y no se promete como devolución.
+
+    Auditoría M4, ronda 2 (mutante CR-6, `if reconcilia:` → `if True:`): sobrevivía a la suite
+    completa. Ninguna fixture tiene un fondo que no reconcilie, y el guard hermano
+    (`implausible`) ya tiene su propio test. Aquí se fuerza: la retención al cobro de MSTY se
+    infla $20 sobre lo que el CSV netea (la patología de reversos que el guard existe para
+    contener). Solo queda TSLY: $9.85, la misma cifra de la sonda por ticker del docstring de
+    `test_credito_no_cuenta_lo_que_el_broker_devuelve`."""
+    real = logic.build_withholding_diagnosis
+
+    def _msty_no_reconcilia(stats, ticker, *a, **k):
+        d = real(stats, ticker, *a, **k)
+        if ticker == "MSTY":
+            d = dict(d, withheld_at_payment=round(float(d["withheld_at_payment"]) + 20.0, 2))
+        return d
+
+    monkeypatch.setattr(logic, "build_withholding_diagnosis", _msty_no_reconcilia)
+    d = _datos_f4("schwab_synth_1", monkeypatch)
+    assert d["ruta_a"]["casilla9_esperada"] == pytest.approx(9.85, abs=0.01)
+    assert d["impuesto_local"]["credito_eeuu"]["vuelve_por_roc"] == pytest.approx(9.85, abs=0.01)
+
+
 def test_casilla9_converge_con_y_sin_captura():
     """LA PRUEBA DEL ARREGLO, y vale más que el número pineado de arriba.
 

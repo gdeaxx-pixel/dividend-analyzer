@@ -93,6 +93,31 @@ def test_promedio_ponderado_en_venta_parcial():
     assert u['gain'] == pytest.approx(2250.00, abs=0.01)
 
 
+def test_la_venta_se_lleva_su_parte_de_la_antiguedad():
+    """Con costo promedio, lo que queda vivo conserva el día de compra PROMEDIO. La venta
+    retira su parte proporcional de Σ(acciones × día) igual que retira su parte de la base;
+    si no la retira, el numerador sigue pesando 200 acciones sobre 50 vivas, el día medio
+    cae en el futuro y la tenencia sale 0.
+
+    Auditoría M4, ronda 2 (mutante CG-4, quitar `dias_wsum -= dias_wsum * prop` en la rama de
+    venta): sobrevivía a la suite completa — el test de arriba fija la base de lo vivo pero
+    nunca su antigüedad. Medido con este CSV: 892 días y `ge_2y` → 0 días y `lt_2y`.
+
+    100 el 2022-01-10 y 100 el 2025-06-01: día medio a mitad de camino. Venden 150; las 50
+    vivas conservan ese mismo día medio → 892 días al 2026-03-01."""
+    df = _df([
+        ('2022-01-10', 'Buy',  'AAA', 100, 10.00, -1000.00),
+        ('2025-06-01', 'Buy',  'AAA', 100, 20.00, -2000.00),
+        ('2025-09-01', 'Sell', 'AAA', 150, 25.00,  3750.00),
+    ])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=30.00, today='2026-03-01')
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    assert cg['unrealized']['shares'] == pytest.approx(50.0)
+    assert cg['unrealized']['holding_days_ponderado'] == 892
+    assert cg['unrealized']['tramo'] == 'ge_2y'
+
+
 def test_el_metodo_va_declarado_en_el_objeto():
     """La Fase 4 se apoya en que el método sea promedio ponderado; no puede deducirlo."""
     df = _df([('2024-01-10', 'Buy', 'AAA', 10, 10.00, -100.00)])
@@ -119,6 +144,24 @@ def test_corte_de_dos_anios_por_un_dia_a_cada_lado(fecha_venta, tramo_esperado, 
     r = cg['realized'][0]
     assert r['holding_days'] == dias
     assert r['tramo'] == tramo_esperado
+
+
+@pytest.mark.parametrize('hoy,tramo_esperado,dias', [
+    ('2026-01-08', 'lt_2y', 729),
+    ('2026-01-09', 'ge_2y', 730),
+])
+def test_corte_de_dos_anios_de_lo_no_realizado_por_un_dia_a_cada_lado(hoy, tramo_esperado, dias):
+    """El mismo borde que el test de arriba, en la pierna NO realizada. Las dos piernas llevan
+    su propia copia de la comparación contra `CAPITAL_GAINS_TRAMO_DIAS`, y el test de arriba
+    solo mira la realizada.
+
+    Auditoría M4, ronda 2 (mutante CG-3b, `>=` → `>` en la copia del no realizado): sobrevivía
+    a la suite completa. Mismas fechas y la misma nota del año bisiesto que arriba."""
+    df = _df([('2024-01-10', 'Buy', 'AAA', 100, 10.00, -1000.00)])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=12.00, today=hoy)
+    u = cg['unrealized']
+    assert u['holding_days_ponderado'] == dias
+    assert u['tramo'] == tramo_esperado
 
 
 # ── Trampa 2: DRIP sube la base ─────────────────────────────────────────────────────
@@ -300,6 +343,37 @@ def test_la_fila_de_split_no_cuenta_como_acciones_sin_costo():
         ('2025-12-01', 'Reverse Split', 'MSTY',  20,  0.00,     0.00),
     ])
     assert logic.build_capital_gains(df, 'MSTY', market_price=50.0)['estado'] == 'ok'
+
+
+def test_el_split_del_csv_no_rejuvenece_las_acciones():
+    """La fila de split cambia CUÁNTAS acciones hay, no CUÁNDO se compraron. La antigüedad
+    ponderada es Σ(acciones × día) / acciones: si el saldo se reinicia (100 → 20) sin
+    reescalar el numerador, el día medio de compra se multiplica por 5, cae en el futuro y
+    la tenencia sale 0.
+
+    Auditoría M4, ronda 2 (mutante CG-1, quitar `dias_wsum *= qty / shares`): sobrevivía a la
+    suite COMPLETA — los dos tests de arriba miran acciones, base y estado, nunca la
+    antigüedad. Medido con este CSV: la venta pasaba de 1146 días y tramo `ge_2y` a 0 días y
+    `lt_2y`. El tramo es lo que en Colombia separa ganancia ocasional de renta ordinaria, así
+    que el error cambia la casilla de la declaración, no un decimal.
+
+    La ganancia de la venta ata además el reinicio de balance a una VENTA (mutante CG-2,
+    ignorar la fila de split, que antes cazaba un solo test): 10 de 20 acciones se llevan la
+    mitad de los $1,000 → +$100; sin la fila serían 10 de 100 → +$500."""
+    df = _df([
+        ('2023-01-10', 'Buy',           'MSTY', 100, 10.00, -1000.00),
+        ('2025-12-01', 'Reverse Split', 'MSTY',  20,  0.00,     0.00),
+        ('2026-03-01', 'Sell',          'MSTY',  10, 60.00,   600.00),
+    ])
+    cg = logic.build_capital_gains(df, 'MSTY', market_price=55.00, today='2026-03-01')
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    venta = cg['realized'][0]
+    assert venta['gain'] == pytest.approx(100.00, abs=0.01)
+    assert venta['holding_days'] == 1146, "el split no cambia la fecha de compra"
+    assert venta['tramo'] == 'ge_2y'
+    assert cg['unrealized']['holding_days_ponderado'] == 1146
+    assert cg['unrealized']['tramo'] == 'ge_2y'
 
 
 # ── Ramas que los datos reales NO ejercitan (M4 §3): forzadas a mano ────────────────
@@ -750,6 +824,60 @@ def test_una_distribucion_anterior_a_la_primera_compra_no_baja_nada():
     assert cg['unrealized']['basis_roc_adjusted'] == pytest.approx(1000.00, abs=0.01)
     assert cg['roc_basis_applied_total'] == pytest.approx(0.0, abs=0.01)
     assert cg['roc_basis_excess'] == pytest.approx(0.0, abs=0.01)
+
+
+def test_el_roc_del_mismo_dia_de_la_venta_tambien_le_toca_a_lo_vendido():
+    """El borde del reparto fechado: una distribución fechada EL MISMO DÍA que la venta. Las
+    acciones vendidas ese día cobraron esa distribución (la fila del CSV es la de pago, y el
+    derecho se fijó antes), así que su base baja con ella — `_aplicar_roc_hasta(dia)` corre
+    ANTES de procesar la fila, con `<=`.
+
+    Auditoría M4, ronda 2 (mutante CG-6, `<=` → `<`): sobrevivía a la suite completa, porque
+    ningún test ponía un evento en la fecha exacta de una venta. Medido: la ganancia ajustada
+    de la venta pasaba de $160 a $80 y los $200 caían enteros sobre las 60 acciones vivas.
+
+    100 @ $10; ROC de $200 y venta de 40 @ $12 el 2024-06-01 → base ajustada vendida
+    $400 − 40% de $200 = $320, ganancia $160; quedan $600 − $120 = $480."""
+    df = _df([
+        ('2024-01-15', 'Buy',  'YMAX', 100, 10.00, -1000.00),
+        ('2024-06-01', 'Sell', 'YMAX',  40, 12.00,   480.00),
+    ])
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                   roc_events=[(pd.Timestamp('2024-06-01'), 200.0)],
+                                   roc_source='19a')
+
+    venta = cg['realized'][0]
+    assert venta['basis_roc_adjusted'] == pytest.approx(320.00, abs=0.01)
+    assert venta['gain_roc_adjusted'] == pytest.approx(160.00, abs=0.01)
+    assert cg['unrealized']['basis_roc_adjusted'] == pytest.approx(480.00, abs=0.01)
+
+
+def test_el_traspaso_de_salida_se_lleva_su_parte_de_la_base_ajustada():
+    """Las acciones que salen por traspaso se llevan su parte de las DOS bases, la original y
+    la gemela ajustada por ROC. Si solo se descuenta la original, la ajustada queda POR ENCIMA
+    de la original — el ROC habría SUBIDO la base, que es imposible por definición.
+
+    Auditoría M4, ronda 2 (mutante CG-5, quitar `basis_roc -= basis_roc * prop` en la rama del
+    traspaso): sobrevivía a la suite completa — el test del traspaso de salida no lleva ROC y
+    el de conservación no lleva traspaso. Medido: base viva $600 con base ajustada $800 y
+    ganancia ajustada −$320, en vez de $480 y $0.
+
+    100 @ $10, ROC de $200 el 2024-03-01 (base ajustada $800), salen 40 el 2024-06-01:
+    quedan 60 con base $600 y ajustada $480; a $8 la ganancia ajustada es $0."""
+    df = _df([
+        ('2024-01-10', 'Buy',               'YMAX', 100, 10.00, -1000.00),
+        ('2024-06-01', 'Internal Transfer', 'YMAX', -40,  0.00,     0.00),
+    ])
+    cg = logic.build_capital_gains(df, 'YMAX', market_price=8.00,
+                                   roc_events=[(pd.Timestamp('2024-03-01'), 200.0)],
+                                   roc_source='19a')
+
+    u = cg['unrealized']
+    assert u['basis'] == pytest.approx(600.00, abs=0.01)
+    assert u['basis_roc_adjusted'] == pytest.approx(480.00, abs=0.01)
+    assert u['gain_roc_adjusted'] == pytest.approx(0.00, abs=0.01)
+    # Invariante estructural (Regla 5): el ROC solo puede BAJAR la base, nunca subirla.
+    assert u['basis_roc_adjusted'] <= u['basis'] + 0.01
 
 
 @pytest.mark.parametrize('caso', ['ib', 'schwab', 'schwab2'])
