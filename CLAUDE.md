@@ -96,7 +96,22 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+Línea base: **1107 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
+rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos`, base `main` = `333bcc2`, tras
+sacar el efectivo NO distributivo del balde del dividendo: `Cash In Lieu` —la fracción liquidada
+en un split inverso— sumaba a `dividends_collected_cash`, de donde el recorrido lee el efectivo
+del dividendo, y hacía que `DRIP + CASH` superara al NETO del objeto fiscal por su importe
+exacto. `verificar_identidades` bloqueaba Cash flow y Hoja Excel en 9 posiciones de los 3 CSV
+reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora vive en
+`misc_cash_total` y llega a las vistas como `OTROS`, sumando aparte del capital actual.
+**ROI y `net_profit` idénticos al centavo** en las 24 posiciones de los 4 casos (A/B medido):
+`gross_value` lo suma por su cuenta. 4 sabotajes M4 verificados. +4 tests netos.
+
+**Y esta línea llevaba 201 tests de desfase**: decía 906 (2026-09-04) cuando `main` = `333bcc2`
+corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
+abajo dos veces.
+
+Antes: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
 una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
 `gap > 0.01` no lo capturaba, así que decía «Todo el exceso vuelve solo» mientras la

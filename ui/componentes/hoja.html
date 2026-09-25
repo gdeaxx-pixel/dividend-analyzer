@@ -1122,6 +1122,11 @@
     var D = {{DATA_JSON}};
     var POCKET = D.POCKET, BRUTO = D.BRUTO, IMPUESTO = D.IMPUESTO, NETO = D.NETO, DRIP = D.DRIP, CASH = D.CASH, TOTAL_TRABAJANDO = D.TOTAL_TRABAJANDO, MERCADO = D.MERCADO, VALOR_HOY = D.VALOR_HOY, CAPITAL_ACTUAL = D.CAPITAL_ACTUAL, RESULTADO = D.RESULTADO, PICO = D.PICO;
     var INICIO = D.INICIO, TICKER = D.TICKER;
+    // Efectivo no distributivo (`misc_cash_total`): entra en el RESULTADO porque está
+    // en la cuenta, así que la ecuación de abajo tiene que nombrarlo o dejaría de
+    // cuadrar con la cifra que ella misma muestra.
+    var OTROS = (typeof D.OTROS === "number" && isFinite(D.OTROS)) ? D.OTROS : 0;
+    var HAY_OTROS = Math.abs(OTROS) > 0.005;
     var TOTALINV = POCKET + NETO;
 
     // El «retorno aparente» de la hoja vieja: Valor mer. + Dividendos − Inversión.
@@ -1224,7 +1229,12 @@
         ' <span class="eq-note">— sin sumar dividendos: son retorno, no capital</span>') +
       eqLine("Retorno", signed(RESULTADO),
         term(money(VALOR_HOY), "valor mer.", "valor") + op("+") +
-        term(money(CASH), "efectivo", "efvo", "is-cash") + op("−") +
+        term(money(CASH), "efectivo", "efvo", "is-cash") +
+        // El efectivo no distributivo (Cash In Lieu del split inverso, ADR Mgmt Fee…)
+        // está dentro de RESULTADO: si la ecuación no lo nombrara, sus términos no
+        // sumarían la cifra que la propia línea muestra.
+        (HAY_OTROS ? op(OTROS >= 0 ? "+" : "−") +
+          term(money(OTROS), "otros", "efvo", "is-cash") : "") + op("−") +
         term(money(POCKET), "inversión", "inv")));
 
     // Al pasar el cursor por un término, se ilumina esa cifra en la tabla: es lo

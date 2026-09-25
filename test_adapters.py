@@ -262,3 +262,83 @@ def test_el_guard_de_nan_no_le_gana_al_guard_de_convencion(monkeypatch):
     fallos = verificar_identidades(datos, s)
     assert any("CSV releído independiente" in f for f in fallos)
     assert not any("no numérica" in f for f in fallos)
+
+
+# ── efectivo no distributivo (Cash In Lieu y compañía) ──────────────────────────────────────
+#
+# La forma real del CSV que destapó el defecto (MSTY de Schwab, 2026-09-24): el split
+# inverso liquida la fracción de acción y paga «Cash In Lieu». Ese dinero entraba a
+# `dividends_collected_cash` —el balde del dividendo— y hacía que `DRIP + CASH` superara
+# al NETO del objeto fiscal en exactamente esa cifra. El guard hacía lo correcto:
+# bloqueaba Cash flow y Hoja Excel.
+_CSV_LIEU = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"03/01/2025","Buy","MSTY","YIELDMAX MSTY","100","20.00","","-2000.00"\n'
+    b'"04/11/2025","Reinvest Dividend","MSTY","YIELDMAX MSTY","","","","100.00"\n'
+    b'"04/11/2025","NRA Tax Adj","MSTY","YIELDMAX MSTY","","","","-30.00"\n'
+    b'"04/11/2025","Reinvest Shares","MSTY","YIELDMAX MSTY","3.5","20.00","","-70.00"\n'
+    b'"05/09/2025","Cash Dividend","MSTY","YIELDMAX MSTY","","","","50.00"\n'
+    b'"05/09/2025","NRA Tax Adj","MSTY","YIELDMAX MSTY","","","","-15.00"\n'
+    b'"06/06/2025","Cash In Lieu","MSTY","YIELDMAX MSTY","","","","18.32"\n'
+)
+
+
+def _stats_lieu(monkeypatch, version="TEST_ADAPTERS_LIEU"):
+    df, broker = logic.load_and_detect_csv(FakeFile(_CSV_LIEU, "lieu.csv"))
+    assert broker == "schwab"
+    dfc = logic.normalize_csv(df)
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    return logic.analyze_portfolio(dfc, version=version)["MSTY"]
+
+
+def test_el_efectivo_del_split_no_entra_en_el_balde_del_dividendo(monkeypatch):
+    """Bruto $150, retención $45, neto $105 = DRIP $70 + efectivo $35. El Cash In Lieu
+    ($18.32) va aparte, en OTROS — si se cuela en CASH, la identidad se rompe por su
+    importe exacto, que es el bug real que se vio en producción."""
+    s = _stats_lieu(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    assert datos["NETO"] == pytest.approx(105.00, abs=0.01)
+    assert datos["DRIP"] == pytest.approx(70.00, abs=0.01)
+    assert datos["CASH"] == pytest.approx(35.00, abs=0.01)
+    assert datos["OTROS"] == pytest.approx(18.32, abs=0.01)
+    assert datos["OTROS_DETALLE"] == {"Cash In Lieu": 18.32}
+    assert verificar_identidades(datos, s) == []
+
+
+def test_el_efectivo_del_split_sigue_contando_en_el_capital_actual(monkeypatch):
+    """Sacarlo del dividendo no puede perderlo: es dinero que está en la cuenta. Gate de
+    Regla 3b — el RESULTADO del recorrido contra el `net_profit` del motor, dos fuentes
+    independientes del mismo número."""
+    s = _stats_lieu(monkeypatch)
+    datos = cashflow_data(s, "MSTY")
+    assert datos["CAPITAL_ACTUAL"] == pytest.approx(
+        datos["VALOR_HOY"] + 35.00 + 18.32, abs=0.01)
+    assert datos["RESULTADO"] == pytest.approx(s["net_profit"], abs=0.01)
+
+
+def test_el_guard_caza_el_efectivo_no_distributivo_de_vuelta_en_el_dividendo(monkeypatch):
+    """Mutante = el bug original: devolver el Cash In Lieu a `CASH`. El guard debe
+    reportarlo, y por el importe exacto."""
+    s = _stats_lieu(monkeypatch, version="TEST_ADAPTERS_LIEU_MUT")
+    # El mutante se aplica sobre los STATS —el estado exacto que producía el motor antes
+    # del fix: el Cash In Lieu dentro del efectivo del dividendo, y ningún balde propio—
+    # y se deja pasar por `cashflow_data`, en vez de retocar su salida.
+    mutados = dict(s)
+    mutados["dividends_cash_net"] = round(s["dividends_cash_net"] + s["misc_cash_total"], 2)
+    mutados["misc_cash_total"] = 0.0
+    fallos = verificar_identidades(cashflow_data(mutados, "MSTY"), mutados)
+    assert any("neto = reinvertido + efectivo" in f for f in fallos), fallos
+    # 105.00 de neto contra 70.00 de DRIP + 53.32 de «efectivo» con el Cash In Lieu dentro.
+    assert any("105.00 ≠ 123.32" in f for f in fallos), fallos
+
+
+def test_sin_efectivo_no_distributivo_otros_es_cero(monkeypatch):
+    """Control: el CSV sin filas I5 no inventa un OTROS — y el capital actual queda
+    idéntico a como estaba antes del cambio."""
+    s = _schwab_msty_stats(monkeypatch, version="TEST_ADAPTERS_SIN_LIEU")
+    datos = cashflow_data(s, "MSTY")
+    assert datos["OTROS"] == 0.0
+    assert datos["OTROS_DETALLE"] == {}
+    assert datos["CAPITAL_ACTUAL"] == pytest.approx(datos["VALOR_HOY"] + datos["CASH"], abs=0.01)
+    assert verificar_identidades(datos, s) == []

@@ -187,14 +187,22 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         # con defecto conserva el camino legado de los `stats` armados a mano.
         cash = _f(stats.get("dividends_cash_net"), round(neto - drip, 2))
 
+    # Efectivo que entró a la cuenta sin ser distribución (`is_misc_cash` en logic.py:
+    # Cash In Lieu de un split inverso, ADR Mgmt Fee, …). Va como sumando propio del
+    # capital actual, NUNCA dentro de `cash`: el recorrido del dinero cuenta la vida del
+    # dividendo, y este dinero tiene otra base. Si se omitiera del capital actual, el
+    # RESULTADO de esta vista dejaría de coincidir con el `net_profit` de Portafolios
+    # (Regla 3b: dos vistas del mismo número) por el importe del Cash In Lieu.
+    otros = _f(stats.get("misc_cash_total"))
+
     total_trabajando = pocket + drip
     mercado = valor_hoy - total_trabajando
-    capital_actual = valor_hoy + cash
+    capital_actual = valor_hoy + cash + otros
     resultado = capital_actual - pocket
 
     # El pico escala el mosaico: la mayor suma de categorías que se llega a mostrar en
     # cualquier paso. Sin esto, un paso con varias categorías desborda el "100%" de otro.
-    pico = max(pocket, bruto, total_trabajando, capital_actual, valor_hoy + cash)
+    pico = max(pocket, bruto, total_trabajando, capital_actual, valor_hoy + cash + otros)
 
     return {
         "ticker": ticker,
@@ -204,6 +212,8 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
         "NETO": round(neto, 2),
         "DRIP": round(drip, 2),
         "CASH": round(cash, 2),
+        "OTROS": round(otros, 2),
+        "OTROS_DETALLE": dict(stats.get("misc_cash_breakdown") or {}),
         "TOTAL_TRABAJANDO": round(total_trabajando, 2),
         "MERCADO": round(mercado, 2),
         "VALOR_HOY": round(valor_hoy, 2),
@@ -947,7 +957,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
 # Las cifras que este guard compara. Todas tienen que ser números reales antes de
 # entrar a cualquier resta: ver la nota sobre NaN en `verificar_identidades`.
 _CLAVES_FINITAS = (
-    "BRUTO", "NETO", "IMPUESTO", "DRIP", "CASH", "POCKET",
+    "BRUTO", "NETO", "IMPUESTO", "DRIP", "CASH", "OTROS", "POCKET",
     "TOTAL_TRABAJANDO", "MERCADO", "VALOR_HOY", "CAPITAL_ACTUAL", "RESULTADO",
 )
 
@@ -1008,8 +1018,12 @@ def verificar_identidades(datos: dict, stats: dict = None, tolerancia: float = 0
           datos["TOTAL_TRABAJANDO"], datos["POCKET"] + datos["DRIP"])
     check("impacto de mercado = valor hoy − capital trabajando",
           datos["MERCADO"], datos["VALOR_HOY"] - datos["TOTAL_TRABAJANDO"])
-    check("capital actual = valor hoy + efectivo",
-          datos["CAPITAL_ACTUAL"], datos["VALOR_HOY"] + datos["CASH"])
+    # `OTROS` (efectivo no distributivo: Cash In Lieu, ADR Mgmt Fee…) entra AQUÍ y sólo
+    # aquí. No aparece en `neto = reinvertido + efectivo` porque no es un dividendo, y
+    # meterlo en `CASH` era justo el defecto que este check destapó el 2026-09-24.
+    check("capital actual = valor hoy + efectivo + otros",
+          datos["CAPITAL_ACTUAL"],
+          datos["VALOR_HOY"] + datos["CASH"] + _f(datos.get("OTROS")))
     check("resultado = capital actual − bolsillo",
           datos["RESULTADO"], datos["CAPITAL_ACTUAL"] - datos["POCKET"])
 

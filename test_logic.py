@@ -4300,9 +4300,16 @@ _I5_CSV = (
 
 def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama():
     """Cash In Lieu, Special Qual Div, ADR Mgmt Fee y Wire Received quedan
-    clasificados (suman a `dividends_collected_cash`) en vez de caer SIN RAMA —
-    control: Bond Interest sigue entrando por `is_div_payout` ('interest'), sin
-    cambiar de rama."""
+    clasificados —en `misc_cash_total`, su propio balde— en vez de caer SIN RAMA.
+
+    Hasta el 2026-09-24 este test exigía que sumaran a `dividends_collected_cash`, que
+    es de donde el recorrido saca el efectivo del DIVIDENDO: con eso, `DRIP + CASH`
+    superaba al NETO del objeto fiscal y el guard de `verificar_identidades` bloqueaba
+    Cash flow y Hoja Excel (MSTY real: $18.32 de Cash In Lieu del split inverso). La
+    rama I5 sigue siendo necesaria; lo que estaba mal era el balde de destino.
+
+    Control: Bond Interest sigue entrando por `is_div_payout` ('interest'), sin cambiar
+    de rama."""
     df, _ = logic.load_and_detect_csv(FakeFile(_I5_CSV))
     df_clean = logic.normalize_csv(df)
     import conftest
@@ -4311,6 +4318,16 @@ def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama():
     s = res["MSTY"]
     # 5.00 + 2.52 - 0.06 + 3.00 = 10.46 de las 4 acciones I5; Bond Interest (5.89) es
     # `Ticker` vacío -> no ticker MSTY, así que no debe sumar aquí (control de rama).
-    assert s["dividends_collected_cash"] == pytest.approx(10.46, abs=0.01), (
-        f"dividends_collected_cash = {s['dividends_collected_cash']}, esperaba 10.46 "
+    assert s["misc_cash_total"] == pytest.approx(10.46, abs=0.01), (
+        f"misc_cash_total = {s['misc_cash_total']}, esperaba 10.46 "
         "(5.00 Cash In Lieu + 2.52 Special Qual Div - 0.06 ADR Mgmt Fee + 3.00 Wire Received)")
+    # Y NO en el balde del dividendo: este CSV no tiene ninguna distribución de MSTY.
+    assert s["dividends_collected_cash"] == pytest.approx(0.0, abs=0.01), (
+        "el efectivo no distributivo volvió a `dividends_collected_cash`: "
+        f"{s['dividends_collected_cash']}")
+    # La CAJA no se pierde al sacarlo del balde: sigue dentro del resultado.
+    assert s["net_profit"] == pytest.approx(
+        s["market_value"] + s["dividends_cash_net"] + 10.46 - s["pocket_investment"], abs=0.01)
+    assert s["misc_cash_breakdown"] == {
+        "Cash In Lieu": 5.00, "Special Qual Div": 2.52,
+        "ADR Mgmt Fee": -0.06, "Wire Received": 3.00}

@@ -1257,6 +1257,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         total_shares_sold = 0.0    # gross sells
         dividends_collected_cash = 0.0
         dividends_collected_drip = 0.0 # Value of dividends reinvested
+        # Efectivo que entró o salió de la cuenta SIN ser una distribución (rama I5). Va
+        # aparte de `dividends_collected_cash` a propósito: su base no es «dividendo», y
+        # mezclarlas rompía la identidad `neto = reinvertido + efectivo` del recorrido.
+        misc_cash_total = 0.0
+        misc_cash_breakdown = {}
         history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
         
         # Helper for defensive parsing
@@ -1408,7 +1413,17 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 # I5: mismo tratamiento de CAJA que is_div_payout (signed amount: un
                 # cargo como 'ADR Mgmt Fee' es negativo y resta) pero sin pasar por
                 # `dividends_gross_by_year`/objeto fiscal — no son distribuciones.
-                dividends_collected_cash += amount
+                #
+                # Y por eso mismo NO suma a `dividends_collected_cash`. Hasta el
+                # 2026-09-24 sí lo hacía, y el efectivo del recorrido quedaba con dos
+                # bases dentro del mismo total (Regla 2 del contrato): el «Cash In Lieu»
+                # del split inverso de MSTY ($18.32) hacía que `DRIP + CASH` superara al
+                # NETO del objeto fiscal en exactamente esa cifra, y el guard de
+                # `verificar_identidades` bloqueaba Cash flow y Hoja Excel — con razón.
+                # La caja no cambia: `gross_value` suma este acumulador aparte, más abajo.
+                misc_cash_total += amount
+                misc_cash_breakdown[str(row.get('Action', '')).strip()] = round(
+                    misc_cash_breakdown.get(str(row.get('Action', '')).strip(), 0.0) + amount, 2)
                 irr_flows_dated.append((_tx_date, amount))
 
             elif is_sell:
@@ -1595,7 +1610,11 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         _drip_sin_fuente = bool(_acciones.str.contains('reinvest shares', na=False).sum()
                                 > _acciones.str.contains('reinvest dividend', na=False).sum())
 
-        gross_value = market_value + _cash_collected_net
+        # `misc_cash_total` entra en la CAJA (es dinero que de verdad está en la cuenta:
+        # la fracción liquidada en un split inverso ya no está dentro de `market_value`),
+        # pero entra como sumando propio y declarado, no dentro del efectivo de dividendos.
+        # Sin él aquí, sacarlo del balde de dividendos habría bajado el ROI en silencio.
+        gross_value = market_value + _cash_collected_net + misc_cash_total
         net_profit = gross_value - pocket_investment
         roi = (net_profit / pocket_investment * 100) if pocket_investment != 0 else 0
 
@@ -2186,6 +2205,10 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "total_dividends": total_dividends,
             "net_profit": net_profit,
             "dividends_cash_net": _cash_collected_net,
+            # Base: efectivo no distributivo (Cash In Lieu, Special Qual Div, ADR Mgmt Fee,
+            # Wire Received). Momento: al cobro. Nunca se suma a una cifra de dividendos.
+            "misc_cash_total": round(misc_cash_total, 2),
+            "misc_cash_breakdown": dict(misc_cash_breakdown),
             "drip_sin_fuente": _drip_sin_fuente,
             "roi_percent": roi,
             "history": ticker_df,
