@@ -96,7 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1162 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+Línea base: **1182 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`feat/captura-fidelidad-fixture`, base `main` = `3274eac` (#156), en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +20: Fase 1 de la captura de casos — el fixture
+anonimizado conserva las filas sin ticker (sin ellas `build_dividend_tax_totals` cambiaba en los 3
+casos Schwab), lector único `load_capture_fixture`, procedencia por ticker (`origen_posiciones`) y
+promoción que excluye la vista previa. Ninguno mueve una cifra de la app: la captura sigue apagada.)
+
+Antes: **1162 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
 `test/m4-ronda3-huecos`, base `main` = `f0864c2` (#154), en la máquina de Daniel con
 `real_examples/` y `CONY_test.csv` en el worktree. +5: los tests que cierran los huecos de la ronda 3
 de M4 —split posterior múltiple y corte del mismo día (SF-1, SF-2), traspasos entre brókers de

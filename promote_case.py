@@ -48,6 +48,17 @@ def _parse(files: dict):
     return meta, gt, q
 
 
+# Un esperado tiene que venir de fuera del CSV que se va a probar: la captura del bróker
+# o lo que el cliente tecleó. 'vista_previa' sale del propio CSV → test tautológico.
+ORIGENES_PROMOVIBLES = ("captura", "editado")
+
+
+def promotable_shares(gt: dict, q: dict) -> dict:
+    return {t: v.get("shares") for t, v in gt.items()
+            if (q.get(t) or {}).get("level") == "ok" and v.get("shares")
+            and v.get("origen_shares") in ORIGENES_PROMOVIBLES}
+
+
 def show(broker: str, case_id: str):
     files = storage.fetch_case(broker, case_id)
     if not files:
@@ -67,12 +78,13 @@ def promote(broker: str, case_id: str) -> bool:
     if not files:
         return False
     _, gt, q = _parse(files)
-    # Solo tickers 'ok' con shares > 0 entran al ground truth de shares del harness.
-    shares = {t: v.get("shares") for t, v in gt.items()
-              if (q.get(t) or {}).get("level") == "ok" and v.get("shares")}
+    shares = promotable_shares(gt, q)
+    descartados = sorted(t for t, v in gt.items() if v.get("shares") and t not in shares)
     unreliable = {t for t, v in q.items() if v.get("level") == "unreliable"}
+    if descartados:
+        print(f"  (fuera del esperado: {descartados} — origen vista_previa/desconocido o no 'ok')")
     if not shares:
-        print("  ! sin tickers 'ok' con shares — no se promueve (caso no sólido).")
+        print("  ! sin tickers promovibles — no se promueve.")
         return False
 
     dest_dir = os.path.join(REAL, "captured", broker, case_id)
