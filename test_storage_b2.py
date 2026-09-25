@@ -310,3 +310,107 @@ def test_la_clave_no_aparece_en_la_salida_ni_en_la_excepcion(env_b2, monkeypatch
     assert secreto not in str(excinfo.value)
     assert secreto not in capturado.out
     assert secreto not in capturado.err
+
+
+# ── Auditoría de Opus (2026-09-25): los caminos que el falso no ejercitaba ────
+# Mutantes que sobrevivían a T1-T11: secrets ignorados (producción lee
+# st.secrets, no env), prefix obligatorio en secrets, fetch que se traga un 403,
+# y list/delete que leen solo la primera página.
+
+class FakeB2Paginado(FakeB2):
+    """Como FakeB2, pero pagina de a `n` entradas con marcadores por CLAVE (no por
+    índice), igual que S3: borrar entre páginas no desplaza lo que falta."""
+
+    def __init__(self, n=2, **kw):
+        super().__init__(**kw)
+        self.n = n
+
+    def list_objects_v2(self, Bucket, Prefix="", ContinuationToken=None, **resto):
+        todo = FakeB2.list_objects_v2(self, Bucket, Prefix)["Contents"]
+        if ContinuationToken:
+            todo = [c for c in todo if c["Key"] > ContinuationToken]
+        pagina = todo[:self.n]
+        if len(todo) > self.n:
+            return {"Contents": pagina, "IsTruncated": True,
+                    "NextContinuationToken": pagina[-1]["Key"]}
+        return {"Contents": pagina, "IsTruncated": False}
+
+    def list_object_versions(self, Bucket, Prefix="", KeyMarker=None,
+                             VersionIdMarker=None, **resto):
+        r = FakeB2.list_object_versions(self, Bucket, Prefix)
+        orden = lambda e: (e["Key"], int(e["VersionId"][1:]))
+        todo = sorted([("v", e) for e in r["Versions"]] + [("m", e) for e in r["DeleteMarkers"]],
+                      key=lambda x: orden(x[1]))
+        if KeyMarker is not None:
+            corte = (KeyMarker, int(VersionIdMarker[1:]))
+            todo = [x for x in todo if orden(x[1]) > corte]
+        pagina = todo[:self.n]
+        out = {"Versions": [e for k, e in pagina if k == "v"],
+               "DeleteMarkers": [e for k, e in pagina if k == "m"],
+               "IsTruncated": len(todo) > self.n}
+        if out["IsTruncated"]:
+            out["NextKeyMarker"] = pagina[-1][1]["Key"]
+            out["NextVersionIdMarker"] = pagina[-1][1]["VersionId"]
+        return out
+
+
+def test_produccion_lee_st_secrets_sin_prefix(monkeypatch):
+    """Streamlit Cloud configura B2 por st.secrets, no por env, y sin `prefix`."""
+    for v in ("CAPTURE_LOCAL_DIR", "CAPTURE_B2_BUCKET", "CAPTURE_B2_ENDPOINT",
+              "CAPTURE_B2_KEY_ID", "CAPTURE_B2_APP_KEY", "CAPTURE_B2_PREFIX"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr(storage, "_secrets", lambda: {"b2": {
+        "bucket": "bucket-de-prueba", "endpoint": _ENDPOINT,
+        "key_id": "id-de-prueba", "application_key": _CLAVE_FICTICIA}})
+    f = FakeB2(solo_escritura=True)
+    monkeypatch.setattr(storage, "_b2_client", lambda: f)
+    assert storage.backend() == "b2"
+    assert storage.upload_case(_bundle()) == "caso-1"
+    assert sorted(f.versiones) == sorted(
+        f"captured/schwab/caso-1/{n}" for n in (
+            "transactions_min.csv", "ground_truth.json", "quality.json",
+            "gemini_raw.json", "meta.json"))
+
+
+def test_fetch_propaga_un_403(fake, monkeypatch):
+    """Solo «no existe» se omite. Un 403 (p. ej. usar en local la clave de solo
+    escritura) tiene que verse: tragárselo haría que promote_case diga «no
+    encontrado» de un caso que sí está."""
+    storage.upload_case(_bundle())
+
+    def denegado(**kw):
+        raise ClientError({"Error": {"Code": "AccessDenied", "Message": "no"},
+                           "ResponseMetadata": {"HTTPStatusCode": 403}}, "GetObject")
+    monkeypatch.setattr(fake, "get_object", denegado, raising=False)
+    with pytest.raises(ClientError):
+        storage.fetch_case("schwab", "caso-1")
+
+
+def test_list_cases_recorre_todas_las_paginas(env_b2, monkeypatch):
+    f = FakeB2Paginado(n=2)
+    monkeypatch.setattr(storage, "_b2_client", lambda: f)
+    for cid in ("caso-1", "caso-2", "caso-3"):
+        storage.upload_case(_bundle(case_id=cid))
+    assert sorted(c["case_id"] for c in storage.list_cases()) == ["caso-1", "caso-2", "caso-3"]
+
+
+def test_delete_case_recorre_todas_las_paginas(env_b2, monkeypatch):
+    f = FakeB2Paginado(n=2)
+    monkeypatch.setattr(storage, "_b2_client", lambda: f)
+    storage.upload_case(_bundle())
+    storage.upload_case(_bundle())
+    f.add_delete_marker(f"{_RAIZ}/meta.json")
+    storage.upload_case(_bundle(case_id="otro"))
+    assert storage.delete_case("schwab", "caso-1") is True
+    assert not [k for k in f.versiones if k.startswith(_RAIZ + "/")]
+    assert len([k for k in f.versiones if "/otro/" in k]) == 5
+
+
+def test_endpoint_sin_esquema_como_lo_muestra_la_consola(env_b2, monkeypatch):
+    import boto3
+    capturados = {}
+    monkeypatch.setenv("CAPTURE_B2_ENDPOINT", "s3.us-east-005.backblazeb2.com")
+    monkeypatch.setattr(boto3, "client", lambda *a, **kw: capturados.update(kw) or FakeB2())
+    storage._b2_client()
+    assert capturados["endpoint_url"] == "https://s3.us-east-005.backblazeb2.com"
+    assert capturados["region_name"] == "us-east-005"

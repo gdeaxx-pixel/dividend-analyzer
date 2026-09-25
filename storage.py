@@ -83,6 +83,13 @@ def _b2_conf():
     return None
 
 
+def _b2_endpoint(endpoint: str) -> str:
+    """La consola de B2 muestra el endpoint sin esquema (`s3.<region>.backblazeb2.com`);
+    boto3 lo exige con él."""
+    endpoint = endpoint.strip()
+    return endpoint if '://' in endpoint else f'https://{endpoint}'
+
+
 def _b2_region(endpoint: str) -> str:
     """La región es el segmento entre 's3.' y '.backblazeb2.com' del endpoint."""
     host = endpoint.split('://', 1)[-1].split('/', 1)[0]
@@ -94,7 +101,7 @@ def _b2_client():
     from botocore.config import Config
     c = _b2_conf()
     return boto3.client(
-        "s3", endpoint_url=c["endpoint"], region_name=_b2_region(c["endpoint"]),
+        "s3", endpoint_url=_b2_endpoint(c["endpoint"]), region_name=_b2_region(c["endpoint"]),
         aws_access_key_id=c["key_id"], aws_secret_access_key=c["application_key"],
         config=Config(request_checksum_calculation="when_required",
                       response_checksum_validation="when_required"))
