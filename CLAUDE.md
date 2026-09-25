@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1124 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la rama
+Línea base: **1130 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+`0600774` **fusionado**, en la máquina de Daniel con `real_examples/` montado, con
+`tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +6 respecto
+a la de abajo: los tests del #146. La línea de la base quedó fuera de la captura, pero la cifra sale
+exacta de la misma corrida: en las dos pasadas con mutante, 1093 + 37 = 1129 + 1 = 1130.)
+
+Antes: **1124 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la rama
 `fix/mensaje-de-bloqueo-dice-que-le-falta-al-csv`, base `main` = `af6bf1f`, tras hacer que el
 aviso del guard diga QUÉ le falta al export en vez de «las cifras no cuadran entre sí»:
 `logic.drip_huerfanas` cuenta las compras del DRIP sin su fila fuente el mismo día y
@@ -106,10 +112,17 @@ $260.16 contra $232.77 — por eso el aviso publica las dos cifras por separado)
 falla es el guard independiente, el aviso dice que el fallo es NUESTRO y no manda al cliente a
 pedirle nada a su bróker. 4 sabotajes M4 verificados. +6 tests.
 
-> **Un rojo de la primera corrida fue flake, no regresión**:
-> `test_capital_aportado_resta_lo_que_devuelve_una_venta[NVDY-770.0]` falló con la app de
-> Streamlit corriendo en paralelo y pasó aislado y en la segunda corrida completa. Se anota en vez
-> de callarlo: si reaparece sin un servidor compitiendo, es otra cosa.
+> **Corregido el 2026-09-25: aquel rojo NO fue flake.**
+> `test_capital_aportado_resta_lo_que_devuelve_una_venta[NVDY-770.0]` falló porque esa suite corrió
+> en la MISMA carpeta mientras `tools/verificacion_m4_local.py` tenía aplicado el mutante G5-b (una
+> venta SUMA al capital aportado) sobre `logic.py`: había tres sesiones trabajando en paralelo en el
+> mismo working tree. Es exactamente el test que mata ese mutante y, medido con los datos reales,
+> el **único** de toda la suite que lo hace. Hizo su trabajo. Nunca hay que atribuir un rojo de
+> este test a «un servidor compitiendo».
+> Lección general: **una sesión por working tree** (`git worktree`). Una mutación temporal en una
+> carpeta compartida se ve desde las otras sesiones como un rojo «flaky», y en sentido contrario
+> un cambio de rama de otra sesión mezcla el código que mide un arnés. El script ya detecta lo
+> segundo y aborta.
 
 Antes: **1118 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
 rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos` **ya fusionada** con `main` =
@@ -128,27 +141,25 @@ reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora viv
 corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
 abajo dos veces.
 
-Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1018 passed,
-79 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
-2026-09-25 sobre la rama `claude/hola-6x8t15`, base `main` = `5714469`). Es la primera vez
-que la suite queda verde fuera de la máquina de Daniel.
-Llegar aquí costó dos PRs de la auditoría M4:
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1033 passed,
+80 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
+2026-09-25 sobre `main` = `0600774`). La suite queda verde fuera de la máquina de Daniel desde el
+2026-09-25. Llegar ahí costó dos PRs de la auditoría M4:
 - **#142**: `test_spy_math.py` pasó a `tools/`, los tests que dependían de Yahoo sin medir el
   mercado lo mockean y los de splits se saltan con motivo cuando yfinance no responde.
-- **El de los rojos de entorno (2026-09-25)**: los dos se saltan **solo** cuando falta su
-  recurso privado:
+- **#144**: los dos rojos de entorno se saltan **solo** cuando falta su recurso privado:
   - `test_los_contratos_vivos_siguen_pasando_su_check`, cuando falta el demo del vault;
   - `test_s1_demo_no_hereda_capturas_de_la_sesion_previa`, cuando falta `real_examples/`.
   Los dos fallaban también en CI y disparaban el aviso de Telegram de cada refresco semanal
   por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
 El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
-**Esta cifra NO sustituye la línea local de abajo, y la de abajo está desfasada**: la nube
-recolecta 1097 tests (1018 + 79) contra sus 908 (906 + 2). Para volver a medirla en local,
-con `real_examples/` montado: `./.venv/bin/python tools/verificacion_m4_local.py`. Mide la
-línea base y además repite los dos mutantes de la auditoría que solo se pueden medir con los
-datos reales.
+**Esta cifra NO sustituye a la línea local de arriba**: los tests que aquí se saltan son los de
+datos reales. La nube recolecta 1113 tests (1033 + 80) y la local 1132 (1130 + 2). Para volver a
+medir la local, con `real_examples/` montado y **la carpeta para ti sola**:
+`./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los dos mutantes
+de la auditoría que solo se pueden medir con los datos reales.
 
-Línea base: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+Antes: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
 `ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
 una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
 `gap > 0.01` no lo capturaba, así que decía «Todo el exceso vuelve solo» mientras la

@@ -68,6 +68,25 @@ def git(*args):
     return sh(["git", *args]).stdout.strip()
 
 
+def estado_arbol():
+    """Lo que cambiaría otra sesión trabajando en esta misma carpeta: los archivos VERSIONADOS
+    modificados y el HEAD (una rama cambiada lo mueve). Los no versionados quedan fuera a
+    propósito: la suite puede dejar archivos propios y eso no es una intrusión."""
+    return git("status", "--porcelain", "--untracked-files=no"), git("rev-parse", "HEAD")
+
+
+def exigir_arbol_intacto(inicial, momento):
+    """Medido el 2026-09-25: con tres sesiones en la misma carpeta, otra sesión cambió de rama y
+    recuperó un stash a mitad de la corrida, y los mutantes se aplicaron sobre código mezclado.
+    En sentido contrario, esa sesión corrió su suite con un mutante de ESTE script aplicado y
+    anotó como «flake» el rojo que el mutante provocaba. Si la carpeta cambió, nada de lo medido
+    vale: se aborta en vez de entregar cifras mezcladas."""
+    if estado_arbol() != inicial:
+        sys.exit(f"La carpeta cambió {momento}: otra sesión o programa está trabajando aquí "
+                 "(cambió de rama o tocó archivos versionados). Los resultados no valen. "
+                 "Córrelo con la carpeta para ti sola, o en un git worktree aparte.")
+
+
 def resumen(salida):
     lineas = [l for l in salida.strip().splitlines() if l.strip()]
     return lineas[-1] if lineas else "(sin salida)"
@@ -118,21 +137,31 @@ def main():
     if git("status", "--porcelain", "--", "logic.py"):
         sys.exit("logic.py tiene cambios sin commitear: no lo muto encima de trabajo tuyo.")
 
+    print("Durante unos 12 minutos logic.py va a estar MUTADO a ratos: ninguna otra sesión "
+          "debe correr tests ni editar en esta carpeta mientras tanto.", flush=True)
+    inicial = estado_arbol()
     informe = [
         f"HEAD: {git('rev-parse', 'HEAD')} ({git('rev-parse', '--abbrev-ref', 'HEAD')})",
         f"real_examples/: {'montado' if montado else 'NO montado (prueba del script)'}",
     ]
+    if inicial[0]:
+        informe.append("OJO, cambios versionados al empezar (la línea base NO es main puro): "
+                       + "; ".join(inicial[0].splitlines()[:10]))
     print("Midiendo la línea base (suite completa)…", flush=True)
     linea_base, rojos_base = suite_completa()
     informe += [f"Línea base: {linea_base}",
                 f"Rojos de la línea base: {sorted(rojos_base) or 'ninguno'}"]
 
     for m in MUTANTES:
+        exigir_arbol_intacto(inicial, f"antes del mutante {m['id']}")
         print(f"Mutante {m['id']}: {m['que']}…", flush=True)
         informe.append(f"\n{m['id']} — {m['que']}")
-        original = open(LOGIC, encoding="utf-8").read()
-        firma = hashlib.sha256(original.encode("utf-8")).hexdigest()
-        n = original.count(m["viejo"])
+        # En binario: la restauración tiene que ser byte a byte, sin normalizar saltos de línea.
+        with open(LOGIC, "rb") as f:
+            original = f.read()
+        firma = hashlib.sha256(original).hexdigest()
+        texto = original.decode("utf-8")
+        n = texto.count(m["viejo"])
         if n != 1:
             informe.append(f"   NO APLICA: el trozo a mutar aparece {n} veces "
                            "(¿cambió logic.py desde la auditoría?)")
@@ -141,8 +170,8 @@ def main():
         informe.append("   antes del mutante: " + ", ".join(
             f"{nodo.split('::')[-1]}={estado.split(' |')[0]}" for nodo, estado in antes.items()))
         try:
-            with open(LOGIC, "w", encoding="utf-8") as f:
-                f.write(original.replace(m["viejo"], m["nuevo"]))
+            with open(LOGIC, "wb") as f:
+                f.write(texto.replace(m["viejo"], m["nuevo"]).encode("utf-8"))
             if sh([PY, "-m", "py_compile", LOGIC]).returncode != 0:
                 informe.append("   el mutante NO compila: no mide nada")
                 continue
@@ -153,12 +182,14 @@ def main():
             informe.append(f"   suite completa: {linea}")
             informe.append(f"   rojos nuevos ({len(nuevos)}): {nuevos}")
         finally:
-            with open(LOGIC, "w", encoding="utf-8") as f:
+            with open(LOGIC, "wb") as f:
                 f.write(original)
-            restaurado = hashlib.sha256(open(LOGIC, encoding="utf-8").read().encode("utf-8"))
+            with open(LOGIC, "rb") as f:
+                restaurado = hashlib.sha256(f.read())
             if restaurado.hexdigest() != firma:
                 sys.exit("¡logic.py NO quedó como estaba! Corre: git checkout -- logic.py")
 
+    exigir_arbol_intacto(inicial, "durante el último mutante")
     informe.append(f"\nlogic.py restaurado: {'sí' if not git('status', '--porcelain', '--', 'logic.py') else 'NO'}")
     print("\n===== VERIFICACIÓN LOCAL M4 — pega esto en la conversación =====")
     print("\n".join(informe))
