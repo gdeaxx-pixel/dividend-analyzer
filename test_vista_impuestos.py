@@ -910,6 +910,42 @@ def test_credito_definitivo_es_none_cuando_no_hay_con_que_medirlo():
     assert c["definitivo_motivo"] == "sin_dato_de_roc_recuperable"
 
 
+def test_credito_declara_los_fondos_cuyo_roc_no_se_pudo_medir(monkeypatch):
+    """Auditoría M4, ronda 2 (R2-H2), el caso MEDIDO. Sin ROC de MSTY (se quita de los dos yaml),
+    la casilla 9 no puede medir su devolución y los $46.80 que MSTY retuvo caen enteros en el
+    definitivo: $4.10 → $50.90. Antes eso se publicaba sin motivo, como cifra final. Ahora la
+    cifra es la misma, pero se rotula como TECHO y nombra los fondos y su retención.
+    SCHB ($0.45) está en la lista desde siempre: no publica 19a, y la app no puede distinguir
+    «no tiene ROC» de «no tengo el dato» — el peldaño 2 lo trata igual."""
+    for cargar in ("load_roc_19a", "load_roc_ici"):
+        real = getattr(logic, cargar)
+        monkeypatch.setattr(logic, cargar, lambda *a, _r=real, **k: {
+            tk: v for tk, v in _r(*a, **k).items() if tk != "MSTY"})
+    res, _ = _resultados_de_fixture(monkeypatch, "schwab_synth_1", "F4_R2H2_SIN_MSTY")
+    c = impuestos_data(res, logic.build_fiscal_profile(), [])["impuesto_local"]["credito_eeuu"]
+    assert c["definitivo"] == pytest.approx(50.90, abs=0.01), "la cifra no se mueve: se rotula"
+    assert c["definitivo_es_techo"] is True
+    assert c["definitivo_motivo"] == "cobertura_incompleta"
+    assert c["cobertura"]["fondos_sin_medir"] == ["MSTY", "SCHB"]
+    assert c["cobertura"]["retenido_sin_medir"] == pytest.approx(46.80 + 0.45, abs=0.01)
+
+
+@pytest.mark.parametrize("fixture", ["schwab_synth_1", "schwab_synth_2", "ib_synth_1"])
+def test_credito_sin_medir_cuadra_con_el_peldano2_sin_roc(monkeypatch, fixture):
+    """Regla 3b: dos vistas del mismo hecho. El peldaño 2 nombra los fondos sin % de ROC
+    (`gravable.sin_roc`); el peldaño 6 nombra los fondos cuya devolución no se pudo medir.
+    Con todas las retenciones reconciliando —el caso de las tres fixtures—, las dos listas
+    tienen que ser la misma, restringida a los fondos con retención."""
+    d = _datos_f4(fixture, monkeypatch)
+    con_retencion = {f["ticker"] for f in d["fondos"] if f["retenido"] > 0.01}
+    esperado = sorted(set(d["peldanos"]["gravable"]["sin_roc"]) & con_retencion)
+    cob = d["impuesto_local"]["credito_eeuu"]["cobertura"]
+    assert esperado, f"{fixture}: ningún fondo sin ROC con retención — el cruce no prueba nada"
+    assert cob["fondos_sin_medir"] == esperado
+    assert cob["retenido_sin_medir"] == pytest.approx(
+        sum(f["retenido"] for f in d["fondos"] if f["ticker"] in esperado), abs=0.01)
+
+
 def test_credito_definitivo_no_depende_del_pais(monkeypatch):
     """Lo que el bróker devuelve por ROC no depende del tratado: declarar país no puede
     mover el crédito definitivo (misma lógica que el #101/#102)."""

@@ -453,6 +453,18 @@
     if (x == null || isNaN(x)) return 0;
     return Math.max(0, Math.min(100, x));
   }
+  // Crédito del peldaño 6 cuando su cobertura está incompleta (auditoría M4, ronda 2, R2-H2):
+  // hay fondos con retención cuya devolución por ROC no se pudo medir, y toda su retención
+  // quedó dentro del definitivo. La cifra es un TECHO y se dice con los fondos y el monto.
+  function techoCreditoTxt(ce) {
+    if (!ce || !ce.definitivo_es_techo) return "";
+    var cob = ce.cobertura || {};
+    var tks = (cob.fondos_sin_medir || []).map(function (t) { return esc(t); });
+    var quien = tks.length === 1 ? tks[0] : tks.slice(0, -1).join(", ") + " y " + tks[tks.length - 1];
+    return "Es un <b>techo</b>, no la cifra final: de " + quien + " no pudimos medir cuánto "
+      + "vuelve por ROC, así que su retención (<b>" + money(cob.retenido_sin_medir) + "</b>) "
+      + "cuenta entera.";
+  }
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
@@ -788,7 +800,8 @@
         cName = "Retención restante";
         if (definitivo != null) {
           cValue = money(definitivo);
-          cSub = pctTxt(pctDe(definitivo, retTotal)) + " de lo retenido al cobro · estimado";
+          cSub = pctTxt(pctDe(definitivo, retTotal)) + " de lo retenido al cobro · "
+            + (CE && CE.definitivo_es_techo ? "techo" : "estimado");
         } else {
           cValue = "Sin dato"; pending = true;
           cSub = "Motivo: " + (MOTIVOS[motivoDefinitivo] || esc(motivoDefinitivo) || "sin dato");
@@ -871,7 +884,8 @@
       nota1 = "Tras la reclasificación anual, podrían devolverse <strong>" + money(vuelveAgg)
         + " (" + pctTxt(pctDe(vuelveAgg, retTotal)) + " de lo retenido al cobro)</strong>. "
         + "Quedarían <strong>" + money(definitivo) + "</strong> retenidos · estimado, "
-        + "no devolución confirmada.";
+        + "no devolución confirmada."
+        + (techoCreditoTxt(CE) ? " " + techoCreditoTxt(CE) : "");
     } else if (vuelveAgg != null && retTotal > 0) {
       nota1 = "Tras la reclasificación anual, podrían devolverse <strong>" + money(vuelveAgg)
         + " (" + pctTxt(pctDe(vuelveAgg, retTotal)) + " de lo retenido al cobro)</strong>. "
@@ -1442,7 +1456,8 @@
         + '<span class="imp-bucket-money">' + money(L.dividendos.bruto) + '</span>'
         + '<p class="imp-bucket-note">Lo repartido ANTES de la retención — es el bruto el que '
         + 'viaja a la declaración, no lo que entró a tu cuenta.</p></div>'
-      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Crédito por lo pagado a EE.UU.</p>'
+      + '<div class="imp-bucket ambar"><p class="imp-bucket-lab">Crédito por lo pagado a EE.UU.'
+        + (L.credito_eeuu.definitivo_es_techo ? ' · techo' : '') + '</p>'
         + '<span class="imp-bucket-money">'
         + money(L.credito_eeuu.definitivo != null ? L.credito_eeuu.definitivo
                                                   : L.credito_eeuu.monto) + '</span>'
@@ -1457,7 +1472,10 @@
         + '<b>' + money(L.credito_eeuu.vuelve_por_roc) + '</b> vuelven solos al reclasificar el '
         + 'ROC. <b>Eso no es crédito</b>: lo que te devuelven nunca llegaste a pagarlo. El que '
         + 'puedes descontar es <b>' + money(L.credito_eeuu.definitivo) + '</b>. '
-        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.');
+        + 'Llevar el total a tu declaración es reclamar un impuesto que no pagaste.'
+        + (techoCreditoTxt(L.credito_eeuu) ? ' ' + techoCreditoTxt(L.credito_eeuu) : ''));
+    } else if (L.credito_eeuu.definitivo != null && techoCreditoTxt(L.credito_eeuu)) {
+      lPartes.push(techoCreditoTxt(L.credito_eeuu));
     } else if (L.credito_eeuu.definitivo == null) {
       lPartes.push('No podemos medir cuánto de esa retención vuelve por ROC, '
         + 'así que <b>' + money(L.credito_eeuu.monto) + '</b> es el <b>techo</b> del crédito, no '

@@ -141,9 +141,10 @@ reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora viv
 corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
 abajo dos veces.
 
-Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1033 passed,
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1039 passed,
 80 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
-2026-09-25 sobre `main` = `0600774`). La suite queda verde fuera de la máquina de Daniel desde el
+2026-09-25 sobre la rama `claude/credito-cobertura`, base `main` = `e53bd97`, que daba 1033: +6
+tests del crédito con cobertura incompleta, R2-H2 de la ronda 2 de M4). La suite queda verde fuera de la máquina de Daniel desde el
 2026-09-25. Llegar ahí costó dos PRs de la auditoría M4:
 - **#142**: `test_spy_math.py` pasó a `tools/`, los tests que dependían de Yahoo sin medir el
   mercado lo mockean y los de splits se saltan con motivo cuando yfinance no responde.
@@ -154,7 +155,7 @@ Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo):
   por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
 El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
 **Esta cifra NO sustituye a la línea local de arriba**: los tests que aquí se saltan son los de
-datos reales. La nube recolecta 1113 tests (1033 + 80) y la local 1132 (1130 + 2). Para volver a
+datos reales. La nube recolecta 1119 tests (1039 + 80) y la local, estimado, 1138 (1136 + 2). Para volver a
 medir la local, con `real_examples/` montado y **la carpeta para ti sola**:
 `./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los dos mutantes
 de la auditoría que solo se pueden medir con los datos reales.
