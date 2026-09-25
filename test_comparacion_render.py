@@ -22,16 +22,18 @@ import pytest
 import backtest
 
 _HTML = os.path.join(os.path.dirname(__file__), "ui", "componentes", "comparacion.html")
+_HTML_REAL = os.path.join(os.path.dirname(__file__), "ui", "componentes",
+                          "comparacion_real.html")
 
 _node = pytest.mark.skipif(
     shutil.which("node") is None,
     reason="node ausente: el gate de CONSECUENCIA no corre — y un skip no es un pass")
 
 
-def _extraer_funcion(nombre: str) -> str:
-    """Extrae `function NOMBRE(...) { ... }` del componente por balance de llaves —
-    sin regex de una línea, que se corta en la primera `}` (hay varias anidadas)."""
-    with open(_HTML, encoding="utf-8") as f:
+def _extraer_funcion_de(ruta: str, nombre: str) -> str:
+    """Extrae `function NOMBRE(...) { ... }` del componente en `ruta` por balance de
+    llaves — sin regex de una línea, que se corta en la primera `}` (hay varias anidadas)."""
+    with open(ruta, encoding="utf-8") as f:
         src = f.read()
     i = src.index(f"function {nombre}(")
     depth = 0
@@ -46,6 +48,10 @@ def _extraer_funcion(nombre: str) -> str:
             if started and depth == 0:
                 return src[i:k + 1]
     raise AssertionError(f"no encontré el cierre de function {nombre}(")
+
+
+def _extraer_funcion(nombre: str) -> str:
+    return _extraer_funcion_de(_HTML, nombre)
 
 
 def _correr_js(fn_src: str, data: dict, last: int, llamada: str) -> dict:
@@ -396,3 +402,174 @@ def test_q5_bruto_y_plano_ignoran_idxdesde(modo):
         assert rep["data"][str(m)] == pytest.approx(v, abs=1e-9), (
             f"{modo} m={m}: dio {rep['data'][str(m)]}, esperado {v} — "
             "¿se quitó el guard de modo?")
+
+
+# ── Q6 (2026-09-24): gemelo de Q5 en la vista REAL (`comparacion_real.html`). Mismo
+# defecto —`series()` dividía entre `tot[startM]`, que en modo roc arrastra el
+# `roc_receivable` devengado antes del inicio elegido— pero otra firma:
+# `series(tk, mode, baseIncep)` calcula `startM = max(baseIncep, F[tk].incep)` DENTRO y
+# devuelve `late`. Y otro cableado: `baseIncep` es la incepción del fondo base y nada más
+# (no el máximo de la pantalla como `ventanaComun()` de la Simulación), así que aquí solo
+# se ve afectado un comparador MÁS VIEJO que el base. Medido sobre el universo real:
+# 10 combinaciones, peor error 2.94 pp, signo variable (spec Q6 §3). El arreglo es el
+# mismo: dato precalculado en Python (`DATA.idxDesde` desde `trg_real_data`), no fórmula.
+#
+# `series()` del componente Real lee dos globales del IIFE: `DATA` (vía `idxAt`) y `F`
+# (las incepciones). `_correr_js` ya inyecta `DATA`/`LAST`; `F` se inyecta aquí con la
+# incepción que cada caso necesite.
+
+_HTML_REAL_FN = "series"
+
+
+def _fn_real(incep_x: int) -> str:
+    """`idxAt` + `F` + la `series()` EXTRAÍDA de `comparacion_real.html` — mismos
+    globales que le da el IIFE del componente, con `F["X"].incep` fijado por el test."""
+    return (_IDX_AT
+            + 'var F = {"X": {"incep": ' + str(incep_x) + "}};\n"
+            + _extraer_funcion_de(_HTML_REAL, _HTML_REAL_FN))
+
+
+@_node
+def test_q6_real_con_drip_roc_reproduce_el_motor(monkeypatch):
+    """El test que paga la spec (Q6 §5.1): gemelo de
+    `test_q5_con_drip_roc_reproduce_el_motor` con la firma de la vista Real —
+    `series(tk, mode, baseIncep)`, que calcula `startM` dentro. El esperado sale del
+    MOTOR (una compra nueva corrida desde la fecha real de `startM`), nunca de una
+    transcripción de la fórmula. `F["X"].incep` (2) es MENOR que los dos `baseIncep`
+    probados (5, 18), así que `startM == baseIncep` — el caso del comparador más viejo
+    que el fondo base, que es el único afectado en esta vista."""
+    from ui.adapters import _fecha_por_mes, _mensualizar_desde
+
+    history = _historia_sintetica()
+    monkeypatch.setattr(backtest, "fetch_history",
+                        lambda ticker, start=None, end=None: history)
+
+    origen_start = history.index.min()
+    origen = [int(origen_start.year), int(origen_start.month) - 1]
+    POL = dict(nra_rate=0.30, roc_pct_by_year={2024: 50.0, 2025: 50.0})
+    CAPITAL = 10000.0
+
+    r = backtest.run_backtest("X", start_date=origen_start, initial_capital=CAPITAL,
+                              drip=True, history=history, **POL)
+    idx = {"roc": {"X": _mensualizar_desde(r.daily["total_value"], origen)}}
+    fecha_por_mes = _fecha_por_mes(r.daily["total_value"], origen)
+    last = max(int(k) for k in idx["roc"]["X"])
+
+    incep_x = 2
+    fn = _fn_real(incep_x)
+
+    for base_incep in (5, 18):
+        start_m = max(base_incep, incep_x)
+        assert 0 < start_m < last, f"startM={start_m} fuera de rango (0, {last})"
+
+        # ORÁCULO: compra nueva en startM — el motor arranca con el receivable en cero
+        # por construcción, que es justo lo que NO tiene quien ya venía desde antes.
+        r_nueva = backtest.run_backtest("X", start_date=fecha_por_mes[str(start_m)],
+                                        initial_capital=CAPITAL, drip=True,
+                                        history=history, **POL)
+        compra_nueva_pct = r_nueva.total_return_pct
+
+        idx_desde = {"X": {str(start_m): _mensualizar_desde(
+            r_nueva.daily["total_value"], origen)}}
+        data = {"idx": idx, "idxDesde": idx_desde}
+        rep = _correr_js(fn, data, last=last,
+                         llamada=f'series("X", "roc", {base_incep})')
+
+        assert rep["startM"] == start_m, (
+            f"baseIncep={base_incep}: startM = {rep['startM']}, esperaba {start_m}")
+        assert rep["data"][str(last)] * 100 == pytest.approx(compra_nueva_pct, abs=1e-4), (
+            f"baseIncep={base_incep}: series() dio {rep['data'][str(last)]*100:.6f}%, "
+            f"compra nueva (run_backtest desde startM) dio {compra_nueva_pct:.6f}%")
+
+        # La serie sigue naciendo en 0% en startM — el rebase no mueve el punto de partida.
+        assert rep["data"][str(start_m)] == pytest.approx(0.0, abs=1e-12), (
+            f"baseIncep={base_incep}: la serie no arranca en 0%")
+
+        # `late` es del comparador contra el base: incep_x (2) > baseIncep (5/18) = False.
+        assert rep["late"] is False, f"baseIncep={base_incep}: late debe ser False"
+
+        # Y el cálculo VIEJO no coincide: si coincidiera, la fixture no tendría receivable
+        # pre-startM y este test estaría verde sin vigilar nada.
+        viejo = idx["roc"]["X"][str(last)] / idx["roc"]["X"][str(start_m)] - 1
+        assert rep["data"][str(last)] != pytest.approx(viejo, abs=1e-6), (
+            f"baseIncep={base_incep}: series() sigue dando el valor viejo — la fixture "
+            "no tiene receivable pre-startM o el fix no se aplicó")
+
+
+# Fixture de números redondos para la degradación: el esperado es aritmética de mano
+# (240/120 − 1 = 1.0 · 300/120 − 1 = 1.5 · 300/240 − 1 = 0.25), no la fórmula auditada.
+_Q6_IDX = {"0": 100.0, "1": 120.0, "2": 240.0, "3": 300.0}
+_Q6_ESPERADO_STARTM1 = {1: 0.0, 2: 1.0, 3: 1.5}
+
+
+@_node
+def test_q6_real_degrada_y_respeta_el_modo():
+    """Q6 §5.2, tres piezas en un solo test (el mutante M3 apunta a este nodeid):
+
+    (a) Sin `DATA.idxDesde`, con `idxDesde` vacío, con `idxDesde` SIN ese `startM`, y
+        con la entrada de ese `startM` presente pero SIN su propio mes (`{}`):
+        `series()` da exactamente `idx[m]/idx[startM] − 1` y NUNCA `NaN`. El cuarto caso
+        es el único que ejerce el guard `desde[startM] != null`: en los otros tres
+        `desde` ya sale `undefined` antes de llegar a él. El adapter lo produciría con un
+        `r.daily` vacío, que el bloque `idx_desde` no filtra. Los cuatro, en modo `roc`.
+    (b) Con `idxDesde` presente y valores TRAMPA deliberadamente distintos, en `bruto`
+        y `plano`: sigue dando la fórmula de siempre. Si alguien quita el
+        `mode === "roc"`, esto cae (mutante M3).
+    (c) `late` sale correcto en las DOS ramas: la del dato precalculado y la del
+        fallback (aquí con `F["X"].incep` (2) > `baseIncep` (1) → `late === true`,
+        que es el comparador más nuevo que el base)."""
+    fn = _fn_real(1)      # incep == baseIncep → startM=1, late=False
+    fn_late = _fn_real(2)  # incep > baseIncep → startM=2, late=True
+
+    # (a) los tres fallbacks, en roc
+    trampas = [
+        ("sin la clave", None),
+        ("idxDesde vacío", {}),
+        ("idxDesde sin ese startM", {"X": {"0": {"0": 9.0, "1": 9.0, "2": 9.0, "3": 9.0}}}),
+        ("entrada de ese startM sin su propio mes", {"X": {"1": {}}}),
+    ]
+    for etiqueta, idx_desde in trampas:
+        data = {"idx": {"roc": {"X": _Q6_IDX}}}
+        if idx_desde is not None:
+            data["idxDesde"] = idx_desde
+        rep = _correr_js(fn, data, last=3, llamada='series("X", "roc", 1)')
+        assert rep["startM"] == 1, f"{etiqueta}: startM = {rep['startM']}"
+        assert rep["late"] is False, f"{etiqueta}: late debe ser False (incep 1 == base 1)"
+        for m, v in _Q6_ESPERADO_STARTM1.items():
+            # Trampa 6: `JSON.stringify` pierde los `undefined` y los `NaN` salen `null` —
+            # afirmar que la clave ESTÁ y que no es null antes de comparar.
+            assert str(m) in rep["data"] and rep["data"][str(m)] is not None, (
+                f"{etiqueta} m={m}: valor ausente o NaN — la degradación produjo NaN")
+            assert rep["data"][str(m)] == pytest.approx(v, abs=1e-9), (
+                f"{etiqueta} m={m}: dio {rep['data'][str(m)]}, esperado {v}")
+
+    # (b) bruto y plano ignoran idxDesde aunque traiga valores trampa (M3)
+    for modo in ("bruto", "plano"):
+        data = {
+            "idx": {modo: {"X": _Q6_IDX}},
+            "idxDesde": {"X": {"1": {"1": 7.0, "2": 7.0, "3": 7.0}}},
+        }
+        rep = _correr_js(fn, data, last=3, llamada=f'series("X", "{modo}", 1)')
+        for m, v in _Q6_ESPERADO_STARTM1.items():
+            assert rep["data"][str(m)] == pytest.approx(v, abs=1e-9), (
+                f"{modo} m={m}: dio {rep['data'][str(m)]}, esperado {v} — "
+                "¿se quitó el guard `mode === \"roc\"`?")
+
+    # (c) late=True en la rama del dato precalculado (valores distintos a idx a
+    # propósito, para confirmar que se usó el dato: 600/500 − 1 = 0.2, no 300/240 − 1)
+    data = {"idx": {"roc": {"X": _Q6_IDX}},
+            "idxDesde": {"X": {"2": {"2": 500.0, "3": 600.0}}}}
+    rep = _correr_js(fn_late, data, last=3, llamada='series("X", "roc", 1)')
+    assert rep["startM"] == 2, f"startM = {rep['startM']}, esperaba max(1, 2) = 2"
+    assert rep["late"] is True, "incep (2) > baseIncep (1): late debe ser True (rama dato)"
+    assert rep["data"]["2"] == pytest.approx(0.0, abs=1e-12)
+    assert rep["data"]["3"] == pytest.approx(0.2, abs=1e-9), (
+        f"rama dato: dio {rep['data']['3']} — 600/500 − 1 = 0.2")
+
+    # (c') late=True en la rama del fallback (sin idxDesde: 300/240 − 1 = 0.25)
+    rep = _correr_js(fn_late, {"idx": {"roc": {"X": _Q6_IDX}}}, last=3,
+                     llamada='series("X", "roc", 1)')
+    assert rep["late"] is True, "incep (2) > baseIncep (1): late debe ser True (fallback)"
+    assert rep["data"]["2"] == pytest.approx(0.0, abs=1e-12)
+    assert rep["data"]["3"] == pytest.approx(0.25, abs=1e-9), (
+        f"fallback: dio {rep['data']['3']} — 300/240 − 1 = 0.25")
