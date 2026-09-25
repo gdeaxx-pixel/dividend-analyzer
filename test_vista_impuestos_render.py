@@ -1153,3 +1153,40 @@ def test_titular_y_tarjeta_de_w8ben_no_se_contradicen(gap):
     assert not (muestra_resto and absoluto), (
         f"gap={gap}: la tarjeta muestra {monto_tarjeta} y el titular dice {big!r} — "
         "las dos vistas del mismo número se contradicen")
+
+
+def _D_techo(fondos, retenido):
+    d = copy.deepcopy(_D)
+    ce = d["impuesto_local"]["credito_eeuu"]
+    ce["definitivo_es_techo"] = bool(fondos)
+    ce["definitivo_motivo"] = "cobertura_incompleta" if fondos else None
+    ce["cobertura"] = {"completa": not fondos, "fondos_sin_medir": fondos,
+                       "retenido_sin_medir": retenido}
+    return d
+
+
+@_node
+def test_credito_con_cobertura_incompleta_se_rotula_como_techo():
+    """Auditoría M4, ronda 2 (R2-H2). Cuando hay fondos con retención cuya devolución por ROC
+    no se pudo medir, el crédito definitivo los incluye enteros: es un techo. La vista lo dice
+    en el peldaño 6 y en la fase 2 de la dona, con los fondos y su retención — y NO cambia la
+    cifra (sigue siendo `definitivo`)."""
+    out = _ejecutar(d=_D_techo(["MSTY", "SCHB"], 47.25))
+    peldano6 = _texto(out, "fase0")
+    assert "Es un <b>techo</b>, no la cifra final: de MSTY y SCHB" in peldano6
+    assert "$47.25" in peldano6
+    assert "Crédito por lo pagado a EE.UU. · techo" in peldano6
+    assert "$38.71" in peldano6, "la cifra del crédito no se mueve: solo se rotula"
+    fase2 = out["fase1"]["impNotas"]["html"] + out["fase1"]["impDona"]["html"]
+    assert "Es un <b>techo</b>" in fase2 and "$47.25" in fase2
+    assert "de lo retenido al cobro · techo" in fase2
+
+
+@_node
+def test_credito_con_cobertura_completa_no_se_rotula_como_techo():
+    """Contracara: si todos los fondos con retención tienen su ROC medido, el definitivo es
+    la cifra estimada de siempre y ningún texto habla de techo."""
+    out = _ejecutar(d=_D_techo([], 0.0))
+    todo = _texto(out, "fase0") + _texto(out, "fase1")
+    assert "no pudimos medir cuánto vuelve" not in todo
+    assert "· techo" not in todo
