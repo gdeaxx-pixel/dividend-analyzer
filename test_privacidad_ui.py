@@ -25,6 +25,8 @@ rojo que aparece y desaparece solo es exactamente lo que el mecanismo anti-deriv
 tendria que poder descartar.
 """
 import os
+import re
+import subprocess
 import sys
 
 import pandas as pd
@@ -325,3 +327,61 @@ def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypa
 
     assert _ss(at, "_wizard_photo_sig") != sig_a
     assert _ss(at, "_wizard_ocr_positions") == ocr_b
+
+
+# ── Fase 4 de la captura · el aviso y la casilla dicen lo mismo ─────────────
+
+def _privacy():
+    with open(_PRIVACY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_f4_privacy_dice_los_mismos_dias_que_la_casilla():
+    from ui.carga import CAPTURA_RETENCION_DIAS, _AYUDA_CAPTURA, _privacy_visible
+
+    texto = _privacy()
+    assert set(re.findall(r"(\d+) días", texto)) == {str(CAPTURA_RETENCION_DIAS)}
+    assert f"{CAPTURA_RETENCION_DIAS} días" in _privacy_visible(texto)
+    assert f"{CAPTURA_RETENCION_DIAS} días" in _AYUDA_CAPTURA
+
+
+def test_f4_privacy_y_la_casilla_prometen_lo_mismo():
+    from ui.carga import _AYUDA_CAPTURA, _QUE_GUARDAMOS, _privacy_visible
+
+    visible = _privacy_visible(_privacy())
+    no_guardamos = " ".join(visible.split("**Qué no guardamos:**")[1].split("\n- ")[0].split())
+    no_casilla = _QUE_GUARDAMOS.split("No:")[1]
+    for dato in ("el archivo original", "tus capturas", "tu correo", "tu nombre",
+                 "tu número de cuenta", "tu IP"):
+        assert dato in no_guardamos, dato
+        assert dato in no_casilla, dato
+    assert "No entrena ninguna IA" in _AYUDA_CAPTURA
+    assert "No se usa para entrenar ningún modelo" in visible
+    assert "Backblaze B2" in visible
+    assert "desactivada" not in visible
+    assert "no sale del servidor" not in visible
+
+
+_TELEFONO = re.compile(
+    r"wa\.me/|api\.whatsapp\.com/send"
+    r"|\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}"
+    r"|(?<![\d.])(?:\+?57[\s-]?)?3\d{2}[\s-]?\d{3}[\s-]?\d{4}(?![\d.])",
+    re.IGNORECASE,
+)
+
+
+def test_f4_contacto_es_el_correo_de_soporte_y_no_hay_telefonos_versionados():
+    assert "soporte@invierteygana.net" in _privacy()
+
+    versionados = subprocess.run(["git", "ls-files"], cwd=_RAIZ, capture_output=True,
+                                 text=True, check=True).stdout.split()
+    assert len(versionados) > 50
+    hallados = []
+    for ruta in versionados:
+        try:
+            with open(os.path.join(_RAIZ, ruta), encoding="utf-8") as f:
+                contenido = f.read()
+        except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+            continue
+        hallados += [(ruta, m.group()) for m in _TELEFONO.finditer(contenido)]
+    assert hallados == []

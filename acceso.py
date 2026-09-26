@@ -14,9 +14,11 @@ from typing import Callable, Mapping, Optional
 
 import streamlit as st
 
-WHATSAPP_URL = (
-    "https://wa.me/573195994689?text=Hola%2C%20pagu%C3%A9%20Vive%20de%20Dividendos%20y%20no"
-    "%20puedo%20entrar%20a%20la%20Calculadora.%20Mi%20correo%20de%20compra%20es%3A%20"
+SOPORTE_CORREO = "soporte@invierteygana.net"
+SOPORTE_URL = (
+    f"mailto:{SOPORTE_CORREO}?subject=No%20puedo%20entrar%20a%20la%20Calculadora"
+    "&body=Pagu%C3%A9%20Vive%20de%20Dividendos%20y%20no%20puedo%20entrar.%20"
+    "Mi%20correo%20de%20compra%20es%3A%20"
 )
 ENTRENAMIENTO_URL = "https://invierteygana.net/entrenamiento-vive-de-dividendos/"
 HOTMART_URL = "https://consumer.hotmart.com"
@@ -313,7 +315,7 @@ def _pantalla_login(avisador: Avisador) -> None:
             st.login("auth0")
         except Exception as e:
             st.error("El acceso no está disponible en este momento. Escríbenos y te ayudamos.")
-            st.markdown(f"[Escríbenos por WhatsApp]({WHATSAPP_URL})")
+            st.markdown(f"[Escríbenos a {SOPORTE_CORREO}]({SOPORTE_URL})")
             try:
                 avisador.login_roto(type(e).__name__)
             except Exception:
@@ -324,7 +326,7 @@ def _pantalla_rechazo(correo: Optional[str]) -> None:
     st.error(f"Este correo no tiene acceso activo a la Calculadora: {correo}")
     st.write("La Calculadora es para miembros de Vive de Dividendos con la suscripción al día.")
     st.markdown(f"[Conocer Vive de Dividendos]({ENTRENAMIENTO_URL})")
-    st.markdown(f"[¿Pagaste y no puedes entrar? Escríbenos por WhatsApp]({WHATSAPP_URL})")
+    st.markdown(f"[¿Pagaste y no puedes entrar? Escríbenos a {SOPORTE_CORREO}]({SOPORTE_URL})")
     if st.button("Entrar con otro correo"):
         st.logout()
 
@@ -341,7 +343,7 @@ def _pantalla_sin_verificar() -> None:
     que el mensaje pide reintentar en vez de acusar al cliente de no tener acceso."""
     st.error("No pudimos verificar tu acceso en este momento. Inténtalo en unos minutos.")
     st.write("Si el problema sigue, escríbenos y lo resolvemos.")
-    st.markdown(f"[Escríbenos por WhatsApp]({WHATSAPP_URL})")
+    st.markdown(f"[Escríbenos a {SOPORTE_CORREO}]({SOPORTE_URL})")
 
 
 def _aviso_gracia(gracia_hasta: str) -> None:

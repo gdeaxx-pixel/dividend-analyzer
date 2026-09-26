@@ -33,7 +33,7 @@ CLAVES_CONTEXTO_CARTERA = (
 )
 
 # F2 §4.1 — Días de retención de un caso capturado antes de borrado automático
-# (regla de lifecycle del bucket). La Fase 4 lo usará también en PRIVACY.md.
+# (regla de lifecycle del bucket). PRIVACY.md dice el mismo número (test_privacidad_ui).
 CAPTURA_RETENCION_DIAS = 90
 
 # Textos de la casilla de consentimiento — LITERALES, aprobados por Daniel el
@@ -701,7 +701,7 @@ def _privacy_visible(texto: str) -> str:
 
     Recorta la VISTA, no el documento: `PRIVACY.md` sigue siendo la fuente única y
     completa. Fuera quedan el título del documento (el expander ya tiene el suyo),
-    la línea de fecha y el anexo técnico, que describe un mecanismo desactivado.
+    la línea de fecha y el anexo técnico, que es para el operador.
     """
     cuerpo = texto.split(_ANEXO)[0]
     lineas = []
