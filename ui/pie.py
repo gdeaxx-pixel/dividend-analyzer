@@ -90,6 +90,12 @@ def render_pie(resultados: dict) -> None:
         return
     st.markdown(HTML_REGLA, unsafe_allow_html=True)
     _render_disclaimer()
+    # F2 §4.3 — código del caso capturado: línea discreta, una sola vez por render,
+    # solo si esta sesión capturó un caso (el id lo guarda `ui/carga.py::_capturar_caso`).
+    case_id = st.session_state.get("_captura_case_id")
+    if case_id:
+        st.caption(f"Gracias. Código de tu caso: {case_id}. "
+                   "Guárdalo si algún día quieres que lo borremos.")
 
 
 ESTILOS_PIE = """
