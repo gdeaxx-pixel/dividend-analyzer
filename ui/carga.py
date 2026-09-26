@@ -16,6 +16,7 @@ import os
 import streamlit as st
 
 import logic
+import storage
 from ui import adapters, componentes, estado
 
 
@@ -25,6 +26,33 @@ CLAVES_CONTEXTO_CARTERA = (
     "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
     "_wizard_ocr_positions",
     "_wizard_photo_sig",
+    # F2 §4.4: la captura de casos se limpia al «editar» el CSV del paso 1 (cartera nueva,
+    # consentimiento nuevo). `_captura_consent` es la instantánea del consentimiento
+    # (ver `_capturar_caso`); `_consent_capture` es clave de widget y también se purga aquí.
+    "_consent_capture", "_captura_consent", "_captura_origen", "_captura_case_id",
+)
+
+# F2 §4.1 — Días de retención de un caso capturado antes de borrado automático
+# (regla de lifecycle del bucket). La Fase 4 lo usará también en PRIVACY.md.
+CAPTURA_RETENCION_DIAS = 90
+
+# Textos de la casilla de consentimiento — LITERALES, aprobados por Daniel el
+# 2026-09-25. No reescribir.
+_ETIQUETA_CAPTURA = "Ayúdanos a mejorar la calculadora con tu caso"
+
+_AYUDA_CAPTURA = (
+    "Guardamos una copia de tus movimientos sin nombre, correo ni número de cuenta "
+    "(fecha, ticker, cantidad, precio, importe) y las posiciones que confirmas, para "
+    "comprobar que la calculadora sigue acertando con casos reales. No entrena ninguna IA. "
+    f"Se borra a los {CAPTURA_RETENCION_DIAS} días salvo que lo convirtamos en caso de "
+    "prueba; puedes pedir que lo borremos cuando quieras. Opcional: sin marcarla la app "
+    "funciona igual."
+)
+
+_QUE_GUARDAMOS = (
+    "Sí: fechas, tipo de movimiento, ticker, cantidad, precio, importe; acciones y costo "
+    "que confirmas; totales leídos del 1042-S. No: el archivo original, el nombre del "
+    "archivo, tus capturas, el PDF, tu correo, tu nombre, tu número de cuenta ni tu IP."
 )
 
 
@@ -393,9 +421,29 @@ def render_bloque_posiciones() -> bool:
                        "la calculadora no sabe interpretar todavía.")
             st.write(", ".join(excluidos))
 
+    # F2 §4.1 — Casilla de consentimiento de captura de casos (textos literales
+    # aprobados por Daniel el 2026-09-25). Solo se dibuja con backend activo: sin
+    # él, la pantalla queda idéntica a antes.
+    if storage.is_enabled():
+        # El texto va VISIBLE debajo, no en `help=`: un tooltip detrás de un «?» no es
+        # consentimiento informado (mockup aprobado por Daniel, auditoría Opus 25-sep).
+        st.checkbox(_ETIQUETA_CAPTURA, value=False, key="_consent_capture")
+        st.caption(_AYUDA_CAPTURA)
+        with st.expander("Qué guardamos y qué no"):
+            st.caption(_QUE_GUARDAMOS)
+
     if st.button("Confirmar posiciones", key="_vd_confirm_pos", type="primary"):
         st.session_state["_wizard_positions"] = posiciones
         st.session_state["_wizard_pos_confirmed"] = True
+        # F2 §4.1: el origen se calcula con los valores por defecto que vio el cliente
+        # (`leido`/`previa` son locales de ESTE render), no con lo que haya en sesión
+        # más tarde. El consentimiento se instantanea por el mismo motivo y porque
+        # Streamlit purga las claves de widget que no se instancian en el run
+        # (MEDIDO: al confirmar, esta rama deja de dibujar la casilla y
+        # `_consent_capture` desaparece de la sesión antes de llegar a
+        # «Ver resultados»). `_capturar_caso` lee la instantánea.
+        st.session_state["_captura_origen"] = logic.origen_posiciones(posiciones, leido, previa)
+        st.session_state["_captura_consent"] = st.session_state.get("_consent_capture") is True
         # La captura entra a `analyze_portfolio` como base de costo (ver `ui/vistas.py`
         # :_resultados), así que unos resultados calculados ANTES de confirmarla se quedarían
         # sin ella y el peldaño 5 declararía indeterminado un costo que el cliente ya dio.
@@ -693,6 +741,81 @@ def _render_cobertura() -> None:
         adapters.cobertura_data(_resultados_para_cobertura()), tema)
 
 
+def _capturar_caso() -> None:
+    """F2 §4.2 — captura el caso anónimo si el cliente dio consentimiento.
+
+    Se llama UNA vez, en el handler de «Ver resultados →», cuando ya hay posiciones
+    confirmadas y (si el cliente lo subió) 1042-S. Nunca propaga excepciones: un fallo
+    de la captura no puede interrumpir el análisis del cliente.
+
+    El consentimiento se lee del widget `_consent_capture` si existe en el run, y si no
+    de la instantánea `_captura_consent` que toma «Confirmar posiciones». La instantánea
+    es necesaria porque Streamlit purga las claves de widget que no se instancian en el
+    run (MEDIDO 2026-09-25: al confirmar, la casilla deja de dibujarse y su clave
+    desaparece de la sesión antes de que exista el botón «Ver resultados»).
+    """
+    try:
+        if (st.session_state.get("_consent_capture") is not True
+                and st.session_state.get("_captura_consent") is not True):
+            return
+        if not storage.is_enabled():
+            return
+        df_clean = st.session_state.get("_wizard_df_clean")
+        if df_clean is None:
+            return
+
+        # Importación DENTRO de la función (mismo patrón que `_resultados_para_cobertura`):
+        # `ui.vistas` importa `ui.componentes` y a nivel de módulo crearía un ciclo.
+        from ui.vistas import obtener_resultados
+        resultados = obtener_resultados()
+        quality_map = logic.assess_data_quality(
+            resultados, logic.classify_tickers(list(resultados)))
+
+        tasa, pais = estado.tasa_y_pais()
+
+        # Señales para el harness — cada una en su propio try: si fallan, lista vacía
+        # y la captura sigue (spec §4.2.4).
+        try:
+            datos = adapters.metodo_real_data(resultados, df_clean, tasa, pais)
+            bloqueos = [e["t"] for e in (datos or {}).get("excluidos", [])]
+        except Exception:                                       # noqa: BLE001
+            bloqueos = []
+        try:
+            indeterminados = adapters._ganancias_capital_cartera(
+                resultados)["tickers_indeterminados"]
+        except Exception:                                       # noqa: BLE001
+            indeterminados = []
+
+        # NO se pasa `_wizard_csv_name` ni nada derivado del nombre del archivo:
+        # `build_capture_bundle` no tiene ese parámetro a propósito (el nombre del CSV
+        # de IB lleva el número de cuenta).
+        bundle = logic.build_capture_bundle(
+            df_clean,
+            st.session_state.get("_wizard_broker", "generic"),
+            st.session_state.get("_wizard_positions") or {},
+            quality_map,
+            gemini_raw=st.session_state.get("_wizard_ocr_positions"),
+            origen=st.session_state.get("_captura_origen"),
+            form_1042s=st.session_state.get("_wizard_1042s"),
+            pais=pais,
+            bloqueos=bloqueos,
+            indeterminados=indeterminados,
+        )
+
+        # Un caso por sesión (spec §4.2.5): si ya hay id, se reutiliza y el backend
+        # sobrescribe la misma carpeta.
+        previo = st.session_state.get("_captura_case_id")
+        if previo:
+            bundle["case_id"] = previo
+            bundle["meta"]["case_id"] = previo
+
+        nuevo = storage.upload_case(bundle)
+        if nuevo:
+            st.session_state["_captura_case_id"] = nuevo
+    except Exception:                                           # noqa: BLE001
+        pass
+
+
 def render_carga() -> bool:
     """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
 
@@ -736,6 +859,9 @@ def render_carga() -> bool:
     render_bloque_1042s()
 
     if st.button("Ver resultados →", key="_vd_ir_resultados", type="primary"):
+        # F2 §4.2: la captura del caso (si hay consentimiento) ocurre AQUÍ, una sola
+        # vez por sesión, justo antes de pasar a resultados — no en cada render.
+        _capturar_caso()
         st.session_state["_wizard_listo"] = True
         st.rerun()
 
