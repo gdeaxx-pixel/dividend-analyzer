@@ -356,7 +356,8 @@ def test_el_pie_muestra_el_codigo_del_caso_que_existe_en_disco(con_backend):
     cid = _ss(at, "_captura_case_id")
     assert cid, "no se capturó ningún caso"
     esperada = (f"Gracias. Código de tu caso: {cid}. "
-                "Guárdalo si algún día quieres que lo borremos.")
+                "Guárdalo si algún día quieres que lo borremos: escríbenos a "
+                "soporte@invierteygana.net.")
     avisos = [c.value for c in at.caption if "Código de tu caso" in c.value]
     assert avisos == [esperada]                   # exactamente una vez por render
     assert os.path.isdir(os.path.join(str(con_backend), "captured", "schwab", cid))
@@ -399,7 +400,11 @@ def test_el_texto_de_la_casilla_es_el_aprobado(con_backend):
     at.run()
     cb = _wid(at.checkbox, "_consent_capture")
     assert cb.label == _ETIQUETA
-    ayuda = cb.proto.help
+    # Visible debajo de la casilla, no escondido en el tooltip (auditoría Opus 25-sep).
+    assert not cb.proto.help
+    visibles = [c.value for c in at.caption if c.value.startswith("Guardamos una copia")]
+    assert len(visibles) == 1, visibles
+    ayuda = visibles[0]
     assert "No entrena ninguna IA" in ayuda
     assert "90 días" in ayuda
     # El texto pintado ES el literal aprobado, transcrito a mano en este archivo:
@@ -408,3 +413,40 @@ def test_el_texto_de_la_casilla_es_el_aprobado(con_backend):
     # Y el «90» del texto sale de la constante (f-string dentro de ella):
     from ui.carga import _AYUDA_CAPTURA
     assert _AYUDA_CAPTURA.replace(f"{CAPTURA_RETENCION_DIAS} días", "N días") != _AYUDA_CAPTURA
+
+
+# ── Auditoría de Opus (2026-09-25): lo que el caso tiene que llevar ─────────
+# Cuatro mutantes sobrevivían a T1-T10: el 1042-S, el país, la lectura de Gemini y
+# los bloqueos podían perderse en silencio. No es privacidad, es valor: el 1042-S es
+# el oráculo fiscal independiente que justifica la captura.
+
+def test_el_caso_lleva_1042s_pais_gemini_y_senales(con_backend, monkeypatch):
+    from ui import adapters, estado
+    monkeypatch.setattr(estado, "tasa_y_pais", lambda: (10.0, "México"))
+    monkeypatch.setattr(adapters, "metodo_real_data",
+                        lambda *a, **k: {"excluidos": [{"t": "MSTY", "motivo": "x"}]})
+    monkeypatch.setattr(adapters, "_ganancias_capital_cartera",
+                        lambda *a, **k: {"tickers_indeterminados": ["SCHB"]})
+    at = _at()
+    _seed(at)
+    at.session_state["_wizard_ocr_positions"] = {"MSTY": {"shares": 40.0, "cost_basis": 1000.0}}
+    at.session_state["_wizard_1042s"] = {
+        "tax_year": 2025, "recipient_country_code": "MX", "source": "pdfplumber",
+        "forms": [{"unique_form_id": "0000999", "income_code": "06", "gross_income": 50.0,
+                   "federal_tax_withheld": 5.0, "withholding_credit": 5.0, "tax_rate": 10.0}]}
+    at.run()
+    _marcar(at)
+    _confirmar(at)
+    _ver_resultados(at)
+    casos = _casos(con_backend)
+    assert len(casos) == 1, casos
+    meta = json.load(open(os.path.join(casos[0], "meta.json")))
+    assert meta["pais"] == "México"
+    assert meta["form_1042s"] == {"tax_year": 2025, "recipient_country_code": "MX", "forms": [
+        {"income_code": "06", "gross_income": 50.0, "federal_tax_withheld": 5.0,
+         "withholding_credit": 5.0, "tax_rate": 10.0}]}
+    assert meta["senales"]["bloqueos_identidades"] == ["MSTY"]
+    assert meta["senales"]["indeterminados"] == ["SCHB"]
+    gem = json.load(open(os.path.join(casos[0], "gemini_raw.json")))
+    assert gem == {"MSTY": {"shares": 40.0, "cost_basis": 1000.0}}
+    assert "0000999" not in open(os.path.join(casos[0], "meta.json")).read()

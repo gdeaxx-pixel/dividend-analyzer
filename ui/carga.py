@@ -425,8 +425,10 @@ def render_bloque_posiciones() -> bool:
     # aprobados por Daniel el 2026-09-25). Solo se dibuja con backend activo: sin
     # él, la pantalla queda idéntica a antes.
     if storage.is_enabled():
-        st.checkbox(_ETIQUETA_CAPTURA, value=False, key="_consent_capture",
-                    help=_AYUDA_CAPTURA)
+        # El texto va VISIBLE debajo, no en `help=`: un tooltip detrás de un «?» no es
+        # consentimiento informado (mockup aprobado por Daniel, auditoría Opus 25-sep).
+        st.checkbox(_ETIQUETA_CAPTURA, value=False, key="_consent_capture")
+        st.caption(_AYUDA_CAPTURA)
         with st.expander("Qué guardamos y qué no"):
             st.caption(_QUE_GUARDAMOS)
 

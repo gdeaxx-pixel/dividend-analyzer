@@ -95,7 +95,8 @@ def render_pie(resultados: dict) -> None:
     case_id = st.session_state.get("_captura_case_id")
     if case_id:
         st.caption(f"Gracias. Código de tu caso: {case_id}. "
-                   "Guárdalo si algún día quieres que lo borremos.")
+                   "Guárdalo si algún día quieres que lo borremos: escríbenos a "
+                   "soporte@invierteygana.net.")
 
 
 ESTILOS_PIE = """
