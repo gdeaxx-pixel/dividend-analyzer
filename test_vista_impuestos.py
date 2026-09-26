@@ -24,6 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
 import logic  # noqa: E402
+from conftest import frozen_roc_19a  # noqa: E402
 from ui.adapters import (  # noqa: E402
     _bruto_independiente_del_csv, cashflow_data, hoja_data, impuestos_data)
 
@@ -479,7 +480,8 @@ def test_cruce_peldano2_schwab2_exacto():
     al YAML `asof: 2026-09-05`; si vuelve a fallar por centavos, mirá primero ese asof —
     ver el comentario largo sobre `test_casilla9_no_regresion_con_pais` y
     dividend-analyzer-app/CLAUDE.md, incidente #95."""
-    datos = _impuestos_demo("schwab2")
+    with frozen_roc_19a():
+        datos = _impuestos_demo("schwab2")
     g = datos["peldanos"]["gravable"]
     assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
     # ACTUALIZADO 2026-09-21 (R1+F6): 125.81 -> 63.80. NO es deriva del refresh 19a: el
@@ -585,6 +587,11 @@ def test_casilla9_respeta_el_guard_implausible(monkeypatch):
 # los 12 avisos recientes) puede anularse a 0 y los 6 siguen verdes — ese guard vive en
 # test_logic.py::test_ticker_roc_fraction_*, no aquí.
 # Si fallan por centavos tras un `chore: refresh` → actualizar número y asof; CLAUDE.md, #95.
+# ⚠️ SUPERADO 2026-09-26: estos tests (y `test_cruce_peldano2_schwab2_exacto`,
+# `test_r2_casilla9_igual_al_objeto_fiscal_ib_real`) corren dentro de `frozen_roc_19a()`
+# (conftest.py) contra `knowledge/roc_19a_frozen.yaml`, que el cron NO toca. Un refresh del
+# YAML vivo ya no los mueve; si caen, es el código. Medido: con el vivo ±2 pp caían estos 5
+# y solo estos 5 de la suite completa.
 @pytest.mark.parametrize("alias,casilla9_esp", [
     ("schwab_1", 0.00),
     # ACTUALIZADO 2026-09-22 (Sprint 2, fix F1: el objeto fiscal real pasó a leer el
@@ -616,9 +623,10 @@ def test_casilla9_no_regresion_con_pais(alias, casilla9_esp):
     import demo_mode
     if not demo_mode.demo_available():
         pytest.skip("real_examples/ no montado")
-    bundle = demo_mode.load_demo_case(alias)
-    assert bundle is not None, alias
-    datos = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
+    with frozen_roc_19a():
+        bundle = demo_mode.load_demo_case(alias)
+        assert bundle is not None, alias
+        datos = impuestos_data(bundle["_results"], logic.build_fiscal_profile("Colombia"), [])
     assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(casilla9_esp, abs=0.05)
 
 
@@ -631,34 +639,35 @@ def test_r2_casilla9_igual_al_objeto_fiscal_ib_real():
     import demo_mode
     if not demo_mode.demo_available():
         pytest.skip("real_examples/ no montado")
-    bundle = demo_mode.load_demo_case("ib_1")
-    assert bundle is not None
-    res = bundle["_results"]
+    with frozen_roc_19a():
+        bundle = demo_mode.load_demo_case("ib_1")
+        assert bundle is not None
+        res = bundle["_results"]
 
-    comparados = 0
-    for t, s in sorted(res.items()):
-        if not isinstance(s, dict) or s.get("skipped") or "error" in s:
-            continue
-        dg = logic.applied_withholding_rate(s)
-        wap = float(dg.get("withheld_at_payment") or 0)
-        if dg.get("applied_pct") is None or wap <= 0.01 or dg.get("implausible"):
-            continue
-        if not (dg.get("gross") or 0) > 0:
-            continue
-        ts = logic.build_tax_summary(s, t, base_rate_pct=30.0)
-        netted = float(ts.get("withheld_real") if ts.get("withheld_real") is not None
-                       else s.get("withheld_tax_total") or 0)
-        ya = sum(float(v or 0) for v in (s.get("tax_refund_observed_by_year") or {}).values())
-        if abs(wap - round(netted + ya, 2)) > max(0.02, 0.01 * wap):
-            continue  # no reconcilia: mismo filtro que el oráculo (r2_casilla9_casos.py)
+        comparados = 0
+        for t, s in sorted(res.items()):
+            if not isinstance(s, dict) or s.get("skipped") or "error" in s:
+                continue
+            dg = logic.applied_withholding_rate(s)
+            wap = float(dg.get("withheld_at_payment") or 0)
+            if dg.get("applied_pct") is None or wap <= 0.01 or dg.get("implausible"):
+                continue
+            if not (dg.get("gross") or 0) > 0:
+                continue
+            ts = logic.build_tax_summary(s, t, base_rate_pct=30.0)
+            netted = float(ts.get("withheld_real") if ts.get("withheld_real") is not None
+                           else s.get("withheld_tax_total") or 0)
+            ya = sum(float(v or 0) for v in (s.get("tax_refund_observed_by_year") or {}).values())
+            if abs(wap - round(netted + ya, 2)) > max(0.02, 0.01 * wap):
+                continue  # no reconcilia: mismo filtro que el oráculo (r2_casilla9_casos.py)
 
-        diag = logic.build_withholding_diagnosis(s, t, None)
-        assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.05), t
-        comparados += 1
+            diag = logic.build_withholding_diagnosis(s, t, None)
+            assert diag["refund_roc"] == pytest.approx(ts["refund_total_estimated"], abs=0.05), t
+            comparados += 1
 
-    assert comparados >= 8, "muy pocos fondos reconciliaron: revisa el fixture ib_1"
+        assert comparados >= 8, "muy pocos fondos reconciliaron: revisa el fixture ib_1"
 
-    datos = impuestos_data(res, logic.build_fiscal_profile(), [])
+        datos = impuestos_data(res, logic.build_fiscal_profile(), [])
     # ACTUALIZADO 2026-09-21: 801.69 -> 780.92. El oráculo se midió antes de `dccad80`
     # (refresh automático de knowledge/roc_19a.yaml del 19-sep), que movió la base.
     assert datos["ruta_a"]["casilla9_esperada"] == pytest.approx(780.92, abs=0.05)
