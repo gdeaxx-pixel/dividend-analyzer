@@ -96,7 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1182 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+Línea base: **1212 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`docs/privacy-captura`, cuyo árbol es idéntico al de `main` = `08e0fa7` (#162), en la máquina de
+Daniel con `real_examples/` y `CONY_test.csv` en el worktree. Sobre `a70b7eb` (#160), antes del
+#162, daba 1209. +30 respecto a 1182: 27 entre #159, #160 y #161 (Fases 3-B y 2 de la captura) y los 3 tests del aviso de
+privacidad del #162 —días del aviso == `CAPTURA_RETENCION_DIAS`, aviso y casilla prometen lo mismo,
+ningún teléfono en archivos versionados—.)
+
+Antes: **1182 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
 `feat/captura-fidelidad-fixture`, base `main` = `3274eac` (#156), en la máquina de Daniel con
 `real_examples/` y `CONY_test.csv` en el worktree. +20: Fase 1 de la captura de casos — el fixture
 anonimizado conserva las filas sin ticker (sin ellas `build_dividend_tax_totals` cambiaba en los 3
