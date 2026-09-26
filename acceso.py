@@ -301,7 +301,7 @@ def _avisador_singleton(token: str, chat_id: str) -> Avisador:
 
 
 def _usuario_actual() -> dict:
-    return st.experimental_user.to_dict()
+    return st.user.to_dict()
 
 
 def _pantalla_login(avisador: Avisador) -> None:
