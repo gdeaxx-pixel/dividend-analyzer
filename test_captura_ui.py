@@ -49,19 +49,18 @@ _PREVIA = {
 _ARCHIVOS_CASO = ("transactions_min.csv", "ground_truth.json", "quality.json",
                   "gemini_raw.json", "meta.json")
 
-# Textos aprobados (Daniel, 2026-09-25) — LITERALES, copiados de la spec §4.1.
+# Textos aprobados (Daniel, 2026-09-27) — LITERALES. Sustituyen el párrafo + desplegable
+# del 25-sep por una sola lista visible.
 _ETIQUETA = "Ayúdanos a mejorar la calculadora con tu caso"
 _AYUDA = (
-    "Guardamos una copia de tus movimientos sin nombre, correo ni número de cuenta "
-    "(fecha, ticker, cantidad, precio, importe) y las posiciones que confirmas, para "
-    "comprobar que la calculadora sigue acertando con casos reales. No entrena ninguna IA. "
-    "Se borra a los 90 días salvo que lo convirtamos en caso de prueba; puedes pedir que "
-    "lo borremos cuando quieras. Opcional: sin marcarla la app funciona igual."
-)
-_GUARDAMOS = (
-    "Sí: fechas, tipo de movimiento, ticker, cantidad, precio, importe; acciones y costo "
-    "que confirmas; totales leídos del 1042-S. No: el archivo original, el nombre del "
-    "archivo, tus capturas, el PDF, tu correo, tu nombre, tu número de cuenta ni tu IP."
+    "- **Guardamos:** tus movimientos (fecha, tipo, ticker, cantidad, precio, importe), "
+    "las acciones y el costo que confirmas, y los totales leídos del 1042-S.\n"
+    "- **Nunca guardamos:** tu nombre, tu correo, tu número de cuenta, tu IP, el archivo "
+    "original ni su nombre, tus capturas ni el PDF.\n"
+    "- **Para qué:** comprobar que la calculadora sigue acertando con casos reales. "
+    "No entrena ninguna IA.\n"
+    "- Se borra a los 90 días salvo que lo convirtamos en caso de prueba, o antes si nos "
+    "lo pides. Es opcional: sin marcarla, la app funciona igual."
 )
 
 _VARS_B2 = ("CAPTURE_B2_BUCKET", "CAPTURE_B2_ENDPOINT", "CAPTURE_B2_KEY_ID",
@@ -236,7 +235,8 @@ def test_con_backend_la_casilla_existe_y_empieza_desmarcada(con_backend):
     cb = _wid(at.checkbox, "_consent_capture")
     assert cb.value is False                      # NUNCA value=True
     assert cb.label == _ETIQUETA                  # texto literal aprobado
-    assert _GUARDAMOS in [c.value for c in at.caption]   # el desplegable existe
+    assert _AYUDA in [c.value for c in at.caption]       # el aviso se pinta visible
+    assert not [e for e in at.expander if "guardamos" in e.label.lower()]
 
 
 # ── T3 · sin marcar no guarda ────────────────────────────────────────────────
@@ -402,7 +402,7 @@ def test_el_texto_de_la_casilla_es_el_aprobado(con_backend):
     assert cb.label == _ETIQUETA
     # Visible debajo de la casilla, no escondido en el tooltip (auditoría Opus 25-sep).
     assert not cb.proto.help
-    visibles = [c.value for c in at.caption if c.value.startswith("Guardamos una copia")]
+    visibles = [c.value for c in at.caption if c.value.startswith("- **Guardamos:**")]
     assert len(visibles) == 1, visibles
     ayuda = visibles[0]
     assert "No entrena ninguna IA" in ayuda

@@ -36,23 +36,19 @@ CLAVES_CONTEXTO_CARTERA = (
 # (regla de lifecycle del bucket). PRIVACY.md dice el mismo número (test_privacidad_ui).
 CAPTURA_RETENCION_DIAS = 90
 
-# Textos de la casilla de consentimiento — LITERALES, aprobados por Daniel el
-# 2026-09-25. No reescribir.
+# Texto de la casilla de consentimiento — LITERAL, aprobado por Daniel el 2026-09-27
+# (reemplaza párrafo + desplegable «Qué guardamos y qué no» del 25-sep). No reescribir.
 _ETIQUETA_CAPTURA = "Ayúdanos a mejorar la calculadora con tu caso"
 
 _AYUDA_CAPTURA = (
-    "Guardamos una copia de tus movimientos sin nombre, correo ni número de cuenta "
-    "(fecha, ticker, cantidad, precio, importe) y las posiciones que confirmas, para "
-    "comprobar que la calculadora sigue acertando con casos reales. No entrena ninguna IA. "
-    f"Se borra a los {CAPTURA_RETENCION_DIAS} días salvo que lo convirtamos en caso de "
-    "prueba; puedes pedir que lo borremos cuando quieras. Opcional: sin marcarla la app "
-    "funciona igual."
-)
-
-_QUE_GUARDAMOS = (
-    "Sí: fechas, tipo de movimiento, ticker, cantidad, precio, importe; acciones y costo "
-    "que confirmas; totales leídos del 1042-S. No: el archivo original, el nombre del "
-    "archivo, tus capturas, el PDF, tu correo, tu nombre, tu número de cuenta ni tu IP."
+    "- **Guardamos:** tus movimientos (fecha, tipo, ticker, cantidad, precio, importe), "
+    "las acciones y el costo que confirmas, y los totales leídos del 1042-S.\n"
+    "- **Nunca guardamos:** tu nombre, tu correo, tu número de cuenta, tu IP, el archivo "
+    "original ni su nombre, tus capturas ni el PDF.\n"
+    "- **Para qué:** comprobar que la calculadora sigue acertando con casos reales. "
+    "No entrena ninguna IA.\n"
+    f"- Se borra a los {CAPTURA_RETENCION_DIAS} días salvo que lo convirtamos en caso de "
+    "prueba, o antes si nos lo pides. Es opcional: sin marcarla, la app funciona igual."
 )
 
 
@@ -451,16 +447,14 @@ def render_bloque_posiciones() -> bool:
                        "la calculadora no sabe interpretar todavía.")
             st.write(", ".join(excluidos))
 
-    # F2 §4.1 — Casilla de consentimiento de captura de casos (textos literales
-    # aprobados por Daniel el 2026-09-25). Solo se dibuja con backend activo: sin
+    # F2 §4.1 — Casilla de consentimiento de captura de casos (texto literal
+    # aprobado por Daniel el 2026-09-27). Solo se dibuja con backend activo: sin
     # él, la pantalla queda idéntica a antes.
     if storage.is_enabled():
         # El texto va VISIBLE debajo, no en `help=`: un tooltip detrás de un «?» no es
         # consentimiento informado (mockup aprobado por Daniel, auditoría Opus 25-sep).
         st.checkbox(_ETIQUETA_CAPTURA, value=False, key="_consent_capture")
         st.caption(_AYUDA_CAPTURA)
-        with st.expander("Qué guardamos y qué no"):
-            st.caption(_QUE_GUARDAMOS)
 
     if st.button("Confirmar posiciones", key="_vd_confirm_pos", type="primary"):
         st.session_state["_wizard_positions"] = posiciones
