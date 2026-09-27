@@ -78,6 +78,28 @@ def test_tda_por_ticker(tk):
     assert sorted(t["Action"].unique()) == caso["acciones"]
 
 
+_CSV_QDR_OTRO_DIA = (
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"01/10/2023","Buy","NVDA","NVIDIA CORP","1","$200.00","","-$200.00"\n'
+    b'"03/29/2023","Qual Div Reinvest","","TDA TRAN - QUALIFIED DIVIDEND (NVDA)","","","","$0.20"\n'
+    b'"03/29/2023","Reinvest Shares","NVDA","TDA TRAN - Bought 0.001 (NVDA) @200.0000","0.001","$200.00","","-$0.20"\n'
+    b'"06/30/2023","Qual Div Reinvest","","TDA TRAN - QUALIFIED DIVIDEND (NVDA)","","","","$0.20"\n'
+)
+
+
+def test_tda_qdr_sin_compra_ese_dia_aunque_el_ticker_reinvierta_otro_dia():
+    """El emparejamiento es por (ticker, DÍA), no por ticker: NVDA reinvierte el 03/29 pero el
+    06/30 cobró en efectivo. Caso real (CSV `1`, 4 filas de NVDA, $0.80). Emparejar solo por
+    ticker lo convertía en fuente del DRIP y el efectivo desaparecía — mutante que sobrevivía
+    a los tests del fixture (auditoría Opus, 2026-09-27), porque ES no reinvierte nunca."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_QDR_OTRO_DIA, "qdr_otro_dia.csv"))
+    dfc = logic.normalize_csv(df)
+    t = dfc[(dfc["Ticker"] == "NVDA") & (dfc["Action"] != "Buy")]
+    por_dia = sorted(zip(t["Date"].dt.strftime("%Y-%m-%d"), t["Action"]))
+    assert por_dia == [("2023-03-29", "Reinvest Dividend"), ("2023-03-29", "Reinvest Shares"),
+                       ("2023-06-30", "Qualified Dividend")]
+
+
 # ── T2 · W-8 sin ticker: no se atribuye a ninguna posición ──────────────────────────
 
 def test_tda_w8_sin_ticker_no_se_atribuye():
