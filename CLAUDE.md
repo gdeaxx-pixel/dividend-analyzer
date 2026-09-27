@@ -96,7 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1224 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+Línea base: **1260 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+`feat/roc-mascota` = `e090d75` (base `main` = `9b52fc4`), en la máquina de Daniel con `real_examples/` y
+`CONY_test.csv`, Streamlit 1.52.2. +36: `test_roc.py` (35: ROC, la mascota — mapeo veredicto→estado,
+frases con la misma cifra que el detalle técnico, sprite en Node, favicon, carga, encabezado,
+Impuestos y el resumen de la fila 9) + 1 de `test_auto_alto.py` (ahora también recorre `roc.html`).
+Sin datos privados (worktree limpio): **1157 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1224 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
 `fix/auto-alto-streamlit-152` = `fb375e1`, cuyo árbol es idéntico al de `main` = `d379c93` (#165), en la
 máquina de Daniel con `real_examples/` y `CONY_test.csv`, con **Streamlit 1.52.2 + Authlib 1.6.12**.
 +12: `test_auto_alto.py` (el script de auto-alto corre en Node y el contenedor de Streamlit 1.52
