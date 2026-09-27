@@ -338,3 +338,56 @@ def test_impuestos_lleva_a_roc_sobre_la_dona(monkeypatch):
 def test_impuestos_sin_dividendos_no_lleva_a_roc(monkeypatch):
     llamadas = _impuestos_con(monkeypatch, None)
     assert llamadas == []
+
+
+# ── R1-bis: ROC encabeza «La erosión del precio (NAV)» (fila 9, Portafolios) ────────────
+
+from ui.adapters import roc_cartera_data  # noqa: E402
+
+
+@pytest.mark.parametrize("veredictos, estado, frase", [
+    (["destructive", "destructive", "mixed", "accounting", "insufficient"],
+     "alerta", "Ojo: 2 de 5 fondos con el NAV encogiéndose."),
+    (["mixed", "accounting", "accounting"],
+     "vigilante", "1 de 3 fondos con señales mezcladas: los vigilo."),
+    (["accounting", "insufficient"], "tranquilo", "1 de 2 fondos con el NAV sano."),
+    (["insufficient", "veredicto_raro"], "confundido", None),
+    ([], "vigilante", None),
+])
+def test_roc_cartera_resume_la_lista(veredictos, estado, frase):
+    r = roc_cartera_data([{"verdict": v} for v in veredictos])
+    assert "estado" in r and "frase" in r
+    assert r == {"estado": estado, "frase": frase}
+
+
+def test_fila_9_dibuja_un_solo_roc_arriba_con_los_mismos_objetos(monkeypatch):
+    from ui import adapters, componentes, heredadas
+    eventos = []
+    veredictos = {"CONY": "destructive", "MSTY": "destructive", "NVDY": "mixed"}
+
+    def _salud(ticker, stats):
+        eventos.append(("salud", ticker))
+        return {"verdict": veredictos[ticker], "color": "#000", "headline": "H", "plain": "P",
+                "nav_cagr": -10.0, "roc_pct": 50.0, "total_return_pct": -5.0, "reason": "R"}
+
+    monkeypatch.setattr(adapters, "salud_nav_data", _salud)
+    monkeypatch.setattr(componentes, "render_roc",
+                        lambda estado, tema, frase=None, tam=72:
+                        eventos.append(("roc", estado, frase, tam)))
+    monkeypatch.setattr(heredadas.st, "markdown",
+                        lambda texto, *a, **k: eventos.append(("md", texto)))
+    monkeypatch.setattr(heredadas.logic, "load_instruments", lambda: {})
+    monkeypatch.setattr(heredadas.estado, "perfil_fiscal",
+                        lambda: {"rate_declared": False, "rate_pct": 30.0})
+
+    resultados = {t: {} for t in veredictos} | {"PLTY": {"error": "sin datos"}}
+    heredadas._portafolio_dividendos(resultados, ["CONY", "MSTY", "NVDY", "PLTY"])
+
+    rocs = [e for e in eventos if e[0] == "roc"]
+    assert rocs == [("roc", "alerta", "Ojo: 2 de 3 fondos con el NAV encogiéndose.", 64)]
+    # Un solo cálculo por fondo (el ROC no recalcula) y el búho va ANTES del primer titular.
+    assert [e for e in eventos if e[0] == "salud"] == [("salud", t) for t in ("CONY", "MSTY", "NVDY")]
+    i_roc = eventos.index(rocs[0])
+    i_titular = next(i for i, e in enumerate(eventos)
+                     if e[0] == "md" and "vd-her-nav-headline" in e[1])
+    assert i_roc < i_titular

@@ -153,11 +153,22 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
         'llama <b>erosión del NAV</b>. Aquí el diagnóstico de cada fondo tuyo, con su '
         "tendencia real de precio:</p>", unsafe_allow_html=True)
 
+    filas = []
     for ticker in mode_a:
         stats = resultados.get(ticker)
         if not isinstance(stats, dict) or "error" in stats:
             continue
-        datos = salud_nav_data(ticker, stats)
+        filas.append((ticker, salud_nav_data(ticker, stats)))
+
+    # ROC encabeza la lista y la resume con los MISMOS objetos que se pintan debajo
+    # (decisión de Daniel 2026-09-26: un solo búho arriba, no uno por fondo).
+    if filas:
+        from ui.adapters import roc_cartera_data
+        from ui.componentes import render_roc
+        roc = roc_cartera_data([datos for _, datos in filas])
+        render_roc(roc["estado"], st.session_state.get("vd_tema", "Claro"), roc["frase"], tam=64)
+
+    for ticker, datos in filas:
         st.markdown(
             f'<p class="vd-her-nav-headline" style="color:{datos["color"]};">'
             f'{ticker} — {datos["headline"]}</p>'

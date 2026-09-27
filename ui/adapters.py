@@ -2891,3 +2891,30 @@ def roc_salud_data(datos_salud: dict) -> dict:
         "vigilante": f"{cifra}. Señales mezcladas: lo vigilo.",
     }
     return {"estado": estado, "frase": frases[estado]}
+
+
+def roc_cartera_data(lista_salud: list) -> dict:
+    """Estado y frase del ROC que encabeza «La erosión del precio (NAV), fondo por fondo»
+    (`ui/heredadas.py::_portafolio_dividendos`).
+
+    Resume la MISMA lista de `salud_nav_data` que la sección pinta debajo: solo cuenta
+    veredictos, no recalcula ninguno. Manda el peor veredicto presente: si un fondo está
+    destructivo, ROC está en alerta aunque el resto esté sano. `insufficient` y los
+    veredictos que el mapa no conoce cuentan en el total pero no deciden la cara; si solo
+    hay de esos, ROC queda confundido y callado.
+    """
+    total = len(lista_salud)
+    if not total:
+        return {"estado": "vigilante", "frase": None}
+    cuenta = {v: sum(1 for d in lista_salud if d.get("verdict") == v)
+              for v in ("destructive", "mixed", "accounting")}
+    if cuenta["destructive"]:
+        return {"estado": "alerta",
+                "frase": f"Ojo: {cuenta['destructive']} de {total} fondos con el NAV encogiéndose."}
+    if cuenta["mixed"]:
+        return {"estado": "vigilante",
+                "frase": f"{cuenta['mixed']} de {total} fondos con señales mezcladas: los vigilo."}
+    if cuenta["accounting"]:
+        return {"estado": "tranquilo",
+                "frase": f"{cuenta['accounting']} de {total} fondos con el NAV sano."}
+    return {"estado": "confundido", "frase": None}
