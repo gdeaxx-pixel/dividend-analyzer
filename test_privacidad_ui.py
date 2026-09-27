@@ -346,11 +346,11 @@ def test_f4_privacy_dice_los_mismos_dias_que_la_casilla():
 
 
 def test_f4_privacy_y_la_casilla_prometen_lo_mismo():
-    from ui.carga import _AYUDA_CAPTURA, _QUE_GUARDAMOS, _privacy_visible
+    from ui.carga import _AYUDA_CAPTURA, _privacy_visible
 
     visible = _privacy_visible(_privacy())
     no_guardamos = " ".join(visible.split("**Qué no guardamos:**")[1].split("\n- ")[0].split())
-    no_casilla = _QUE_GUARDAMOS.split("No:")[1]
+    no_casilla = _AYUDA_CAPTURA.split("**Nunca guardamos:**")[1].split("\n")[0]
     for dato in ("el archivo original", "tus capturas", "tu correo", "tu nombre",
                  "tu número de cuenta", "tu IP"):
         assert dato in no_guardamos, dato
