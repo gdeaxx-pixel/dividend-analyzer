@@ -517,8 +517,8 @@ def test_foreign_tax_paid_no_mueve_withheld_tax_total_de_ib():
 
 
 def test_schwab_fixture_invariante_con_ftp_estrechado():
-    """SCHB de `schwab_synth_1`: NRA -$0.45 + FTP -$0.08. Coherente → al cobro 0.45,
-    neteado 0.45, invariante 0.00 (a medias daría -0.08 y 'parcial')."""
+    """SCHB de `schwab_synth_1`: NRA -$0.75 (-$0.45 del 03/31 + -$0.30 del `Qual Div Reinvest` del 04/15, que el fixture lleva desde el 2026-09-27) + FTP -$0.08.
+    Coherente → al cobro 0.75, neteado 0.75, invariante 0.00 (a medias daría -0.08 y 'parcial')."""
     df = logic.normalize_csv(
         pd.read_csv(os.path.join(BASE, "fixtures", "schwab_synth_1",
                                  "synthetic_transactions.csv")))
@@ -526,8 +526,8 @@ def test_schwab_fixture_invariante_con_ftp_estrechado():
     alc = round(sum(logic.withheld_at_payment_by_year(g).values()), 2)
     dev = round(sum(logic.observed_tax_refund_by_year(g).values()), 2)
     net = logic.withheld_tax_total(g)
-    assert alc == pytest.approx(0.45)
-    assert net == pytest.approx(0.45)
+    assert alc == pytest.approx(0.75)
+    assert net == pytest.approx(0.75)
     assert alc == pytest.approx(net + dev)
     assert logic.foreign_tax_paid_total(g) == pytest.approx(0.08)
 
