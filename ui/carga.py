@@ -174,23 +174,28 @@ BROKER_LABEL = {
 }
 
 _AYUDA_BROKER = (
-    "Interactive Brokers: Informes → Extractos → Transaction History  |  "
+    "Interactive Brokers: Informes → Extractos → Transaction History · "
     "Charles Schwab: Historial → Transacciones → Exportar"
 )
 
 
+TAM_ROC_CARGA = 28
+
+
 def _roc_bloque1(hueco, estado_roc: str, frase: str | None = None,
                  reaccion: dict | None = None) -> None:
-    """ROC del bloque 1: un solo hueco, ARRIBA del bloque, en las dos ramas (sin archivo y
-    con CSV cargado), para que el búho no cambie de sitio al pasar de una a otra."""
+    """ROC del bloque 1, dibujado en el hueco del ENCABEZADO (`ui.chrome.render_encabezado`):
+    un solo búho en la pantalla de carga, arriba, en las dos ramas (sin archivo y con CSV
+    cargado), para que no cambie de sitio al pasar de una a otra."""
     with hueco.container():
         componentes.render_roc(estado_roc, st.session_state.get("vd_tema", "Claro"), frase,
-                               tam=48, reaccion=reaccion)
+                               tam=TAM_ROC_CARGA, reaccion=reaccion)
 
 
 def render_bloque_transacciones() -> bool:
     """Bloque 1. Devuelve True cuando ya hay un CSV cargado."""
-    hueco_roc = st.empty()
+    # Sin encabezado (el bloque suelto, como en los tests) se dibuja aquí mismo.
+    hueco_roc = st.session_state.pop("_vd_hueco_roc", None) or st.empty()
     if st.session_state.get("_wizard_df_clean") is not None:
         broker = BROKER_LABEL.get(st.session_state.get("_wizard_broker"), "Archivo")
         nombre = st.session_state.get("_wizard_csv_name") or "transacciones.csv"
@@ -234,8 +239,11 @@ def render_bloque_transacciones() -> bool:
     st.markdown(bloque_header(1, "Transacciones", "activo"),
                 unsafe_allow_html=True)
     archivo = st.file_uploader("Archivo de transacciones", type=["csv", "xlsx"],
-                               label_visibility="collapsed", help=_AYUDA_BROKER,
-                               key="_vd_upload_txn")
+                               label_visibility="collapsed", key="_vd_upload_txn")
+    # Con la etiqueta colapsada Streamlit no dibuja el `help`: la ruta de exportación va
+    # a la vista, debajo de la zona de arrastre.
+    st.markdown(f'<p class="vd-ayuda-broker">¿Dónde lo exporto? {_AYUDA_BROKER}</p>',
+                unsafe_allow_html=True)
     if archivo is None:
         _roc_bloque1(hueco_roc, "vigilante", None,
                      {"tipo": "arrastre", "frase": adapters.ROC_FRASE_ARRASTRE})
@@ -838,6 +846,19 @@ def _capturar_caso() -> None:
         pass
 
 
+def _render_privacidad() -> None:
+    """Pie discreto de la carga: la frase sale literal de `PRIVACY.md` («La app no los
+    escribe a disco») y el aviso completo queda en el expander, con estilo de enlace."""
+    with st.container(key="vd_privacidad"):
+        st.markdown('<p class="vd-privacidad">Tu archivo se procesa en memoria y no se '
+                    'escribe a disco.</p>', unsafe_allow_html=True)
+        with st.expander("Cómo tratamos tus datos"):
+            ruta_privacy = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "PRIVACY.md")
+            with open(ruta_privacy, encoding="utf-8") as f:
+                st.markdown(_privacy_visible(f.read()))
+
+
 def render_carga() -> bool:
     """Dibuja la hoja completa. Devuelve True cuando se puede pasar a resultados.
 
@@ -846,20 +867,10 @@ def render_carga() -> bool:
     dinero» se eliminan, no se mueven a otro sitio (decidido con Daniel, Fase 3b)."""
     st.markdown('<h2 class="vd-title vd-wordmark">INVIERTE &amp; GANA</h2>',
                 unsafe_allow_html=True)
-    st.markdown(
-        '<p class="vd-lede">Tres bloques. El primero es obligatorio; los otros dos afinan '
-        'la lectura.</p>',
-        unsafe_allow_html=True)
 
     # La dona de cobertura va ARRIBA de los tres bloques (integrada v2: antes vivía al
     # final; ver spec U4 §5.1.4 y referencia-carga-cobertura-integrada-v2.html).
     _render_cobertura()
-
-    with st.expander("Cómo tratamos tus datos"):
-        ruta_privacy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                    "PRIVACY.md")
-        with open(ruta_privacy, encoding="utf-8") as f:
-            st.markdown(_privacy_visible(f.read()))
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:
@@ -869,6 +880,7 @@ def render_carga() -> bool:
         st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
+        _render_privacidad()
         return False
 
     hay_posiciones = render_bloque_posiciones()
@@ -876,6 +888,7 @@ def render_carga() -> bool:
         st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
+        _render_privacidad()
         return False
 
     render_bloque_1042s()
@@ -886,6 +899,7 @@ def render_carga() -> bool:
         _capturar_caso()
         st.session_state["_wizard_listo"] = True
         st.rerun()
+    _render_privacidad()
 
     return bool(st.session_state.get("_wizard_listo"))
 
@@ -946,6 +960,48 @@ ESTILOS_CARGA = """
           border-left: 3px solid var(--accent); padding: 10px 14px; margin: 14px 0;
         }
         .vd-nota b { color: var(--ink); }
+        [data-testid="stMarkdownContainer"] p.vd-ayuda-broker { font-size: 11.5px; line-height: 1.5; color: var(--ink-mut); margin: 6px 0 0; }
+
+        /* Uploader del bloque 1 en español. Streamlit no expone sus textos: se ocultan los
+           nodos originales (font-size 0) y se pinta el texto con ::after. Solo con la clave
+           `_vd_upload_txn` — los otros uploaders de la carga tienen su propio contexto. Si
+           una versión nueva de Streamlit cambia el DOM, vuelve el texto en inglés, no se
+           rompe la subida. */
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
+          font-size: 0 !important; white-space: normal;
+        }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
+          content: "Arrastra aquí tu archivo de transacciones"; font-size: 14px;
+        }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
+          content: "CSV o XLSX · Interactive Brokers, Charles Schwab o formato genérico";
+          font-size: 12px;
+        }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button { font-size: 0 !important; }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button::after {
+          content: "Elegir archivo"; font-size: 14px;
+        }
+
+        /* Pie de privacidad: una línea gris y el aviso completo como enlace. */
+        .st-key-vd_privacidad {
+          gap: 0; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--hair);
+        }
+        [data-testid="stMarkdownContainer"] p.vd-privacidad { font-size: 11.5px; color: var(--ink-mut); margin: 0; }
+        .st-key-vd_privacidad [data-testid="stExpander"] details {
+          border: none; border-radius: 0; background: transparent;
+        }
+        .st-key-vd_privacidad [data-testid="stExpander"] summary {
+          padding: 2px 0; font-size: 11.5px; color: var(--accent); background: transparent !important;
+        }
+        .st-key-vd_privacidad [data-testid="stExpander"] summary p { font-size: 11.5px; }
+        .st-key-vd_privacidad [data-testid="stExpander"] summary:hover { color: var(--ink); }
+        .st-key-vd_privacidad [data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+          font-size: 14px;
+        }
+        .st-key-vd_privacidad [data-testid="stExpanderDetails"] {
+          padding: 6px 0 0; font-size: 13px; color: var(--ink-2);
+        }
+
         [data-testid="stFileUploader"] section {
           background: var(--panel); border: 1px dashed var(--hair); border-radius: 0;
         }

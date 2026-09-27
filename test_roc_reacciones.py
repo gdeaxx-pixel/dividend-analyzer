@@ -146,7 +146,7 @@ def test_bloque1_sin_archivo_roc_escucha_el_arrastre(monkeypatch):
     assert len(rocs) == 1
     assert 'var ESTADO = "vigilante";' in rocs[0]
     assert "var FRASE = null;" in rocs[0]
-    assert "var TAM = 48;" in rocs[0]
+    assert "var TAM = 28;" in rocs[0]
     assert 'var REACCION = {"tipo": "arrastre", "frase": "Suéltalo."};' in rocs[0]
 
 
@@ -190,6 +190,51 @@ def test_bloque1_csv_valido_asiente_una_sola_vez_con_la_cifra_del_resumen(monkey
     assert len(rocs) == 1
     assert 'var FRASE = "Interactive Brokers: 3 tickers leídos.";' in rocs[0]
     assert "var REACCION = null;" in rocs[0]
+
+
+_SCRIPT_CARGA = """
+import sys
+sys.path.insert(0, __RAIZ__)
+from ui.chrome import render_encabezado
+from ui.carga import render_carga
+render_encabezado(False)
+render_carga()
+""".replace("__RAIZ__", repr(_RAIZ))
+
+
+def _en_orden(nodo):
+    for hijo in getattr(nodo, "children", {}).values():
+        yield hijo
+        yield from _en_orden(hijo)
+
+
+def test_carga_un_solo_roc_en_el_encabezado_y_es_el_que_escucha_el_arrastre():
+    """La pantalla de carga completa (encabezado + bloques) lleva UN búho, arriba del
+    wordmark, y es el del bloque 1: el que escucha el arrastre. Mutantes que caza:
+    el encabezado vuelve a dibujar su propio ROC (dos búhos), o el bloque 1 deja de usar
+    el hueco del encabezado (el búho cae debajo del wordmark)."""
+    at = AppTest.from_string(_SCRIPT_CARGA, default_timeout=25)
+    at.run()
+    assert at.exception == []
+    orden = []
+    for el in _en_orden(at.main):
+        srcdoc = getattr(getattr(el, "proto", None), "srcdoc", "")
+        if "function rocGrid" in srcdoc:
+            orden.append(("roc", srcdoc))
+        elif getattr(el, "type", None) == "markdown" and "vd-wordmark" in el.value:
+            orden.append(("wordmark", None))
+    assert [t for t, _ in orden] == ["roc", "wordmark"]
+    assert 'var REACCION = {"tipo": "arrastre", "frase": "Suéltalo."};' in orden[0][1]
+    assert "var TAM = 28;" in orden[0][1]
+
+
+def test_carga_sin_frase_de_bloques_y_uploader_sin_help_invisible():
+    at = AppTest.from_string(_SCRIPT_CARGA, default_timeout=25)
+    at.run()
+    textos = "\n".join(m.value for m in at.markdown)
+    assert "Tres bloques" not in textos
+    assert "¿Dónde lo exporto? Interactive Brokers: Informes → Extractos" in textos
+    assert "Tu archivo se procesa en memoria y no se escribe a disco." in textos
 
 
 # ── 4. Impuestos ────────────────────────────────────────────────────────────────────────

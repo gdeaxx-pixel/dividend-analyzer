@@ -176,8 +176,10 @@ def render_encabezado(con_datos: bool) -> str:
 
     En `con_datos=False` la marca no se dibuja aquí: el wordmark de `ui/carga.py` (`<h2>`)
     ya cumple ese papel como título de pantalla — mostrar ambos era redundante, así que la
-    columna izquierda solo lleva a ROC (vigilante, 28px) durante la carga. Devuelve el tema
-    activo — nunca `None`.
+    columna izquierda solo lleva a ROC durante la carga. Ese ROC es el ÚNICO de la pantalla
+    y lo dibuja el bloque 1 (`ui.carga.render_bloque_transacciones`), que es quien sabe si
+    toca escuchar el arrastre, asentir o confundirse: aquí solo se reserva su hueco en
+    `st.session_state["_vd_hueco_roc"]`. Devuelve el tema activo — nunca `None`.
     """
     from ui.componentes import render_roc  # dentro: `ui.chrome` ↔ `ui.componentes` es un ciclo
 
@@ -194,7 +196,8 @@ def render_encabezado(con_datos: bool) -> str:
                 st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>',
                             unsafe_allow_html=True)
         else:
-            render_roc("vigilante", st.session_state["vd_tema"], None, tam=28)
+            with st.container(key="vd_roc_carga"):
+                st.session_state["_vd_hueco_roc"] = st.empty()
     with col_der:
         st.segmented_control(
             "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
@@ -554,6 +557,12 @@ _ESTILOS = """
         /* Control de tema: `stButtonGroup` trae radio redondeado (8px en los extremos) y
            tipografía `system-ui` de fábrica — igual que el popover, es CSS propio de
            Streamlit y solo se ve midiendo el DOM, no con `grep` sobre este archivo. */
+        /* El contenedor del control abraza su contenido: sin esto queda pegado al borde
+           izquierdo de su columna y no al borde derecho de la página. */
+        .st-key-vd_tema_w { align-self: flex-end; }
+        /* Alto reservado para el globo de ROC en la carga («Suéltalo.», «N tickers
+           leídos»): sin él, al aparecer el globo el título baja ~10px. */
+        .st-key-vd_roc_carga { min-height: 50px; justify-content: center; }
         [data-testid="stButtonGroup"] button {
           border-radius: 0 !important;
           font-family: var(--font-mono) !important; font-size: 11px !important;
