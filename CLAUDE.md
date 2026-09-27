@@ -98,8 +98,8 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 
 Línea base: **1308 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-27 sobre la rama
 `fix/qdr-nativo` = `0ca3a21` (base `main` = `2361156`, que ya trae el #172 del historial TDA), con
-`real_examples/` y `CONY_test.csv`. +48 desde la línea de abajo: los PR de captura/carga del 26–27-sep,
-`test_historial_tda.py` (10) y los oráculos de las demos schwab/schwab2 con el bruto TDA atribuido.
+`real_examples/` y `CONY_test.csv`. +48 desde la línea de abajo; de ellos, 10 son `test_historial_tda.py`
+(el resto entró con los PR de main entre medias, sin desglose medido). `main` = `2361156` daba 1307.
 Sin datos privados (worktree limpio): **1205 passed, 86 skipped, 1 deselected**.)
 
 Antes: **1260 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
