@@ -2,8 +2,9 @@
      Fuente de diseño: Obsidian/APPs/Dividend-Analyzer/demos/roc-mascota.html (kit aprobado
      por Daniel). Dibuja a ROC en UNO de sus 6 estados y, si llega, su frase. Aquí no se
      calcula ninguna cifra ni se decide ningún estado (Regla 3): el estado y la frase llegan
-     ya resueltos desde `ui/adapters.py::roc_data`. El motor del sprite se inyecta en
-     {{SPRITE_JS}} desde `ui/componentes/roc_sprite.js` (misma fuente que el favicon).
+     ya resueltos desde `ui/adapters.py` (`ROC_POR_VEREDICTO`, `roc_salud_data`). El motor
+     del sprite se inyecta en el hueco SPRITE_JS desde `ui/componentes/roc_sprite.js`
+     (misma fuente que el favicon).
      El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
 <meta charset="utf-8">
 <style>

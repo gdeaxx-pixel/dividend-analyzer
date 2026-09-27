@@ -1,7 +1,7 @@
 /* Motor del sprite de ROC, la mascota de la app (16×16 pixeles).
    Fuente de diseño: Obsidian/APPs/Dividend-Analyzer/demos/roc-mascota.html (kit aprobado por
    Daniel, 24/25-sep-2026). Escrito A MANO; NO se genera. Lo inlinea `render_roc` en
-   `ui/componentes/roc.html` ({{SPRITE_JS}}) y lo evalúa `tools/generar_favicon_roc.py` con node:
+   `ui/componentes/roc.html` (hueco SPRITE_JS) y lo evalúa `tools/generar_favicon_roc.py` con node:
    una sola fuente para el componente y el favicon.
    Cada pixel sale como <rect class="pX">: el COLOR lo decide el CSS del componente con los
    tokens de la app, no este archivo. Ojos siempre `drip` (azul) en todos los estados. */

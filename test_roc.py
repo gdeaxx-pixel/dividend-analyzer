@@ -5,6 +5,7 @@ componente, motor del sprite en node, favicon y los dos cableados con estado pro
 Todos los esperados son LITERALES medidos: ningún test calcula el valor esperado con la
 función que prueba.
 """
+import re
 import json
 import os
 import shutil
@@ -97,14 +98,11 @@ def capturado(monkeypatch):
 def test_render_roc_rellena_los_huecos_y_pone_estado_frase_y_tema(capturado):
     componentes.render_roc("alerta", "Oscuro", "Ojo: NAV -38%/año.", tam=72)
     html = capturado["html"]
-    # Los 4 huecos de la plantilla están rellenos. NO se afirma «ningún `{{…}}` en el html»:
-    # el motor del sprite trae su propio comentario con el texto `{{SPRITE_JS}}` y se inlinea
-    # entero, así que ese literal sobrevive por construcción (medido: 2 apariciones, ambas
-    # dentro de un comentario). Lo que sí no puede quedar es un hueco suelto.
-    for hueco in ("{{ESTADO_JSON}}", "{{FRASE_JSON}}", "{{TAM}}"):
-        assert hueco not in html
-    assert "\n{{SPRITE_JS}}\n" not in html
-    assert "function rocGrid" in html
+    # Ningún hueco `{{…}}` queda sin rellenar, y el motor del sprite entra UNA sola vez
+    # (los comentarios de la plantilla y del motor ya no citan el hueco: antes se inlineaba
+    # dos veces, desvío D1 de la auditoría R1).
+    assert re.search(r"\{\{\w+\}\}", html) is None
+    assert html.count("function rocGrid") == 1
     assert 'var ESTADO = "alerta";' in html
     assert 'data-theme", "dark"' in html
     assert 'var FRASE = "Ojo: NAV -38%/año.";' in html
@@ -285,3 +283,58 @@ def test_carga_dibuja_a_roc_antes_de_calcular_y_lo_retira_al_terminar(monkeypatc
     # (b) Al terminar el run ya no queda ningún iframe de «calculando».
     srcdocs = [f.proto.srcdoc for f in at.get("iframe")]
     assert not any('var ESTADO = "calculando";' in s for s in srcdocs)
+
+
+# ── Guards añadidos en la auditoría (X1/X2): encabezado e Impuestos ─────────────────────
+
+_SCRIPT_ENCABEZADO = """
+import sys
+sys.path.insert(0, __RAIZ__)
+import streamlit as st
+from ui.chrome import render_encabezado
+render_encabezado(st.session_state.get("_con_datos_prueba", False))
+""".replace("__RAIZ__", repr(_RAIZ))
+
+
+@pytest.mark.parametrize("con_datos", [False, True])
+def test_encabezado_lleva_a_roc(con_datos):
+    """X1: el búho de 28px del encabezado, con y sin datos. Sin datos va solo; con datos va
+    junto a la marca «Invierte & Gana»."""
+    at = AppTest.from_string(_SCRIPT_ENCABEZADO, default_timeout=25)
+    at.session_state["_con_datos_prueba"] = con_datos
+    at.run()
+    assert not at.exception
+    rocs = [f for f in at.get("iframe") if 'var ESTADO = "vigilante";' in f.proto.srcdoc]
+    assert len(rocs) == 1
+    assert "var TAM = 28;" in rocs[0].proto.srcdoc
+    marca = any("Invierte &amp; Gana" in m.value for m in at.markdown)
+    assert marca is con_datos
+
+
+def _impuestos_con(monkeypatch, datos_fiscales):
+    from ui import adapters, componentes
+    from ui import impuestos as vista_impuestos
+    llamadas = []
+    monkeypatch.setattr("ui.vistas.obtener_resultados", lambda: {"MSTY": {}})
+    monkeypatch.setattr(vista_impuestos.estado, "perfil_fiscal", lambda: {})
+    monkeypatch.setattr(adapters, "impuestos_data", lambda *a, **k: datos_fiscales)
+    monkeypatch.setattr(componentes, "render_impuestos",
+                        lambda datos, tema, *a, **k: llamadas.append("render_impuestos"))
+    monkeypatch.setattr(componentes, "render_roc",
+                        lambda estado, tema, frase=None, tam=72:
+                        llamadas.append(("render_roc", estado, frase, tam)))
+    vista_impuestos.render_vista(vista_impuestos.VIEW_ORDER[0],
+                                 SimpleNamespace(etf="MSTY", tema="Claro"))
+    return llamadas
+
+
+def test_impuestos_lleva_a_roc_sobre_la_dona(monkeypatch):
+    """X2: ROC con el documento, justo antes de la dona fiscal."""
+    llamadas = _impuestos_con(monkeypatch, {"fondos": [{"ticker": "MSTY"}]})
+    assert llamadas == [("render_roc", "impuestos", "Casilla por casilla.", 64),
+                        "render_impuestos"]
+
+
+def test_impuestos_sin_dividendos_no_lleva_a_roc(monkeypatch):
+    llamadas = _impuestos_con(monkeypatch, None)
+    assert llamadas == []
