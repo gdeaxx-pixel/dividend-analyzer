@@ -483,18 +483,24 @@ def test_cruce_peldano2_schwab2_exacto():
     with frozen_roc_19a():
         datos = _impuestos_demo("schwab2")
     g = datos["peldanos"]["gravable"]
-    assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(385.78, abs=0.02)
+    # ACTUALIZADO 2026-09-27 (T1, historial TDA): 385.78 -> 396.13 y gravable 63.80 -> 74.15.
+    # Las filas `TDA TRAN - …` del CSV traían el dividendo sin ticker; ahora se atribuyen:
+    # SCHB +4.67 y XLK +5.68, cuadrado al centavo contra las filas crudas del CSV. Los dos
+    # están en `sin_roc`, así que el gravable sube lo mismo que el bruto.
+    assert datos["peldanos"]["bruto"]["monto"] == pytest.approx(396.13, abs=0.02)
     # ACTUALIZADO 2026-09-21 (R1+F6): 125.81 -> 63.80. NO es deriva del refresh 19a: el
     # objeto fiscal pasa a consumir el CIERRE (ICI, casilla 3 del 1099) en los años cerrados
-    # en vez de la ESTIMACIÓN 19(a). El bruto (385.78) no se mueve — sólo el bucket gravable.
-    assert g["monto"] == pytest.approx(63.80, abs=0.05)
+    # en vez de la ESTIMACIÓN 19(a).
+    assert g["monto"] == pytest.approx(74.15, abs=0.05)
     assert set(g["sin_roc"]) == {"SCHB", "XLK"}
     assert (g["cubiertos"], g["total"]) == (1, 3)
 
 
 @pytest.mark.parametrize("alias,bruto_esp,sin_roc_min", [
     ("ib", 18319.69, {"SCHB", "SMH", "XLK"}),
-    ("schwab", 5827.18, {"SCHB", "XLK"}),
+    # 5827.18 -> 6637.76 (T1, 2026-09-27): +810.58 de dividendo TDA sin ticker que ahora se
+    # atribuye (QYLD 446.47, TSLY 232.76, SVOL 78.31, SCHB 30.20, XLK 22.84 — filas crudas).
+    ("schwab", 6637.76, {"SCHB", "XLK"}),
 ])
 def test_cruce_peldano2_estructural(alias, bruto_esp, sin_roc_min):
     datos = _impuestos_demo(alias)
