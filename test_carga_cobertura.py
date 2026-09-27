@@ -596,7 +596,9 @@ def _datos_dona(at):
     se dibuja es exactamente lo que Python le pasó)."""
     import json
 
-    iframes = at.get("iframe")
+    # Desde R2 la carga también dibuja a ROC (bloque 1): se separa por contenido. El
+    # invariante sigue siendo UNA dona.
+    iframes = [f for f in at.get("iframe") if "function rocGrid" not in f.proto.srcdoc]
     assert len(iframes) == 1, f"esperaba 1 iframe (la dona), vi {len(iframes)}"
     m = re.search(r"var DATA = (\{.*?\});", iframes[0].proto.srcdoc, re.S)
     assert m, "la dona no trae su DATA JSON"

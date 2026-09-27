@@ -179,12 +179,28 @@ _AYUDA_BROKER = (
 )
 
 
+def _roc_bloque1(hueco, estado_roc: str, frase: str | None = None,
+                 reaccion: dict | None = None) -> None:
+    """ROC del bloque 1: un solo hueco, ARRIBA del bloque, en las dos ramas (sin archivo y
+    con CSV cargado), para que el búho no cambie de sitio al pasar de una a otra."""
+    with hueco.container():
+        componentes.render_roc(estado_roc, st.session_state.get("vd_tema", "Claro"), frase,
+                               tam=48, reaccion=reaccion)
+
+
 def render_bloque_transacciones() -> bool:
     """Bloque 1. Devuelve True cuando ya hay un CSV cargado."""
+    hueco_roc = st.empty()
     if st.session_state.get("_wizard_df_clean") is not None:
         broker = BROKER_LABEL.get(st.session_state.get("_wizard_broker"), "Archivo")
         nombre = st.session_state.get("_wizard_csv_name") or "transacciones.csv"
         tickers = st.session_state.get("_wizard_csv_ticker_data") or {}
+        # Asiente UNA vez: la bandera la pone la validación justo antes de su `st.rerun()` y
+        # se consume aquí. Si el iframe se re-montara en otro rerun (algo nuevo encima lo
+        # desplaza), llega sin reacción y no vuelve a asentir.
+        asiente = st.session_state.pop("_roc_asiente", False)
+        _roc_bloque1(hueco_roc, "vigilante", adapters.roc_csv_frase(broker, len(tickers)),
+                     {"tipo": "asiente"} if asiente else None)
         st.markdown(bloque_resumen("CSV cargado",
                                    f"{nombre} · {broker} · {len(tickers)} tickers"),
                     unsafe_allow_html=True)
@@ -221,11 +237,14 @@ def render_bloque_transacciones() -> bool:
                                label_visibility="collapsed", help=_AYUDA_BROKER,
                                key="_vd_upload_txn")
     if archivo is None:
+        _roc_bloque1(hueco_roc, "vigilante", None,
+                     {"tipo": "arrastre", "frase": adapters.ROC_FRASE_ARRASTRE})
         return False
 
     try:
         crudo, broker = _leer_transacciones(archivo)
         if crudo.empty:
+            _roc_bloque1(hueco_roc, "confundido")
             st.error("No pudimos leer el formato del archivo. "
                      "Intenta guardarlo como «CSV UTF-8» o usa Excel (.xlsx).")
             return False
@@ -233,6 +252,7 @@ def render_bloque_transacciones() -> bool:
         limpio = logic.normalize_csv(crudo)
         faltan = [c for c in ("Date", "Ticker", "Amount") if c not in limpio.columns]
         if faltan:
+            _roc_bloque1(hueco_roc, "confundido")
             st.error(f"Falta(n) la(s) columna(s): {', '.join(faltan)}")
             st.caption(f"Columnas encontradas: {list(limpio.columns)}")
             return False
@@ -243,8 +263,10 @@ def render_bloque_transacciones() -> bool:
         st.session_state["_wizard_csv_name"] = archivo.name
         st.session_state["_wizard_csv_descarte"] = getattr(
             logic.normalize_csv, "ultimo_descarte", None)
+        st.session_state["_roc_asiente"] = True
         st.rerun()
     except Exception as error:                                    # noqa: BLE001
+        _roc_bloque1(hueco_roc, "confundido")
         st.error(f"Error procesando el archivo: {error}")
         with st.expander("Ver detalles"):
             import traceback

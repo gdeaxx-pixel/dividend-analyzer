@@ -5,6 +5,9 @@
      ya resueltos desde `ui/adapters.py` (`ROC_POR_VEREDICTO`, `roc_salud_data`). El motor
      del sprite se inyecta en el hueco SPRITE_JS desde `ui/componentes/roc_sprite.js`
      (misma fuente que el favicon).
+     Fase 2 (reacciones): el hueco REACCION_JSON trae null o {tipo, frase?} resuelto en
+     `ui/adapters.py`. asiente / arrastre solo con «vigilante», ojo con «impuestos», favicon
+     con «calculando»; cualquier otra combinación se ignora (Python ya la rechaza).
      El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
 <meta charset="utf-8">
 <style>
@@ -53,40 +56,146 @@
   var ESTADO = {{ESTADO_JSON}};
   var FRASE = {{FRASE_JSON}};
   var TAM = {{TAM}};
+  var REACCION = {{REACCION_JSON}};
   if (typeof ROC_ESTADOS === "undefined") return;
   if (ROC_ESTADOS.indexOf(ESTADO) < 0) ESTADO = "vigilante";
   if (typeof TAM !== "number" || !(TAM > 0)) TAM = 72;
+  var R = REACCION && typeof REACCION === "object" ? REACCION : {};
+  var COMPAT = { asiente: "vigilante", arrastre: "vigilante", ojo: "impuestos", favicon: "calculando" };
+  var TIPO = COMPAT[R.tipo] === ESTADO ? R.tipo : null;
   var COLOR = { vigilante: "var(--warn)", calculando: "var(--drip)", tranquilo: "var(--cash)",
     alerta: "var(--loss)", confundido: "var(--ink-mut)", impuestos: "var(--drip)" };
   var spr = document.getElementById("spr"), frase = document.getElementById("frase");
-  if (typeof FRASE === "string" && FRASE) {
-    frase.textContent = FRASE;
-    frase.style.setProperty("--c", COLOR[ESTADO]);
-    frase.hidden = false;
+  function ponerFrase(txt, color) {
+    if (typeof txt === "string" && txt) {
+      frase.textContent = txt;
+      frase.style.setProperty("--c", color);
+      frase.hidden = false;
+    } else {
+      frase.textContent = "";
+      frase.hidden = true;
+    }
   }
-  var S = { st: ESTADO, look: ESTADO === "impuestos" ? [0, 1] : [0, 0], lid: 0, wing: 0, hop: 0, face: "front" };
-  var ocupado = false;
-  function dibujar() { spr.innerHTML = rocSvg(S, TAM, "ROC, " + ESTADO); }
+  var COLOR_FRASE = TIPO === "ojo" ? "var(--warn)" : COLOR[ESTADO];
+  ponerFrase(FRASE, COLOR_FRASE);
+  var S = { st: ESTADO, look: ESTADO === "impuestos" ? [0, 1] : [0, 0], lid: 0,
+    lidL: TIPO === "ojo" ? 2 : 0, nod: 0, wing: 0, hop: 0, face: "front" };
+  var ocupado = false, expectante = false;
+  function dibujar() { spr.innerHTML = rocSvg(S, TAM, "ROC, " + (expectante ? "expectante" : ESTADO)); }
   function esperar(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function aletear() {
-    if (ocupado) return;
+    if (ocupado || expectante) return;
     ocupado = true;
     var pasos = [["up", 1], ["out", 1], ["up", 1], ["out", 1], ["up", 0], [0, 0]];
     var i = 0;
     (function sig() {
-      if (i >= pasos.length) { ocupado = false; return; }
+      if (i >= pasos.length || expectante) { ocupado = false; return; }
       S.wing = pasos[i][0]; S.hop = pasos[i][1]; dibujar(); i++;
       setTimeout(sig, 110);
     })();
   }
+  function asentir() {
+    if (ocupado) return;
+    ocupado = true;
+    var pasos = [1, 0, 1, 0], i = 0;
+    (function sig() {
+      if (i >= pasos.length) { ocupado = false; return; }
+      S.nod = pasos[i]; dibujar(); i++;
+      setTimeout(sig, 150);
+    })();
+  }
+  /* Documentos a los que escucha / toca ROC: el suyo y, por ser `srcdoc` same-origin, el
+     de la app. En Streamlit Cloud la app vive a su vez en un iframe `/~/+/` y la pestaña
+     toma el favicon del documento `top` (medido 26-sep: same-origin), así que también ese. */
+  function documentos() {
+    var ds = [document];
+    try { var fe = window.frameElement; if (fe && ds.indexOf(fe.ownerDocument) < 0) ds.push(fe.ownerDocument); } catch (e) { /* cross-origin */ }
+    try { var td = window.top.document; if (td && ds.indexOf(td) < 0) ds.push(td); } catch (e) { /* cross-origin */ }
+    return ds;
+  }
   dibujar();
   var quieto = false;
   try { quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { quieto = false; }
+
+  /* Expectante: un ARCHIVO arrastrado sobre la página (no texto ni un enlace). Sin
+     `dragover` durante 450 ms, o al soltar, vuelve a vigilante. Es respuesta a un gesto
+     del usuario, no animación ambiental: corre también con movimiento reducido. */
+  if (TIPO === "arrastre") {
+    var tSalida = null;
+    var conArchivos = function (e) {
+      var t = e.dataTransfer && e.dataTransfer.types;
+      return !!t && Array.prototype.indexOf.call(t, "Files") >= 0;
+    };
+    var salir = function () {
+      clearTimeout(tSalida);
+      if (!expectante) return;
+      expectante = false; S.look = [0, 0]; S.wing = 0; S.hop = 0;
+      ponerFrase(FRASE, COLOR_FRASE); dibujar();
+    };
+    var entrar = function (e) {
+      if (!conArchivos(e)) return;
+      clearTimeout(tSalida);
+      tSalida = setTimeout(salir, 450);
+      if (expectante) return;
+      expectante = true; S.look = [0, -1]; S.wing = "up"; S.hop = 0;
+      ponerFrase(R.frase, COLOR.vigilante); dibujar();
+    };
+    var escuchados = documentos();
+    escuchados.forEach(function (d) {
+      d.addEventListener("dragenter", entrar, true);
+      d.addEventListener("dragover", entrar, true);
+      d.addEventListener("drop", salir, true);
+    });
+    window.addEventListener("pagehide", function () {
+      clearTimeout(tSalida);
+      escuchados.forEach(function (d) {
+        try {
+          d.removeEventListener("dragenter", entrar, true);
+          d.removeEventListener("dragover", entrar, true);
+          d.removeEventListener("drop", salir, true);
+        } catch (e) { /* documento ya cerrado */ }
+      });
+    });
+  }
   if (quieto) return;
 
+  if (TIPO === "asiente") setTimeout(asentir, 350);
+
   if (ESTADO === "calculando") {
+    var favPaso = function () {};
+    if (TIPO === "favicon") {
+      /* Favicon que gira mientras corre el análisis. Paleta del tema claro, la MISMA de
+         `tools/generar_favicon_roc.py` (la vigila test_roc). Al retirarse el iframe
+         (`hueco_roc.empty()`) salta `pagehide` y se devuelve el href original: sin eso la
+         pestaña se queda en el último cuadro (medido 26-sep: Streamlit no lo restaura). */
+      var FAV = { B: "#021C36", T: "#021C36", W: "#33475a", L: "#33475a", E: "#ffffff",
+        P: "#006497", K: "#a06a1a", F: "#a06a1a", C: "#d5e0ea" };
+      var cuadros = ROC_TURN.map(function (cara) {
+        var c = document.createElement("canvas");
+        c.width = 32; c.height = 32;
+        var x = c.getContext("2d");
+        rocGrid({ st: "calculando", face: cara }).forEach(function (fila, yy) {
+          fila.forEach(function (ch, xx) {
+            if (!FAV[ch]) return;
+            x.fillStyle = FAV[ch]; x.fillRect(xx * 2, yy * 2, 2, 2);
+          });
+        });
+        return c.toDataURL("image/png");
+      });
+      var favLinks = [], favOrig = [];
+      documentos().forEach(function (d) {
+        if (d === document) return;
+        [].slice.call(d.querySelectorAll('link[rel~="icon"]')).forEach(function (l) {
+          favLinks.push(l); favOrig.push(l.getAttribute("href"));
+        });
+      });
+      window.addEventListener("pagehide", function () {
+        favLinks.forEach(function (l, i) { try { l.setAttribute("href", favOrig[i]); } catch (e) { /* cerrado */ } });
+      });
+      favPaso = function (k) { favLinks.forEach(function (l) { l.setAttribute("href", cuadros[k]); }); };
+    }
     var n = 0;
-    setInterval(function () { n++; S.face = ROC_TURN[n % 6]; dibujar(); }, 130);
+    setInterval(function () { n++; S.face = ROC_TURN[n % 6]; dibujar(); favPaso(n % 6); }, 130);
     return;
   }
   if (ESTADO === "impuestos") {
@@ -104,6 +213,7 @@
     (function libre() { setTimeout(function () { aletear(); libre(); }, 7000 + Math.random() * 7000); })();
     var dx0 = 0, dy0 = 0;
     function seguir(x, y) {
+      if (expectante) return;
       var r = spr.getBoundingClientRect();
       var dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height * 0.4);
       var nx = Math.abs(dx) < 30 ? 0 : (dx > 0 ? 1 : -1), ny = Math.abs(dy) < 40 ? 0 : (dy > 0 ? 1 : -1);
