@@ -96,7 +96,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1212 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+Línea base: **1224 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+`fix/auto-alto-streamlit-152` = `fb375e1`, cuyo árbol es idéntico al de `main` = `d379c93` (#165), en la
+máquina de Daniel con `real_examples/` y `CONY_test.csv`, con **Streamlit 1.52.2 + Authlib 1.6.12**.
++12: `test_auto_alto.py` (el script de auto-alto corre en Node y el contenedor de Streamlit 1.52
+sigue al iframe; cada componente lleva la versión vigente). Login real en producción verificado por
+Daniel tras el merge.)
+
+Antes: **1212 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
 `docs/privacy-captura`, cuyo árbol es idéntico al de `main` = `08e0fa7` (#162), en la máquina de
 Daniel con `real_examples/` y `CONY_test.csv` en el worktree. Sobre `a70b7eb` (#160), antes del
 #162, daba 1209. +30 respecto a 1182: 27 entre #159, #160 y #161 (Fases 3-B y 2 de la captura) y los 3 tests del aviso de
