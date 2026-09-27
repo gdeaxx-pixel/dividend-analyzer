@@ -10,14 +10,14 @@ import streamlit as st
 
 import logic
 from ui import estado, heredadas, impuestos, nav
-from ui.adapters import (DatosIncompletos, cashflow_data, comparacion_data,
-                         diagnosticar_bloqueo, hoja_data, metodo_data, metodo_real_data,
-                         metodo_serie_data, salud_nav_data, trg_real_data,
-                         verificar_identidades)
+from ui.adapters import (ROC_FRASE_CARGA, DatosIncompletos, cashflow_data,
+                         comparacion_data, diagnosticar_bloqueo, hoja_data, metodo_data,
+                         metodo_real_data, metodo_serie_data, roc_salud_data,
+                         salud_nav_data, trg_real_data, verificar_identidades)
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodo_real,
-                            render_metodologia, render_rail)
+                            render_metodologia, render_rail, render_roc)
 from ui.validacion import render_validacion_datos
 
 
@@ -64,9 +64,14 @@ def _resultados() -> dict:
         capturas = None
         if st.session_state.get("_wizard_pos_confirmed"):
             capturas = st.session_state.get("_wizard_positions") or None
+        hueco_roc = st.empty()
+        with hueco_roc.container():
+            render_roc("calculando", st.session_state.get("vd_tema", "Claro"),
+                       ROC_FRASE_CARGA, tam=64)
         with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
             st.session_state["_vd_resultados"] = logic.analyze_portfolio(
                 df, position_overrides=capturas)
+        hueco_roc.empty()
     return st.session_state["_vd_resultados"] or {}
 
 
@@ -212,6 +217,9 @@ def render_salud_nav(ruta: Ruta) -> None:
         return
 
     datos = salud_nav_data(ruta.etf, stats)
+
+    roc = roc_salud_data(datos)
+    render_roc(roc["estado"], ruta.tema, roc["frase"], tam=72)
 
     st.markdown('<span class="vd-badge">Salud del NAV</span>', unsafe_allow_html=True)
     st.markdown(

@@ -9,6 +9,7 @@ componente solo dibuja lo que recibe.
 from __future__ import annotations
 
 import json
+import math
 import os
 
 import streamlit as st
@@ -311,6 +312,29 @@ def render_cobertura(datos: dict, tema: str, alto: int = ALTO_COBERTURA) -> None
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
+
+
+def alto_roc(tam: int, con_frase: bool) -> int:
+    """Alto INICIAL del iframe de ROC; el auto-alto lo corrige al cargar. Con frase se
+    reserva sitio para que el globo baje debajo del búho en celular (flex-wrap): con
+    `scrolling=False` lo que no cabe es inalcanzable."""
+    base = math.ceil(tam * 17 / 16) + 8
+    return base + 72 if con_frase else base
+
+
+def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72) -> None:
+    """Dibuja a ROC en uno de sus 6 estados. El estado y la frase llegan resueltos
+    (`ui.adapters.ROC_POR_VEREDICTO` / `roc_salud_data`); aquí no se decide nada."""
+    from ui.adapters import ROC_ESTADOS
+    if estado not in ROC_ESTADOS:
+        raise ValueError(f"Estado de ROC desconocido: {estado!r}")
+    html = _plantilla("roc.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{ESTADO_JSON}}", json.dumps(estado))
+    html = html.replace("{{FRASE_JSON}}", json.dumps(frase, ensure_ascii=False))
+    html = html.replace("{{TAM}}", str(int(tam)))
+    html = html.replace("{{SPRITE_JS}}", _plantilla("roc_sprite.js"))
+    components.html(html, height=alto_roc(tam, bool(frase)), scrolling=False)
 
 
 def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | None = None,

@@ -9,6 +9,8 @@ Estado y controles en widgets nativos; el HTML del artifact es render visual:
 todo lo que cambia estado vive en Python.
 """
 
+import os
+
 import streamlit as st
 
 import stale_guard
@@ -33,7 +35,7 @@ from ui.vistas import obtener_resultados, render_vista
 
 st.set_page_config(
     page_title="Viaje del dinero · Invierte & Gana",
-    page_icon="📈",
+    page_icon=os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui", "assets", "roc_favicon.png"),
     layout="wide",
     initial_sidebar_state="collapsed",
 )
