@@ -258,9 +258,9 @@ if not getattr(logic.analyze_portfolio, "_espia_roc", False):
 
 if not getattr(vistas.render_roc, "_espia_roc", False):
     _original = vistas.render_roc
-    def _roc(estado, tema, frase=None, tam=72):
+    def _roc(estado, tema, frase=None, tam=72, reaccion=None):
         test_roc.LLAMADAS.append(("render_roc", estado))
-        return _original(estado, tema, frase, tam)
+        return _original(estado, tema, frase, tam, reaccion)
     _roc._espia_roc = True
     vistas.render_roc = _roc
 
@@ -321,7 +321,7 @@ def _impuestos_con(monkeypatch, datos_fiscales):
     monkeypatch.setattr(componentes, "render_impuestos",
                         lambda datos, tema, *a, **k: llamadas.append("render_impuestos"))
     monkeypatch.setattr(componentes, "render_roc",
-                        lambda estado, tema, frase=None, tam=72:
+                        lambda estado, tema, frase=None, tam=72, reaccion=None:
                         llamadas.append(("render_roc", estado, frase, tam)))
     vista_impuestos.render_vista(vista_impuestos.VIEW_ORDER[0],
                                  SimpleNamespace(etf="MSTY", tema="Claro"))

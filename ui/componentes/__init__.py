@@ -322,17 +322,22 @@ def alto_roc(tam: int, con_frase: bool) -> int:
     return base + 72 if con_frase else base
 
 
-def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72) -> None:
-    """Dibuja a ROC en uno de sus 6 estados. El estado y la frase llegan resueltos
-    (`ui.adapters.ROC_POR_VEREDICTO` / `roc_salud_data`); aquí no se decide nada."""
-    from ui.adapters import ROC_ESTADOS
+def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
+               reaccion: dict | None = None) -> None:
+    """Dibuja a ROC en uno de sus 6 estados. El estado, la frase y la reacción llegan
+    resueltos (`ui.adapters.ROC_POR_VEREDICTO` / `roc_salud_data` / `ROC_REACCIONES`); aquí
+    no se decide nada. Una reacción que no vale con ese estado es un error del llamador."""
+    from ui.adapters import ROC_ESTADOS, ROC_REACCIONES
     if estado not in ROC_ESTADOS:
         raise ValueError(f"Estado de ROC desconocido: {estado!r}")
+    if reaccion is not None and ROC_REACCIONES.get(reaccion.get("tipo")) != estado:
+        raise ValueError(f"Reacción de ROC {reaccion!r} no vale con el estado {estado!r}")
     html = _plantilla("roc.html")
     html = _con_tema(html, tema)
     html = html.replace("{{ESTADO_JSON}}", json.dumps(estado))
     html = html.replace("{{FRASE_JSON}}", json.dumps(frase, ensure_ascii=False))
     html = html.replace("{{TAM}}", str(int(tam)))
+    html = html.replace("{{REACCION_JSON}}", json.dumps(reaccion, ensure_ascii=False))
     html = html.replace("{{SPRITE_JS}}", _plantilla("roc_sprite.js"))
     components.html(html, height=alto_roc(tam, bool(frase)), scrolling=False)
 

@@ -67,11 +67,15 @@ def _resultados() -> dict:
         hueco_roc = st.empty()
         with hueco_roc.container():
             render_roc("calculando", st.session_state.get("vd_tema", "Claro"),
-                       ROC_FRASE_CARGA, tam=64)
-        with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
-            st.session_state["_vd_resultados"] = logic.analyze_portfolio(
-                df, position_overrides=capturas)
-        hueco_roc.empty()
+                       ROC_FRASE_CARGA, tam=64, reaccion={"tipo": "favicon"})
+        # `finally`: si el cálculo lanza, ROC «calculando» se retira igual. Sin eso el iframe
+        # se queda y, con él, el favicon girando en la pestaña para siempre.
+        try:
+            with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
+                st.session_state["_vd_resultados"] = logic.analyze_portfolio(
+                    df, position_overrides=capturas)
+        finally:
+            hueco_roc.empty()
     return st.session_state["_vd_resultados"] or {}
 
 

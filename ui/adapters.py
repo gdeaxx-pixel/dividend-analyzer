@@ -2918,3 +2918,46 @@ def roc_cartera_data(lista_salud: list) -> dict:
         return {"estado": "tranquilo",
                 "frase": f"{cuenta['accounting']} de {total} fondos con el NAV sano."}
     return {"estado": "confundido", "frase": None}
+
+
+# ── ROC fase 2: reacciones ──────────────────────────────────────────────────────────────
+# Cada reacción solo vale con UN estado; `render_roc` rechaza cualquier otra combinación y
+# el JS de `roc.html` la ignora igual.
+ROC_REACCIONES = {
+    "asiente": "vigilante",
+    "arrastre": "vigilante",
+    "ojo": "impuestos",
+    "favicon": "calculando",
+}
+
+ROC_FRASE_ARRASTRE = "Suéltalo."
+
+
+def roc_csv_frase(etiqueta_broker: str, n_tickers: int) -> str:
+    """Frase de ROC al validar el CSV (bloque 1 de la carga).
+
+    Recibe las MISMAS dos cosas que pinta el resumen «CSV cargado» de
+    `ui/carga.py::render_bloque_transacciones` (la etiqueta de `BROKER_LABEL` y
+    `len(tickers)`), así mascota y resumen no pueden decir cifras distintas. No cuenta
+    «pagos»: filas ≠ pagos (en IB la retención va en fila aparte) y esa cifra no está en
+    pantalla.
+    """
+    unidad = "ticker leído" if n_tickers == 1 else "tickers leídos"
+    return f"{etiqueta_broker}: {n_tickers} {unidad}."
+
+
+def roc_impuestos_data(datos: dict) -> dict:
+    """Frase y reacción de ROC en Impuestos, leídas del MISMO `impuestos_data` que pinta
+    la escalera.
+
+    Ojo entrecerrado solo cuando el peldaño 4 está en `parcial`: el cliente declaró país y
+    en ≥1 fondo la retención al cobro no reconcilia, que es exactamente lo que el titular
+    ya dice («En N fondos no podemos decir cuánto sobra»). N es `len(fondos_sin_desglose)`,
+    la misma lista que lee el titular. En cualquier otro caso, la frase de siempre.
+    """
+    retenido = ((datos or {}).get("peldanos") or {}).get("retenido") or {}
+    n = len(retenido.get("fondos_sin_desglose") or [])
+    if retenido.get("estado") == "parcial" and n:
+        donde = "En 1 fondo" if n == 1 else f"En {n} fondos"
+        return {"frase": f"{donde} la retención no cuadra.", "reaccion": {"tipo": "ojo"}}
+    return {"frase": ROC_FRASE_IMPUESTOS, "reaccion": None}
