@@ -962,24 +962,49 @@ ESTILOS_CARGA = """
         .vd-nota b { color: var(--ink); }
         [data-testid="stMarkdownContainer"] p.vd-ayuda-broker { font-size: 11.5px; line-height: 1.5; color: var(--ink-mut); margin: 6px 0 0; }
 
-        /* Uploader del bloque 1 en español. Streamlit no expone sus textos: se ocultan los
-           nodos originales (font-size 0) y se pinta el texto con ::after. Solo con la clave
-           `_vd_upload_txn` — los otros uploaders de la carga tienen su propio contexto. Si
-           una versión nueva de Streamlit cambia el DOM, vuelve el texto en inglés, no se
-           rompe la subida. */
-        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
+        /* Uploaders de la carga en español. Streamlit no expone sus textos: se ocultan los
+           nodos originales (font-size 0) y se pinta el texto con ::after, por clave. Si una
+           versión nueva de Streamlit cambia el DOM, vuelve el texto en inglés; la subida no
+           se rompe. */
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
           font-size: 0 !important; white-space: normal;
+        }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button,
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzone"] button,
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzone"] button,
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button { font-size: 0 !important; }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button::after,
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzone"] button::after,
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzone"] button::after,
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button::after {
+          content: "Elegir archivo"; font-size: 14px;
         }
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
           content: "Arrastra aquí tu archivo de transacciones"; font-size: 14px;
         }
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
-          content: "CSV o XLSX · Interactive Brokers, Charles Schwab o formato genérico";
-          font-size: 12px;
+          content: "CSV o XLSX · Interactive Brokers, Charles Schwab o formato genérico"; font-size: 12px;
         }
-        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button { font-size: 0 !important; }
-        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button::after {
-          content: "Elegir archivo"; font-size: 14px;
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
+          content: "Arrastra aquí tus capturas del portafolio"; font-size: 14px;
+        }
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
+          content: "PNG o JPG · puedes subir varias"; font-size: 12px;
+        }
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
+          content: "Arrastra aquí tu formulario 1042-S"; font-size: 14px;
+        }
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
+          content: "PDF"; font-size: 12px;
+        }
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
+          content: "Arrastra aquí tu archivo de ingresos"; font-size: 14px;
+        }
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
+          content: "CSV o XLSX"; font-size: 12px;
         }
 
         /* Pie de privacidad: una línea gris y el aviso completo como enlace. */
