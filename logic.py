@@ -713,6 +713,57 @@ def _sortino_ratio(daily_returns, rf_daily, periods: int = 252):
     return float((excess / dd) * np.sqrt(periods))
 
 
+_TDA_TICKER_RE = re.compile(r"^TDA TRAN - .*\(([A-Z][A-Z.]{0,5})\)\s*$")
+_FUENTES_DRIP_EMPAREJABLES = ('cash dividend', 'qualified dividend', 'qual div reinvest')
+
+
+def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
+    """Devuelve las filas del historial migrado de TD Ameritrade al vocabulario nativo de Schwab.
+
+    Schwab exporta ese historial («TDA TRAN - …») con `Symbol` vacío y el ticker solo en la
+    descripción, y lo parte en un triplete que el motor no reconoce: `Cash Dividend` (bruto),
+    `Journaled Shares` «W-8 WITHHOLDING» (retención) y `Reinvest Shares` (compra neta). Medido
+    en los 3 CSV reales de Schwab: 104 tripletes, dividendo − W-8 = compra al centavo en todos.
+
+    1. Ticker vacío + descripción `TDA TRAN - … (TICKER)` → ese ticker.
+    2. `Journaled Shares` con «W-8 WITHHOLDING» y ticker → `NRA Tax Adj`. La que no trae
+       ticker se deja como está: no hay posición a la que atribuirla.
+    3. Fila TDA de dividendo (`Cash Dividend`, `Qualified Dividend`, `Qual Div Reinvest`) con un
+       `Reinvest Shares` del mismo ticker y día → `Reinvest Dividend`, la fila fuente del DRIP.
+       Solo filas TDA: un dividendo NATIVO el mismo día que una compra no la respalda
+       (`test_un_dividendo_en_efectivo_no_respalda_una_compra_del_drip`).
+    4. `Qual Div Reinvest` TDA SIN compra ese día → `Qualified Dividend`: se cobró en efectivo.
+       Medido: ninguno de los 11 casos reales tiene una reinversión del mismo ticker a ±7 días
+       (ES, por ejemplo, ya estaba vendido), y hoy su importe no llegaba a ningún lado.
+
+    El `Qual Div Reinvest` NATIVO (con ticker) también queda fuera del bruto, pero arreglarlo
+    mueve la casilla 9 del fixture sintético por otro defecto: queda para otra spec.
+    """
+    if not {'Ticker', 'Action', 'Description', 'Date'} <= set(df.columns):
+        return df
+    df = df.copy()
+    desc = df['Description'].astype(str)
+    vacio = df['Ticker'].astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
+    del_tda = desc.str.extract(_TDA_TICKER_RE, expand=False)
+    llenar = vacio & del_tda.notna()
+    df.loc[llenar, 'Ticker'] = del_tda[llenar]
+
+    accion = df['Action'].astype(str).str.strip().str.lower()
+    con_ticker = ~df['Ticker'].astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
+    es_w8 = ((accion == 'journaled shares') & con_ticker
+             & desc.str.upper().str.contains('W-8 WITHHOLDING', regex=False))
+    df.loc[es_w8, 'Action'] = 'NRA Tax Adj'
+
+    es_tda = desc.str.startswith('TDA TRAN - ')
+    compras = set(zip(df.loc[accion == 'reinvest shares', 'Ticker'],
+                      df.loc[accion == 'reinvest shares', 'Date']))
+    emparejada = pd.Series([(t, d) in compras for t, d in zip(df['Ticker'], df['Date'])],
+                           index=df.index)
+    df.loc[es_tda & accion.isin(_FUENTES_DRIP_EMPAREJABLES) & emparejada, 'Action'] = 'Reinvest Dividend'
+    df.loc[es_tda & (accion == 'qual div reinvest') & ~emparejada, 'Action'] = 'Qualified Dividend'
+    return df
+
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -834,6 +885,7 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     # Clean Ticker (remove spaces)
     if 'Ticker' in df.columns:
         df['Ticker'] = df['Ticker'].astype(str).str.strip()
+        df = _resolver_filas_tda(df)
 
     # Clean Numeric Columns (Aggressive Regex)
     cols_to_clean = ['Quantity', 'Price', 'Amount']
