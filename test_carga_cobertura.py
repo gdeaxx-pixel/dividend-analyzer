@@ -614,13 +614,17 @@ def test_dona_va_arriba_del_flujo_de_carga():
 
     orden = list(at.main.children.values())
     tipos = [type(el).__name__ for el in orden]
-    # 0 wordmark · 1 lede · 2 iframe (dona) · 3 expander privacidad · 4+ bloques
+    # 0 wordmark · 1 iframe (dona) · 2+ bloques · al final el pie de privacidad
+    # (la frase «Tres bloques…» se retiró el 27-sep; el expander vive en el pie).
     assert "UnknownElement" in tipos, "el iframe de la dona no se dibujó"
     idx_dona = tipos.index("UnknownElement")
-    assert idx_dona == 2, f"la dona no va justo tras wordmark+lede: {tipos}"
+    assert idx_dona == 1, f"la dona no va justo tras el wordmark: {tipos}"
     assert isinstance(orden[0].value, str) and "vd-wordmark" in orden[0].value
-    # Todo lo que viene después (expander + bloques) va detrás de la dona.
-    assert idx_dona < tipos.index("Expander")
+    # Todo lo que viene después (bloques) va detrás de la dona.
+    idx_bloque = next(i for i, el in enumerate(orden)
+                      if isinstance(getattr(el, "value", None), str)
+                      and "vd-bloque-head" in el.value)
+    assert idx_dona < idx_bloque
 
 
 def test_antes_de_confirmar_todo_pendiente_y_analyze_no_corre(monkeypatch):

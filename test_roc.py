@@ -298,13 +298,19 @@ render_encabezado(st.session_state.get("_con_datos_prueba", False))
 
 @pytest.mark.parametrize("con_datos", [False, True])
 def test_encabezado_lleva_a_roc(con_datos):
-    """X1: el búho de 28px del encabezado, con y sin datos. Sin datos va solo; con datos va
-    junto a la marca «Invierte & Gana»."""
+    """X1: el búho de 28px del encabezado. Con datos va junto a la marca «Invierte & Gana».
+    Sin datos el encabezado solo RESERVA el hueco: lo llena el bloque 1 de la carga (un solo
+    búho en la pantalla, con sus reacciones) — lo prueba
+    `test_roc_reacciones.py::test_carga_un_solo_roc_en_el_encabezado_y_es_el_que_escucha_el_arrastre`."""
     at = AppTest.from_string(_SCRIPT_ENCABEZADO, default_timeout=25)
     at.session_state["_con_datos_prueba"] = con_datos
     at.run()
     assert not at.exception
     rocs = [f for f in at.get("iframe") if 'var ESTADO = "vigilante";' in f.proto.srcdoc]
+    if not con_datos:
+        assert rocs == []
+        assert "_vd_hueco_roc" in at.session_state
+        return
     assert len(rocs) == 1
     assert "var TAM = 28;" in rocs[0].proto.srcdoc
     marca = any("Invierte &amp; Gana" in m.value for m in at.markdown)

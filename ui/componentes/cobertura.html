@@ -60,8 +60,10 @@
   /* §3B.7: sin titular de cobertura repetido ni estado de simulación visible —
      el encabezado de la pantalla ya lo dice. */
   .coverage { background: var(--ground); }
-  .detail { position: relative; display: flex; justify-content: center; padding: 30px 22px 26px; }
-  #dona { width: 280px; height: 280px; max-width: 100%; }
+  .detail { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 22px 6px; }
+  #dona { width: 132px; height: 132px; max-width: 100%; }
+  .dona-cap { margin: 6px 0 0; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ink-mut); }
 
   .seg { fill: none; stroke-width: 17; transition: opacity .15s; }
   .seg[data-tone="ok"] { stroke: var(--accent); cursor: default; }
@@ -104,8 +106,7 @@
   .pop .fix { margin-top: 10px; color: var(--ink-mut); font-size: 12px; }
 
   @media (max-width: 620px) {
-    #dona { width: 240px; height: 240px; }
-    .detail { padding: 24px 16px 20px; }
+    .detail { padding: 8px 16px 6px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .seg { animation: none !important; transition: none !important; }
@@ -115,6 +116,7 @@
 <section class="coverage" id="cov-root" aria-label="Cobertura de los datos">
   <div class="detail" id="detail">
     <svg id="dona" viewBox="0 0 150 150" role="group"></svg>
+    <p class="dona-cap" id="dona-cap"></p>
     <div class="pop" id="pop" role="dialog" aria-label="Información pendiente" hidden></div>
   </div>
 </section>
@@ -128,6 +130,9 @@
     root.hidden = true;
     return;
   }
+  document.getElementById("dona-cap").textContent =
+    DATA.segmentos.some(function (s) { return s.estado !== "ok"; })
+      ? "Verificación · toca un segmento" : "Verificación completa";
 
   var NS = "http://www.w3.org/2000/svg";
   var svg = document.getElementById("dona");
