@@ -4402,9 +4402,15 @@ render_portafolios(resultados)
     at.run()
     assert at.exception == [], [e.value for e in at.exception]
 
+    # Desde R1-bis (2026-09-26) la sección de erosión del NAV lleva además el iframe de ROC,
+    # la mascota: se separa por contenido para que este invariante siga mirando SOLO el
+    # componente Portafolios.
     iframes = at.get("iframe")
-    assert len(iframes) == 1, "el componente Portafolios v3 debe dibujarse en un iframe"
-    srcdoc = iframes[0].proto.srcdoc
+    rocs = [f for f in iframes if "function rocGrid" in f.proto.srcdoc]
+    portafolios = [f for f in iframes if "function rocGrid" not in f.proto.srcdoc]
+    assert len(rocs) == 1, "la erosión del NAV lleva un solo ROC arriba"
+    assert len(portafolios) == 1, "el componente Portafolios v3 debe dibujarse en un iframe"
+    srcdoc = portafolios[0].proto.srcdoc
     assert '"SCHB"' in srcdoc, "el grupo de crecimiento debe incluir a SCHB"
     assert '"MSTY"' in srcdoc, "el grupo de dividendos debe incluir a MSTY"
     assert "SMH" not in srcdoc, "SMH está skipped: no debe llegar al componente"

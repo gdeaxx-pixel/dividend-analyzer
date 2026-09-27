@@ -1,0 +1,167 @@
+<!-- Escrito A MANO (mascota ROC, fase 1, sep-2026). NO lo genera ningún extractor.
+     Fuente de diseño: Obsidian/APPs/Dividend-Analyzer/demos/roc-mascota.html (kit aprobado
+     por Daniel). Dibuja a ROC en UNO de sus 6 estados y, si llega, su frase. Aquí no se
+     calcula ninguna cifra ni se decide ningún estado (Regla 3): el estado y la frase llegan
+     ya resueltos desde `ui/adapters.py` (`ROC_POR_VEREDICTO`, `roc_salud_data`). El motor
+     del sprite se inyecta en el hueco SPRITE_JS desde `ui/componentes/roc_sprite.js`
+     (misma fuente que el favicon).
+     El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --ground:#f4f7fa; --panel:#ffffff; --ink:#021C36; --ink-2:#33475a; --ink-mut:#6a7b8a;
+    --hair:#d5e0ea; --anchor:#021C36; --drip:#006497; --cash:#1f8a5b; --loss:#A32D2D;
+    --warn:#a06a1a; --paper:#ffffff; --paper-line:#8598a9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --ink:#eaf1f7; --ink-2:#c3d1de; --ink-mut:#8598a9;
+      --hair:#26394c; --anchor:#b9c9d8; --drip:#3ea0d6; --cash:#35b07d; --loss:#e07a7a;
+      --warn:#d9a441; --paper:#eaf1f7; --paper-line:#6a7b8a;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --ink:#021C36; --ink-2:#33475a; --ink-mut:#6a7b8a;
+    --hair:#d5e0ea; --anchor:#021C36; --drip:#006497; --cash:#1f8a5b; --loss:#A32D2D;
+    --warn:#a06a1a; --paper:#ffffff; --paper-line:#8598a9;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --ink:#eaf1f7; --ink-2:#c3d1de; --ink-mut:#8598a9;
+    --hair:#26394c; --anchor:#b9c9d8; --drip:#3ea0d6; --cash:#35b07d; --loss:#e07a7a;
+    --warn:#d9a441; --paper:#eaf1f7; --paper-line:#6a7b8a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-mono); }
+  [hidden] { display: none !important; }
+  .roc { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 2px 0; }
+  .roc svg { display: block; }
+  .pB, .pT { fill: var(--anchor); } .pW, .pL { fill: var(--ink-2); } .pE { fill: var(--panel); }
+  .pP { fill: var(--drip); } .pK, .pF { fill: var(--warn); } .pC { fill: var(--hair); }
+  .pQ { fill: var(--paper); } .pH { fill: var(--paper-line); }
+  .frase { margin: 0; flex: 1 1 220px; min-width: 0; font-size: 13px; line-height: 1.5;
+    color: var(--ink); background: var(--panel); border: 1px solid var(--hair);
+    border-left: 3px solid var(--c, var(--drip)); padding: 8px 12px; border-radius: 0; }
+</style>
+<div class="roc" id="roc"><div id="spr"></div><p class="frase" id="frase" hidden></p></div>
+<script>
+{{SPRITE_JS}}
+</script>
+<script>
+(function () {
+  "use strict";
+  var ESTADO = {{ESTADO_JSON}};
+  var FRASE = {{FRASE_JSON}};
+  var TAM = {{TAM}};
+  if (typeof ROC_ESTADOS === "undefined") return;
+  if (ROC_ESTADOS.indexOf(ESTADO) < 0) ESTADO = "vigilante";
+  if (typeof TAM !== "number" || !(TAM > 0)) TAM = 72;
+  var COLOR = { vigilante: "var(--warn)", calculando: "var(--drip)", tranquilo: "var(--cash)",
+    alerta: "var(--loss)", confundido: "var(--ink-mut)", impuestos: "var(--drip)" };
+  var spr = document.getElementById("spr"), frase = document.getElementById("frase");
+  if (typeof FRASE === "string" && FRASE) {
+    frase.textContent = FRASE;
+    frase.style.setProperty("--c", COLOR[ESTADO]);
+    frase.hidden = false;
+  }
+  var S = { st: ESTADO, look: ESTADO === "impuestos" ? [0, 1] : [0, 0], lid: 0, wing: 0, hop: 0, face: "front" };
+  var ocupado = false;
+  function dibujar() { spr.innerHTML = rocSvg(S, TAM, "ROC, " + ESTADO); }
+  function esperar(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function aletear() {
+    if (ocupado) return;
+    ocupado = true;
+    var pasos = [["up", 1], ["out", 1], ["up", 1], ["out", 1], ["up", 0], [0, 0]];
+    var i = 0;
+    (function sig() {
+      if (i >= pasos.length) { ocupado = false; return; }
+      S.wing = pasos[i][0]; S.hop = pasos[i][1]; dibujar(); i++;
+      setTimeout(sig, 110);
+    })();
+  }
+  dibujar();
+  var quieto = false;
+  try { quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { quieto = false; }
+  if (quieto) return;
+
+  if (ESTADO === "calculando") {
+    var n = 0;
+    setInterval(function () { n++; S.face = ROC_TURN[n % 6]; dibujar(); }, 130);
+    return;
+  }
+  if (ESTADO === "impuestos") {
+    var k = 0;
+    setInterval(function () { k++; S.look = [[-1, 1], [0, 1], [1, 1]][k % 3]; dibujar(); }, 420);
+  }
+  if (ESTADO === "vigilante" || ESTADO === "alerta" || ESTADO === "impuestos") {
+    setInterval(function () {
+      var l = [2, 4, 2, 0], j = 0;
+      (function paso() { if (j >= l.length) return; S.lid = l[j]; dibujar(); j++; setTimeout(paso, 45); })();
+    }, 3900);
+  }
+  if (ESTADO === "alerta") setTimeout(aletear, 400);
+  if (ESTADO === "vigilante") {
+    (function libre() { setTimeout(function () { aletear(); libre(); }, 7000 + Math.random() * 7000); })();
+    var dx0 = 0, dy0 = 0;
+    function seguir(x, y) {
+      var r = spr.getBoundingClientRect();
+      var dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height * 0.4);
+      var nx = Math.abs(dx) < 30 ? 0 : (dx > 0 ? 1 : -1), ny = Math.abs(dy) < 40 ? 0 : (dy > 0 ? 1 : -1);
+      if (nx !== dx0 || ny !== dy0) { dx0 = nx; dy0 = ny; S.look = [nx, ny]; dibujar(); }
+    }
+    window.addEventListener("mousemove", function (e) { seguir(e.clientX, e.clientY); });
+    try {
+      var fe = window.frameElement;
+      if (fe && fe.ownerDocument) {
+        fe.ownerDocument.addEventListener("mousemove", function (e) {
+          var f = fe.getBoundingClientRect();
+          seguir(e.clientX - f.left, e.clientY - f.top);
+        });
+      }
+    } catch (e) { /* cross-origin: solo sigue el puntero dentro del propio iframe */ }
+  }
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h) return;
+    /* Streamlit >=1.52 envuelve el iframe en un contenedor con `flex: 0 0 <alto de Python>`
+       que no sigue al iframe: sin esto queda el hueco (o el solape) entre ese alto y el real.
+       Se re-aplica en cada llamada porque un rerun puede reescribir el estilo del contenedor. */
+    var cont = fe.parentElement;
+    if (cont && cont.style.flexBasis !== h + "px") cont.style.flexBasis = h + "px";
+    if (Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>

@@ -92,4 +92,5 @@ def render_vista(vista: str, ruta) -> None:
             unsafe_allow_html=True)
         return
 
+    componentes.render_roc("impuestos", ruta.tema, adapters.ROC_FRASE_IMPUESTOS, tam=64)
     componentes.render_impuestos(datos, ruta.tema)

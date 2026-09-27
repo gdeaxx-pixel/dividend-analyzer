@@ -176,15 +176,25 @@ def render_encabezado(con_datos: bool) -> str:
 
     En `con_datos=False` la marca no se dibuja aquí: el wordmark de `ui/carga.py` (`<h2>`)
     ya cumple ese papel como título de pantalla — mostrar ambos era redundante, así que la
-    columna izquierda queda vacía durante la carga. Devuelve el tema activo — nunca `None`.
+    columna izquierda solo lleva a ROC (vigilante, 28px) durante la carga. Devuelve el tema
+    activo — nunca `None`.
     """
+    from ui.componentes import render_roc  # dentro: `ui.chrome` ↔ `ui.componentes` es un ciclo
+
     st.session_state.setdefault("vd_tema", "Claro")
     st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
 
     col_izq, col_der = st.columns([4, 2])
     with col_izq:
         if con_datos:
-            st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>', unsafe_allow_html=True)
+            c_roc, c_marca = st.columns([1, 11], vertical_alignment="center")
+            with c_roc:
+                render_roc("vigilante", st.session_state["vd_tema"], None, tam=28)
+            with c_marca:
+                st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>',
+                            unsafe_allow_html=True)
+        else:
+            render_roc("vigilante", st.session_state["vd_tema"], None, tam=28)
     with col_der:
         st.segmented_control(
             "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
