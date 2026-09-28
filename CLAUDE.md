@@ -96,7 +96,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1321 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+Línea base: **1322 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre `main` = `b56f1ea`
+FUSIONADO (#180 y #179), con `real_examples/` y `CONY_test.csv`. #179 aportó +5 netos y #180 +1
+(`test_la_caida_nunca_pasa_del_100_por_ciento`); cada rama por separado daba 1321 y 1317.)
+
+Antes: **1321 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
 `feat/portafolios-lo-que-toca-vigilar`, base `main` = `e7fa22d` (#178), con `real_examples/` y `CONY_test.csv`.
 −7 de `test_heredadas_base_mixta.py` (probaban la ficha por fondo, retirada) +11 de `test_vigilar_data.py`
 +1 de `test_auto_alto.py` (el componente nuevo entra por glob). Sin datos privados: **1218 passed, 86 skipped,
