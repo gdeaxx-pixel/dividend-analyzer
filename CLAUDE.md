@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1308 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-27 sobre la rama
+Línea base: **1311 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/aviso-huerfanas-sin-culpar`, base `main` = `d5f55a6` (#172, #173 y #174 dentro), con `real_examples/`
+y `CONY_test.csv`. +3 sobre la de abajo: `test_migracion_deja_exactamente_las_acciones_traspasadas` del
+#174 (tres casos). El #175 no añade tests: cambia el texto del aviso y reescribe dos.
+Sin datos privados: **1207 passed, 86 skipped, 1 deselected**, medido sobre la rama del #174.)
+
+Antes: **1308 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-27 sobre la rama
 `fix/qdr-nativo` = `0ca3a21` (base `main` = `2361156`, que ya trae el #172 del historial TDA), con
 `real_examples/` y `CONY_test.csv`. +48 desde la línea de abajo; de ellos, 10 son `test_historial_tda.py`
 (el resto entró con los PR de main entre medias, sin desglose medido). `main` = `2361156` daba 1307.
