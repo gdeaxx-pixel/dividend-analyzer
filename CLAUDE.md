@@ -96,7 +96,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1311 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+Línea base: **1312 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/huerfanas-compra-dias-despues` = `9b09daf` (base `main` = `18a08b2`, #175 dentro), con `real_examples/`
+y `CONY_test.csv`. +1: `test_una_distribucion_respalda_la_compra_de_los_dias_siguientes`.
+Sin datos privados (worktree limpio): **1209 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1311 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
 `fix/aviso-huerfanas-sin-culpar`, base `main` = `d5f55a6` (#172, #173 y #174 dentro), con `real_examples/`
 y `CONY_test.csv`. +3 sobre la de abajo: `test_migracion_deja_exactamente_las_acciones_traspasadas` del
 #174 (tres casos). El #175 no añade tests: cambia el texto del aviso y reescribe dos.
