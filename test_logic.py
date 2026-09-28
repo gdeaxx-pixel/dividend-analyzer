@@ -1025,6 +1025,9 @@ def test_net_transfer_pairs_tda_migration():
     assert len(out) == 2
     assert "Journaled Shares" not in out["Action"].values
     assert out[out["Action"] == "Internal Transfer"]["Quantity"].iloc[0] == pytest.approx(18.933)
+    # La entrada queda marcada con lo traspasado: el bucle deja la posición en esa cifra.
+    assert out[out["Action"] == "Internal Transfer"]["_migracion_q"].iloc[0] == pytest.approx(18.933)
+    assert out[out["Action"] == "Buy"]["_migracion_q"].isna().all()
 
 
 def test_net_transfer_pairs_keeps_unpaired_journal_out():
@@ -1066,6 +1069,45 @@ def test_net_transfer_pairs_una_entrada_empareja_con_una_sola_salida():
     out = logic._net_transfer_pairs(df)
     assert (out["Action"] == "Journaled Shares").sum() == 1
     assert out["Quantity"].sum() == pytest.approx(0.0)
+
+
+_MKT_DIARIO = lambda t, d: (pd.DataFrame(
+    {"Close": 20.0, "Dividends": 0.0, "Stock Splits": 0.0},
+    index=pd.bdate_range("2024-01-02", "2025-03-31")), None)
+
+
+def _con_migracion(filas):
+    """Posición con una migración TDA -> Schwab de `q` acciones el 2024-05-13 en medio."""
+    return _roc_norm_df(filas)
+
+
+@pytest.mark.parametrize("filas,acciones_hoy", [
+    # SVOL del CSV real `1`: el historial TDA ya traía las acciones, se migraron y se
+    # vendieron todas. La entrada de la migración no añade nada: posición cerrada.
+    ([("2024-01-10", "Buy", "SCHB", 22.0, -440.0),
+      ("2024-05-13", "Journaled Shares", "SCHB", -22.0, 0.0),
+      ("2024-05-13", "Internal Transfer", "SCHB", 22.0, 0.0),
+      ("2025-01-02", "Sell", "SCHB", 22.0, 480.0)], 0.0),
+    # QYLD del CSV real `1`: el historial trae 5 de las 20 migradas; las otras 15 se
+    # compraron antes de que empiece el CSV y entran con la migración.
+    ([("2024-01-10", "Buy", "SCHB", 5.0, -100.0),
+      ("2024-05-13", "Journaled Shares", "SCHB", -20.0, 0.0),
+      ("2024-05-13", "Internal Transfer", "SCHB", 20.0, 0.0)], 20.0),
+    # El CSV contaba MÁS de lo migrado (TSLY real: una fila TDA de reverse split sumaba
+    # acciones): tras migrar quedan las traspasadas, no las contadas.
+    ([("2024-01-10", "Buy", "SCHB", 30.0, -600.0),
+      ("2024-05-13", "Journaled Shares", "SCHB", -20.0, 0.0),
+      ("2024-05-13", "Internal Transfer", "SCHB", 20.0, 0.0)], 20.0),
+], ids=["historial_completo_y_vendida", "historial_parcial", "historial_contaba_de_mas"])
+def test_migracion_deja_exactamente_las_acciones_traspasadas(monkeypatch, filas, acciones_hoy):
+    """Tras una migración la cuenta tiene EXACTAMENTE las acciones traspasadas. Sumar la
+    entrada entera contaba dos veces lo que el historial TDA ya traía: SVOL quedaba con 25.464
+    acciones fantasma tras venderlo todo, y SCHB de Daniel con +18.31 sobre la captura del
+    bróker (84.05 vs 65.74). La serie diaria del gráfico tiene que contar lo mismo."""
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_DIARIO)
+    s = logic.analyze_portfolio(_con_migracion(filas), version="MIGRACION")["SCHB"]
+    assert s["shares_owned"] == pytest.approx(acciones_hoy, abs=1e-6)
+    assert s["daily_trend"]["Market Value"].iloc[-1] == pytest.approx(acciones_hoy * 20.0, abs=1e-4)
 
 
 def test_split_factor_multiplica_todos_los_splits_posteriores():

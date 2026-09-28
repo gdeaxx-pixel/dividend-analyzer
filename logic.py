@@ -635,9 +635,13 @@ def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
     Una transferencia de cuenta aparece como DOS filas el mismo día y mismo ticker:
     una 'Journaled Shares' de salida (Quantity < 0, descripción "...TRANSFER...OUT")
     y una 'Internal Transfer' de entrada (Quantity > 0). Son las dos patas del mismo
-    movimiento; si se suman se anulan y la posición transferida cuenta 0. Eliminamos la
-    pata de salida (journaled OUT) cuando existe su entrada gemela, dejando solo la
-    entrada neta. Las 'Journaled Shares' sin gemela (salidas reales) se conservan.
+    movimiento. Se elimina la salida y la entrada gemela queda marcada en `_migracion_q` con
+    las acciones traspasadas: tras la migración la posición tiene EXACTAMENTE esas acciones,
+    y el bucle de `analyze_portfolio` suma solo lo que falta para llegar a ellas (las
+    compradas antes de que empiece el CSV). Sumar la entrada entera contaba dos veces lo que
+    el historial TDA ya traía: SVOL (CSV real `1`) compró 22 + 3.46 de DRIP en TDA, migró
+    25.464 y vendió 28.2475 — con la entrada entera quedaban 25.464 acciones fantasma.
+    Las 'Journaled Shares' sin gemela (salidas reales) se conservan.
     """
     if df is None or df.empty or 'Action' not in df.columns or 'Quantity' not in df.columns:
         return df
@@ -651,6 +655,7 @@ def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
     if not journal_out.any() or not transfer_in.any():
         return df
     drop_idx = []
+    emparejadas = []
     in_idx = list(out.index[transfer_in])
     for i in out.index[journal_out]:
         t, d, q = out.at[i, 'Ticker'], out.at[i, 'Date'], abs(qty[i])
@@ -658,9 +663,15 @@ def _net_transfer_pairs(df: pd.DataFrame) -> pd.DataFrame:
             if (out.at[j, 'Ticker'] == t and out.at[j, 'Date'] == d
                     and abs(abs(qty[j]) - q) < 1e-6 and j not in drop_idx):
                 drop_idx.append(i)
+                emparejadas.append(j)
                 in_idx.remove(j)  # cada entrada empareja con una sola salida
                 break
-    return out.drop(index=drop_idx) if drop_idx else df
+    if not drop_idx:
+        return df
+    out['_migracion_q'] = np.nan
+    for j in emparejadas:
+        out.at[j, '_migracion_q'] = abs(qty[j])
+    return out.drop(index=drop_idx)
 
 
 def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20):
@@ -1410,6 +1421,13 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                     # Internal transfers: signed qty so transfer-out(-) + transfer-in(+) = 0 net shares
                     # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
                     _adj_qty = qty * _sf
+                    # Entrada de una migración (`_net_transfer_pairs`): deja la posición en las
+                    # acciones traspasadas — entra lo que el CSV no traía de antes, o sale lo
+                    # que contaba de más (TSLY: una fila TDA «MANDATORY REVERSE SPLIT» sumaba
+                    # +22). La cantidad se reescribe para que la serie diaria cuente lo mismo.
+                    if not pd.isna(row.get('_migracion_q', np.nan)):
+                        _adj_qty = abs(qty) * _sf - shares_owned
+                        ticker_df.at[idx, 'Quantity'] = _adj_qty / _sf if _sf else 0.0
                     shares_owned += _adj_qty
                     shares_owned_pocket += _adj_qty
                     if _adj_qty > 0:
