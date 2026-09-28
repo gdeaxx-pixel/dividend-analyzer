@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1260 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+Línea base: **1308 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-27 sobre la rama
+`fix/qdr-nativo` = `0ca3a21` (base `main` = `2361156`, que ya trae el #172 del historial TDA), con
+`real_examples/` y `CONY_test.csv`. +48 desde la línea de abajo; de ellos, 10 son `test_historial_tda.py`
+(el resto entró con los PR de main entre medias, sin desglose medido). `main` = `2361156` daba 1307.
+Sin datos privados (worktree limpio): **1205 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1260 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
 `feat/roc-mascota` = `e090d75` (base `main` = `9b52fc4`), en la máquina de Daniel con `real_examples/` y
 `CONY_test.csv`, Streamlit 1.52.2. +36: `test_roc.py` (35: ROC, la mascota — mapeo veredicto→estado,
 frases con la misma cifra que el detalle técnico, sprite en Node, favicon, carga, encabezado,

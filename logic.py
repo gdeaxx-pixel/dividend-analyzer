@@ -730,14 +730,17 @@ def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
        ticker se deja como está: no hay posición a la que atribuirla.
     3. Fila TDA de dividendo (`Cash Dividend`, `Qualified Dividend`, `Qual Div Reinvest`) con un
        `Reinvest Shares` del mismo ticker y día → `Reinvest Dividend`, la fila fuente del DRIP.
-       Solo filas TDA: un dividendo NATIVO el mismo día que una compra no la respalda
+       Un `Cash`/`Qualified Dividend` NATIVO el mismo día que una compra no la respalda
        (`test_un_dividendo_en_efectivo_no_respalda_una_compra_del_drip`).
     4. `Qual Div Reinvest` TDA SIN compra ese día → `Qualified Dividend`: se cobró en efectivo.
-       Medido: ninguno de los 11 casos reales tiene una reinversión del mismo ticker a ±7 días
-       (ES, por ejemplo, ya estaba vendido), y hoy su importe no llegaba a ningún lado.
+       Medido: ninguno de los 11 casos TDA reales tiene una reinversión del mismo ticker a ±7
+       días (ES, por ejemplo, ya estaba vendido), y hoy su importe no llegaba a ningún lado.
 
-    El `Qual Div Reinvest` NATIVO (con ticker) también queda fuera del bruto, pero arreglarlo
-    mueve la casilla 9 del fixture sintético por otro defecto: queda para otra spec.
+    La regla 3 vale también para el `Qual Div Reinvest` NATIVO: es la fila fuente del DRIP con
+    dividendo cualificado, pero no contiene «dividend» y quedaba fuera del bruto y de
+    `drip_huerfanas` (medido en el CSV real `1`: AAPL, MSFT, NVDA y BMNR con bruto $0; los 26
+    nativos tienen su `Reinvest Shares` el mismo día). La 4 no: ningún nativo sale sin compra,
+    así que no hay evidencia de qué significa y se deja como está.
     """
     if not {'Ticker', 'Action', 'Description', 'Date'} <= set(df.columns):
         return df
@@ -759,8 +762,10 @@ def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
                       df.loc[accion == 'reinvest shares', 'Date']))
     emparejada = pd.Series([(t, d) in compras for t, d in zip(df['Ticker'], df['Date'])],
                            index=df.index)
-    df.loc[es_tda & accion.isin(_FUENTES_DRIP_EMPAREJABLES) & emparejada, 'Action'] = 'Reinvest Dividend'
-    df.loc[es_tda & (accion == 'qual div reinvest') & ~emparejada, 'Action'] = 'Qualified Dividend'
+    es_qdr = accion == 'qual div reinvest'
+    df.loc[(es_tda | es_qdr) & accion.isin(_FUENTES_DRIP_EMPAREJABLES) & emparejada,
+           'Action'] = 'Reinvest Dividend'
+    df.loc[es_tda & es_qdr & ~emparejada, 'Action'] = 'Qualified Dividend'
     return df
 
 

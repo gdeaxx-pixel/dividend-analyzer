@@ -3930,8 +3930,8 @@ def test_analyze_portfolio_schwab_msty_dividend_base_convention(monkeypatch):
 
 
 def test_analyze_portfolio_propaga_foreign_tax_paid(monkeypatch):
-    """`schwab_synth_1` SCHB: NRA -$0.45 + `Foreign Tax Paid` -$0.08. `analyze_portfolio`
-    saca el FTP del eje NRA (`withheld_tax_total` = 0.45, no 0.53) y lo expone en su propio
+    """`schwab_synth_1` SCHB: NRA -$0.75 (-$0.45 del 03/31 + -$0.30 del `Qual Div Reinvest` del 04/15, que el fixture lleva desde el 2026-09-27) + `Foreign Tax Paid` -$0.08.
+    `analyze_portfolio` saca el FTP del eje NRA (`withheld_tax_total` = 0.75, no 0.83) y lo expone en su propio
     campo. `dividends_net_total` sube el mismo importe que salió de la retención."""
     raw = open(os.path.join(os.path.dirname(__file__), "fixtures", "schwab_synth_1",
                              "synthetic_transactions.csv"), "rb").read()
@@ -3939,7 +3939,7 @@ def test_analyze_portfolio_propaga_foreign_tax_paid(monkeypatch):
     monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
     res = logic.analyze_portfolio(logic.normalize_csv(df), version="TEST_FTP")
     s = res["SCHB"]
-    assert s["withheld_tax_total"] == pytest.approx(0.45, abs=0.01)
+    assert s["withheld_tax_total"] == pytest.approx(0.75, abs=0.01)
     assert s["foreign_tax_paid_total"] == pytest.approx(0.08, abs=0.01)
     assert s["foreign_tax_paid_by_year"] == {2025: pytest.approx(0.08, abs=0.01)}
 

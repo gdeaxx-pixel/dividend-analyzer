@@ -875,7 +875,11 @@ def test_credito_definitivo_mas_lo_que_vuelve_es_lo_retenido(monkeypatch, fixtur
 
 def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
     """GROUND TRUTH de `schwab_synth_1` (el CSV que se subió a producción el 2026-09-02):
-    retenido $60.75, de los que la casilla 9 devuelve $56.65 ⇒ crédito real **$4.10**.
+    retenido $61.05, de los que la casilla 9 devuelve $56.65 ⇒ crédito real **$4.40**.
+
+    ACTUALIZADO 2026-09-27: 60.75 -> 61.05 y 4.10 -> 4.40. El `Qual Div Reinvest` de SCHB
+    (04/15) ahora cuenta como dividendo, y el fixture lleva su retención al 30% (-$0.30) como
+    en una cuenta NRA real. SCHB no tiene ROC: la devolución (56.65) no se mueve.
 
     **Estas cifras NO se mueven con el refresco semanal de 19a** (corregido 2026-09-23; la
     versión anterior de este docstring decía lo contrario y ya no era cierta). Las 20 filas
@@ -898,9 +902,9 @@ def test_credito_no_cuenta_lo_que_el_broker_devuelve(monkeypatch):
     inflando 14.8× la cifra que el cliente llevaría a su contador."""
     d = _datos_f4("schwab_synth_1", monkeypatch)
     c = d["impuesto_local"]["credito_eeuu"]
-    assert c["monto"] == pytest.approx(60.75, abs=0.01)
+    assert c["monto"] == pytest.approx(61.05, abs=0.01)
     assert c["vuelve_por_roc"] == pytest.approx(56.65, abs=0.01)
-    assert c["definitivo"] == pytest.approx(4.10, abs=0.01)
+    assert c["definitivo"] == pytest.approx(4.40, abs=0.01)
     assert c["definitivo"] < c["monto"], "el crédito no puede ser todo lo retenido"
 
 
@@ -928,9 +932,9 @@ def test_credito_definitivo_es_none_cuando_no_hay_con_que_medirlo():
 def test_credito_declara_los_fondos_cuyo_roc_no_se_pudo_medir(monkeypatch):
     """Auditoría M4, ronda 2 (R2-H2), el caso MEDIDO. Sin ROC de MSTY (se quita de los dos yaml),
     la casilla 9 no puede medir su devolución y los $46.80 que MSTY retuvo caen enteros en el
-    definitivo: $4.10 → $50.90. Antes eso se publicaba sin motivo, como cifra final. Ahora la
+    definitivo: $4.40 → $51.20. Antes eso se publicaba sin motivo, como cifra final. Ahora la
     cifra es la misma, pero se rotula como TECHO y nombra los fondos y su retención.
-    SCHB ($0.45) está en la lista desde siempre: no publica 19a, y la app no puede distinguir
+    SCHB ($0.75 desde el 2026-09-27, ver `test_credito_no_cuenta_lo_que_el_broker_devuelve`) está en la lista desde siempre: no publica 19a, y la app no puede distinguir
     «no tiene ROC» de «no tengo el dato» — el peldaño 2 lo trata igual."""
     for cargar in ("load_roc_19a", "load_roc_ici"):
         real = getattr(logic, cargar)
@@ -938,11 +942,11 @@ def test_credito_declara_los_fondos_cuyo_roc_no_se_pudo_medir(monkeypatch):
             tk: v for tk, v in _r(*a, **k).items() if tk != "MSTY"})
     res, _ = _resultados_de_fixture(monkeypatch, "schwab_synth_1", "F4_R2H2_SIN_MSTY")
     c = impuestos_data(res, logic.build_fiscal_profile(), [])["impuesto_local"]["credito_eeuu"]
-    assert c["definitivo"] == pytest.approx(50.90, abs=0.01), "la cifra no se mueve: se rotula"
+    assert c["definitivo"] == pytest.approx(51.20, abs=0.01), "la cifra no se mueve: se rotula"
     assert c["definitivo_es_techo"] is True
     assert c["definitivo_motivo"] == "cobertura_incompleta"
     assert c["cobertura"]["fondos_sin_medir"] == ["MSTY", "SCHB"]
-    assert c["cobertura"]["retenido_sin_medir"] == pytest.approx(46.80 + 0.45, abs=0.01)
+    assert c["cobertura"]["retenido_sin_medir"] == pytest.approx(46.80 + 0.75, abs=0.01)
 
 
 @pytest.mark.parametrize("fixture", ["schwab_synth_1", "schwab_synth_2", "ib_synth_1"])

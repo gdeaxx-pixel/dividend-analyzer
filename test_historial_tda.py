@@ -133,10 +133,38 @@ def test_tda_desbloquea_el_guard_de_identidades(monkeypatch):
 
 # ── T4 · los CSV nativos salen intactos ─────────────────────────────────────────────
 
-@pytest.mark.parametrize("fixture", ["schwab_synth_1", "schwab_synth_2"])
-def test_tda_no_toca_los_csv_nativos(fixture, monkeypatch):
-    """Un CSV sin filas TDA sale idéntico con y sin el resolver."""
+@pytest.mark.parametrize("fixture,renombradas", [
+    ("schwab_synth_1", [("2025-04-15", "SCHB", "Qual Div Reinvest", "Reinvest Dividend")]),
+    ("schwab_synth_2", []),
+], ids=["schwab_synth_1", "schwab_synth_2"])
+def test_tda_no_toca_los_csv_nativos(fixture, renombradas, monkeypatch):
+    """En un CSV nativo el resolver solo toca el `Qual Div Reinvest` (fuente del DRIP que no
+    contiene «dividend»); todo lo demás sale idéntico con y sin él."""
     a = logic.normalize_csv(_leer(fixture))
     monkeypatch.setattr(logic, "_resolver_filas_tda", lambda df: df)
     b = logic.normalize_csv(_leer(fixture))
-    pd.testing.assert_frame_equal(a, b)
+    distinta = a["Action"] != b["Action"]
+    assert [(d.strftime("%Y-%m-%d"), t, antes, despues) for d, t, antes, despues in zip(
+        a.loc[distinta, "Date"], a.loc[distinta, "Ticker"], b.loc[distinta, "Action"],
+        a.loc[distinta, "Action"])] == renombradas
+    pd.testing.assert_frame_equal(a.drop(columns="Action"), b.drop(columns="Action"))
+
+
+def test_qdr_nativo_entra_al_bruto_sin_diluir_la_tasa(monkeypatch):
+    """`Qual Div Reinvest` NATIVO: la fila fuente del DRIP con dividendo cualificado. No
+    contiene «dividend», así que quedaba fuera del bruto y su compra salía huérfana (CSV real
+    `1`: AAPL, MSFT, NVDA y BMNR con bruto $0). SCHB de `schwab_synth_1`: $1.50 cobrados +
+    $1.00 reinvertidos, retención $0.45 + $0.30 — al 30% los dos, así que la tasa aplicada
+    sigue en 30% y no se inventa una devolución ROC en un fondo sin ROC."""
+    dfc = logic.normalize_csv(_leer("schwab_synth_1"))
+    t = dfc[dfc["Ticker"] == "SCHB"]
+    tot = logic.build_dividend_tax_totals(t)
+    assert tot["gross"] == pytest.approx(2.50, abs=0.005)
+    assert tot["withheld"] == pytest.approx(0.75, abs=0.005)
+    assert logic.drip_huerfanas(t) == {'compras': 1, 'fuentes': 1, 'huerfanas': 0, 'importe': 0.0}
+
+    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
+    res = logic.analyze_portfolio(dfc, version="QDR_NATIVO")
+    diag = logic.build_withholding_diagnosis(res["SCHB"], "SCHB")
+    assert diag["applied_pct"] == pytest.approx(30.0, abs=0.01)
+    assert diag["refund_roc"] == pytest.approx(0.0, abs=0.001)
