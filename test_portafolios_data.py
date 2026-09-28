@@ -69,7 +69,7 @@ def test_grupo_coincide_con_agregados():
     assert g["dividendos"] == pytest.approx(div_e) == 10
     assert g["retorno"] == pytest.approx(tr_e) == 180        # net_profit declarado (E1)
     assert g["retorno_pct"] == pytest.approx(pct_e) == 18.0  # 180/1000
-    assert g["precio"] == pytest.approx(200)                 # mv − inv
+    assert g["precio"] == pytest.approx(170)                 # retorno − dividendos (180 − 10)
 
     inv_d, mv_d, div_d, tr_d, _ = _agregados(RESULTADOS, ["YIEL"])
     d = _grupo(datos, "div")
@@ -79,6 +79,37 @@ def test_grupo_coincide_con_agregados():
     assert d["dividendos"] == 300  # neto, no 400
 
     assert datos["total_mv"] == pytest.approx(mv_e + mv_d) == 3000
+
+
+def test_cascada_cierra_con_drip():
+    """precio + dividendos = retorno, también con DRIP. Antes `precio = mv − inv` y lo
+    reinvertido contaba dos veces: dentro de `mv` (las acciones compradas) y dentro de
+    `dividends_net_total`. Fixture sintético: invertido 1000, valor 700, dividendos netos
+    400 de los que 350 se reinvirtieron, así que `net_profit` = 700 + 50 − 1000 = −250.
+    Con la fórmula vieja la cascada daba −300 + 400 = +100 y el veredicto decía que los
+    dividendos cubrían la caída."""
+    resultados = {"DRIP": _stats(1000, 700, 400, net_profit=-250)}
+    g = _grupo(portafolios_data(resultados, {"DRIP": "mode_a"}), "div")
+
+    assert g["precio"] == pytest.approx(-650)                # −250 − 400, a mano
+    assert g["precio"] + g["dividendos"] == pytest.approx(g["retorno"]) == -250
+    assert g["veredicto"] == "El precio cayó 65% y los dividendos no alcanzan a cubrirlo."
+
+
+def test_la_barra_precio_no_promete_valor_de_hoy_menos_invertido(monkeypatch):
+    """La etiqueta vieja («invertiste X · hoy vale Y») describía `mv − inv`, que ya no es
+    la cifra de la barra. Y el pie decía «valor de hoy + dividendos − invertido», la misma
+    doble cuenta en palabras."""
+    from ui import componentes
+
+    capturado = {}
+    monkeypatch.setattr(componentes.components, "html",
+                        lambda html, height=None, scrolling=None: capturado.update(html=html))
+    componentes.render_portafolios(portafolios_data(RESULTADOS, CLASSIFY), "Claro")
+    html = capturado["html"]
+    assert "invertiste" not in html
+    assert "valor de hoy + dividendos" not in html
+    assert "valor de hoy + efectivo cobrado − invertido" in html
 
 
 def test_excluye_sin_datos_y_mv_cero():

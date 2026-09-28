@@ -199,7 +199,7 @@
 
   <div class="cards" id="cards"></div>
 
-  <p class="foot">Retorno total = valor de hoy + dividendos − invertido. Resumen redondeado; no es una tasa anual.</p>
+  <p class="foot">Retorno total = valor de hoy + efectivo cobrado − invertido. Resumen redondeado; no es una tasa anual.</p>
 </div>
 
 <script>
@@ -329,7 +329,7 @@
     const host = $("cards");
     host.classList.toggle("single", single);
     const filas = (g) => [
-      { k: "Precio", sub: `invertiste ${money(g.invertido)} · hoy vale ${money(g.mv)}`, from: 0, to: g.precio, v: g.precio,
+      { k: "Precio", sub: "sobre todas tus acciones", from: 0, to: g.precio, v: g.precio,
         bar: g.precio >= 0 ? "b-price" : "b-loss", vc: g.precio < 0 ? "neg" : "" },
       { k: "Dividendos", sub: "lo que cobraste", from: g.precio, to: g.precio + g.dividendos, v: g.dividendos, bar: "b-div", vc: "" },
       { k: "Retorno total", sub: "precio + dividendos", from: 0, to: g.retorno, v: g.retorno,
