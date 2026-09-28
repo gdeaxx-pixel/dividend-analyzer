@@ -177,7 +177,7 @@ def render_vista(vista: str, ruta) -> None:
 
 
 ESTILOS_HEREDADAS = """
-        .vd-her-subtitulo {
+        [data-testid="stMarkdownContainer"] p.vd-her-subtitulo {
           font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
           margin: 18px 0 6px;
