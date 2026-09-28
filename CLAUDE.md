@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1316 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+Línea base: **1321 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`feat/portafolios-lo-que-toca-vigilar`, base `main` = `e7fa22d` (#178), con `real_examples/` y `CONY_test.csv`.
+−7 de `test_heredadas_base_mixta.py` (probaban la ficha por fondo, retirada) +11 de `test_vigilar_data.py`
++1 de `test_auto_alto.py` (el componente nuevo entra por glob). Sin datos privados: **1218 passed, 86 skipped,
+1 deselected**.)
+
+Antes: **1316 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
 `fix/cascada-drip-doble-conteo`, base `main` = `22a210d` (#177), con `real_examples/` y `CONY_test.csv`.
 +2 en `test_portafolios_data.py`: la cascada de Portafolios cierra con DRIP (`precio + dividendos =
 retorno`) y la barra Precio ya no promete «invertiste · hoy vale».)

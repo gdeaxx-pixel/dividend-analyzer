@@ -104,6 +104,10 @@ ALTO_IMPUESTOS = 7100
 ALTO_PORTAFOLIOS = 2400
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
+# script corrige el alto real desde dentro del iframe.
+ALTO_VIGILAR = 640
+
+# Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # componente corrige su propio alto en cuanto carga. U4 (dona de cobertura, 5 segmentos):
 # la dona (280px + padding) MÁS el pop-out abierto en su caso más alto —celular a 390px,
 # donde el pop-out (max-width 100%-24) cae DEBAJO de la dona y los textos «qué falta» y
@@ -294,6 +298,18 @@ def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> 
     `_con_tema` que `render_impuestos`, sin `VISTA_ACTIVA` (es una sola pantalla).
     """
     html = _plantilla("portafolios.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_vigilar(datos: dict, tema: str, alto: int = ALTO_VIGILAR) -> None:
+    """Dibuja «Lo que toca vigilar» (vista Portafolios, rediseño v4). `datos` viene de
+    `ui.adapters.vigilar_data`: cifras, gravedad, textos y rutas ya salen de Python; el
+    componente solo RENDERIZA. Mismo patrón `{{DATA_JSON}}` + `_con_tema` que
+    `render_portafolios`. Fuente de diseño:
+    `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v4-detalle.html`."""
+    html = _plantilla("vigilar.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)

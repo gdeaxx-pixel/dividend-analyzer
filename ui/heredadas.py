@@ -17,6 +17,7 @@ Fase 5b — Portafolios e Ingresos:
   `app_old.py:3989-4029` (Portafolio dividendos), `app_old.py:4997-5337` (Detalle por
   portafolio + Resumen consolidado), `app_old.py:1869-1895` (`_render_interpretation`,
   filas 35/36).
+  Desde el rediseño v4 (2026-09-28) las filas 9, 15, 16, 35 y 36 son «Lo que toca vigilar».
 - Ingresos (filas 11, 12, 14) — `app_old.py:4153-4995`, todo detrás de la misma guarda
   `_wizard_income_df is not None` que en `app_old.py` (verificado por indentación: el
   bloque completo — gráfica, cuadrícula ROC y las 3 cuadrículas Schwab-vs-cálculo —
@@ -35,7 +36,6 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
-from ui import estado
 
 CAT_CLAVE = "detalle"
 CAT_LABEL = "Portafolios"
@@ -47,44 +47,7 @@ VIEWS = {
 VIEW_ORDER = ("portafolios",)
 
 
-# ── Helpers de formato y presentación ───────────────────────────────────────────
-
-def _money(v, decimales: int = 2, defecto: str = "n/d") -> str:
-    if v is None or v != v:  # None o NaN
-        return defecto
-    return f"${v:,.{decimales}f}"
-
-
-def _pct1(v, defecto: str = "—") -> str:
-    if v is None or v != v:
-        return defecto
-    return f"{v:+.1f}%"
-
-
-def _color_signo(v) -> str:
-    return "--cash" if (v or 0) >= 0 else "--loss"
-
-
-def _seccion(titulo: str, lede: str = "") -> None:
-    st.markdown(f'<p class="vd-her-seccion">{titulo}</p>', unsafe_allow_html=True)
-    if lede:
-        st.markdown(f'<p class="vd-her-lede">{lede}</p>', unsafe_allow_html=True)
-
-
-def _tarjeta(accent_var: str, titulo_html: str, cuerpo_html: str) -> str:
-    return (f'<div class="vd-her-card" style="border-left-color: var({accent_var});">'
-            f'<p class="vd-her-card-titulo">{titulo_html}</p>{cuerpo_html}</div>')
-
-
 # ── Fila 8 — Tus dos portafolios ────────────────────────────────────────────────
-
-def _fondos(tickers: list[str]) -> str:
-    """«3 fondos» / «1 fondo». Antes del filtro de `_tiene_datos` estos chips casi nunca
-    llegaban a uno solo y el plural fijo pasaba desapercibido; al excluir los tickers sin
-    datos, «1 fondos» se volvió visible (auditoría 2026-08-10)."""
-    n = len(tickers)
-    return f"{n} fondo" if n == 1 else f"{n} fondos"
-
 
 def _agregados(resultados: dict, tickers: list[str]) -> tuple:
     from ui.adapters import _tiene_datos
@@ -113,8 +76,8 @@ def _tus_dos_portafolios(resultados: dict, classify_map: dict, tema: str) -> tup
     dona Altair de `app_old.py:3901-3987` (rediseño «Propuesta v3», sep-2026). Sin título
     ni lede: la ruta ya dice Portafolios (decisión de Daniel). Las cifras las calcula
     `ui.adapters.portafolios_data` en Python; el componente solo dibuja. Devuelve
-    `(mode_a, mode_b)` con los tickers que tienen datos, que siguen usando
-    `_portafolio_dividendos` y `_detalle_por_portafolio`."""
+    `(mode_a, mode_b)` con los tickers que tienen datos, que sigue usando
+    `_portafolio_dividendos`."""
     from ui import adapters, componentes
 
     mode_a = sorted(t for t, m in classify_map.items()
@@ -134,24 +97,17 @@ def _tus_dos_portafolios(resultados: dict, classify_map: dict, tema: str) -> tup
 # ── Fila 9 — Portafolio dividendos (erosión del NAV, fondo por fondo) ──────────
 
 def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
-    """Fila 9 — semáforo de salud del NAV por fondo + cierre honesto. Literal de
-    `app_old.py:3989-4029`. Reusa `ui.adapters.salud_nav_data` (mismo objeto que Salud
-    NAV) en vez de volver a invocar `classify_roc_health` por su cuenta.
-
-    La «Hoja de Excel que te venden vs la realidad» que `app_old.py` embebía aquí como
-    expander **no se duplica**: ya es su propia vista completa en la ruta
-    (Dividendos/Largo Plazo › [ETF] › Hoja Excel) — la función sigue accesible,
-    solo cambió de puerta de entrada."""
+    """Fila 9 — «Lo que toca vigilar» (rediseño v4, sep-2026): ROC arriba, luego el
+    componente `ui/componentes/vigilar.html` con los puntos a vigilar de cada fondo, y las
+    rutas de la calculadora como botones nativos (un clic dentro del iframe no puede
+    cambiar la ruta). Sustituye al titular por fondo, sus dos expanders, «El trato
+    completo» y el «Detalle por portafolio». `salud_nav_data` corre UNA vez por fondo y
+    lo comparten el ROC y el adapter. Diseño:
+    `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v4-detalle.html`."""
     if not mode_a:
         return
-    from ui.adapters import salud_nav_data
-
-    _seccion("Portafolio dividendos", "")
-    st.markdown(
-        '<p class="vd-her-subtitulo">La erosión del precio (NAV), fondo por fondo</p>'
-        '<p class="vd-her-nota">El precio de estos ETFs tiende a bajar con el tiempo — se '
-        'llama <b>erosión del NAV</b>. Aquí el diagnóstico de cada fondo tuyo, con su '
-        "tendencia real de precio:</p>", unsafe_allow_html=True)
+    from ui import componentes
+    from ui.adapters import roc_cartera_data, salud_nav_data, vigilar_data
 
     filas = []
     for ticker in mode_a:
@@ -159,354 +115,43 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
         if not isinstance(stats, dict) or "error" in stats:
             continue
         filas.append((ticker, salud_nav_data(ticker, stats)))
-
-    # ROC encabeza la lista y la resume con los MISMOS objetos que se pintan debajo
-    # (decisión de Daniel 2026-09-26: un solo búho arriba, no uno por fondo).
-    if filas:
-        from ui.adapters import roc_cartera_data
-        from ui.componentes import render_roc
-        roc = roc_cartera_data([datos for _, datos in filas])
-        render_roc(roc["estado"], st.session_state.get("vd_tema", "Claro"), roc["frase"], tam=64)
-
-    for ticker, datos in filas:
-        st.markdown(
-            f'<p class="vd-her-nav-headline" style="color:{datos["color"]};">'
-            f'{ticker} — {datos["headline"]}</p>'
-            f'<p class="vd-her-nav-plain">{datos["plain"]}</p>', unsafe_allow_html=True)
-        with st.expander("Ver detalle técnico", expanded=False):
-            nums = []
-            if datos["nav_cagr"] is not None:
-                nums.append(f"NAV {datos['nav_cagr']:+.0f}%/año")
-            if datos["roc_pct"] is not None:
-                nums.append(f"ROC {datos['roc_pct']:.0f}%")
-            if datos["total_return_pct"] is not None:
-                nums.append(f"retorno total {datos['total_return_pct']:+.0f}%")
-            if nums:
-                st.caption(" · ".join(nums))
-            st.write(datos["reason"])
-        info = logic.load_instruments().get(str(ticker).upper(), {}) or {}
-        why = []
-        if info.get("nav_erosion"):
-            why.append(f"**Erosión del NAV:** {info['nav_erosion']}")
-        if info.get("sustainability"):
-            why.append(f"**Sostenibilidad de la distribución:** {info['sustainability']}")
-        if why:
-            with st.expander(f"¿Por qué pasa esto en {ticker}?", expanded=False):
-                for parrafo in why:
-                    st.markdown(parrafo)
-
-    # La tasa se lee del perfil: este callout va pegado a las cifras reales del bróker, así
-    # que fijar "~30%" le mentiría a un mexicano (10% por tratado) o a un residente US (0%).
-    _perfil = estado.perfil_fiscal()
-    _imp = (f'menos ~{_perfil["rate_pct"]:.0f}% de impuesto' if _perfil["rate_declared"]
-            else 'menos la retención de impuestos que te corresponda')
-    st.markdown(
-        '<div class="vd-her-callout" style="border-left-color: var(--warn);">'
-        '<p class="vd-her-callout-eyebrow">El trato completo, en una línea</p>'
-        '<p class="vd-her-callout-cuerpo">'
-        '<b>Cuándo sí:</b> quieres ingreso mensual real hoy y lo entiendes como renta, no '
-        'crecimiento. &nbsp;·&nbsp; <b>El precio:</b> renuncias a la subida de la acción, '
-        "el NAV tiende a erosionarse, y parte del 'pago' es tu dinero de vuelta (ROC) "
-        f'{_imp}. &nbsp;·&nbsp; <b>Regla de bolsillo:</b> yield alto ≠ ganancia '
-        'alta — la cifra que manda es el retorno total de la portada.</p></div>',
-        unsafe_allow_html=True)
-
-
-# ── Filas 35, 36 — interpretación educativa + exposición al subyacente ─────────
-
-def _render_interpretation(resultados: dict, ticker: str) -> None:
-    """Filas 35 y 36. Literal de `app_old.py:1869-1895` (`_render_interpretation`)."""
-    interp = logic.build_interpretation(resultados, ticker)
-    exp_lines = logic.build_underlying_exposure(resultados, ticker).get("lines", [])
-    if not interp.get("lines") and not exp_lines:
+    if not filas:
         return
-    if interp.get("lines"):
-        items = "".join(f"<li>{ln}</li>" for ln in interp["lines"])
-        st.markdown(
-            '<div class="vd-her-callout" style="border-left-color: var(--accent);">'
-            '<p class="vd-her-callout-eyebrow">Qué significa para ti</p>'
-            f'<ul class="vd-her-callout-lista">{items}</ul></div>', unsafe_allow_html=True)
-    if exp_lines:
-        eitems = "".join(f"<li>{ln}</li>" for ln in exp_lines)
-        st.markdown(
-            '<div class="vd-her-callout" style="border-left-color: var(--ink);">'
-            '<p class="vd-her-callout-eyebrow">Exposición al subyacente — riesgo asimétrico</p>'
-            f'<ul class="vd-her-callout-lista">{eitems}</ul></div>', unsafe_allow_html=True)
 
+    tema = st.session_state.get("vd_tema", "Claro")
+    roc = roc_cartera_data([datos for _, datos in filas])
+    componentes.render_roc(roc["estado"], tema, roc["frase"], tam=64)
 
-# ── Fila 15 — Detalle por portafolio (tarjeta por ticker, mode_a) ──────────────
-
-def _tarjeta_roc(stats: dict) -> None:
-    """ROC callout — literal de `app_old.py:5117-5139` (solo si hay costo base del bróker)."""
-    if stats.get("ib_cost_basis") is None or stats.get("roc_accumulated") is None:
+    datos = vigilar_data(resultados, dict(filas))
+    if datos is None:
         return
-    roc_acc = stats["roc_accumulated"]
-    roc_pct = stats["roc_percent"]
-    ib_b = stats["ib_cost_basis"]
-    pocket = stats["pocket_investment"]
-    st.markdown(
-        '<div class="vd-her-roc-callout">'
-        '<p class="vd-her-roc-titulo">Return of Capital detectado</p>'
-        '<div class="vd-her-roc-valores">'
-        f'<div><span class="vd-her-roc-num">{_money(roc_acc, 2)}</span>'
-        '<span class="vd-her-roc-sub">ROC acumulado</span></div>'
-        f'<div><span class="vd-her-roc-num">{roc_pct:.1f}%</span>'
-        '<span class="vd-her-roc-sub">del costo real</span></div>'
-        f'<div><span class="vd-her-roc-num">{_money(ib_b, 2)}</span>'
-        '<span class="vd-her-roc-sub">base actual del broker</span></div>'
-        "</div>"
-        f'<p class="vd-her-roc-explica">Tu broker redujo tu base de {_money(pocket, 2)} a '
-        f'{_money(ib_b, 2)} porque {roc_pct:.1f}% de las distribuciones fue clasificado '
-        "como Return of Capital. Esto reduce tu ganancia de capital imponible al vender.</p>"
-        "</div>", unsafe_allow_html=True)
+    componentes.render_vigilar(datos, tema)
+    _botones_ruta(datos["rutas"])
 
 
-def _tarjeta_retorno_total(stats: dict) -> None:
-    """Literal de `app_old.py:5160-5219` (retorno total + erosión de NAV si aplica).
-
-    Alineada (2026-08-23) con `_agregados` de este archivo y `cashflow_data`: el «Income»
-    era `dividends_collected_cash`, que es BRUTO al cobro en Schwab (retención en fila
-    aparte) mientras el ROI que calcula `analyze_portfolio` (`logic.py:1574`,
-    `_cash_collected_net`) deriva del NETO — hasta ~$105 de diferencia por posición bajo la
-    misma etiqueta «Retorno Total». Mismo fallback que `_agregados`.
-    """
-    inc = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
-           else stats.get("dividends_collected_cash", 0))
-    total_ret = stats["net_profit"]
-    total_ret_pct = (total_ret / stats["pocket_investment"] * 100) if stats["pocket_investment"] > 0 else 0
-    inc_comp = inc
-    cap_comp = total_ret - inc_comp
-    color_tr = _color_signo(total_ret)
-    color_cap = _color_signo(cap_comp)
-    st.markdown(
-        f'<div class="vd-her-retorno" style="border-left-color:var({color_tr});">'
-        '<p class="vd-her-retorno-label">Retorno Total</p>'
-        f'<p class="vd-her-retorno-num" style="color:var({color_tr});">'
-        f'{_money(total_ret, 2)} <span class="vd-her-retorno-pct">({total_ret_pct:+.2f}%)</span></p>'
-        f'<p class="vd-her-retorno-desglose">Capital: <b style="color:var({color_cap});">'
-        f'{_money(cap_comp, 2)}</b> &nbsp;·&nbsp; Income: <b style="color:var(--cash);">'
-        f'{_money(inc_comp, 2)}</b></p></div>', unsafe_allow_html=True)
-
-    if cap_comp < 0:
-        erosion_amt = abs(cap_comp)
-        offset = inc_comp - erosion_amt
-        m_income = stats.get("monthly_income")
-        avg_monthly = (m_income.mean() if (m_income is not None and not m_income.empty
-                                            and m_income.mean() > 0) else None)
-        if offset >= 0:
-            label, color = "COMPENSADO", "--cash"
-            verdict = (f"Los dividendos superaron la caída de precio en "
-                       f"<b style='color:var(--cash);'>{_money(offset, 2)}</b>. "
-                       "Tu capital está cubierto por el income.")
-        else:
-            deficit = abs(offset)
-            label, color = "DÉFICIT NETO", "--loss"
-            if avg_monthly:
-                meses = deficit / avg_monthly
-                verdict = (f"Faltan <b style='color:var(--loss);'>{_money(deficit, 2)}</b> en "
-                           f"dividendos para cubrir la caída — a tasa actual "
-                           f"(~{_money(avg_monthly, 0)}/mes): <b>~{meses:.0f} meses más</b>")
-            else:
-                verdict = (f"Faltan <b style='color:var(--loss);'>{_money(deficit, 2)}</b> en "
-                           "dividendos para cubrir la caída de precio")
-        st.markdown(
-            f'<div class="vd-her-erosion" style="border-left-color:var({color});">'
-            f'<p class="vd-her-erosion-eyebrow" style="color:var({color});">NAV EROSION · {label}</p>'
-            '<div class="vd-her-erosion-valores">'
-            f'<div><span class="vd-her-erosion-sub">Caída de precio</span>'
-            f'<span class="vd-her-erosion-num" style="color:var(--loss);">{_money(erosion_amt, 2)}</span></div>'
-            '<span class="vd-her-erosion-vs">vs</span>'
-            f'<div><span class="vd-her-erosion-sub">Income cobrado</span>'
-            f'<span class="vd-her-erosion-num" style="color:var(--cash);">{_money(inc_comp, 2)}</span></div>'
-            "</div>"
-            f'<p class="vd-her-erosion-verdict">{verdict}</p></div>', unsafe_allow_html=True)
+def _ir_a_ruta(cat: str, vista: str, etf: str | None) -> None:
+    st.session_state.vd_categoria = cat
+    st.session_state.vd_vista = vista
+    if etf:
+        st.session_state[f"vd_etf_{cat}"] = etf
 
 
-def _tarjeta_ticker(resultados: dict, ticker: str, stats: dict) -> None:
-    """Una tarjeta del acordeón «Detalle por portafolio» — literal de `app_old.py:5051-5259`."""
-    roi = stats.get("roi_percent", 0)
-    color_roi = _color_signo(roi)
-    st.markdown(
-        f'<div class="vd-her-tk-header"><span class="vd-her-tk-nombre">{ticker}</span>'
-        '<span class="vd-her-tk-badge">Income</span>'
-        f'<span class="vd-her-tk-precio">{_money(stats.get("current_price"))} &nbsp;·&nbsp; '
-        f'<span style="color:var({color_roi});font-weight:700;">{roi:+.2f}% ROI</span></span>'
-        "</div>", unsafe_allow_html=True)
-
-    buys = stats.get("shares_bought", 0)
-    sells = stats.get("shares_sold", 0)
-    proj_m = stats.get("monthly_income")
-    proj_recent = proj_m[proj_m > 0].tail(3) if (proj_m is not None and not proj_m.empty) else None
-    proj_val = proj_recent.mean() if (proj_recent is not None and len(proj_recent) > 0) else None
-    proj_cell = (f'<p class="vd-her-tkpi-value" style="color:var(--cash);">{_money(proj_val)}</p>'
-                 '<p class="vd-her-tkpi-sub">prom. últ. 3 meses</p>') if proj_val else (
-        '<p class="vd-her-tkpi-value" style="color:var(--ink-mut);">—</p>'
-        '<p class="vd-her-tkpi-sub">sin historial</p>')
-
-    if stats.get("ib_cost_basis") is not None:
-        base_cell = f'<p class="vd-her-tkpi-value">{_money(stats["ib_cost_basis"])}</p>'
-        ra = stats.get("roc_accumulated")
-        if ra is not None:
-            rp = stats.get("roc_percent")
-            rp_txt = f" ({rp:.1f}%)" if rp is not None else ""
-            base_cell += f'<p class="vd-her-tkpi-sub" style="color:var(--warn);">ROC: {_money(ra)}{rp_txt}</p>'
-    elif stats.get("roc_accumulated") is not None:
-        base_cell = (f'<p class="vd-her-tkpi-value" style="color:var(--warn);">ROC ~{_money(stats["roc_accumulated"], 0)}</p>'
-                     f'<p class="vd-her-tkpi-sub">est. 19a ({(stats.get("roc_percent") or 0):.0f}% de distrib.)</p>')
-    else:
-        base_cell = ('<p class="vd-her-tkpi-value" style="color:var(--ink-mut);">—</p>'
-                     '<p class="vd-her-tkpi-sub">Edítala al cargar (Paso 1)</p>')
-
-    st.markdown(f"""
-    <div class="vd-her-tkpi">
-        <div class="vd-her-tkpi-cell">
-            <p class="vd-her-tkpi-label">Acciones</p>
-            <p class="vd-her-tkpi-value">{stats['shares_owned']:.4f}</p>
-            <p class="vd-her-tkpi-sub">Compradas {buys:.2f} · Vendidas {sells:.2f}</p>
-        </div>
-        <div class="vd-her-tkpi-cell">
-            <p class="vd-her-tkpi-label">Tu inversión</p>
-            <p class="vd-her-tkpi-value">{_money(stats['pocket_investment'])}</p>
-            <p class="vd-her-tkpi-sub">lo que pusiste de tu bolsillo</p>
-        </div>
-        <div class="vd-her-tkpi-cell">
-            <p class="vd-her-tkpi-label">Base broker (con ROC)</p>
-            {base_cell}
-        </div>
-        <div class="vd-her-tkpi-cell">
-            <p class="vd-her-tkpi-label">Valor de Mercado</p>
-            <p class="vd-her-tkpi-value">{_money(stats['market_value'])}</p>
-            <p class="vd-her-tkpi-sub">@ {_money(stats['current_price'])} por acción</p>
-        </div>
-        <div class="vd-her-tkpi-cell">
-            <p class="vd-her-tkpi-label" style="color:var(--cash);">Próx. mes (est.)</p>
-            {proj_cell}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    quality = logic.assess_ticker_quality(resultados, ticker)
-    if quality["level"] == "unreliable":
-        st.warning(f"{ticker} · datos incompletos: {quality['reason']} {quality['action']}")
-
-    cov = stats.get("csv_coverage_pct")
-    if cov is not None:
-        inc_yf = stats.get("csv_inception_yf")
-        color_cov = "--accent" if cov >= 80 else ("--warn" if cov >= 60 else "--loss")
-        inc_txt = f" (ticker cotiza desde {inc_yf})" if inc_yf else ""
-        st.markdown(f'<p class="vd-her-cobertura" style="color:var({color_cov});">CSV cubre el '
-                    f'<b>{cov:.0f}%</b> del historial disponible{inc_txt}</p>', unsafe_allow_html=True)
-        if cov < 80:
-            st.caption("Se recomienda ≥80% de cobertura para métricas de riesgo confiables")
-
-    for disc in stats.get("price_discrepancies", []):
-        st.warning(f"Posible evento corporativo no registrado en {ticker} el {disc['date']}: "
-                   f"precio CSV ${disc['csv_price']:.2f} vs yfinance ${disc['yf_price']:.2f} "
-                   f"(ratio {disc['ratio']:.2f}x). Verifica si hubo un split adicional.")
-
-    _tarjeta_roc(stats)
-    _tarjeta_retorno_total(stats)
-    _render_interpretation(resultados, ticker)
-
-    if st.checkbox("Ver números crudos", key=f"vd_her_raw_{ticker}"):
-        import pandas as pd
-
-        tabla = pd.DataFrame({
-            "Indicador": [
-                "Inversión (el dinero que tu pusiste)",
-                "Valor de Mercado (valor de tu inversión hoy)",
-                "Div. Efectivo (dividendos pagados a tu balance)",
-                "Valor de Div. Reinvertidos",
-                "Total generado en dividendos (Cash + Reinversión)",
-                "Acciones Compradas", "Acciones por DRIP", "Acciones Totales",
-                "Ganancia en $", "Ganancia en %",
-            ],
-            "Valor": [
-                _money(stats["pocket_investment"]), _money(stats["market_value"]),
-                _money(stats["dividends_collected_cash"]), _money(stats["dividends_collected_drip"]),
-                _money(stats["total_dividends"]),
-                f"{stats.get('shares_owned_pocket', 0):.4f}", f"{stats.get('shares_owned_drip', 0):.4f}",
-                f"{stats['shares_owned']:.4f}", _money(stats["net_profit"]), f"{stats['roi_percent']:.2f}%",
-            ],
-        })
-        st.dataframe(tabla, hide_index=True, use_container_width=True)
-
-    st.divider()
-
-
-def _resumen_consolidado(rows: list[tuple[str, dict]]) -> None:
-    """Fila 16 — Resumen consolidado, fondos de dividendos. Literal de `app_old.py:5261-5334`."""
-    if len(rows) < 2:
+def _botones_ruta(rutas: list[dict]) -> None:
+    """«Para entenderlo a fondo»: las vistas de la calculadora donde se estudia cada punto,
+    en orden de estudio. Botones nativos: la ruta vive en `st.session_state` y solo un
+    callback de Python puede cambiarla."""
+    if not rutas:
         return
-    import pandas as pd
-
-    total_inv = sum(s["pocket_investment"] for _, s in rows)
-    total_mv = sum(s["market_value"] for _, s in rows)
-    # Mismo defecto de base mixta que ya resolvió `_agregados` (:105) en este archivo:
-    # `dividends_collected_cash` viene BRUTO en Schwab (retención en fila aparte) y NETO en
-    # IB, así que el TOTAL y el ROI consolidados sumaban bases distintas en un portafolio
-    # mixto. `dividends_net_total` es el objeto fiscal único (`build_dividend_tax_totals`,
-    # corrido dentro de `analyze_portfolio`) — mismo fallback que `_agregados`.
-    total_div = sum((s.get("dividends_net_total") if s.get("dividends_net_total") is not None
-                     else s.get("dividends_collected_cash", 0))
-                    for _, s in rows)
-    total_tr = sum(s["net_profit"] for _, s in rows)
-    total_tr_pct = (total_tr / total_inv * 100) if total_inv > 0 else 0
-    has_roc = any(s.get("ib_cost_basis") is not None for _, s in rows)
-    total_ib = sum(s["ib_cost_basis"] for _, s in rows if s.get("ib_cost_basis") is not None)
-    total_roc = sum(s["roc_accumulated"] for _, s in rows if s.get("roc_accumulated") is not None)
-    total_roc_pct = round(total_roc / total_inv * 100, 1) if (has_roc and total_inv > 0) else None
-
-    st.markdown('<p class="vd-her-seccion">Resumen consolidado — fondos de dividendos</p>',
+    st.markdown('<p class="vd-her-subtitulo">Para entenderlo a fondo, en este orden</p>',
                 unsafe_allow_html=True)
-    tabla = pd.DataFrame([{
-        "Ticker": t,
-        "Acciones": f"{s['shares_owned']:.4f}",
-        "Tu inversión": _money(s["pocket_investment"]),
-        "Dividendos cobrados": _money(s.get("dividends_net_total")
-                                      if s.get("dividends_net_total") is not None
-                                      else s.get("dividends_collected_cash", 0)),
-        "Valor mercado": _money(s["market_value"]),
-        "Base de coste (ROC)": _money(s.get("ib_cost_basis"), defecto="—"),
-        "ROC acumulado": (f"{_money(s.get('roc_accumulated'))} "
-                          f"({s.get('roc_percent'):.1f}%)" if s.get("roc_accumulated") is not None else "—"),
-        "ROI total": f"{s['roi_percent']:+.2f}%",
-    } for t, s in rows] + [{
-        "Ticker": "TOTAL", "Acciones": "",
-        "Tu inversión": _money(total_inv), "Dividendos cobrados": _money(total_div),
-        "Valor mercado": _money(total_mv),
-        "Base de coste (ROC)": _money(total_ib) if has_roc else "Ver broker",
-        "ROC acumulado": (f"{_money(total_roc)} ({total_roc_pct:.1f}%)" if has_roc else "—"),
-        "ROI total": f"{total_tr_pct:+.2f}%",
-    }])
-    st.dataframe(tabla, hide_index=True, use_container_width=True)
-    st.caption('Base de Coste (ROC): el broker reduce el costo base por distribuciones '
-              'clasificadas como Return of Capital. En Interactive Brokers: Portafolio → '
-              'Posiciones → columna "Base de coste". En Charles Schwab: Cuentas → '
-              'Posiciones → columna "Cost Basis".')
-
-
-def _detalle_por_portafolio(resultados: dict, mode_a: list[str]) -> None:
-    """Fila 15 + 16 — acordeón de tarjetas por ticker + resumen. Literal de
-    `app_old.py:4997-5337` (solo `mode_a`: `app_old.py` no despliega este detalle denso para
-    los tickers de crecimiento, solo la tarjeta agregada de la fila 8)."""
-    if not mode_a:
-        return
-    _seccion("Detalle por portafolio",
-             "Abre cada portafolio para ver sus posiciones y métricas de riesgo")
-    with st.expander(f"PORTAFOLIO DE DIVIDENDOS · income mensual · {_fondos(mode_a)}",
-                     expanded=True):
-        mostrados = []
-        for ticker in mode_a:
-            stats = resultados.get(ticker)
-            if not isinstance(stats, dict) or "error" in stats:
-                continue
-            mostrados.append((ticker, stats))
-            _tarjeta_ticker(resultados, ticker, stats)
-        if mostrados:
-            _resumen_consolidado(mostrados)
-        else:
-            st.info("No hay posiciones YieldMax activas en este portafolio.")
+    for i, r in enumerate(rutas, 1):
+        c1, c2 = st.columns([2, 3])
+        with c1:
+            st.button(f"{i} · {r['etiqueta']} →", key=f"vd_vig_ruta_{r['clave']}",
+                      type="tertiary", on_click=_ir_a_ruta,
+                      args=(r["cat"], r["vista"], r["etf"]))
+        with c2:
+            st.caption(r["que"])
 
 
 def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
@@ -519,7 +164,6 @@ def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
     classify_map = logic.classify_tickers(list(resultados.keys()))
     mode_a, _mode_b = _tus_dos_portafolios(resultados, classify_map, tema)
     _portafolio_dividendos(resultados, mode_a)
-    _detalle_por_portafolio(resultados, mode_a)
 
 
 # ── Despacho ─────────────────────────────────────────────────────────────────

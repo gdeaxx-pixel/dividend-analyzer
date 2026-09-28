@@ -2688,6 +2688,244 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
     return {"total_mv": total_mv, "grupos": grupos}
 
 
+# ── «Lo que toca vigilar» (vista Portafolios, componente `ui/componentes/vigilar.html`) ──
+#
+# Resumen de los fondos de dividendos: qué fondo está en alerta, hasta 4 puntos por fondo
+# con su cifra y una explicación corta, y la ruta de la calculadora donde se estudia cada
+# uno. Toda cifra, regla y texto sale de aquí; el componente solo dibuja. La descomposición
+# es la de `portafolios_data`: caída del precio = retorno − dividendos, así que la cascada
+# del modal y la tarjeta de grupo de arriba no pueden contradecirse.
+# Diseño: `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v4-detalle.html`.
+
+# Solo vistas alcanzables desde el menú (`ui.chrome._orden`): Salud NAV y Hoja Excel salieron
+# de la navegación de Dividendos el 2026-09-08 (#116) y no se enlazan. Las etiquetas son las
+# que el usuario ve en la ruta (con una sola vista, el segmento de vista no se dibuja).
+VIG_RUTAS = {
+    "viaje": {"cat": "dividendos", "vista": "viaje", "con_etf": True,
+              "etiqueta": "Dividendos",
+              "que": "El recorrido de cada dólar: tu bolsillo, el impuesto, el DRIP y el efectivo."},
+    "real": {"cat": "comparacion", "vista": "real", "con_etf": False,
+             "etiqueta": "Comparación › Real",
+             "que": "Tu fondo contra ETFs de crecimiento, con dividendos reinvertidos y datos reales."},
+    "impuestos": {"cat": "impuestos", "vista": "impuestos", "con_etf": False,
+                  "etiqueta": "Impuestos",
+                  "que": "Qué parte del pago es ROC, cuánto te retienen y qué puede volver."},
+    "metodo": {"cat": "metodo", "vista": "matriz", "con_etf": False,
+               "etiqueta": "Método tradicional › La matriz",
+               "que": "Por qué la hoja de «yield por inversión» cuenta dos veces los dividendos."},
+}
+VIG_ORDEN_RUTAS = ("viaje", "real", "impuestos", "metodo")
+
+_VIG_CHIP = {
+    "destructive": ("Encogiéndose", "loss"),
+    "mixed": ("Señales mezcladas", "warn"),
+    "accounting": ("NAV sano", "cash"),
+}
+
+
+def _vig_dinero(v: float, signo: bool = False, dec: int = 2) -> str:
+    """`−$250.00` / `$400.00` / `+$400.00`. El signo va delante del `$` y es el menos
+    tipográfico (U+2212), no el guion: la vista vieja mostraba `$-138.86`."""
+    r = round(v, dec)
+    txt = f"${abs(r):,.{dec}f}"
+    if r < 0:
+        return "−" + txt
+    return "+" + txt if (signo and r > 0) else txt
+
+
+def _vig_pct(v: float, dec: int = 0) -> str:
+    """`−77%` / `+12%` / `0%`, con el mismo menos tipográfico."""
+    r = round(v, dec)
+    txt = f"{abs(r):.{dec}f}%"
+    if r < 0:
+        return "−" + txt
+    return "+" + txt if r > 0 else txt
+
+
+def _vig_ritmo(stats: dict) -> float | None:
+    """Promedio de los últimos 3 meses con pago: el mismo que la ficha vieja rotulaba
+    «Próx. mes (est.)». NO el promedio de todo el historial, que la ficha llamaba
+    «tasa actual» sin serlo."""
+    m = stats.get("monthly_income")
+    if m is None or getattr(m, "empty", True):
+        return None
+    reciente = m[m > 0].tail(3)
+    if len(reciente) == 0:
+        return None
+    ritmo = float(reciente.mean())
+    return ritmo if ritmo > 0 else None
+
+
+def _vig_ruta_etiqueta(clave: str, ticker: str, etfs: tuple) -> tuple[str | None, str | None]:
+    """Etiqueta de la ruta y ETF de contexto. Cash flow necesita el ETF, y solo existe para
+    los tickers del menú de Dividendos (`ui.nav.CATS`): para cualquier otro no hay vista a
+    la que mandar, y la ruta queda en `None` en vez de abrir el Cash flow de otro fondo."""
+    r = VIG_RUTAS[clave]
+    if r["con_etf"]:
+        if ticker in etfs:
+            return f"{r['etiqueta']} › {ticker}", ticker
+        return None, None
+    return r["etiqueta"], None
+
+
+def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
+               capital: float, etfs: tuple) -> list[dict]:
+    """Los puntos a vigilar de un fondo, ALTO antes que MEDIO. Reglas aprobadas por Daniel
+    (2026-09-28):
+    - precio: veredicto de Salud NAV `destructive` = ALTO, `mixed` = MEDIO.
+    - cubre: retorno < 0 y caída del precio < 0 = ALTO.
+    - roc: hay ROC > 0 y además el precio da alerta (el ROC solo no es malo) = MEDIO.
+    - yield: yield cobrado > 0 con retorno < 0 = MEDIO.
+    """
+    flags = []
+    verdict = salud.get("verdict")
+    nav_cagr = salud.get("nav_cagr")
+    alerta_precio = verdict in ("destructive", "mixed")
+
+    def _flag(clave, gravedad, titulo, cifra, cifra_tono, lede, eq, filas, nota, ruta):
+        etiqueta, _ = _vig_ruta_etiqueta(ruta, ticker, etfs)
+        return {"clave": clave, "gravedad": gravedad, "titulo": titulo, "cifra": cifra,
+                "cifra_tono": cifra_tono, "ruta": ruta if etiqueta else None,
+                "tip": {"eyebrow": f"Qué pasa · {ticker}", "titulo": titulo, "lede": lede,
+                        "eq": eq, "filas": filas, "nota": nota, "ruta": etiqueta}}
+
+    if alerta_precio:
+        destructivo = verdict == "destructive"
+        filas = []
+        u_tk = stats.get("underlying_ticker")
+        u_cagr = stats.get("underlying_cagr_recent")
+        if u_tk and u_cagr is not None:
+            filas.append([f"{u_tk}, el subyacente", _vig_pct(u_cagr), ""])
+        if nav_cagr is not None:
+            filas.append([f"{ticker}, tu fondo", _vig_pct(nav_cagr), "loss" if nav_cagr < 0 else ""])
+        if u_tk and u_cagr is not None and nav_cagr is not None:
+            dif = nav_cagr - u_cagr
+            filas.append([f"{ticker} contra {u_tk}", _vig_pct(dif)[:-1] + " pts",
+                          "loss" if round(dif) < 0 else ""])
+        flags.append(_flag(
+            "precio", "alto" if destructivo else "medio",
+            "El precio se está encogiendo" if destructivo else "El precio da señales mezcladas",
+            f"{_vig_pct(nav_cagr)} al año" if nav_cagr is not None else None,
+            "neg" if (nav_cagr is not None and nav_cagr < 0) else "",
+            (f"El precio de {ticker} baja con el tiempo y parte del pago sale de tu propio "
+             "capital. El cheque se ve bien, pero tu inversión vale menos cada mes.")
+            if destructivo else
+            (f"El precio de {ticker} baja, pero no está claro que el pago salga de tu "
+             "capital. Conviene vigilar la tendencia."),
+            "Ritmo anual del precio", filas,
+            "Si el precio sigue cayendo, el pago futuro también baja.", "real"))
+
+    if tr < 0 and capital < 0:
+        ritmo = _vig_ritmo(stats)
+        if ritmo:
+            nota = (f"Al ritmo de los últimos 3 meses ({_vig_dinero(ritmo)}/mes) faltan unos "
+                    f"{math.ceil(-tr / ritmo)} meses para empatar, si el precio no baja más.")
+        else:
+            nota = "Sin pagos recientes suficientes para estimar cuánto falta."
+        flags.append(_flag(
+            "cubre", "alto", "Los dividendos aún no cubren la caída",
+            f"faltan {_vig_dinero(-tr)}", "neg",
+            ("Cobraste dividendos, pero el precio de tus acciones cayó más. Mientras la "
+             "caída pese más, tu resultado sigue en rojo."),
+            "Caída del precio + dividendos = retorno total",
+            [["Caída del precio", _vig_dinero(capital), "loss"],
+             ["Dividendos cobrados", _vig_dinero(div, signo=True), "cash"],
+             ["Retorno total", _vig_dinero(tr), "loss"]],
+            nota, "viaje"))
+
+    roc = stats.get("roc_accumulated")
+    if alerta_precio and roc is not None and roc > 0:
+        flags.append(_flag(
+            "roc", "medio", "Parte del pago es tu propio dinero de vuelta",
+            f"ROC ~{_vig_dinero(roc, dec=0)}", "",
+            ("El ROC (return of capital) es la parte del pago que no sale de ganancias: te "
+             "devuelven tu propio dinero. Por sí solo no es malo; preocupa cuando además el "
+             "precio cae."),
+            "Parte de lo cobrado que es devolución de capital",
+            [["ROC en tu período", f"~{_vig_dinero(roc, dec=0)}", ""]],
+            "El ROC baja tu base de costo y cambia cuánto impuesto te retienen.", "impuestos"))
+
+    ry = stats.get("realized_yield")
+    if ry is not None and ry > 0 and tr < 0:
+        filas = []
+        fy = stats.get("forward_yield")
+        if fy is not None:
+            filas.append(["Yield anunciado", f"{fy:.1f}%", ""])
+        filas.append(["Yield cobrado, 12 meses", f"{ry:.1f}%", ""])
+        inv = stats.get("pocket_investment") or 0
+        if inv > 0:
+            filas.append(["Tu retorno total", _vig_pct(tr / inv * 100, dec=2), "loss"])
+        flags.append(_flag(
+            "yield", "medio", "El yield alto no es tu ganancia", f"{ry:.1f}% cobrado", "",
+            ("El yield mide cuánto pagó el fondo, no cuánto ganaste. Con el precio cayendo, "
+             "un yield alto convive con una pérdida."),
+            "Lo que paga no es lo que ganas", filas,
+            ("El yield anunciado se calcula sobre el valor de hoy: si el precio cae, sube "
+             "aunque el pago no crezca."), "metodo"))
+
+    return sorted(flags, key=lambda f: 0 if f["gravedad"] == "alto" else 1)
+
+
+def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
+    """Datos del componente «Lo que toca vigilar».
+
+    `salud_por_ticker` = `{ticker: salud_nav_data(ticker, stats)}` en el orden en que se
+    dibujan: lo calcula UNA vez `ui.heredadas._portafolio_dividendos` y lo comparten el ROC
+    y este adapter (no se recalcula `classify_roc_health` aquí). Tickers sin datos
+    analizables (`_tiene_datos`) quedan fuera. Un fondo sin ningún punto va a `sanos`, en
+    una sola línea. `None` si no queda ningún fondo.
+
+    Cifras: `retorno` = `net_profit`; `dividendos` = `dividends_net_total` (neto, al cobro)
+    con el mismo respaldo que `ui.heredadas._agregados`; caída del precio = retorno −
+    dividendos."""
+    from ui import nav
+
+    etfs = tuple(nav.CATS.get("dividendos", ()))
+    fondos, sanos = [], []
+    for ticker, salud in salud_por_ticker.items():
+        stats = resultados.get(ticker)
+        if not _tiene_datos(stats):
+            continue
+        inv = stats["pocket_investment"]
+        tr = stats["net_profit"]
+        div = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
+               else stats.get("dividends_collected_cash", 0))
+        capital = tr - div
+        flags = _vig_flags(ticker, stats, salud or {}, tr, div, capital, etfs)
+        if not flags:
+            sanos.append(ticker)
+            continue
+        texto, tono = _VIG_CHIP.get((salud or {}).get("verdict"), ("Sin veredicto", "mut"))
+        fondos.append({
+            "ticker": ticker, "chip_texto": texto, "chip_tono": tono,
+            "retorno": _vig_dinero(tr),
+            "retorno_pct": _vig_pct(tr / inv * 100, dec=2) if inv > 0 else None,
+            "tono": "neg" if round(tr, 2) < 0 else "pos",
+            "flags": flags,
+        })
+
+    if not fondos and not sanos:
+        return None
+
+    rutas = []
+    for clave in VIG_ORDEN_RUTAS:
+        con_flag = [fo["ticker"] for fo in fondos if any(f["ruta"] == clave for f in fo["flags"])]
+        if not con_flag:
+            continue
+        etiqueta, etf = _vig_ruta_etiqueta(clave, con_flag[0], etfs)
+        r = VIG_RUTAS[clave]
+        rutas.append({"clave": clave, "etiqueta": etiqueta, "que": r["que"],
+                      "cat": r["cat"], "vista": r["vista"], "etf": etf})
+
+    n = len(fondos) + len(sanos)
+    return {
+        "eyebrow": f"Portafolio Dividendos · {n} fondo{'' if n == 1 else 's'}",
+        "fondos": fondos,
+        "sanos": f"{', '.join(sanos)}: sin alertas." if sanos else None,
+        "rutas": rutas,
+    }
+
+
 # ── U4 · Cobertura integrada — la dona de 5 segmentos del flujo de carga ──────────────
 #
 # Textos «qué falta» / «cómo se resuelve» por segmento. Los cuatro primeros salen de la

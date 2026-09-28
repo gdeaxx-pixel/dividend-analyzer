@@ -1,0 +1,344 @@
+<!-- Escrito y mantenido A MANO. Vista «Portafolios» — resumen «Lo que toca vigilar» (rediseño
+     v4, sep-2026). Fuente de diseño: `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v4-detalle.html`.
+     Los datos llegan ya calculados desde `ui/adapters.py::vigilar_data`: cifras, gravedad,
+     textos y rutas salen de Python; aquí solo se dibuja. El ROC (mascota) va en su propio
+     componente encima, y las rutas de la calculadora van como botones nativos debajo: un clic
+     dentro de este iframe no puede cambiar la ruta. El bloque de auto-alto del final es el de
+     `tools/_auto_alto.py`, igual que los demás componentes. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+    --ground:     #f4f7fa;
+    --panel:      #ffffff;
+    --panel-tint: #eef4f9;
+    --ink:        #021C36;
+    --ink-2:      #33475a;
+    --ink-mut:    #6a7b8a;
+    --hair:       #d5e0ea;
+    --hair-soft:  #e6edf3;
+    --accent:     #006497;
+    --cash:       #1f8a5b;
+    --loss:       #A32D2D;
+    --warn:       #a06a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+      --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d;
+      --loss:#e07a7a; --warn:#d9a441;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a;
+    --ink-mut:#6a7b8a; --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497; --cash:#1f8a5b;
+    --loss:#A32D2D; --warn:#a06a1a;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de;
+    --ink-mut:#8598a9; --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d;
+    --loss:#e07a7a; --warn:#d9a441;
+  }
+
+  * { box-sizing: border-box; border-radius: 0; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--font-sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { display: grid; padding-bottom: 8px; }
+  .panel { background: var(--panel); padding: clamp(20px, 4vw, 40px); display: grid; gap: 24px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .neg { color: var(--loss); }
+  .pos { color: var(--cash); }
+
+  .sec-head { display: grid; gap: 6px; }
+  .eyebrow {
+    margin: 0; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mut);
+  }
+  .sec-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; }
+
+  .fondos { display: grid; gap: 28px; }
+  .fund { display: grid; gap: 12px; }
+  .fund-top {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px 20px; flex-wrap: wrap;
+    padding-bottom: 12px; border-bottom: 1px solid var(--hair);
+  }
+  .ft-id { display: flex; align-items: center; gap: 12px; }
+  .ft-tk { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  .chip {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 8px; border: 1px solid currentColor; white-space: nowrap;
+  }
+  .chip-loss { color: var(--loss); }
+  .chip-warn { color: var(--warn); }
+  .chip-cash { color: var(--cash); }
+  .chip-mut { color: var(--ink-mut); }
+  .ft-res { display: flex; align-items: baseline; gap: 6px 12px; flex-wrap: wrap; }
+  .ft-k { font-size: 13px; color: var(--ink-mut); }
+  .ft-num { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+  .ft-pct { font-size: 14px; font-weight: 600; }
+
+  .flags { list-style: none; margin: 0; padding: 0; display: grid; }
+  .flags li + li { border-top: 1px solid var(--hair-soft); }
+  .flag {
+    appearance: none; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    width: 100%; min-height: 56px; padding: 10px 12px 10px 16px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 20px; gap: 16px; align-items: center;
+    box-shadow: inset 3px 0 0 var(--loss); transition: background-color .2s ease;
+  }
+  .flag.medio { box-shadow: inset 3px 0 0 var(--warn); }
+  .flag:hover, .flag:active { background: var(--panel-tint); }
+  .flag:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .f-main { display: flex; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; min-width: 0; }
+  .sev {
+    flex: none; width: 3.6rem; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--loss);
+  }
+  .flag.medio .sev { color: var(--warn); }
+  .f-lab { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .f-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: var(--ink-2); text-align: right; white-space: nowrap; }
+  .f-num.neg { color: var(--loss); }
+  .f-i { font-size: 15px; color: var(--accent); justify-self: end; line-height: 1; }
+  .hint { margin: 0; font-size: 13px; color: var(--ink-mut); padding-left: 16px; }
+  .sanos { margin: 0; font-size: 14px; color: var(--ink-2); padding-top: 12px; border-top: 1px solid var(--hair); }
+
+  /* Modal: patrón aprobado del Viaje del dinero. Vive dentro del iframe; su alto máximo es el
+     del propio iframe y al abrir se desplaza a la vista para no quedar fuera de pantalla. */
+  #vig-modal {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
+  }
+  #vig-modal.open { display: flex; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--hair);
+    max-width: 500px; width: 100%; padding: clamp(22px, 4vw, 34px);
+    position: relative; max-height: calc(100vh - 40px); overflow-y: auto;
+    animation: fadeIn .18s ease both;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .modal-close {
+    position: absolute; top: 12px; right: 14px;
+    font-family: var(--font-mono); font-size: 20px; font-weight: 700;
+    background: none; border: none; color: var(--ink-mut); cursor: pointer;
+    line-height: 1; padding: 4px 8px; transition: color .12s ease;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-close:focus-visible { outline: 2px solid var(--accent); }
+  .modal-eyebrow {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+  }
+  .modal-title {
+    font-family: var(--font-mono); font-size: 16px; font-weight: 700;
+    color: var(--ink); margin: 0 0 14px; letter-spacing: -0.01em; padding-right: 28px;
+  }
+  .modal-lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+  .modal-formula { background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 14px 16px; margin: 0 0 16px; }
+  .mf-eq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); display: block; margin-bottom: 14px; line-height: 1.4; }
+  .mf-table { width: 100%; border-collapse: collapse; }
+  .mf-table td { font-family: var(--font-mono); font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: baseline; }
+  .mf-table tr:last-child td { border-bottom: none; padding-top: 10px; font-weight: 700; font-size: 13px; }
+  .mf-table td:last-child { text-align: right; padding-left: 12px; white-space: nowrap; }
+  .mf-label { color: var(--ink-mut); }
+  .mf-val { color: var(--ink); }
+  .mf-val.loss { color: var(--loss); }
+  .mf-val.cash { color: var(--cash); }
+  .modal-note { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.6; }
+  .modal-go {
+    display: block; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hair);
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent);
+  }
+
+  @media (max-width: 520px) {
+    .flag { grid-template-columns: minmax(0, 1fr) 20px; row-gap: 4px; padding-left: 14px; }
+    .f-main { flex-direction: column; gap: 2px; }
+    .f-num { grid-column: 1; grid-row: 2; text-align: left; }
+    .f-i { grid-column: 2; grid-row: 1 / 3; }
+    .hint { padding-left: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .flag, .modal-close { transition: none; }
+    .modal-box { animation: none; }
+  }
+</style>
+
+<div class="wrap" id="vig-root">
+  <section class="panel" aria-labelledby="vig-t">
+    <div class="sec-head">
+      <p class="eyebrow" id="vig-eyebrow"></p>
+      <h2 class="sec-title" id="vig-t">Lo que toca vigilar</h2>
+    </div>
+    <div class="fondos" id="vig-fondos"></div>
+    <p class="hint" id="vig-hint" hidden>Toca un punto para ver qué pasa.</p>
+    <p class="sanos" id="vig-sanos" hidden></p>
+  </section>
+</div>
+
+<div id="vig-modal" role="dialog" aria-modal="true" aria-labelledby="vm-title">
+  <div class="modal-box" id="vm-box">
+    <button type="button" class="modal-close" id="vm-close" aria-label="Cerrar">×</button>
+    <p class="modal-eyebrow" id="vm-eyebrow"></p>
+    <p class="modal-title" id="vm-title"></p>
+    <p class="modal-lede" id="vm-lede"></p>
+    <div class="modal-formula">
+      <span class="mf-eq" id="vm-eq"></span>
+      <table class="mf-table"><tbody id="vm-rows"></tbody></table>
+    </div>
+    <p class="modal-note" id="vm-note"></p>
+    <span class="modal-go" id="vm-go"></span>
+  </div>
+</div>
+
+<script>
+const DATA = {{DATA_JSON}};
+(function () {
+  "use strict";
+  function el(tag, cls, texto) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (texto !== undefined && texto !== null) n.textContent = texto;
+    return n;
+  }
+
+  document.getElementById("vig-eyebrow").textContent = DATA.eyebrow || "";
+  var cont = document.getElementById("vig-fondos");
+  var hayFlags = false;
+
+  (DATA.fondos || []).forEach(function (fo, i) {
+    var fund = el("div", "fund");
+    var top = el("div", "fund-top");
+    var id = el("div", "ft-id");
+    id.appendChild(el("span", "ft-tk", fo.ticker));
+    id.appendChild(el("span", "chip chip-" + (fo.chip_tono || "mut"), fo.chip_texto));
+    var res = el("div", "ft-res");
+    res.appendChild(el("span", "ft-k", "Retorno total"));
+    res.appendChild(el("span", "mono ft-num " + (fo.tono || ""), fo.retorno));
+    if (fo.retorno_pct) res.appendChild(el("span", "mono ft-pct " + (fo.tono || ""), fo.retorno_pct));
+    top.appendChild(id);
+    top.appendChild(res);
+    fund.appendChild(top);
+
+    var ul = el("ul", "flags");
+    (fo.flags || []).forEach(function (f, j) {
+      hayFlags = true;
+      var li = el("li");
+      var b = el("button", "flag " + (f.gravedad === "medio" ? "medio" : "alto"));
+      b.type = "button";
+      b.setAttribute("aria-haspopup", "dialog");
+      b.setAttribute("data-fondo", String(i));
+      b.setAttribute("data-flag", String(j));
+      var main = el("span", "f-main");
+      main.appendChild(el("span", "sev", f.gravedad === "medio" ? "Medio" : "Alto"));
+      main.appendChild(el("span", "f-lab", f.titulo));
+      b.appendChild(main);
+      b.appendChild(el("span", "f-num " + (f.cifra_tono || ""), f.cifra || ""));
+      var ico = el("span", "f-i", "ⓘ");
+      ico.setAttribute("aria-hidden", "true");
+      b.appendChild(ico);
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+    fund.appendChild(ul);
+    cont.appendChild(fund);
+  });
+
+  document.getElementById("vig-hint").hidden = !hayFlags;
+  var sanos = document.getElementById("vig-sanos");
+  if (DATA.sanos) { sanos.textContent = DATA.sanos; sanos.hidden = false; }
+
+  var modal = document.getElementById("vig-modal");
+  var box = document.getElementById("vm-box");
+  var cerrar = document.getElementById("vm-close");
+  var ultimo = null;
+
+  function llenar(t) {
+    document.getElementById("vm-eyebrow").textContent = t.eyebrow || "";
+    document.getElementById("vm-title").textContent = t.titulo || "";
+    document.getElementById("vm-lede").textContent = t.lede || "";
+    document.getElementById("vm-eq").textContent = t.eq || "";
+    var rows = document.getElementById("vm-rows");
+    while (rows.firstChild) rows.removeChild(rows.firstChild);
+    (t.filas || []).forEach(function (r) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mf-label", r[0]));
+      tr.appendChild(el("td", "mf-val" + (r[2] ? " " + r[2] : ""), r[1]));
+      rows.appendChild(tr);
+    });
+    document.getElementById("vm-note").textContent = t.nota || "";
+    document.getElementById("vm-go").textContent = t.ruta ? "Estúdialo en " + t.ruta : "";
+  }
+  function abrir(boton) {
+    var fo = (DATA.fondos || [])[Number(boton.getAttribute("data-fondo"))];
+    var f = fo && (fo.flags || [])[Number(boton.getAttribute("data-flag"))];
+    if (!f || !f.tip) return;
+    llenar(f.tip);
+    ultimo = boton;
+    modal.classList.add("open");
+    try { box.scrollIntoView({ block: "nearest" }); } catch (e) { /* entorno sin scroll */ }
+    cerrar.focus();
+  }
+  function cerrarModal() {
+    if (!modal.classList.contains("open")) return;
+    modal.classList.remove("open");
+    if (ultimo) ultimo.focus();
+  }
+  document.querySelectorAll(".flag").forEach(function (b) {
+    b.addEventListener("click", function (e) { e.stopPropagation(); abrir(b); });
+  });
+  cerrar.addEventListener("click", cerrarModal);
+  modal.addEventListener("click", function (e) { if (e.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") cerrarModal(); });
+  window.__vigAbrir = function (i, j) {
+    var b = document.querySelector('.flag[data-fondo="' + i + '"][data-flag="' + j + '"]');
+    if (b) abrir(b);
+  };
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h) return;
+    /* Streamlit >=1.52 envuelve el iframe en un contenedor con `flex: 0 0 <alto de Python>`
+       que no sigue al iframe: sin esto queda el hueco (o el solape) entre ese alto y el real.
+       Se re-aplica en cada llamada porque un rerun puede reescribir el estilo del contenedor. */
+    var cont = fe.parentElement;
+    if (cont && cont.style.flexBasis !== h + "px") cont.style.flexBasis = h + "px";
+    if (Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>
+
