@@ -1090,10 +1090,11 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
 
     `verificar_identidades` habla en identidades contables («neto = reinvertido +
     efectivo: 18.15 ≠ 20.91»): correcto como diagnóstico técnico, inútil como aviso — no
-    dice de quién es el problema ni qué hacer. En las 9 posiciones reales que hoy se
-    bloquean (medido 2026-09-24 sobre los 3 CSV de Schwab) la causa NO es un error de
-    cálculo: es que al export del bróker le faltan filas. Eso sí se puede decir, y con
-    cifras del propio CSV.
+    dice de quién es el problema ni qué hacer. El 2026-09-24 se atribuyeron a «al export le
+    faltan filas» las 9 posiciones reales que se bloqueaban; el 2026-09-27 resultó que la
+    mayoría eran filas que SÍ estaban y la calculadora no leía (historial migrado de TD
+    Ameritrade, #172–#174). Por eso solo el bolsillo negativo culpa al export; las compras
+    huérfanas se describen con cifras del propio CSV y ofrecen las dos salidas.
 
     Devuelve `{'titular', 'cuerpo': [str, ...], 'accion', 'nuestro'}`. `nuestro=True`
     significa que la causa apunta al motor y no al export: ahí el aviso pide que lo
@@ -1134,7 +1135,7 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
         cuerpo.append(
             "Con eso, el dividendo que el archivo declara no alcanza para cubrir lo que "
             "muestra reinvertido. Dibujarlo diría que reinvertiste más de lo que el fondo "
-            "te pagó, y esa cifra no está en ningún lado: falta en el archivo.")
+            "te pagó.")
     if pocket < 0:
         cuerpo.append(
             f"Y el capital aportado sale **negativo (${pocket:,.2f})**: hay ventas sin las "
@@ -1149,12 +1150,28 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
             "nuestro": True,
         }
 
+    historial = ("pide el historial completo desde tu primera compra — en Schwab, "
+                 "*History › Transactions* con el rango entero (no solo el último año); "
+                 "en IBKR, el *Activity Statement* del período completo.")
+    # Solo el bolsillo negativo prueba que al archivo le falta historia (ventas sin sus
+    # compras). Una compra huérfana puede ser eso o una fila que la calculadora no reconoce:
+    # el historial migrado de TD Ameritrade se leía así hasta el #172, y las huérfanas que
+    # quedan en TSLY vienen de «Pr Yr Div Reinvest» con fecha «as of». Ahí no se culpa al
+    # export: se dice lo que se ve y se ofrecen las dos salidas.
+    if pocket < 0:
+        return {
+            "titular": f"{sujeto} no se dibuja: al export de tu bróker le faltan filas.",
+            "cuerpo": cuerpo,
+            "accion": historial[0].upper() + historial[1:],
+            "nuestro": False,
+        }
     return {
-        "titular": f"{sujeto} no se dibuja: al export de tu bróker le faltan filas.",
+        "titular": f"{sujeto} no se dibuja: hay compras reinvertidas sin la distribución "
+                   "que las paga.",
         "cuerpo": cuerpo,
-        "accion": "Pide el historial completo desde tu primera compra — en Schwab, "
-                  "*History › Transactions* con el rango entero (no solo el último año); "
-                  "en IBKR, el *Activity Statement* del período completo.",
+        "accion": f"Si tu export no empieza en tu primera compra, {historial} Si ya es "
+                  "completo, repórtalo con el nombre del fondo: puede ser una fila que la "
+                  "calculadora todavía no reconoce.",
         "nuestro": False,
     }
 

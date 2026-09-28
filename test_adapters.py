@@ -370,19 +370,26 @@ def _stats_drip_sin_fuente(monkeypatch, version="TEST_ADAPTERS_DRIPSF"):
 
 def test_el_aviso_nombra_las_filas_que_faltan_y_su_importe(monkeypatch):
     """Las dos cifras del aviso salen del CSV, no de una plantilla: 3 compras contra 1
-    distribución, 2 huérfanas, $70.00 sin respaldo."""
+    distribución, 2 huérfanas, $70.00 sin respaldo.
+
+    Con solo huérfanas (bolsillo positivo) el titular dice lo que se ve y NO culpa al export:
+    una compra sin su distribución también puede ser una fila que la calculadora no reconoce
+    —el historial de TD Ameritrade se leía así hasta el #172—. La acción ofrece las dos salidas."""
     from ui.adapters import diagnosticar_bloqueo
     s = _stats_drip_sin_fuente(monkeypatch)
     datos = cashflow_data(s, "MSTY")
     fallos = verificar_identidades(datos, s)
     assert fallos, "el fixture debe bloquear, si no el aviso no se prueba"
+    assert datos["POCKET"] > 0
     dx = diagnosticar_bloqueo(datos, s, fallos)
     texto = " ".join([dx["titular"]] + dx["cuerpo"])
-    assert "le faltan filas" in dx["titular"]
+    assert "compras reinvertidas sin la distribución" in dx["titular"]
+    assert "le faltan filas" not in dx["titular"]
+    assert "falta en el archivo" not in texto
     assert "3 compras" in texto and "1 distribución" in texto   # singular, no "1 distribuciones"
     assert "$70.00" in texto
     assert dx["nuestro"] is False
-    assert "History" in dx["accion"]
+    assert "History" in dx["accion"] and "repórtalo" in dx["accion"]
 
 
 def test_el_aviso_no_culpa_al_export_cuando_la_culpa_es_del_motor(monkeypatch):
@@ -410,6 +417,10 @@ def test_el_aviso_nombra_el_bolsillo_negativo_como_historial_que_falta():
     cuerpo = " ".join(dx["cuerpo"])
     assert "negativo" in cuerpo and "-2,439.63" in cuerpo
     assert "ventas sin las compras" in cuerpo
+    # Ventas sin sus compras SÍ prueban historia incompleta: aquí el aviso culpa al export.
+    assert "le faltan filas" in dx["titular"]
+    assert dx["accion"].startswith("Pide el historial completo")
+    assert "repórtalo" not in dx["accion"]
 
 
 def test_una_causa_desconocida_no_se_disfraza_de_export_incompleto():
