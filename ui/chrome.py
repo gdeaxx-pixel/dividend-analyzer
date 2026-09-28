@@ -64,11 +64,16 @@ def _consumir_cierre_popover() -> None:
 # generador (traspaso § Fase 5, y § Fase 2 de la vista fiscal para «Impuestos»).
 #
 # El ORDEN importa: `CAT_ORDER_TOTAL[0]` es la categoría de aterrizaje por defecto (commit
-# `bec1061`, decisión de Daniel) y debe seguir siendo «Portafolios». «Impuestos» va al
-# final.
-CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE,) + nav.CAT_ORDER + (impuestos.CAT_CLAVE,)
-CAT_LABELS_TOTAL = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL,
-                    impuestos.CAT_CLAVE: impuestos.CAT_LABEL}
+# `bec1061`, decisión de Daniel) y debe seguir siendo «Portafolios». El resto sigue el orden
+# del menú que pidió Daniel (2026-09-28): Largo Plazo antes que Dividendos, «Impuestos» al
+# final. `CAT_LABELS_TOTAL` se construye EN ese orden porque el popover recorre el dict: antes
+# se armaba desde `nav.CAT_LABELS` y Portafolios salía quinto aunque fuera el aterrizaje.
+CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE, "largo", "dividendos", "comparacion", "metodo",
+                   impuestos.CAT_CLAVE)
+_LABELS = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL,
+           impuestos.CAT_CLAVE: impuestos.CAT_LABEL}
+assert set(CAT_ORDER_TOTAL) == set(_LABELS), "CAT_ORDER_TOTAL y las etiquetas divergen"
+CAT_LABELS_TOTAL = {clave: _LABELS[clave] for clave in CAT_ORDER_TOTAL}
 
 
 @dataclass(frozen=True)
@@ -172,32 +177,27 @@ def _sync_tema() -> None:
 
 
 def render_encabezado(con_datos: bool) -> str:
-    """Fila superior: marca a la izquierda, tema a la derecha.
+    """Fila superior: marca con ROC a su derecha, tema a la derecha de la fila.
 
-    En `con_datos=False` la marca no se dibuja aquí: el wordmark de `ui/carga.py` (`<h2>`)
-    ya cumple ese papel como título de pantalla — mostrar ambos era redundante, así que la
-    columna izquierda solo lleva a ROC durante la carga. Ese ROC es el ÚNICO de la pantalla
-    y lo dibuja el bloque 1 (`ui.carga.render_bloque_transacciones`), que es quien sabe si
-    toca escuchar el arrastre, asentir o confundirse: aquí solo se reserva su hueco en
-    `st.session_state["_vd_hueco_roc"]`. Devuelve el tema activo — nunca `None`.
+    Con datos, ROC es el ÚNICO búho de la pantalla: aquí solo se reserva su hueco
+    (`HUECO_ROC_VISTA`) y lo llena la vista con su estado (`roc_de_vista`) o, si ninguna lo
+    hizo, `cerrar_roc_encabezado`. En `con_datos=False` la marca no se dibuja aquí: el
+    wordmark de `ui/carga.py` (`<h2>`) ya cumple ese papel, y es él quien reserva a su
+    derecha el hueco del ROC del bloque 1. Devuelve el tema activo — nunca `None`.
     """
-    from ui.componentes import render_roc  # dentro: `ui.chrome` ↔ `ui.componentes` es un ciclo
+    from ui.componentes import HUECO_ROC_VISTA  # dentro: `ui.chrome` ↔ `ui.componentes` es un ciclo
 
     st.session_state.setdefault("vd_tema", "Claro")
     st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
 
-    col_izq, col_der = st.columns([4, 2])
+    col_izq, col_der = st.columns([4, 2], vertical_alignment="center")
     with col_izq:
         if con_datos:
-            c_roc, c_marca = st.columns([1, 11], vertical_alignment="center")
-            with c_roc:
-                render_roc("vigilante", st.session_state["vd_tema"], None, tam=28)
-            with c_marca:
+            with st.container(horizontal=True, vertical_alignment="center", gap="medium",
+                              key="vd_marca"):
                 st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>',
-                            unsafe_allow_html=True)
-        else:
-            with st.container(key="vd_roc_carga"):
-                st.session_state["_vd_hueco_roc"] = st.empty()
+                            unsafe_allow_html=True, width="content")
+                st.session_state[HUECO_ROC_VISTA] = st.empty()
     with col_der:
         st.segmented_control(
             "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
@@ -418,6 +418,11 @@ _ESTILOS = """
           text-transform: uppercase; letter-spacing: .10em;
           font-size: clamp(20px, 3vw, 27px);
         }
+        /* Marca + ROC en una fila: Streamlit le pone `margin-bottom: -1rem` al markdown, y
+           el centrado vertical usaba esa caja recortada — el búho quedaba 10px por encima
+           del texto (medido 28-sep en la carga). */
+        .st-key-vd_marca [data-testid="stMarkdownContainer"],
+        .st-key-vd_marca_carga [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
 
         .vd-sep { color: var(--ink-mut); opacity: .6; font-size: 13px; margin: 0 6px; }
 
@@ -571,7 +576,6 @@ _ESTILOS = """
         .st-key-vd_tema_w { align-self: flex-end; }
         /* Alto reservado para el globo de ROC en la carga («Suéltalo.», «N tickers
            leídos»): sin él, al aparecer el globo el título baja ~10px. */
-        .st-key-vd_roc_carga { min-height: 50px; justify-content: center; }
         [data-testid="stButtonGroup"] button {
           border-radius: 0 !important;
           font-family: var(--font-mono) !important; font-size: 11px !important;

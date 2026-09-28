@@ -1213,3 +1213,14 @@ def test_credito_con_cobertura_completa_no_se_rotula_como_techo():
     todo = _texto(out, "fase0") + _texto(out, "fase1")
     assert "no pudimos medir cuánto vuelve" not in todo
     assert "· techo" not in todo
+
+
+def test_menu_de_categorias_en_el_orden_de_daniel():
+    """Daniel, 2026-09-28: Portafolios (aterrizaje) · Largo Plazo · Dividendos · Comparación ·
+    Método tradicional · Impuestos. El popover recorre `CAT_LABELS_TOTAL`, así que se vigila
+    el orden del DICT, no solo el de la tupla: con el dict viejo Portafolios salía quinto."""
+    from ui import chrome
+    esperado = ["Portafolios", "Largo Plazo", "Dividendos", "Comparación",
+                "Método tradicional", "Impuestos"]
+    assert list(chrome.CAT_LABELS_TOTAL.values()) == esperado
+    assert [chrome.CAT_LABELS_TOTAL[c] for c in chrome.CAT_ORDER_TOTAL] == esperado

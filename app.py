@@ -29,6 +29,7 @@ stale_guard.asegurar_frescura()
 
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
 from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
+from ui.componentes import cerrar_roc_encabezado
 from ui.pie import render_pie
 from ui.validacion import hay_alertas
 from ui.vistas import obtener_resultados, render_vista
@@ -88,6 +89,7 @@ if con_datos:
     resultados = obtener_resultados()
     ruta = render_ruta(hay_alertas(resultados))
     render_vista(ruta)
+    cerrar_roc_encabezado(ruta.tema)
     render_pie(resultados)
 else:
     render_carga()

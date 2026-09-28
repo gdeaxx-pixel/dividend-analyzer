@@ -277,7 +277,11 @@
 
   /* ---- waterfall ---- */
   .fall-scroll { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
-  .fall { position: relative; min-width: 820px; padding: 12px 8px 88px; }
+  /* Arriba, 32px para el rótulo «Lo que pusiste» cuando la línea roja roza el techo; abajo,
+     116px para la caption más alta (4 renglones con «+ $3.55 Cash In Lieu» partido). Con
+     12/88 ambos se salían, y como `.fall-scroll` lleva `overflow-x: auto` el navegador
+     también activa el eje Y: de ahí la barra de scroll vertical (medido 28-sep: 413 vs 404). */
+  .fall { position: relative; min-width: 820px; padding: 32px 8px 116px; }
   .plot { position: relative; height: 300px; display: flex; align-items: flex-end; gap: clamp(5px, 1.1vw, 13px); border-bottom: 1px solid var(--hair); }
   .col { position: relative; flex: 1; height: 100%; }
   .seg {
@@ -294,6 +298,17 @@
     color: var(--ink-mut); opacity: .42; line-height: 1.2;
   }
   .seg.s-anchor  { background: var(--anchor); }
+  /* Eje cortado: zigzag del color del fondo sobre las columnas que arrancan en $0. */
+  .seg.cut::after {
+    content: ""; position: absolute; left: -1px; right: -1px; bottom: min(14px, 30%); height: 10px;
+    background: var(--ground);
+    clip-path: polygon(0 40%, 16.6% 0, 33.3% 40%, 50% 0, 66.6% 40%, 83.3% 0, 100% 40%, 100% 100%,
+                       83.3% 60%, 66.6% 100%, 50% 60%, 33.3% 100%, 16.6% 60%, 0 100%);
+  }
+  .eje-corte {
+    position: absolute; right: 0; bottom: 100%; margin-bottom: 8px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; color: var(--ink-mut);
+  }
   .seg.s-drip    { background: var(--drip); }
   .seg.s-transito{ background: var(--accent-tint); border: 2px solid var(--accent); }
   .seg.s-cash    { background: var(--cash); }
@@ -1268,6 +1283,31 @@
         (RESULTADO >= 0 ? "sumó" : "se llevó") + "." }
   ];
   function colsForStep(step) { return COLS.slice(0, step + 1); }
+
+  // Eje cortado (Daniel, 2026-09-28). Con el eje en $0, en un fondo cuyo recorrido es chico
+  // frente al capital (SCHB: ~$38 sobre ~$1,680) los pasos miden 1–3 px y las anclas los
+  // tapan. Si todo el recorrido cabe en una franja estrecha, el eje arranca por debajo del
+  // mínimo y las columnas que salen de $0 llevan un zigzag que avisa el corte. Con un
+  // recorrido amplio (NAV hundido) el eje se queda en $0: no hay nada que ampliar.
+  var CORTE_MAX = 0.3;
+  var TOPE = MAXV, BASE = 0;
+  (function () {
+    var vals = [];
+    COLS.forEach(function (c) {
+      c.segs.forEach(function (sg) { [sg.lo, sg.hi].forEach(function (v) { if (v > 0) vals.push(v); }); });
+    });
+    vals.push(POCKET, CAPITAL_ACTUAL);
+    vals = vals.filter(function (v) { return typeof v === "number" && isFinite(v) && v > 0; });
+    if (!vals.length) return;
+    var min = Math.min.apply(null, vals);
+    TOPE = Math.max(MAXV, Math.max.apply(null, vals));
+    var rango = TOPE - min;
+    if (!(rango > 0) || rango / TOPE >= CORTE_MAX) return;
+    var paso = Math.pow(10, Math.floor(Math.log10(rango)));
+    BASE = Math.max(0, Math.floor((min - rango * 0.6) / paso) * paso);
+  })();
+  sc = PLOT_H / (TOPE - BASE);
+  function yPx(v) { return (Math.max(v, BASE) - BASE) * sc; }
   var SLOT_COUNT = 8;
   function newColIndex(step) { return step; }   // 1:1 rail ↔ columna
 
@@ -1309,9 +1349,10 @@
       c.segs.forEach(function (seg) {
         var lo = Math.min(seg.lo, seg.hi), hi = Math.max(seg.lo, seg.hi);
         var el = document.createElement("div");
-        el.className = "seg " + seg.cls + (animate ? "" : " settled");
-        el.style.bottom = (lo * sc) + "px";
-        el.style.height = ((hi - lo) * sc) + "px";
+        el.className = "seg " + seg.cls + (animate ? "" : " settled") +
+                       (BASE > 0 && lo <= BASE ? " cut" : "");
+        el.style.bottom = yPx(lo) + "px";
+        el.style.height = (yPx(hi) - yPx(lo)) + "px";
         el.style.cursor = "pointer";
         function move(e) {
           var pt = e.touches ? e.touches[0] : e;
@@ -1339,8 +1380,8 @@
         var gapGain = RESULTADO >= 0;
         gap.className = "gap-band" + (gapGain ? " gap-gain" : "");
         var gapLo = Math.min(POCKET, CAPITAL_ACTUAL), gapHi = Math.max(POCKET, CAPITAL_ACTUAL);
-        gap.style.bottom = (gapLo * sc) + "px";
-        gap.style.height = ((gapHi - gapLo) * sc) + "px";
+        gap.style.bottom = yPx(gapLo) + "px";
+        gap.style.height = (yPx(gapHi) - yPx(gapLo)) + "px";
         gap.innerHTML = "<span>" + (gapGain ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2) + "</span>";
         col.appendChild(gap);
       }
@@ -1351,11 +1392,17 @@
     if (step === 7) {
       var cl = document.createElement("div");
       cl.className = "costline";
-      cl.style.bottom = (POCKET * sc) + "px";
+      cl.style.bottom = yPx(POCKET) + "px";
       cl.innerHTML = '<span class="cl-lab">Lo que pusiste<br>$' + POCKET.toFixed(2) + "</span>";
       plot.appendChild(cl);
     }
 
+    if (BASE > 0) {
+      var eje = document.createElement("div");
+      eje.className = "eje-corte";
+      eje.textContent = "Eje desde $" + BASE.toLocaleString("en-US");
+      plot.appendChild(eje);
+    }
     fall.appendChild(plot);
 
     if (step === 7) {

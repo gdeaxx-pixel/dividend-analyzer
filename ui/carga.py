@@ -180,7 +180,7 @@ TAM_ROC_CARGA = 28
 
 def _roc_bloque1(hueco, estado_roc: str, frase: str | None = None,
                  reaccion: dict | None = None) -> None:
-    """ROC del bloque 1, dibujado en el hueco del ENCABEZADO (`ui.chrome.render_encabezado`):
+    """ROC del bloque 1, dibujado en el hueco a la derecha del wordmark (`render_carga`):
     un solo búho en la pantalla de carga, arriba, en las dos ramas (sin archivo y con CSV
     cargado), para que no cambie de sitio al pasar de una a otra."""
     with hueco.container():
@@ -859,8 +859,14 @@ def render_carga() -> bool:
     El eyebrow «Paso 1 de 2 · Carga» vive ahora en el encabezado (`ui.chrome`). El título
     de esta pantalla es el wordmark de la marca — la frase vieja y el subtítulo «Viaje del
     dinero» se eliminan, no se mueven a otro sitio (decidido con Daniel, Fase 3b)."""
-    st.markdown('<h2 class="vd-title vd-wordmark">INVIERTE &amp; GANA</h2>',
-                unsafe_allow_html=True)
+    # ROC va a la DERECHA del wordmark, a su altura (Daniel, 2026-09-28): el hueco se
+    # reserva aquí y lo llena el bloque 1, que es quien sabe si escucha, asiente o se
+    # confunde.
+    with st.container(horizontal=True, vertical_alignment="center", gap="medium",
+                      key="vd_marca_carga"):
+        st.markdown('<h2 class="vd-title vd-wordmark">INVIERTE &amp; GANA</h2>',
+                    unsafe_allow_html=True, width="content")
+        st.session_state["_vd_hueco_roc"] = st.empty()
 
     # La dona de cobertura va ARRIBA de los tres bloques (integrada v2: antes vivía al
     # final; ver spec U4 §5.1.4 y referencia-carga-cobertura-integrada-v2.html).
