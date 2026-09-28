@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1312 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+Línea base: **1314 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/auto-alto-flex-basis-huerfano`, base `main` = `ffbde3e` (#176), con `real_examples/` y
+`CONY_test.csv`. +2: `test_flex_basis_huerfano.py`, que mide en Chromium (Playwright) que el
+`flex-basis` inline del auto-alto no estira a un elemento sin iframe; sin Chromium se salta.
+Sin datos privados: no medido en esta rama.)
+
+Antes: **1312 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
 `fix/huerfanas-compra-dias-despues` = `9b09daf` (base `main` = `18a08b2`, #175 dentro), con `real_examples/`
 y `CONY_test.csv`. +1: `test_una_distribucion_respalda_la_compra_de_los_dias_siguientes`.
 Sin datos privados (worktree limpio): **1209 passed, 86 skipped, 1 deselected**.)

@@ -343,6 +343,15 @@ _ESTILOS = """
         [data-testid="stHeader"], .block-container {
           user-select: none; -webkit-user-select: none;
         }
+        /* Hueco en blanco tras cambiar de vista (medido 2026-09-28): el auto-alto de los
+           componentes (`tools/_auto_alto.py`) fija `flex-basis` INLINE en el contenedor de su
+           iframe. React reutiliza ese nodo para el elemento que ocupe la misma posición en la
+           vista siguiente y le cambia la clase, pero no toca un estilo que no puso él: un
+           párrafo de 51 px heredaba 170 px del iframe anterior. Streamlit fija el alto por
+           clase, nunca inline, así que un inline sin iframe dentro solo puede ser ese resto. */
+        [data-testid="stElementContainer"][style*="flex-basis"]:not(:has(iframe)) {
+          flex-basis: auto !important;
+        }
         input, textarea, [contenteditable="true"], [data-testid="stDataFrame"],
         [data-testid="stDataFrame"] *, [data-testid="stCode"], pre, code {
           user-select: text; -webkit-user-select: text;
