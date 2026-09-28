@@ -93,7 +93,20 @@ def test_cascada_cierra_con_drip():
 
     assert g["precio"] == pytest.approx(-650)                # −250 − 400, a mano
     assert g["precio"] + g["dividendos"] == pytest.approx(g["retorno"]) == -250
-    assert g["veredicto"] == "El precio cayó 65% y los dividendos no alcanzan a cubrirlo."
+    # La caída se mide contra lo que costaron todas las acciones (700 + 650 = 1350), no
+    # contra el bolsillo (1000): 650/1350 = 48%. Contra el bolsillo daba 65%, y con más
+    # DRIP pasaba del 100%.
+    assert g["veredicto"] == "El precio cayó 48% y los dividendos no alcanzan a cubrirlo."
+
+
+def test_la_caida_nunca_pasa_del_100_por_ciento():
+    """Con DRIP fuerte la caída del precio (sobre todas las acciones) supera al bolsillo:
+    invertido 600, valor 150, dividendos 250 casi todos reinvertidos, `net_profit` −410
+    ⇒ precio −660. Contra el bolsillo serían 110%; contra el costo (150 + 660) son 81%."""
+    g = _grupo(portafolios_data({"D": _stats(600, 150, 250, net_profit=-410)},
+                                {"D": "mode_a"}), "div")
+    assert g["precio"] == pytest.approx(-660)
+    assert g["veredicto"] == "El precio cayó 81% y los dividendos no alcanzan a cubrirlo."
 
 
 def test_la_barra_precio_no_promete_valor_de_hoy_menos_invertido(monkeypatch):
