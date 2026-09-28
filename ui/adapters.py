@@ -2611,7 +2611,7 @@ def metodo_real_data(resultados: dict, df, tasa_pct, pais: str | None = None) ->
 # `dividends_collected_cash`, que mezclaría bases (Regla 2 del contrato).
 
 def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
-                          invertido: float) -> str | None:
+                          invertido: float, costo: float | None = None) -> str | None:
     """La frase de una línea de cada tarjeta de grupo. `None` = sin frase (el componente
     deja el párrafo vacío). Ramas, en orden:
 
@@ -2620,6 +2620,11 @@ def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
     - `precio >= 0`: qué parte del resultado explica el precio (≥70% = «el precio manda»).
     - `precio < 0`: si los dividendos cubren la caída, y con cuánto margen
       (`retorno / invertido < 0.10` = «con poco margen»).
+
+    `costo` es lo que costaron TODAS las acciones (`mv − precio`: el bolsillo más lo
+    reinvertido por DRIP). La caída se mide contra eso y no contra `invertido`: desde que
+    `precio` incluye las acciones del DRIP, dividir por el bolsillo daba caídas de más del
+    100% («El precio cayó 108%»).
     """
     if invertido <= 0:
         return None
@@ -2631,7 +2636,8 @@ def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
             return (f"El {share}% del resultado viene del precio. "
                     "Los dividendos son un extra.")
         return f"El precio aporta el {share}% del resultado; los dividendos, el resto."
-    caida = round(-precio / invertido * 100)
+    base = costo if costo and costo > 0 else invertido
+    caida = round(-precio / base * 100)
     if dividendos >= -precio:
         margen = ", con poco margen" if retorno / invertido < 0.10 else ""
         return f"El precio cayó {caida}%. Los dividendos cubren esa caída{margen}."
@@ -2669,7 +2675,7 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
             "clave": clave, "nombre": nombre,
             "invertido": inv, "mv": mv, "dividendos": div, "precio": precio,
             "retorno": tr, "retorno_pct": pct, "pct": 0.0,
-            "veredicto": _veredicto_portafolio(precio, div, tr, inv),
+            "veredicto": _veredicto_portafolio(precio, div, tr, inv, costo=mv - precio),
             "fondos": fondos,
         })
     if not grupos:
