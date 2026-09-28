@@ -177,80 +177,9 @@ def render_vista(vista: str, ruta) -> None:
 
 
 ESTILOS_HEREDADAS = """
-        .vd-her-seccion {
-          font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-          letter-spacing: .04em; text-transform: uppercase; color: var(--ink);
-          margin: 22px 0 4px;
-        }
-        .vd-her-subtitulo {
+        [data-testid="stMarkdownContainer"] p.vd-her-subtitulo {
           font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
           margin: 18px 0 6px;
         }
-        .vd-her-lede { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin: 0 0 12px; }
-        .vd-her-nota { font-size: 12px; color: var(--ink-mut); line-height: 1.6; margin: 0 0 10px; }
-
-        .vd-her-card {
-          border-left: 3px solid var(--hair); background: var(--panel-tint);
-          padding: 8px 14px; margin: 8px 0;
-        }
-        .vd-her-card-titulo { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink); margin: 0; }
-
-        .vd-her-callout {
-          border-left: 4px solid var(--hair); background: var(--panel-tint);
-          padding: 12px 16px; margin: 8px 0 14px;
-        }
-        .vd-her-callout-eyebrow {
-          font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
-          letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 8px;
-        }
-        .vd-her-callout-cuerpo { font-size: 12px; color: var(--ink-2); line-height: 1.65; margin: 0; }
-        .vd-her-callout-lista { font-size: 12px; color: var(--ink-2); line-height: 1.6; margin: 0; padding-left: 18px; }
-        .vd-her-callout-lista li { margin: 0 0 6px; }
-
-        .vd-her-nav-headline { font-weight: 700; font-size: 15px; margin: 10px 0 2px; }
-        .vd-her-nav-plain { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; margin: 0 0 4px; }
-
-        .vd-her-tk-header {
-          display: flex; align-items: baseline; gap: 10px; margin: 20px 0 10px;
-          padding-top: 14px; border-top: 1px dashed var(--hair);
-        }
-        .vd-her-tk-nombre { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); }
-        .vd-her-tk-badge {
-          font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .08em;
-          text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent);
-          padding: 1px 6px;
-        }
-        .vd-her-tk-precio { font-size: 12px; color: var(--ink-mut); margin-left: auto; }
-
-        .vd-her-tkpi { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 8px 0 10px; }
-        .vd-her-tkpi-cell { border: 1px dashed var(--hair); padding: 8px 10px; }
-        .vd-her-tkpi-label {
-          font-size: 9px; color: var(--ink-mut); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 3px;
-        }
-        .vd-her-tkpi-value { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--ink); margin: 0; }
-        .vd-her-tkpi-sub { font-size: 10px; color: var(--ink-mut); margin: 2px 0 0; }
-
-        .vd-her-cobertura { font-size: 11px; margin: 0 0 2px; }
-
-        .vd-her-roc-callout { border-left: 3px solid var(--warn); background: var(--panel-tint); padding: 12px 16px; margin: 8px 0; }
-        .vd-her-roc-titulo { font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--warn); margin: 0 0 8px; }
-        .vd-her-roc-valores { display: flex; gap: 24px; margin-bottom: 8px; }
-        .vd-her-roc-num { display: block; font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); }
-        .vd-her-roc-sub { display: block; font-size: 10px; color: var(--ink-mut); }
-        .vd-her-roc-explica { font-size: 11.5px; color: var(--ink-2); line-height: 1.55; margin: 0; }
-
-        .vd-her-retorno { border-left: 3px solid var(--hair); background: var(--panel-tint); padding: 13px 18px; margin: 8px 0 12px; }
-        .vd-her-retorno-label { font-size: 10px; color: var(--ink-mut); font-weight: 400; margin: 0 0 4px; letter-spacing: .08em; text-transform: uppercase; }
-        .vd-her-retorno-num { font-family: var(--font-mono); font-size: 24px; font-weight: 700; margin: 0 0 6px; }
-        .vd-her-retorno-pct { font-size: 14px; font-weight: 600; }
-        .vd-her-retorno-desglose { font-size: 11.5px; color: var(--ink-2); margin: 0; }
-
-        .vd-her-erosion { border-left: 3px solid var(--hair); padding: 12px 16px; margin: 0 0 12px; background: var(--panel-tint); }
-        .vd-her-erosion-eyebrow { font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 8px; }
-        .vd-her-erosion-valores { display: flex; gap: 18px; align-items: flex-end; margin-bottom: 8px; }
-        .vd-her-erosion-sub { display: block; font-size: 9px; color: var(--ink-mut); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px; }
-        .vd-her-erosion-num { display: block; font-family: var(--font-mono); font-size: 18px; font-weight: 800; }
-        .vd-her-erosion-vs { font-size: 14px; color: var(--ink-mut); margin-bottom: 4px; }
-        .vd-her-erosion-verdict { font-size: 11px; color: var(--ink-2); margin: 0; }
 """
