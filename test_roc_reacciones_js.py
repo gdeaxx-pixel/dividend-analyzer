@@ -123,6 +123,13 @@ if (OPC.caso === "asiente") {
   out.asentimientos = nodos;
   out.al_final_abajo = abajo;
 }
+if (OPC.caso === "solo_frase") {
+  avanzar(20000);
+  out.spr = [spr.innerHTML, !!spr.hidden];
+  out.frase = [frase.hidden, frase.textContent, frase._c];
+  out.tareas = tareas.length;
+  out.oyentes = docApp.cuantos("dragenter") + docApp.cuantos("mousemove");
+}
 if (OPC.caso === "ojo") {
   out.parpado_izq = spr.innerHTML.indexOf('class="pL" x="2" y="5"') >= 0;
   out.parpado_der = spr.innerHTML.indexOf('class="pL" x="10" y="5"') >= 0;
@@ -132,7 +139,7 @@ console.log(JSON.stringify(out));
 """
 
 
-def _scripts(estado, frase, tam, reaccion):
+def _scripts(estado, frase, tam, reaccion, buho=True):
     """El sprite y el script principal de roc.html con los huecos rellenos igual que
     `render_roc` (el auto-alto, tercer <script>, se deja fuera)."""
     with open(_HTML, encoding="utf-8") as f:
@@ -143,15 +150,16 @@ def _scripts(estado, frase, tam, reaccion):
                 .replace("{{FRASE_JSON}}", json.dumps(frase, ensure_ascii=False))
                 .replace("{{TAM}}", str(tam))
                 .replace("{{REACCION_JSON}}", json.dumps(reaccion, ensure_ascii=False))
+                .replace("{{BUHO_JSON}}", json.dumps(buho))
                 .replace("{{SPRITE_JS}}", sprite))
     bloques = re.findall(r"<script>(.*?)</script>", html, re.S)
     assert len(bloques) == 3, f"roc.html debería tener 3 <script>, tiene {len(bloques)}"
     return bloques[0] + "\n" + bloques[1]
 
 
-def _correr(caso, estado, frase, tam, reaccion, quieto=False):
+def _correr(caso, estado, frase, tam, reaccion, quieto=False, buho=True):
     js = ("var OPC = %s;\n" % json.dumps({"caso": caso, "quieto": quieto})
-          + _ARNES + _scripts(estado, frase, tam, reaccion) + _ESCENARIOS)
+          + _ARNES + _scripts(estado, frase, tam, reaccion, buho) + _ESCENARIOS)
     r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
@@ -228,3 +236,18 @@ def test_paleta_del_favicon_animado_es_la_del_favicon_estatico():
     estatica = {k: ("#" + r + g + b).lower() for k, r, g, b in tuplas}
     assert len(estatica) == 9
     assert js == estatica
+
+
+@_PIDE_NODE
+@pytest.mark.parametrize("estado,reaccion,color", [
+    ("alerta", None, "var(--loss)"),
+    ("impuestos", {"tipo": "ojo"}, "var(--warn)"),
+    ("calculando", {"tipo": "favicon"}, "var(--drip)"),
+])
+def test_solo_frase_no_dibuja_buho_ni_anima(estado, reaccion, color):
+    """`buho=False` (el búho vive en el encabezado, Daniel 2026-09-28): solo la frase, con el
+    color del estado; sin sprite, sin temporizadores y sin oyentes — un favicon o un arrastre
+    duplicados abajo pelearían con los del búho de arriba."""
+    out = _correr("solo_frase", estado, "Frase de prueba.", 64, reaccion, buho=False)
+    assert out == {"spr": ["", True], "frase": [False, "Frase de prueba.", color],
+                   "tareas": 0, "oyentes": 0}

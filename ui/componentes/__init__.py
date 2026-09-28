@@ -339,10 +339,12 @@ def alto_roc(tam: int, con_frase: bool) -> int:
 
 
 def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
-               reaccion: dict | None = None) -> None:
+               reaccion: dict | None = None, buho: bool = True) -> None:
     """Dibuja a ROC en uno de sus 6 estados. El estado, la frase y la reacción llegan
     resueltos (`ui.adapters.ROC_POR_VEREDICTO` / `roc_salud_data` / `ROC_REACCIONES`); aquí
-    no se decide nada. Una reacción que no vale con ese estado es un error del llamador."""
+    no se decide nada. Una reacción que no vale con ese estado es un error del llamador.
+    `buho=False` dibuja solo la frase, con el color del estado: el búho ya está arriba, en
+    el encabezado (`roc_de_vista`)."""
     from ui.adapters import ROC_ESTADOS, ROC_REACCIONES
     if estado not in ROC_ESTADOS:
         raise ValueError(f"Estado de ROC desconocido: {estado!r}")
@@ -354,8 +356,37 @@ def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
     html = html.replace("{{FRASE_JSON}}", json.dumps(frase, ensure_ascii=False))
     html = html.replace("{{TAM}}", str(int(tam)))
     html = html.replace("{{REACCION_JSON}}", json.dumps(reaccion, ensure_ascii=False))
+    html = html.replace("{{BUHO_JSON}}", json.dumps(bool(buho)))
     html = html.replace("{{SPRITE_JS}}", _plantilla("roc_sprite.js"))
-    components.html(html, height=alto_roc(tam, bool(frase)), scrolling=False)
+    alto = alto_roc(tam, bool(frase)) if buho else alto_roc(0, bool(frase))
+    components.html(html, height=alto, scrolling=False)
+
+
+# Un solo búho por pantalla (Daniel, 2026-09-28): el del encabezado, junto a la marca, toma
+# el estado de la vista y la frase se queda abajo, sin búho. `render_encabezado` reserva el
+# hueco; la vista lo llena con `roc_de_vista` y, si ninguna lo llenó, `cerrar_roc_encabezado`
+# lo deja en «vigilante». Sin encabezado (tests, bloques sueltos) se dibuja completo en sitio.
+HUECO_ROC_VISTA = "_vd_hueco_roc_vista"
+TAM_ROC_ENCABEZADO = 36
+
+
+def roc_de_vista(estado: str, tema: str, frase: str | None = None,
+                 reaccion: dict | None = None, tam: int = 72) -> None:
+    hueco = st.session_state.pop(HUECO_ROC_VISTA, None)
+    if hueco is None:
+        render_roc(estado, tema, frase, tam=tam, reaccion=reaccion)
+        return
+    with hueco.container():
+        render_roc(estado, tema, None, tam=TAM_ROC_ENCABEZADO, reaccion=reaccion)
+    if frase:
+        render_roc(estado, tema, frase, reaccion=reaccion, buho=False)
+
+
+def cerrar_roc_encabezado(tema: str) -> None:
+    hueco = st.session_state.pop(HUECO_ROC_VISTA, None)
+    if hueco is not None:
+        with hueco.container():
+            render_roc("vigilante", tema, None, tam=TAM_ROC_ENCABEZADO)
 
 
 def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | None = None,

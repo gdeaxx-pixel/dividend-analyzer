@@ -619,7 +619,9 @@ def test_dona_va_arriba_del_flujo_de_carga():
     assert "UnknownElement" in tipos, "el iframe de la dona no se dibujó"
     idx_dona = tipos.index("UnknownElement")
     assert idx_dona == 1, f"la dona no va justo tras el wordmark: {tipos}"
-    assert isinstance(orden[0].value, str) and "vd-wordmark" in orden[0].value
+    # El wordmark va en una fila horizontal con el hueco de ROC a su derecha.
+    fila = list(orden[0].children.values())
+    assert isinstance(fila[0].value, str) and "vd-wordmark" in fila[0].value
     # Todo lo que viene después (bloques) va detrás de la dona.
     idx_bloque = next(i for i, el in enumerate(orden)
                       if isinstance(getattr(el, "value", None), str)

@@ -57,6 +57,7 @@
   var FRASE = {{FRASE_JSON}};
   var TAM = {{TAM}};
   var REACCION = {{REACCION_JSON}};
+  var BUHO = {{BUHO_JSON}};
   if (typeof ROC_ESTADOS === "undefined") return;
   if (ROC_ESTADOS.indexOf(ESTADO) < 0) ESTADO = "vigilante";
   if (typeof TAM !== "number" || !(TAM > 0)) TAM = 72;
@@ -78,6 +79,7 @@
   }
   var COLOR_FRASE = TIPO === "ojo" ? "var(--warn)" : COLOR[ESTADO];
   ponerFrase(FRASE, COLOR_FRASE);
+  if (BUHO === false) { spr.hidden = true; return; }
   var S = { st: ESTADO, look: ESTADO === "impuestos" ? [0, 1] : [0, 0], lid: 0,
     lidL: TIPO === "ojo" ? 2 : 0, nod: 0, wing: 0, hop: 0, face: "front" };
   var ocupado = false, expectante = false;

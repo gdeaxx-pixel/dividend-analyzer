@@ -225,8 +225,8 @@ def test_salud_nav_dibuja_a_roc_con_la_misma_cifra_que_el_detalle(monkeypatch):
     monkeypatch.setattr(vistas, "_stats_o_aviso", lambda ruta: {"stats": "sintéticos"})
     monkeypatch.setattr(vistas, "salud_nav_data", lambda etf, stats: datos)
     monkeypatch.setattr(vistas.logic, "load_instruments", lambda: {})
-    monkeypatch.setattr(vistas, "render_roc",
-                        lambda estado, tema, frase=None, tam=72:
+    monkeypatch.setattr(vistas, "roc_de_vista",
+                        lambda estado, tema, frase=None, reaccion=None, tam=72:
                         rocs.append((estado, tema, frase, tam)))
     monkeypatch.setattr(vistas.st, "caption", lambda texto, *a, **k: captions.append(texto))
 
@@ -292,29 +292,69 @@ import sys
 sys.path.insert(0, __RAIZ__)
 import streamlit as st
 from ui.chrome import render_encabezado
-render_encabezado(st.session_state.get("_con_datos_prueba", False))
+from ui.componentes import cerrar_roc_encabezado, roc_de_vista
+con_datos = st.session_state.get("_con_datos_prueba", False)
+render_encabezado(con_datos)
+if con_datos:
+    vista = st.session_state.get("_roc_vista_prueba")
+    if vista:
+        roc_de_vista(*vista)
+    cerrar_roc_encabezado("Claro")
 """.replace("__RAIZ__", repr(_RAIZ))
 
 
 @pytest.mark.parametrize("con_datos", [False, True])
 def test_encabezado_lleva_a_roc(con_datos):
-    """X1: el búho de 28px del encabezado. Con datos va junto a la marca «Invierte & Gana».
-    Sin datos el encabezado solo RESERVA el hueco: lo llena el bloque 1 de la carga (un solo
-    búho en la pantalla, con sus reacciones) — lo prueba
+    """X1: con datos, el búho del encabezado va a la DERECHA de la marca «Invierte & Gana»
+    y, si ninguna vista lo llenó, queda en «vigilante». Sin datos el encabezado no dibuja
+    ni marca ni búho: el wordmark de la carga lleva el suyo — lo prueba
     `test_roc_reacciones.py::test_carga_un_solo_roc_en_el_encabezado_y_es_el_que_escucha_el_arrastre`."""
     at = AppTest.from_string(_SCRIPT_ENCABEZADO, default_timeout=25)
     at.session_state["_con_datos_prueba"] = con_datos
     at.run()
     assert not at.exception
-    rocs = [f for f in at.get("iframe") if 'var ESTADO = "vigilante";' in f.proto.srcdoc]
-    if not con_datos:
-        assert rocs == []
-        assert "_vd_hueco_roc" in at.session_state
-        return
-    assert len(rocs) == 1
-    assert "var TAM = 28;" in rocs[0].proto.srcdoc
+    rocs = [f for f in at.get("iframe") if "function rocGrid" in f.proto.srcdoc]
     marca = any("Invierte &amp; Gana" in m.value for m in at.markdown)
     assert marca is con_datos
+    if not con_datos:
+        assert rocs == []
+        return
+    assert len(rocs) == 1
+    assert 'var ESTADO = "vigilante";' in rocs[0].proto.srcdoc
+    assert "var TAM = 36;" in rocs[0].proto.srcdoc
+    orden = []
+    for el in _en_orden(at.main):
+        if "function rocGrid" in (getattr(getattr(el, "proto", None), "srcdoc", "") or ""):
+            orden.append("roc")
+        elif getattr(el, "type", None) == "markdown" and "vd-brand" in el.value:
+            orden.append("marca")
+    assert orden == ["marca", "roc"]
+
+
+def test_un_solo_buho_la_vista_llena_el_del_encabezado_y_la_frase_queda_abajo():
+    """Daniel, 2026-09-28: un búho por pantalla. La vista pinta su estado en el búho del
+    encabezado y su frase abajo SIN búho. Mutantes que caza: la vista vuelve a dibujar su
+    propio búho (dos), la frase se pierde, o `cerrar_roc_encabezado` pisa el estado de la
+    vista con «vigilante»."""
+    at = AppTest.from_string(_SCRIPT_ENCABEZADO, default_timeout=25)
+    at.session_state["_con_datos_prueba"] = True
+    at.session_state["_roc_vista_prueba"] = ("alerta", "Claro", "Ojo: NAV -38%/año.")
+    at.run()
+    assert not at.exception
+    rocs = [f.proto.srcdoc for f in at.get("iframe") if "function rocGrid" in f.proto.srcdoc]
+    buhos = [s for s in rocs if "var BUHO = true;" in s]
+    frases = [s for s in rocs if "var BUHO = false;" in s]
+    assert len(buhos) == 1 and len(frases) == 1, (len(buhos), len(frases))
+    assert 'var ESTADO = "alerta";' in buhos[0]
+    assert "var FRASE = null;" in buhos[0]
+    assert "var TAM = 36;" in buhos[0]
+    assert "Ojo: NAV -38%/año." in frases[0]
+
+
+def _en_orden(nodo):
+    for hijo in getattr(nodo, "children", {}).values():
+        yield hijo
+        yield from _en_orden(hijo)
 
 
 def _impuestos_con(monkeypatch, datos_fiscales):
@@ -378,7 +418,7 @@ def test_fila_9_dibuja_un_solo_roc_arriba_con_los_mismos_objetos(monkeypatch):
 
     monkeypatch.setattr(adapters, "salud_nav_data", _salud)
     monkeypatch.setattr(componentes, "render_roc",
-                        lambda estado, tema, frase=None, tam=72:
+                        lambda estado, tema, frase=None, tam=72, reaccion=None, buho=True:
                         eventos.append(("roc", estado, frase, tam)))
     vistos = {}
 

@@ -93,5 +93,6 @@ def render_vista(vista: str, ruta) -> None:
         return
 
     roc = adapters.roc_impuestos_data(datos)
-    componentes.render_roc("impuestos", ruta.tema, roc["frase"], tam=64, reaccion=roc["reaccion"])
+    componentes.roc_de_vista("impuestos", ruta.tema, roc["frase"], reaccion=roc["reaccion"],
+                             tam=64)
     componentes.render_impuestos(datos, ruta.tema)

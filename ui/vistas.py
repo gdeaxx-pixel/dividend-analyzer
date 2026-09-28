@@ -17,7 +17,8 @@ from ui.adapters import (ROC_FRASE_CARGA, DatosIncompletos, cashflow_data,
 from ui.chrome import Ruta, render_placeholder
 from ui.componentes import (render_cashflow, render_comparacion, render_comparacion_real,
                             render_hoja, render_metodo, render_metodo_real,
-                            render_metodologia, render_rail, render_roc)
+                            render_metodologia, render_rail, render_roc,
+                            HUECO_ROC_VISTA, TAM_ROC_ENCABEZADO, roc_de_vista)
 from ui.validacion import render_validacion_datos
 
 
@@ -64,10 +65,21 @@ def _resultados() -> dict:
         capturas = None
         if st.session_state.get("_wizard_pos_confirmed"):
             capturas = st.session_state.get("_wizard_positions") or None
+        tema = st.session_state.get("vd_tema", "Claro")
+        # Un solo búho: si hay encabezado, el que gira es el suyo (se usa `get`, no `pop`:
+        # la vista lo vuelve a llenar después) y aquí abajo queda solo la frase.
+        hueco_enc = st.session_state.get(HUECO_ROC_VISTA)
         hueco_roc = st.empty()
         with hueco_roc.container():
-            render_roc("calculando", st.session_state.get("vd_tema", "Claro"),
-                       ROC_FRASE_CARGA, tam=64, reaccion={"tipo": "favicon"})
+            if hueco_enc is None:
+                render_roc("calculando", tema, ROC_FRASE_CARGA, tam=64,
+                           reaccion={"tipo": "favicon"})
+            else:
+                render_roc("calculando", tema, ROC_FRASE_CARGA, buho=False)
+        if hueco_enc is not None:
+            with hueco_enc.container():
+                render_roc("calculando", tema, None, tam=TAM_ROC_ENCABEZADO,
+                           reaccion={"tipo": "favicon"})
         # `finally`: si el cálculo lanza, ROC «calculando» se retira igual. Sin eso el iframe
         # se queda y, con él, el favicon girando en la pestaña para siempre.
         try:
@@ -76,6 +88,8 @@ def _resultados() -> dict:
                     df, position_overrides=capturas)
         finally:
             hueco_roc.empty()
+            if hueco_enc is not None:
+                hueco_enc.empty()
     return st.session_state["_vd_resultados"] or {}
 
 
@@ -223,7 +237,7 @@ def render_salud_nav(ruta: Ruta) -> None:
     datos = salud_nav_data(ruta.etf, stats)
 
     roc = roc_salud_data(datos)
-    render_roc(roc["estado"], ruta.tema, roc["frase"], tam=72)
+    roc_de_vista(roc["estado"], ruta.tema, roc["frase"], tam=72)
 
     st.markdown('<span class="vd-badge">Salud del NAV</span>', unsafe_allow_html=True)
     st.markdown(

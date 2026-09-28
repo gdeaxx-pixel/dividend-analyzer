@@ -209,10 +209,10 @@ def _en_orden(nodo):
 
 
 def test_carga_un_solo_roc_en_el_encabezado_y_es_el_que_escucha_el_arrastre():
-    """La pantalla de carga completa (encabezado + bloques) lleva UN búho, arriba del
-    wordmark, y es el del bloque 1: el que escucha el arrastre. Mutantes que caza:
+    """La pantalla de carga completa (encabezado + bloques) lleva UN búho, a la DERECHA
+    del wordmark, y es el del bloque 1: el que escucha el arrastre. Mutantes que caza:
     el encabezado vuelve a dibujar su propio ROC (dos búhos), o el bloque 1 deja de usar
-    el hueco del encabezado (el búho cae debajo del wordmark)."""
+    el hueco junto al wordmark (el búho cae debajo, en los bloques)."""
     at = AppTest.from_string(_SCRIPT_CARGA, default_timeout=25)
     at.run()
     assert at.exception == []
@@ -223,9 +223,15 @@ def test_carga_un_solo_roc_en_el_encabezado_y_es_el_que_escucha_el_arrastre():
             orden.append(("roc", srcdoc))
         elif getattr(el, "type", None) == "markdown" and "vd-wordmark" in el.value:
             orden.append(("wordmark", None))
-    assert [t for t, _ in orden] == ["roc", "wordmark"]
-    assert 'var REACCION = {"tipo": "arrastre", "frase": "Suéltalo."};' in orden[0][1]
-    assert "var TAM = 28;" in orden[0][1]
+    assert [t for t, _ in orden] == ["wordmark", "roc"]
+    assert 'var REACCION = {"tipo": "arrastre", "frase": "Suéltalo."};' in orden[1][1]
+    assert "var TAM = 28;" in orden[1][1]
+    # A su derecha = en la misma fila horizontal que el wordmark, no más abajo.
+    fila = next(el for el in _en_orden(at.main)
+                if any(getattr(h, "type", None) == "markdown" and "vd-wordmark" in h.value
+                       for h in getattr(el, "children", {}).values()))
+    assert any("function rocGrid" in (getattr(getattr(el, "proto", None), "srcdoc", "") or "")
+               for el in _en_orden(fila))
 
 
 def test_carga_sin_frase_de_bloques_y_uploader_sin_help_invisible():

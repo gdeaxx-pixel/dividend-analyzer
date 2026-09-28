@@ -120,7 +120,7 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
 
     tema = st.session_state.get("vd_tema", "Claro")
     roc = roc_cartera_data([datos for _, datos in filas])
-    componentes.render_roc(roc["estado"], tema, roc["frase"], tam=64)
+    componentes.roc_de_vista(roc["estado"], tema, roc["frase"], tam=64)
 
     datos = vigilar_data(resultados, dict(filas))
     if datos is None:
