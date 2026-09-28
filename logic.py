@@ -5779,6 +5779,9 @@ def withheld_tax_total(history_df) -> float:
     return round(max(0.0, -signed), 2)  # retención neta soportada (≥0)
 
 
+_DIAS_LIQUIDACION_DRIP = 4
+
+
 def drip_huerfanas(history_df) -> dict:
     """Compras del DRIP (`Reinvest Shares`) que no tienen su fila fuente (`Reinvest
     Dividend`) el mismo día, con su importe. Es lo que hace que el bruto declarado por el
@@ -5808,7 +5811,14 @@ def drip_huerfanas(history_df) -> dict:
     es_fuente = (es_drip & accion.str.contains('dividend|dividendo', na=False)
                  & ~accion.map(_is_tax_row_action))
     dias_fuente = set(fechas[es_fuente].dropna())
-    sin_respaldo = es_compra & ~fechas.isin(dias_fuente)
+    # Schwab a veces compra días después de pagar: TSLY cobró el vie 01-nov-2024 y compró el
+    # lun 04-nov; cobró el 05-ene-2026 y compró el 06. Una distribución SIN compra ese día
+    # respalda las de los `_DIAS_LIQUIDACION_DRIP` siguientes. Las que sí tienen compra el
+    # mismo día no se extienden, y la ventana no alcanza la distribución semanal siguiente.
+    diferidas = sorted(dias_fuente - set(fechas[es_compra].dropna()))
+    respaldada = fechas.map(lambda d: d in dias_fuente or any(
+        0 < (d - f).days <= _DIAS_LIQUIDACION_DRIP for f in diferidas))
+    sin_respaldo = es_compra & ~respaldada.fillna(False).astype(bool)
     importe = sum(abs(_clean_money(v)) for v in history_df.loc[sin_respaldo.values, 'Amount']
                   if _clean_money(v) == _clean_money(v))
     return {'compras': int(es_compra.sum()), 'fuentes': int(es_fuente.sum()),

@@ -459,6 +459,37 @@ def test_las_huerfanas_se_cuentan_por_dia_no_por_total_de_filas():
     assert h == {"compras": 4, "fuentes": 2, "huerfanas": 1, "importe": 30.00}, h
 
 
+_CSV_COMPRA_DIAS_DESPUES = (
+    b'"Transactions for account XXXX-1234","","","","","","",""\n'
+    b'"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"\n'
+    b'"10/01/2024","Buy","TSLY","YIELDMAX TSLY","100","12.00","","-1200.00"\n'
+    # Cobra el viernes y compra el lunes (TSLY real, 01/04-nov-2024).
+    b'"11/01/2024","Reinvest Dividend","TSLY","YIELDMAX TSLY","","","","20.78"\n'
+    b'"11/04/2024","Reinvest Shares","TSLY","YIELDMAX TSLY","1.7296","12.01","","-20.78"\n'
+    # Cobra y compra el mismo día: esa distribución NO se extiende a días posteriores.
+    b'"11/08/2024","Reinvest Dividend","TSLY","YIELDMAX TSLY","","","","20.00"\n'
+    b'"11/08/2024","Reinvest Shares","TSLY","YIELDMAX TSLY","1.6","12.50","","-20.00"\n'
+    b'"11/11/2024","Reinvest Shares","TSLY","YIELDMAX TSLY","0.8","12.50","","-10.00"\n'
+    # Distribución sin compra y la siguiente compra a 7 días (el pago semanal que falta).
+    b'"11/15/2024","Reinvest Dividend","TSLY","YIELDMAX TSLY","","","","18.00"\n'
+    b'"11/22/2024","Reinvest Shares","TSLY","YIELDMAX TSLY","1.5","12.00","","-18.00"\n'
+)
+
+
+def test_una_distribucion_respalda_la_compra_de_los_dias_siguientes():
+    """Schwab a veces compra días después de pagar: en los 3 CSV reales así eran TODAS las
+    huérfanas de MSTY (cobro vie 12-dic-2025, compra lun 15) y 2 de las 3 de TSLY. Una
+    distribución sin compra ese día respalda las compras de los 4 días siguientes.
+
+    La ventana no se estira: la del 11/08 ya tiene su compra y no respalda la del 11/11, y la
+    del 11/15 no alcanza la compra del 11/22 (7 días, el pago semanal siguiente). Quedan 2
+    huérfanas, $28.00. Por día exacto salían 3 ($48.78)."""
+    df, _ = logic.load_and_detect_csv(FakeFile(_CSV_COMPRA_DIAS_DESPUES, "diasdesp.csv"))
+    dfc = logic.normalize_csv(df)
+    h = logic.drip_huerfanas(dfc[dfc["Ticker"] == "TSLY"])
+    assert h == {"compras": 4, "fuentes": 3, "huerfanas": 2, "importe": 28.00}, h
+
+
 def test_el_titular_nombra_lo_que_no_se_dibuja(monkeypatch):
     """El mismo aviso sirve a dos vistas, así que el sujeto se pasa: «Este recorrido» en
     Cash flow, «Esta hoja» en la Hoja Excel. (De la segunda no hay test de render: hoy
