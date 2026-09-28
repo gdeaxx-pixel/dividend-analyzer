@@ -2644,7 +2644,7 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
     Grupos en orden `crec` (mode_b, Crecimiento) y `div` (mode_a, Dividendos); solo los
     que tengan tickers con datos analizables (`_tiene_datos`). Ninguno → `None` (el
     componente se oculta). Por grupo, los agregados salen de `_agregados` (import local
-    desde `ui.heredadas` para no crear ciclo) y `precio = mv - inv`. Por fondo,
+    desde `ui.heredadas` para no crear ciclo) y `precio = retorno − dividendos`. Por fondo,
     `market_value or 0`; se excluyen los `<= 0`; orden por `mv` descendente. `pct` de
     grupo y de fondo sobre `total_mv`, sin redondear — el JS redondea al dibujar.
     """
@@ -2658,7 +2658,9 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
         if not tickers:
             continue
         inv, mv, div, tr, pct = _agregados(resultados, tickers)
-        precio = mv - inv
+        # `mv − inv` contaría dos veces lo reinvertido por DRIP: esas acciones ya están en
+        # `mv` y su dividendo también está en `div`. Así la cascada cierra por construcción.
+        precio = tr - div
         fondos = [{"ticker": t, "mv": resultados[t].get("market_value") or 0}
                   for t in tickers]
         fondos = [f for f in fondos if f["mv"] > 0]

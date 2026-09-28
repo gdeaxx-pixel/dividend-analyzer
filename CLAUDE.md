@@ -96,7 +96,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1314 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+Línea base: **1316 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/cascada-drip-doble-conteo`, base `main` = `22a210d` (#177), con `real_examples/` y `CONY_test.csv`.
++2 en `test_portafolios_data.py`: la cascada de Portafolios cierra con DRIP (`precio + dividendos =
+retorno`) y la barra Precio ya no promete «invertiste · hoy vale».)
+
+Antes: **1314 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
 `fix/auto-alto-flex-basis-huerfano`, base `main` = `ffbde3e` (#176), con `real_examples/` y
 `CONY_test.csv`. +2: `test_flex_basis_huerfano.py`, que mide en Chromium (Playwright) que el
 `flex-basis` inline del auto-alto no estira a un elemento sin iframe; sin Chromium se salta.
