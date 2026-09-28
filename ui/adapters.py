@@ -2718,7 +2718,7 @@ _VIG_CHIP = {
 
 
 def _vig_dinero(v: float, signo: bool = False, dec: int = 2) -> str:
-    """`−$138.86` / `$259.15` / `+$259.15`. El signo va delante del `$` y es el menos
+    """`−$250.00` / `$400.00` / `+$400.00`. El signo va delante del `$` y es el menos
     tipográfico (U+2212), no el guion: la vista vieja mostraba `$-138.86`."""
     r = round(v, dec)
     txt = f"${abs(r):,.{dec}f}"
