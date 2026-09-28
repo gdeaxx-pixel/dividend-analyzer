@@ -334,6 +334,8 @@ out.abrir00 = { title: _t("vm-title"), rows: _rows(), go: _t("vm-go") };
 window.__vigAbrir(2, 1);
 out.abrir21 = { title: _t("vm-title") };
 out.sanos = { text: _t("vig-sanos"), hidden: store["vig-sanos"] ? store["vig-sanos"].hidden : null };
+out.chips = _all.filter(function (n) { return n._classes.indexOf("chip") >= 0; }).map(function (n) { return n.className; });
+out.hint = store["vig-hint"].hidden;
 console.log(JSON.stringify(out));
 """
 
@@ -373,3 +375,8 @@ def test_el_modal_abre_la_explicacion_del_punto_tocado():
 
     assert out["sanos"]["hidden"] is False
     assert out["sanos"]["text"] == "SANO: sin alertas."
+
+    # El color del chip ES el estado (rojo encogiéndose, ámbar mezclado): sin esto, un chip
+    # que siempre sale rojo pasaba la suite (mutante A4 de la auditoría de Opus).
+    assert out["chips"] == ["chip chip-loss", "chip chip-warn", "chip chip-warn"]
+    assert out["hint"] is False, "hay puntos clicables: la pista «Toca un punto…» debe verse"
