@@ -135,3 +135,12 @@ def test_una_baja_de_centavos_no_se_rotula_como_subida(pasos):
     assert SCHB_BAJA["MERCADO"] < 0
     assert "q-gain" not in mercado["n"]
     assert not any("Subida" in fila for fila in mercado["leyenda"])
+
+
+def test_sin_drip_la_leyenda_no_lo_nombra(pasos):
+    """MSTY no reinvierte: la leyenda decía «DRIP · $0.00 · Los 0 siguen vivos»."""
+    assert MSTY["DRIP"] == 0
+    for paso in range(len(MSTY["STEP_LABELS"])):
+        assert not any(fila.startswith("DRIP") for fila in pasos["MSTY", paso]["leyenda"]), paso
+    # Con DRIP la fila sigue ahí.
+    assert any(fila.startswith("DRIP") for fila in pasos["SCHB", PASO_MERCADO]["leyenda"])

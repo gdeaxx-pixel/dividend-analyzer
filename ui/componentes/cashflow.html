@@ -1470,7 +1470,13 @@
   // La leyenda usa amt, nunca n*unit — n*unit es una aproximación visual (el
   // redondeo por categoría no cierra exacto a los centavos) y mostrarla como
   // si fuera el monto real desalinea la cifra (ej. $608.88 en vez de $605.43).
+  // Sin DRIP no hay nada que reinvertir ni que sobreviva: la fila «DRIP · $0.00 · Los 0
+  // siguen vivos» solo hacía ruido. Con DRIP > 0 no se filtra nada.
   function segsForStep(step) {
+    var segs = armarSegs(step);
+    return DRIP > 0 ? segs : segs.filter(function (s) { return !/^DRIP/.test(s.cat); });
+  }
+  function armarSegs(step) {
     if (step === 0) {
       return [{ n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital, recién puesto — todavía no expuesto a nada." }];
     }
