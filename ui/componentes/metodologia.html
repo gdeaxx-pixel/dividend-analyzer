@@ -1135,7 +1135,7 @@
         <h3 class="meth-h">11 · Evolución de la calculadora: complejidad y rigor</h3>
         <p class="meth-p"><b>Qué mide:</b> cómo creció esta herramienta desde su primer commit (4 feb 2026) hasta hoy, en dos ejes que cuentan la misma historia desde ángulos distintos. La <b>complejidad</b> es el tamaño del motor de cálculo (<code>logic.py</code>, líneas de código) — todo lo que la app sabe hacer con tus cifras. El <b>rigor</b> es el número de tests automatizados que protegen esas cifras — cada uno una afirmación verificada contra casos reales del bróker.</p>
         <p class="meth-p"><b>Cómo se lee:</b> el motor no creció solo: cada salto de complejidad (el ROC/NRA de junio, la unificación fiscal de agosto) llegó acompañado de una red de seguridad proporcional. A mediados de febrero la calculadora era una hoja con una fórmula; en mayo entraron los primeros tests; desde entonces ambos crecieron juntos. Los puntos marcan hitos: los tests empezaron (may), el contrato fiscal ROC/NRA (jun) y la auditoría y unificación del predicado fiscal (ago).</p>
-        <svg id="evoChart" viewBox="0 0 720 340" role="img" aria-label="Gráfica: líneas del motor y número de tests por mes, febrero a agosto 2026" style="width:100%;height:auto;display:block"></svg>
+        <svg id="evoChart" viewBox="0 0 720 340" role="img" aria-label="Gráfica: líneas del motor y número de tests por mes, febrero a septiembre 2026" style="width:100%;height:auto;display:block"></svg>
         <p class="meth-src">Fuente: medido del historial git del propio repositorio — último commit de cada mes; LOC de <code>logic.py</code> vía <code>git show &lt;sha&gt;:logic.py | wc -l</code> y tests contando <code>def test_*</code> sobre los archivos de test del árbol de ese commit. Nada estimado: cada punto es reproducible con esos dos comandos.</p>
       </section>
 
@@ -1234,9 +1234,9 @@
   (function drawEvolucion() {
     var svg = document.getElementById("evoChart");
     if (!svg) return;
-    var MESES = ["feb", "mar", "abr", "may", "jun", "jul", "ago"];
-    var LOC = [661, 677, 1457, 1724, 4439, 5281, 6145];
-    var TESTS = [1, 1, 1, 29, 163, 221, 486];
+    var MESES = ["feb", "mar", "abr", "may", "jun", "jul", "ago", "sep"];
+    var LOC = [661, 677, 1457, 1724, 4439, 5281, 6862, 7439];
+    var TESTS = [1, 1, 1, 29, 163, 221, 633, 1078];
     /* Hitos de progreso: cada punto es clicable y revela título + descripción breve.
        Sin rótulos permanentes sobre la gráfica — la gráfica queda limpia y el detalle
        se descubre al pasar/clicar. `mes` = índice en MESES, `linea` = "loc" | "tests". */
@@ -1252,7 +1252,7 @@
       { mes: 5, linea: "loc", titulo: "Del papel al backtesting",
         desc: "jul 2026 — El giro metodológico: se cambia la teorización de cálculos por un motor event-driven que corre sobre ex-date y pay-date reales, con precios históricos cacheados. Las estrategias dejan de simularse con fórmulas ideales y se prueban contra el calendario real de distribuciones — el mismo estándar que después se usó para auditar el método tradicional de la clase. El motor llega a 5 281 líneas." },
       { mes: 6, linea: "tests", titulo: "Auditoría + predicado único",
-        desc: "ago 2026 — Auditoría completa del motor fiscal: se jubila el cálculo viejo (15 tests retirados, 15 nuevos sobre el objeto vivo), se unifica el predicado de fila —una sola convención bruto/neto para toda la app; antes asumir «IB = neto» duplicaba retenciones de Schwab— y se añaden guards que impiden reintroducir los caminos eliminados. 486 tests protegen el resultado." }
+        desc: "ago 2026 — Auditoría completa del motor fiscal: se jubila el cálculo viejo (15 tests retirados, 15 nuevos sobre el objeto vivo), se unifica el predicado de fila —una sola convención bruto/neto para toda la app; antes asumir «IB = neto» duplicaba retenciones de Schwab— y se añaden guards que impiden reintroducir los caminos eliminados. La suite cierra agosto en 633 tests." }
     ];
     var NS = "http://www.w3.org/2000/svg";
     var W = 720, H = 340, M = { t: 28, r: 56, b: 42, l: 62 };
@@ -1263,7 +1263,7 @@
       return n;
     }
     var maxLoc = Math.ceil(Math.max.apply(null, LOC) / 2000) * 2000;   // 8000
-    var maxTes = Math.ceil(Math.max.apply(null, TESTS) / 100) * 100;   // 500
+    var maxTes = Math.ceil(Math.max.apply(null, TESTS) / 800) * 800;   // 1600
     var x = function (i) { return M.l + (pw * i) / (MESES.length - 1); };
     var yL = function (v) { return M.t + ph * (1 - v / maxLoc); };
     var yT = function (v) { return M.t + ph * (1 - v / maxTes); };
@@ -1450,13 +1450,13 @@
       fill: inkMut, "font-size": "10", "font-style": "italic" });
     pista.textContent = "● los puntos con aro revelan su historia al pasar o hacer clic";
     svg.appendChild(pista);
-    var fin = el("text", { x: x(6) - 6, y: yL(LOC[6]) - 10, "text-anchor": "end",
+    var fin = el("text", { x: x(MESES.length - 1) - 6, y: yL(LOC[LOC.length - 1]) - 10, "text-anchor": "end",
       fill: acc, "font-size": "12", "font-weight": "600" });
-    fin.textContent = "6 145 líneas";
+    fin.textContent = "7 439 líneas";
     svg.appendChild(fin);
-    var fint = el("text", { x: x(6) - 6, y: yT(TESTS[6]) - 10, "text-anchor": "end",
+    var fint = el("text", { x: x(MESES.length - 1) - 6, y: yT(TESTS[TESTS.length - 1]) - 10, "text-anchor": "end",
       fill: "#2e9e6b", "font-size": "12", "font-weight": "600" });
-    fint.textContent = "486 tests";
+    fint.textContent = "1 078 tests";
     svg.appendChild(fint);
     // leyenda
     var lg = el("g", {});
