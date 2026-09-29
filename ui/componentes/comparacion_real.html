@@ -1017,6 +1017,30 @@
 </style>
 <style>
   body { margin: 0; background: var(--ground); }
+
+  #cmpVerdict { margin-top: 18px; }
+  #cmpVerdict .io-row { grid-template-columns: 64px 1fr; }
+  .v-sub { font-family: var(--font-mono); font-size: 13px; color: var(--ink-mut); font-weight: 600; margin-top: 8px; }
+  .v-sub .up { color: var(--accent); } .v-sub .dn { color: var(--loss); }
+  .io-afuera { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+  .io-vacio { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 10px; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-mut); }
+  .cmp-note { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; max-width: none; }
+  .cmp-ib { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--accent); background: var(--panel); border: 1px solid var(--accent); padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  .cmp-ib:hover { background: var(--accent); color: var(--panel); }
+  .cmp-avisos { font-size: 12.5px; color: var(--loss); margin: 10px 0 0; line-height: 1.5; }
+  .cmp-avisos b { font-weight: 700; }
+  #modal-cmpinfo { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px; }
+  #modal-cmpinfo.open { display: flex; }
+  #modal-cmpinfo .modal-box { max-width: 560px; }
+  .cmp-hall p { font-size: 13px; line-height: 1.55; color: var(--ink); margin: 0 0 10px; }
+  .cmp-hall p:last-child { margin: 0; }
+  .cmp-hall .flag { color: var(--accent); font-weight: 700; font-family: var(--font-mono); font-size: 12px; display: block; margin-bottom: 2px; }
+  .cmp-det { border-top: 1px solid var(--hair-soft); padding: 9px 0; }
+  .cmp-det summary { cursor: pointer; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink-2); list-style: none; }
+  .cmp-det summary::before { content: "+ "; color: var(--accent); }
+  .cmp-det[open] summary::before { content: "− "; }
+  .cmp-det p { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); margin: 8px 0 2px; }
+  @media (max-width: 700px) { #cmpVerdict { grid-template-columns: 1fr; } .cmp-note { flex-direction: column; } }
 </style>
 <main class="wrap" style="padding-top:0">
 <div class="panel" id="cmp-panel-real" role="tabpanel">
@@ -1027,7 +1051,7 @@
 
       <div class="cmp-controls">
         <div class="cmp-field">
-          <span class="cmp-lab">Paso 1 · Fondo base (YieldMax)</span>
+          <span class="cmp-lab">Fondo base (YieldMax)</span>
           <div class="cmp-row" id="cmpBase" role="group" aria-label="Fondo base"></div>
         </div>
         <div class="cmp-field">
@@ -1035,7 +1059,7 @@
           <div class="cmp-row" id="cmpMode" role="group" aria-label="Supuesto de reinversión"></div>
         </div>
         <div class="cmp-field">
-          <span class="cmp-lab">Paso 3 · Crecimiento</span>
+          <span class="cmp-lab">Crecimiento</span>
           <div class="cmp-row" id="cmpGrowth" role="group" aria-label="ETFs de crecimiento"></div>
         </div>
         <div class="cmp-field">
@@ -1044,16 +1068,40 @@
         </div>
       </div>
 
+<div class="verdict" id="cmpVerdict">
+        <div>
+          <p class="v-kick" id="cvKick"></p>
+          <div class="v-big num" id="cvBig"></div>
+          <div class="v-sub" id="cvSub"></div>
+        </div>
+        <div class="io">
+          <div class="io-row"><span class="io-lab" id="cvL1"></span><div class="io-track"><div class="io-fill" id="cvF1"><span id="cvV1"></span></div><span class="io-afuera" id="cvO1"></span></div></div>
+          <div class="io-row"><span class="io-lab" id="cvL2"></span><div class="io-track"><div class="io-fill" id="cvF2"><span id="cvV2"></span></div><span class="io-afuera" id="cvO2"></span><span class="io-vacio" id="cvG2">Elige un comparador</span></div></div>
+        </div>
+      </div>
+      <div class="step-note cmp-note" id="cmpNote"><span id="cmpNoteTxt"></span><button class="cmp-ib" id="cmpInfoBtn" type="button">ⓘ Cómo se calcula</button></div>
+
       <div class="cmp-plot-wrap">
         <svg class="cmp-svg" id="cmpSvg" viewBox="0 0 920 380" role="img" aria-label="Gráfica de rendimiento total comparativo"></svg>
       </div>
 
-      <p class="cmp-summary" id="cmpSummary"></p>
-      <p class="cmp-notes" id="cmpNotes"></p>
+      <p class="cmp-summary" id="cmpSummary" hidden></p>
+      <p class="cmp-notes" id="cmpNotes" hidden></p>
+      <p class="cmp-avisos" id="cmpAvisos" hidden></p>
     </div>
 
     <!-- REAL · gráfica con datos reales del portafolio (en diseño) -->
 </main>
+<div id="modal-cmpinfo" role="dialog" aria-modal="true" aria-labelledby="cmpInfoTitle">
+  <div class="modal-box">
+    <button class="modal-close" id="cmpInfoClose" aria-label="Cerrar">×</button>
+    <p class="modal-eyebrow">Cómo se calcula</p>
+    <p class="modal-title" id="cmpInfoTitle">Rendimiento total comparado</p>
+    <p class="modal-lede" id="cmpInfoLede"></p>
+    <div class="modal-formula cmp-hall" id="cmpInfoHall"></div>
+    <div id="cmpInfoMeth"></div>
+  </div>
+</div>
 <div id="tip" role="status"></div>
 <script>
 (function () {
@@ -1247,6 +1295,85 @@
       hit.addEventListener("mouseleave", function(){ hideTip(); xh.setAttribute("opacity","0"); });
     }
 
+
+    function cmpVeredicto(bv, rivales){
+      var vb = 100*(1+bv);
+      if (!rivales.length) return { vb:vb, rival:null };
+      var best = rivales.reduce(function(a,b){ return b.v > a.v ? b : a; });
+      var vc = 100*(1+best.v);
+      return { vb:vb, rival:best.tk, late:!!best.late, vc:vc, dif:vb-vc };
+    }
+    function cmpClasificar(parts){
+      var AVISOS = ["Aviso", "Sin datos", "Ventana recortada"];
+      var HALLAZGOS = ["Con DRIP vs Sin DRIP", "Rotar vs reinvertir", "Sin distribuciones"];
+      var re = /^<span class="flag">([^<]*?):?<\/span>\s*/;
+      var out = { lede:parts[0], hall:[], meth:[], avisos:[] };
+      parts.slice(1).forEach(function(p){
+        if (p.indexOf("* ") === 0){ out.avisos.push(p); return; }
+        var m = p.match(re), lab = m ? m[1] : "", body = m ? p.slice(m[0].length) : p;
+        var key = lab.replace(/\s*\(.*\)$/, "");
+        if (key === "Sin DRIP") out.lede += "<br><br><b>Sin DRIP:</b> " + body;
+        else if (AVISOS.indexOf(key) !== -1) out.avisos.push("<b>" + lab + ":</b> " + body);
+        else if (HALLAZGOS.indexOf(key) !== -1) out.hall.push({ lab:lab, body:body });
+        else out.meth.push({ lab:lab, body:body });
+      });
+      return out;
+    }
+    function cvUsd(v){ return (v<0?"−":"") + "$" + Math.abs(v).toFixed(2); }
+    function cvBar(n, v, max, color){
+      var f = document.getElementById("cvF"+n), o = document.getElementById("cvO"+n), s = document.getElementById("cvV"+n);
+      var w = max > 0 ? Math.max(0, v/max*100) : 0;
+      f.style.width = w + "%"; f.style.background = color;
+      if (!v){ s.textContent = ""; o.textContent = ""; }
+      else if (w >= 28){ s.textContent = cvUsd(v); o.textContent = ""; }
+      else { s.textContent = ""; o.textContent = cvUsd(v); o.style.left = "calc(" + w + "% + 8px)"; }
+    }
+    function renderVeredicto(list, parts, desde, sin){
+      var base = list[0];
+      var r = cmpVeredicto(base.data[LAST], list.slice(1).map(function(s){ return { tk:s.tk, v:s.data[LAST], late:s.late }; }));
+      var card = document.getElementById("cmpVerdict"), big = document.getElementById("cvBig");
+      var nt = document.getElementById("cmpNoteTxt");
+      document.getElementById("cvL1").textContent = state.base;
+      if (r.rival){
+        var up = r.dif >= 0, tk = r.rival + (r.late ? "*" : "");
+        document.getElementById("cvKick").textContent = state.base + " vs el mejor comparador";
+        big.textContent = (up?"+":"−") + "$" + Math.abs(r.dif).toFixed(2);
+        big.className = "v-big num " + (up?"up":"loss");
+        card.style.borderLeftColor = up ? "var(--accent)" : "var(--loss)";
+        document.getElementById("cvSub").innerHTML = '<span class="v-pct-lab">Por cada $100</span> <span class="v-pct-sep">·</span> ' +
+          state.base + ' <span class="' + (r.vb>=100?"up":"dn") + '">' + fmtPct(r.vb/100-1) + '</span> <span class="v-pct-sep">·</span> ' +
+          tk + ' <span class="' + (r.vc>=100?"up":"dn") + '">' + fmtPct(r.vc/100-1) + '</span>';
+        document.getElementById("cvL2").textContent = tk;
+        var mx = Math.max(r.vb, r.vc);
+        cvBar(1, r.vb, mx, "var(--anchor)"); cvBar(2, r.vc, mx, COL[r.rival]);
+        document.getElementById("cvG2").style.visibility = "hidden";
+        nt.innerHTML = '<b>Lectura</b> · Cada $100 puestos en ' + state.base + ' en ' + desde + ' hoy valen <b>' + cvUsd(r.vb) +
+          '</b>; en ' + tk + ', <b>' + cvUsd(r.vc) + '</b>. Mismo horizonte' + (sin ? '.' : ' y mismo supuesto de reinversión.');
+      } else {
+        var up2 = r.vb >= 100;
+        document.getElementById("cvKick").textContent = state.base + " · rendimiento total";
+        big.textContent = (up2?"+":"−") + "$" + Math.abs(r.vb-100).toFixed(2);
+        big.className = "v-big num " + (up2?"up":"loss");
+        card.style.borderLeftColor = "var(--ink-mut)";
+        document.getElementById("cvSub").innerHTML = '<span class="v-pct-lab">Por cada $100</span> <span class="v-pct-sep">·</span> desde ' + desde;
+        document.getElementById("cvL2").textContent = "—";
+        cvBar(1, r.vb, r.vb, "var(--anchor)"); cvBar(2, 0, 1, "transparent");
+        document.getElementById("cvG2").style.visibility = "visible";
+        nt.innerHTML = '<b>Lectura</b> · Cada $100 puestos en ' + state.base + ' en ' + desde + ' hoy valen <b>' + cvUsd(r.vb) +
+          '</b>. Activa un comparador para medir la diferencia.';
+      }
+      var c = cmpClasificar(parts);
+      document.getElementById("cmpInfoLede").innerHTML = c.lede;
+      var h = document.getElementById("cmpInfoHall");
+      h.innerHTML = '<span class="mf-eq">Lo que dice esta vista</span>' + c.hall.map(function(x){
+        return '<p><span class="flag">' + x.lab + '</span>' + x.body + '</p>'; }).join("");
+      h.hidden = !c.hall.length;
+      document.getElementById("cmpInfoMeth").innerHTML = c.meth.map(function(x){
+        return '<details class="cmp-det"><summary>' + x.lab + '</summary><p>' + x.body + '</p></details>'; }).join("");
+      var w = document.getElementById("cmpAvisos");
+      w.innerHTML = c.avisos.join("<br>"); w.hidden = !c.avisos.length;
+    }
+
     function renderSummaryNotes(list){
       var base = list[0], bv = base.data[LAST];
       var rivals = list.slice(1);
@@ -1278,8 +1405,32 @@
       if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
       if (DATA.faltantes && DATA.faltantes.length) parts.push('<span class="flag">Sin datos:</span> ' + DATA.faltantes.join(", ") + ' no se pudo cargar — no aparece en el gráfico.');
       elNotes.innerHTML = parts.join("<br>");
+      renderVeredicto(list, parts, mLabel(F[state.base].incep), false);
     }
 
+
+    (function(){
+      var md = document.getElementById("modal-cmpinfo");
+      function cerrar(){ md.classList.remove("open"); }
+      function abrir(){
+        var box = md.querySelector(".modal-box"), top = 20;
+        md.classList.add("open");
+        try {
+          var fe = window.frameElement;
+          if (fe){
+            var r = fe.getBoundingClientRect(), vh = fe.ownerDocument.defaultView.innerHeight;
+            box.style.maxHeight = (vh - 40) + "px";
+            top = Math.max(20, -r.top + Math.max(20, (vh - box.offsetHeight) / 2));
+          }
+        } catch (e) {}
+        md.style.alignItems = "flex-start"; md.style.paddingTop = top + "px";
+        document.getElementById("cmpInfoClose").focus();
+      }
+      document.getElementById("cmpInfoBtn").addEventListener("click", abrir);
+      document.getElementById("cmpInfoClose").addEventListener("click", cerrar);
+      md.addEventListener("click", function(e){ if (e.target === md) cerrar(); });
+      document.addEventListener("keydown", function(e){ if (e.key === "Escape") cerrar(); });
+    })();
     renderControls();
     draw();
     // Redibuja al cambiar de tema (los colores dependientes de tokens se recalculan).

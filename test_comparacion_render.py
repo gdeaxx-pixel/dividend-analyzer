@@ -573,3 +573,55 @@ def test_q6_real_degrada_y_respeta_el_modo():
     assert rep["data"]["2"] == pytest.approx(0.0, abs=1e-12)
     assert rep["data"]["3"] == pytest.approx(0.25, abs=1e-9), (
         f"fallback: dio {rep['data']['3']} — 300/240 − 1 = 0.25")
+
+
+# ── Tarjeta de veredicto + ventana «Cómo se calcula» (2026-09-29) ─────────────────────
+_AMBOS = pytest.mark.parametrize("ruta", [_HTML, _HTML_REAL], ids=["simulacion", "real"])
+
+
+@_node
+@_AMBOS
+def test_veredicto_dolares_y_rival_salen_del_mismo_valor(ruta):
+    """NVDY +363.51% vs NVDA +489.35% (y XLK detrás): por cada $100, $463.51 vs $589.35 y
+    la diferencia es exactamente la resta de las dos barras — sin redondeo intermedio."""
+    fn = _extraer_funcion_de(ruta, "cmpVeredicto")
+    r = _correr_js(fn, {}, 0, 'cmpVeredicto(3.6351, [{tk:"XLK", v:1.36}, '
+                              '{tk:"NVDA", v:4.8935, late:true}])')
+    assert r["rival"] == "NVDA"
+    assert r["late"] is True
+    assert round(r["vb"], 2) == 463.51
+    assert round(r["vc"], 2) == 589.35
+    assert round(r["dif"], 2) == -125.84
+
+
+@_node
+@_AMBOS
+def test_veredicto_sin_comparador_no_inventa_rival(ruta):
+    fn = _extraer_funcion_de(ruta, "cmpVeredicto")
+    r = _correr_js(fn, {}, 0, "cmpVeredicto(0.786, [])")
+    assert r["rival"] is None
+    assert round(r["vb"], 2) == 178.60
+
+
+@_node
+@_AMBOS
+def test_clasificar_avisos_quedan_fuera_de_la_ventana(ruta):
+    """Los avisos de datos se ven siempre; las conclusiones arriba de la ventana; la
+    metodología plegada. Si un aviso cae en la ventana, el cliente se fía de una cifra
+    que no debería."""
+    fn = _extraer_funcion_de(ruta, "cmpClasificar")
+    parts = [
+        "Todas las series arrancan…",
+        '<span class="flag">Cifras reales:</span> precios de mercado',
+        '<span class="flag">Con DRIP vs Sin DRIP (NVDY):</span> reinvertir dio',
+        '<span class="flag">Aviso:</span> XLK sin caché fresco',
+        '<span class="flag">Sin datos:</span> COIN no se pudo cargar',
+        "* SMH: incepción posterior al fondo base",
+        '<span class="flag">Sin DRIP:</span> la línea punteada es solo precio',
+    ]
+    c = _correr_js(fn, {}, 0, "cmpClasificar(" + json.dumps(parts) + ")")
+    assert [a.split("</b>")[0] for a in c["avisos"][:2]] == ["<b>Aviso:", "<b>Sin datos:"]
+    assert c["avisos"][2].startswith("* SMH")
+    assert [h["lab"] for h in c["hall"]] == ["Con DRIP vs Sin DRIP (NVDY)"]
+    assert [m["lab"] for m in c["meth"]] == ["Cifras reales"]
+    assert "solo precio" in c["lede"]
