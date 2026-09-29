@@ -14,30 +14,35 @@ import json
 import pytest
 
 from ui import componentes
+from ui.adapters import cashflow_data
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
-_BASE = {"ticker": "SCHB", "POCKET": 1642.66, "BRUTO": 29.88, "IMPUESTO": 8.97, "NETO": 20.91,
-         "DRIP": 20.91, "CASH": 0.0, "OTROS": 3.55, "OTROS_DETALLE": {"Cash In Lieu": 3.55},
-         "TOTAL_TRABAJANDO": 1663.57, "MERCADO": 13.37, "VALOR_HOY": 1676.94,
-         "CAPITAL_ACTUAL": 1680.49, "RESULTADO": 37.83, "PICO": 1672.54,
-         "STEP_LABELS": ["Bolsillo", "Div. bruto", "Imp. NRA", "Reinv + Efvo", "Bols + DRIP",
-                         "Mercado", "Cap. actual", "Resultado"],
-         "impuesto_base": "gross_withheld", "impuesto_momento": "al cobro",
-         "devolucion_estimada": 0.0, "devolucion_es_estimacion": True,
-         "devolucion_momento": "annual_reclass_estimate", "tasa_declarada": False,
-         "tasa_pais": None, "tasa_pct": None, "drip_sin_fuente": False}
+
+def _stats(pocket, bruto, impuesto, neto, drip, cash, valor_hoy, otros=0.0, detalle=None):
+    """`stats` mínimos de `analyze_portfolio` para `cashflow_data`. Los datos del componente
+    salen del adapter, no escritos a mano: un dict copiado a mano traía `PICO = 1672.54`
+    (bolsillo + bruto) mientras el adapter publica 1680.49 para SCHB, y la cascada que
+    dependía de esa coincidencia pasaba en verde con las columnas mal dibujadas en la app."""
+    return {"pocket_investment": pocket, "dividends_gross_total": bruto,
+            "dividends_net_total": neto, "withheld_tax_total": impuesto,
+            "dividends_collected_drip": drip, "dividends_cash_net": cash,
+            "market_value": valor_hoy, "misc_cash_total": otros,
+            "misc_cash_breakdown": detalle or {}}
+
+
+# SCHB del demo Schwab (medido 2026-09-28): +$13.37 de mercado y $3.55 de Cash In Lieu.
+STATS_SCHB = _stats(1642.66, 29.88, 8.97, 20.91, 20.91, 0.0, 1676.94, 3.55, {"Cash In Lieu": 3.55})
 # MSTY del demo IB: el NAV se hundió (20,245 → 4,092). Recorrido amplio: el eje sigue en $0.
-_AMPLIO = dict(_BASE, ticker="MSTY", POCKET=20245.83, BRUTO=7224.59, IMPUESTO=545.52,
-               NETO=6679.07, DRIP=0.0, CASH=6679.07, OTROS=0.0, OTROS_DETALLE={},
-               TOTAL_TRABAJANDO=20245.83, MERCADO=-16153.33, VALOR_HOY=4092.5,
-               CAPITAL_ACTUAL=10771.57, RESULTADO=-9474.26, PICO=20245.83)
-# El mismo MSTY con +$30,156 en cada nivel: el recorrido ($22,832) es el 40% del techo. Aquí
-# la fórmula de la base NO se anula sola (daría $20,000), así que es el umbral `CORTE_MAX`
-# el único que impide cortar un recorrido que ya se ve bien desde $0.
+STATS_MSTY = _stats(20245.83, 7224.59, 545.52, 6679.07, 0.0, 6679.07, 4092.5)
+_BASE = cashflow_data(STATS_SCHB, "SCHB")
+_AMPLIO = cashflow_data(STATS_MSTY, "MSTY")
+# El mismo MSTY con +$30,156 en el bolsillo y en el valor de hoy: el recorrido es ~40% del
+# techo, así que es el umbral `CORTE_MAX` el único que impide cortar un recorrido que ya se
+# ve bien desde $0.
 _K = 30156
-_MEDIO = dict(_AMPLIO, **{k: _AMPLIO[k] + _K for k in
-                          ("POCKET", "TOTAL_TRABAJANDO", "VALOR_HOY", "CAPITAL_ACTUAL", "PICO")})
+_MEDIO = cashflow_data(dict(STATS_MSTY, pocket_investment=20245.83 + _K,
+                            market_value=4092.5 + _K), "MSTY")
 
 _MEDIR = """() => {
   const fs = document.querySelector('.fall-scroll');
@@ -93,8 +98,9 @@ def test_recorrido_corto_corta_el_eje_y_los_pasos_se_ven(medidas):
 def test_recorrido_amplio_deja_el_eje_en_cero(medidas):
     m = medidas["amplio"]
     assert m["eje"] is None and m["cortes"] == 0
-    # Bolsillo $20,245.83 sobre un techo de $26,924.90 (neto + efectivo cobrado) → 226 px.
-    assert m["segs"][0] == ["s-anchor", 0, 226]
+    # Bolsillo $20,245.83 sobre un techo de $27,470.42 (bolsillo + bruto) → 221 px. Antes
+    # medía 226 porque la columna del bruto salía con alto cero y el techo lo ponía el neto.
+    assert m["segs"][0] == ["s-anchor", 0, 221]
 
 
 def test_recorrido_medio_no_se_corta(medidas):

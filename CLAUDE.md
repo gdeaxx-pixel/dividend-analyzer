@@ -96,7 +96,13 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1322 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre `main` = `b56f1ea`
+Línea base: **1353 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+`fix/cuadritos-mercado-y-escala`, base `main` = `22de1ed` (#184), con `real_examples/` y `CONY_test.csv`.
++18 de `test_mosaico_cashflow.py`: el mosaico del Cash flow refleja el mercado desde el paso
+«Mercado», su techo cubre toda pila que dibuja y la cascada acumula bolsillo + bruto, no el techo.
+`main` sin la rama, derivado y no medido: 1335.)
+
+Antes: **1322 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre `main` = `b56f1ea`
 FUSIONADO (#180 y #179), con `real_examples/` y `CONY_test.csv`. #179 aportó +5 netos y #180 +1
 (`test_la_caida_nunca_pasa_del_100_por_ciento`); cada rama por separado daba 1321 y 1317.)
 

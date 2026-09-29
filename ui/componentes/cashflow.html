@@ -373,6 +373,7 @@
   .sq.q-anchor { background: var(--anchor); }
   .sq.q-drip   { background: var(--drip); }
   .sq.q-cash   { background: var(--cash); }
+  .sq.q-gain   { background: transparent; border: 1.5px solid var(--drip); box-sizing: border-box; }
   .sq.q-otros  { background: repeating-linear-gradient(45deg, var(--cash) 0 3px, transparent 3px 6px); border: 1px solid var(--cash); }
   .sq.q-off    { background: var(--sq-off); }
   .sq.q-sd, .sq.q-sl { position: relative; border: 1px solid var(--loss-soft); }
@@ -396,6 +397,7 @@
   .sw-anchor { background: var(--anchor); }
   .sw-drip { background: var(--drip); }
   .sw-cash { background: var(--cash); }
+  .sw-gain { border: 1.5px solid var(--drip); box-sizing: border-box; }
   .sw-otros { background: repeating-linear-gradient(45deg, var(--cash) 0 3px, transparent 3px 6px); border: 1px solid var(--cash); }
   .sw-struck { border: 1px solid var(--loss-soft); position: relative; background: var(--loss-bg); }
   .sw-struck::after { content:""; position:absolute; inset:0; background: linear-gradient(to top right, transparent calc(50% - 0.8px), var(--loss) calc(50% - 0.8px), var(--loss) calc(50% + 0.8px), transparent calc(50% + 0.8px)); }
@@ -409,6 +411,7 @@
   }
   .surv b { font-family: var(--font-mono); }
   .surv .alive { color: var(--cash); } .surv .dead { color: var(--loss); }
+  .surv.surv-gain { border-left-color: var(--accent); } .surv .up { color: var(--accent); }
   .waffle-note { font-size: 11.5px; color: var(--ink-mut); margin: 14px 0 0; }
   .waffle-note .num { color: var(--ink-2); }
 
@@ -1117,7 +1120,7 @@
       <div>
         <div class="legend" id="legend"></div>
         <div class="surv" id="surv"></div>
-        <p class="waffle-note">Cada cuadrito ≈ <span class="num">$9.66</span> de tu pico (<span class="num">$966.48</span>, la mayor suma de categorías del recorrido).</p>
+        <p class="waffle-note" id="waffleNote"></p>
       </div>
     </div>
   </section>
@@ -1132,6 +1135,9 @@
   // ---------- constants (Schwab caso 2 · MSTY) ----------
   var D = {{DATA_JSON}};
   var POCKET = D.POCKET, BRUTO = D.BRUTO, IMPUESTO = D.IMPUESTO, NETO = D.NETO, DRIP = D.DRIP, CASH = D.CASH, TOTAL_TRABAJANDO = D.TOTAL_TRABAJANDO, MERCADO = D.MERCADO, VALOR_HOY = D.VALOR_HOY, CAPITAL_ACTUAL = D.CAPITAL_ACTUAL, RESULTADO = D.RESULTADO, PICO = D.PICO;
+  // Lo que la cascada acumula tras el dividendo bruto. No es PICO: PICO es la escala del
+  // mosaico (la mayor suma de cualquier paso) y solo coincide con esto por casualidad.
+  var CON_BRUTO = POCKET + BRUTO;
   // Efectivo no distributivo (`misc_cash_total`). Fallback a 0 para los datos viejos
   // que no traen la clave: sin él, un `undefined` se propagaría a cada suma.
   var OTROS = (typeof D.OTROS === "number" && isFinite(D.OTROS)) ? D.OTROS : 0;
@@ -1166,7 +1172,7 @@
   }
 
   // ---------- verdict card (portada) ----------
-  var STEP_VALUES = [POCKET, PICO, PICO - IMPUESTO, TOTAL_TRABAJANDO, TOTAL_TRABAJANDO, VALOR_HOY, CAPITAL_ACTUAL];
+  var STEP_VALUES = [POCKET, CON_BRUTO, CON_BRUTO - IMPUESTO, TOTAL_TRABAJANDO, TOTAL_TRABAJANDO, VALOR_HOY, CAPITAL_ACTUAL];
   var VERDICT_KICKERS = ["Tu punto de partida", "Dividendo bruto acumulado", "Después del impuesto NRA",
                           "Capital listo para trabajar", "Capital expuesto al mercado",
                           "Después del impacto del mercado", "Capital actual total"];
@@ -1247,12 +1253,12 @@
       amt:"$" + POCKET.toFixed(2), cap:"base", lab:"Tu bolsillo", run:POCKET,
       th:"Tu bolsillo", tv:"+$" + POCKET.toFixed(2),
       td:"Lo que pusiste de tu propio dinero. Es tu costo — la vara con la que se mide todo el recorrido." },
-    { segs:[{cls:"s-transito", lo:POCKET, hi:PICO}],
-      amt:"+$" + BRUTO.toFixed(2), cap:"up", lab:"Dividendo bruto", run:PICO,
+    { segs:[{cls:"s-transito", lo:POCKET, hi:CON_BRUTO}],
+      amt:"+$" + BRUTO.toFixed(2), cap:"up", lab:"Dividendo bruto", run:CON_BRUTO,
       th:"Dividendo bruto", tv:"+$" + BRUTO.toFixed(2),
-      td:"Lo que el fondo repartió antes de impuestos. Este es tu pico de capital: $" + PICO.toFixed(2) + "." },
-    { segs:[{cls:"s-loss", lo:TOTAL_TRABAJANDO + CASH, hi:PICO}],
-      amt:"−$" + IMPUESTO.toFixed(2), cap:"dn", lab:"Impuesto NRA", run:PICO - IMPUESTO,
+      td:"Lo que el fondo repartió antes de impuestos. Tu bolsillo más el bruto: $" + CON_BRUTO.toFixed(2) + "." },
+    { segs:[{cls:"s-loss", lo:CON_BRUTO - IMPUESTO, hi:CON_BRUTO}],
+      amt:"−$" + IMPUESTO.toFixed(2), cap:"dn", lab:"Impuesto NRA", run:CON_BRUTO - IMPUESTO,
       th:"Impuesto NRA", tv:"−$" + IMPUESTO.toFixed(2),
       td:"Retención automática de EE.UU. sobre dividendos a extranjeros. Sale del sistema — no vuelve." },
     { segs:[{cls:"s-cash", lo:TOTAL_TRABAJANDO, hi:TOTAL_TRABAJANDO + CASH}],
@@ -1443,13 +1449,14 @@
   }
 
   // ---------- waffle: 100 cuadritos = % del pico, progresivo por paso ----------
-  // Port fiel de _build_clusters (app_old.py) — mismo cálculo, mismo redondeo por
-  // categoría. Verificado: el estado final da 10/53/3/20/4/10, idéntico al
-  // mosaico fijo que reemplaza.
+  // PICO es la mayor suma de categorías que el mosaico apila en cualquier paso
+  // (`ui/adapters.py::cashflow_data`), así que ningún paso pasa de 100 salvo por redondeo.
   var MOSAIC_UNIT = PICO / 100;
   function nb(x) { return Math.max(0, Math.round(x / MOSAIC_UNIT)); }
   var N_PK = nb(POCKET), N_BR = nb(BRUTO), N_IM = nb(IMPUESTO), N_DR = nb(DRIP), N_CA = nb(CASH), N_MV = nb(VALOR_HOY);
   var N_OT = nb(Math.abs(OTROS));
+  // Desde este paso el mosaico ya conoce el mercado: el mismo en que la cascada lo dibuja.
+  var PASO_MERCADO = STEP_LABELS.indexOf("Mercado");
   // Pieza de «otros» para el mosaico, o nada. Se arma una vez: los pasos 3-7 la
   // muestran igual, y su monto real (amt) nunca se mezcla con el del efectivo.
   function piezaOtros() {
@@ -1481,32 +1488,38 @@
         { n: nTransito, amt: BRUTO - IMPUESTO, cls: "q-transito", cat: "Dividendo bruto", note: "Lo que queda del bruto, aún sin repartir entre DRIP y efectivo." }
       ];
     }
-    if (step >= 3 && step <= 6) {
+    if (step < PASO_MERCADO) {
       return [
         { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado — expuesto al mercado junto con el DRIP." },
         { n: N_DR, amt: DRIP, cls: "q-drip", cat: "DRIP", note: "Dividendos reinvertidos — la misma suerte que tu bolsillo." },
         { n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Ya cobrado, a salvo del mercado." }
       ].concat(piezaOtros());
     }
-    // step 7 — se revela qué sobrevivió. El monto real de cada categoría (POCKET,
-    // DRIP) se le asigna SOLO a la pieza "vivo" — la pieza "destruido" lleva
-    // amt:0 — así al sumar ambas piezas en la leyenda el total no se duplica.
-    var nCapital = N_PK + N_DR, pkAlive, drAlive, nExtra = 0;
-    if (N_MV >= nCapital) {
-      pkAlive = N_PK; drAlive = N_DR; nExtra = N_MV - nCapital;
+    // Desde el paso Mercado: qué hizo el mercado con el capital expuesto. La rama la
+    // decide el signo de MERCADO, no el conteo de cuadritos — el redondeo por categoría
+    // puede dar un cuadrito de menos a un fondo que subió centavos. El monto real de
+    // cada categoría va SOLO en la pieza "vivo" (la "destruido" lleva amt:0), así al
+    // sumar ambas piezas en la leyenda el total no se duplica.
+    var out;
+    if (MERCADO >= 0) {
+      var nSubida = Math.max(0, N_MV - (N_PK + N_DR));
+      out = [
+        { n: N_PK, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo", note: "Tu capital aportado — sigue entero." },
+        { n: N_DR, amt: DRIP, cls: "q-drip", cat: "DRIP", note: "Dividendos reinvertidos — la misma suerte que tu bolsillo." },
+        { n: nSubida, amt: MERCADO, cls: "q-gain", cat: "Subida del mercado",
+          note: nSubida > 0 ? "Ganancia en papel: aún no cobrada."
+                            : "Ganancia en papel, menor que un cuadrito — no llega a verse en el mosaico." }
+      ];
     } else {
-      var frac = nCapital > 0 ? N_MV / nCapital : 0;
-      pkAlive = Math.round(N_PK * frac);
-      drAlive = Math.round(N_DR * frac);
+      var frac = TOTAL_TRABAJANDO > 0 ? Math.max(0, VALOR_HOY / TOTAL_TRABAJANDO) : 0;
+      var pkAlive = Math.min(N_PK, Math.round(N_PK * frac)), drAlive = Math.min(N_DR, Math.round(N_DR * frac));
+      out = [
+        { n: pkAlive, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo — vivo", note: "Capital tuyo que sobrevivió." },
+        { n: N_PK - pkAlive, amt: 0, cls: "q-sd", cat: "Tu bolsillo — destruido", note: "Capital tuyo que el mercado borró." },
+        { n: drAlive, amt: DRIP, cls: "q-drip", cat: "DRIP — vivo", note: "Dividendo reinvertido que sobrevivió." },
+        { n: N_DR - drAlive, amt: 0, cls: "q-sl", cat: "DRIP — destruido", note: "Dividendo reinvertido, borrado." }
+      ];
     }
-    var pkDead = N_PK - pkAlive, drDead = N_DR - drAlive;
-    var out = [
-      { n: pkAlive, amt: POCKET, cls: "q-anchor", cat: "Tu bolsillo — vivo", note: "Capital tuyo que sobrevivió." },
-      { n: pkDead, amt: 0, cls: "q-sd", cat: "Tu bolsillo — destruido", note: "Capital tuyo que el mercado borró." },
-      { n: drAlive, amt: DRIP, cls: "q-drip", cat: "DRIP — vivo", note: "Dividendo reinvertido que sobrevivió." },
-      { n: drDead, amt: 0, cls: "q-sl", cat: "DRIP — destruido", note: "Dividendo reinvertido, borrado." }
-    ];
-    if (nExtra > 0) out.push({ n: nExtra, amt: 0, cls: "q-cash", cat: "Apreciación", note: "Ganancia por encima de tu capital + DRIP." });
     if (N_CA > 0) out.push({ n: N_CA, amt: CASH, cls: "q-cash", cat: "Efectivo", note: "Dividendos ya cobrados, a salvo." });
     return out.concat(piezaOtros());
   }
@@ -1516,6 +1529,7 @@
     "q-transito": '<i class="sw-anchor" style="background:var(--accent-tint);border:1px solid var(--accent);"></i>',
     "q-sd":       '<i class="sw-anchor" style="background:var(--loss-bg);border:1px solid var(--loss-soft);"></i>',
     "q-drip":     '<i class="sw-drip"></i>',
+    "q-gain":     '<i class="sw-gain"></i>',
     "q-cash":     '<i class="sw-cash"></i>',
     "q-otros":    '<i class="sw-otros"></i>'
   };
@@ -1548,7 +1562,7 @@
           : 'Los ' + g.alive + ' siguen vivos.';
       }
       var sw = hasSplit ? (SWATCH_SPLIT[key] || SWATCH["q-anchor"]) : SWATCH[g.cls];
-      var amt = "$" + g.amt.toFixed(2);
+      var amt = (g.cls === "q-gain" ? "+$" : "$") + g.amt.toFixed(2);
       return '<div class="leg-row"><span class="leg-sw">' + sw + '</span>' +
              '<span class="leg-txt"><strong>' + key + ' · <span class="leg-amt">' + amt + '</span></strong>' +
              '<small>' + note + '</small></span></div>';
@@ -1559,6 +1573,15 @@
   function renderWaffle(step) {
     var segs = segsForStep(step);
     var lit = segs.reduce(function (a, s) { return a + s.n; }, 0);
+    // El redondeo por categoría puede sumar 101: el sobrante sale de la pieza más
+    // grande, donde un cuadrito menos no cambia la lectura. La leyenda usa amt. Solo el
+    // del redondeo (medio cuadrito por pieza como mucho): uno mayor es un techo mal
+    // calculado y se deja ver en vez de comérselo del bolsillo.
+    if (lit > 100 && lit - 100 <= Math.ceil(segs.length / 2)) {
+      var mayor = segs.reduce(function (m, s) { return s.n > m.n ? s : m; }, segs[0]);
+      mayor.n -= lit - 100;
+      lit = 100;
+    }
     var off = Math.max(0, 100 - lit);
 
     grid.innerHTML = "";
@@ -1582,9 +1605,12 @@
           idx++;
         }
       });
-    grid.setAttribute("aria-label", "Mosaico de 100 cuadritos, paso " + (step + 1) + " de 9");
+    grid.setAttribute("aria-label", "Mosaico de 100 cuadritos, paso " + (step + 1) + " de " + STEP_LABELS.length);
 
     document.getElementById("legend").innerHTML = legendHtml(segs);
+    document.getElementById("waffleNote").innerHTML =
+      'Cada cuadrito ≈ <span class="num">$' + MOSAIC_UNIT.toFixed(2) + '</span> de tu pico (<span class="num">$' +
+      PICO.toFixed(2) + '</span>, la mayor suma de categorías del recorrido).';
 
     // Los cuadritos de «otros» NO se suman a los del efectivo del dividendo: se
     // nombran aparte. Sumarlos sería repetir en la frase la mezcla de bases que el
@@ -1594,22 +1620,33 @@
         ? ' <span class="surv-otros">+' + N_OT + ' por ' + OTROS_LABEL + '.</span>' : "";
     }
     var surv = document.getElementById("surv");
-    if (step === 7) {
-      var pctAlive = Math.round(((segs[0].n + segs[2].n) / (N_PK + N_DR)) * 100);
-      var pctDead = 100 - pctAlive;
-      // "se destruyeron" solo si de verdad hubo destrucción — con 0, decirlo igual
-      // afirma un daño que no ocurrió (Clase D).
-      surv.innerHTML = pctDead > 0
-        ? ('De cada $100 invertidos, <b class="alive">' + pctAlive +
-           ' siguen vivos</b> y <b class="dead">' + pctDead +
-           ' se destruyeron</b> · <b>+' + N_CA + '</b> ya en efectivo.' + colaOtros())
-        : ('De cada $100 invertidos, <b class="alive">' + pctAlive +
-           ' siguen vivos</b> — ninguno se destruyó · <b>+' + N_CA + '</b> ya en efectivo.' + colaOtros());
+    surv.classList.toggle("surv-gain", step >= PASO_MERCADO && MERCADO >= 0);
+    if (step >= PASO_MERCADO && TOTAL_TRABAJANDO > 0) {
+      // Por cada $100 del capital expuesto, con los montos reales — no con cuadritos,
+      // que están en la escala del pico y mezclarían dos bases en una misma frase.
+      var hoyPor100 = Math.round((VALOR_HOY / TOTAL_TRABAJANDO) * 100);
+      var cashPor100 = Math.round((CASH / TOTAL_TRABAJANDO) * 100);
+      var colaCash = CASH > 0 ? (' · <b>+$' + cashPor100 + '</b> ya en efectivo.') : ".";
+      if (MERCADO >= 0) {
+        surv.innerHTML = 'De cada $100 que tenías trabajando, hoy valen <b class="up">$' + hoyPor100 +
+          '</b>' + colaCash + colaOtros();
+      } else {
+        var pctAlive = Math.min(100, hoyPor100);
+        var pctDead = 100 - pctAlive;
+        // "se destruyeron" solo si de verdad hubo destrucción — con 0, decirlo igual
+        // afirma un daño que no ocurrió (Clase D).
+        surv.innerHTML = pctDead > 0
+          ? ('De cada $100 invertidos, <b class="alive">' + pctAlive +
+             ' siguen vivos</b> y <b class="dead">' + pctDead +
+             ' se destruyeron</b>' + colaCash + colaOtros())
+          : ('De cada $100 invertidos, <b class="alive">' + pctAlive +
+             ' siguen vivos</b> — ninguno se destruyó' + colaCash + colaOtros());
+      }
     } else {
-      surv.innerHTML = 'Todavía no sabemos cuánto sobrevive — eso se revela en el <b>paso 8</b>, cuando se conoce el impacto del mercado.';
+      surv.innerHTML = 'Todavía no sabemos cuánto sobrevive — eso se revela en el <b>paso ' +
+        (PASO_MERCADO + 1) + '</b>, cuando se conoce el impacto del mercado.';
     }
   }
-
   render(pasoActual);
   render(pasoActual);
 })();
