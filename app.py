@@ -28,7 +28,7 @@ from ui import carga, chrome, pie, vistas  # noqa: F401  — ídem
 stale_guard.asegurar_frescura()
 
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
-from ui.chrome import inyectar_estilos, render_encabezado, render_ruta
+from ui.chrome import etfs_habilitados, inyectar_estilos, render_encabezado, render_ruta
 from ui.componentes import cerrar_roc_encabezado
 from ui.pie import render_pie
 from ui.validacion import hay_alertas
@@ -87,7 +87,7 @@ render_encabezado(con_datos)
 
 if con_datos:
     resultados = obtener_resultados()
-    ruta = render_ruta(hay_alertas(resultados))
+    ruta = render_ruta(hay_alertas(resultados), etfs_habilitados(resultados))
     render_vista(ruta)
     cerrar_roc_encabezado(ruta.tema)
     render_pie(resultados)

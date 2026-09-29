@@ -96,7 +96,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1354 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+Línea base: **1360 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+`feat/ruta-botones-etf`, base `main` = `eef4416` (#186), con `real_examples/` y `CONY_test.csv`.
++6: `test_ruta_botones_etf.py`.)
+
+Antes: **1354 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
 `fix/leyenda-sin-drip`, base `main` = `dab657d` (#185), con `real_examples/` y `CONY_test.csv`.
 +1: `test_sin_drip_la_leyenda_no_lo_nombra`.)
 
