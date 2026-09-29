@@ -229,7 +229,6 @@ def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION
     html = _plantilla("comparacion_real.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    html = html.replace("{{ASOF}}", str(datos.get("asof", "")))
     components.html(html, height=alto, scrolling=False)
 
 
