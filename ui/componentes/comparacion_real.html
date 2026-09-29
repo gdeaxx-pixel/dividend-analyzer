@@ -1044,10 +1044,6 @@
 </style>
 <main class="wrap" style="padding-top:0">
 <div class="panel" id="cmp-panel-real" role="tabpanel">
-      <header class="cmp-head">
-        <h2 class="cmp-title">Total Return Graph · datos reales</h2>
-        <p class="cmp-lede">Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total con distribuciones reinvertidas (DRIP), normalizado a <b>0% en la incepción del fondo base</b>. Calculado sobre precios y dividendos reales hasta el {{ASOF}}, con reinversión por evento al cierre del día ex-dividendo.</p>
-      </header>
 
       <div class="cmp-controls">
         <div class="cmp-field">
@@ -1388,7 +1384,7 @@
       }
       var lateTk = list.filter(function(s){ return s.late; }).map(function(s){ return s.tk; });
       var parts = [
-        "Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
+        "Un fondo YieldMax contra ETFs de crecimiento en <b>igualdad de condiciones</b>: rendimiento total normalizado a <b>0% en la incepción del fondo base</b>. Todas las series arrancan el <b>"+mLabel(F[state.base].incep)+"</b> (incepción de "+state.base+") en 0%. Líneas punteadas = ETFs de crecimiento.",
         '<span class="flag">Cifras reales:</span> precios y dividendos de mercado hasta el '
         + DATA.asof + ' (caché histórico, reinversión por evento al cierre del día '
         + 'ex-dividendo). En <b>neto ROC</b> se retiene el <b>' + DATA.tasa_pct + '% '
