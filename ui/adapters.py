@@ -202,7 +202,14 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
 
     # El pico escala el mosaico: la mayor suma de categorías que se llega a mostrar en
     # cualquier paso. Sin esto, un paso con varias categorías desborda el "100%" de otro.
-    pico = max(pocket, bruto, total_trabajando, capital_actual, valor_hoy + cash + otros)
+    # Son las sumas que el mosaico apila, no sus sumandos sueltos: bolsillo + bruto
+    # (pasos 1-2), bolsillo + DRIP + efectivo (pasos 3-4, y el capital con sus cuadritos
+    # destruidos cuando el mercado resta) y valor de hoy + efectivo cuando el mercado suma.
+    # `otros` entra en valor absoluto porque el mosaico lo pinta así, entre o salga.
+    otros_mosaico = abs(otros)
+    pico = max(pocket + bruto,
+               pocket + drip + cash + otros_mosaico,
+               valor_hoy + cash + otros_mosaico)
 
     return {
         "ticker": ticker,
