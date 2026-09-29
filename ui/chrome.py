@@ -6,8 +6,8 @@ nombre de vista ni un color: si algo no coincide con el artifact, se corrige en 
 y se regenera.
 
 Fase 3b: la barra lateral desaparece. La ruta pasa a ser el único navegador — cada
-segmento (Categoría / Vista / ETF) es un `st.popover` con botones nativos dentro, que sí
-devuelven estado a Python (a diferencia del HTML del artifact). El tema se mueve al
+segmento (Categoría / Vista) es un `st.popover` con botones nativos dentro, y el ETF una
+fila de botones directos (`st.segmented_control`); ambos devuelven estado a Python (a diferencia del HTML del artifact). El tema se mueve al
 encabezado, arriba a la derecha.
 
 Solo presentación — sin datos ni cálculos.
@@ -176,6 +176,28 @@ def _sync_tema() -> None:
         st.session_state["vd_tema"] = seleccion
 
 
+def _con_datos(stats) -> bool:
+    return bool(stats) and not stats.get("skipped")
+
+
+def etfs_habilitados(resultados: dict) -> dict:
+    """Por categoría con ETFs, los tickers de `nav.CATS` que el archivo trae con datos —
+    el mismo criterio con el que `ui.vistas._stats_o_aviso` dibuja «X no está en tu
+    archivo». La ruta solo ofrece estos (decisión de Daniel 2026-09-29): Cash flow solo
+    sabe dibujar los tickers de la lista fija, así que no se añade ninguno de fuera."""
+    return {cat: tuple(t for t in etfs if _con_datos(resultados.get(t)))
+            for cat, etfs in nav.CATS.items()}
+
+
+def _sync_etf(categoria: str) -> None:
+    """`on_change` de los botones de ETF. Mismo caso que `_sync_tema`: un segundo clic
+    sobre el activo lo deselecciona y llega `None`; ahí se conserva el ETF anterior."""
+    seleccion = st.session_state.get(f"vd_etf_w_{categoria}")
+    if seleccion is not None:
+        st.session_state[f"vd_etf_{categoria}"] = seleccion
+        st.session_state["vd_panel"] = None
+
+
 def render_encabezado(con_datos: bool) -> str:
     """Fila superior: marca con ROC a su derecha, tema a la derecha de la fila.
 
@@ -227,8 +249,13 @@ def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actua
                     st.rerun()
 
 
-def render_ruta(alerta: bool = False) -> Ruta:
-    """Ruta horizontal funcional Categoría › Vista › ETF, un popover por segmento.
+def render_ruta(alerta: bool = False, habilitados: dict | None = None) -> Ruta:
+    """Ruta horizontal funcional Categoría › Vista › ETF: popover para Categoría y Vista,
+    botones directos para el ETF.
+
+    `habilitados` (de `etfs_habilitados`) limita los botones de ETF a los que trae el
+    archivo, y una categoría con ETFs que no tiene ninguno se oculta del menú. `None`
+    ofrece la lista fija completa.
 
     Sustituye a `render_crumb` (decorativo) y a la barra lateral: es el único navegador.
     El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
@@ -240,7 +267,14 @@ def render_ruta(alerta: bool = False) -> Ruta:
     """
     _consumir_cierre_popover()
 
+    if habilitados is None:
+        habilitados = dict(nav.CATS)
+    categorias = {c: texto for c, texto in CAT_LABELS_TOTAL.items()
+                  if c not in nav.CATS or habilitados.get(c)}
+
     st.session_state.setdefault("vd_categoria", CAT_ORDER_TOTAL[0])
+    if st.session_state.vd_categoria not in categorias:
+        st.session_state.vd_categoria = CAT_ORDER_TOTAL[0]
     categoria = st.session_state.vd_categoria
 
     orden = _orden(categoria)
@@ -259,7 +293,7 @@ def render_ruta(alerta: bool = False) -> Ruta:
     etf = None
     clave_etf = f"vd_etf_{categoria}"
     if tiene_etf:
-        etfs = nav.CATS[categoria]
+        etfs = habilitados[categoria]
         if st.session_state.get(clave_etf) not in etfs:
             st.session_state[clave_etf] = etfs[0]
         etf = st.session_state[clave_etf]
@@ -283,7 +317,7 @@ def render_ruta(alerta: bool = False) -> Ruta:
         elif kind == "cat":
             def _elegir_categoria(clave):
                 st.session_state.vd_categoria = clave
-            _popover_segmento(columna, CAT_LABELS_TOTAL[categoria], CAT_LABELS_TOTAL,
+            _popover_segmento(columna, CAT_LABELS_TOTAL[categoria], categorias,
                               categoria, "vd_pop_cat", _elegir_categoria)
         elif kind == "vista":
             def _elegir_vista(clave):
@@ -291,10 +325,12 @@ def render_ruta(alerta: bool = False) -> Ruta:
             _popover_segmento(columna, vistas[vista], vistas, vista,
                               f"vd_pop_vis_{categoria}", _elegir_vista)
         elif kind == "etf":
-            def _elegir_etf(clave, _clave_etf=clave_etf):
-                st.session_state[_clave_etf] = clave
-            _popover_segmento(columna, etf, {e: e for e in nav.CATS[categoria]}, etf,
-                              f"vd_pop_etf_{categoria}", _elegir_etf)
+            with columna, st.container(key="vd_etfs"):
+                st.session_state[f"vd_etf_w_{categoria}"] = etf
+                st.segmented_control(
+                    "ETF", habilitados[categoria], key=f"vd_etf_w_{categoria}",
+                    on_change=_sync_etf, args=(categoria,), label_visibility="collapsed",
+                )
         elif kind == "ayuda":
             with columna:
                 clave_wrap = "vd_ayuda_alerta" if alerta else "vd_ayuda_sin_alerta"
@@ -477,6 +513,14 @@ _ESTILOS = """
         [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
           white-space: nowrap;
         }
+        /* Botones de ETF: su columna toma el ancho que sobra y, si no caben, los botones
+           se parten en otra línea dentro de ella (decisión de Daniel 2026-09-29) en vez de
+           empujar la fila a deslizarse. La categoría no se mueve. */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+          > div:has(.st-key-vd_etfs) {
+          flex: 1 1 auto; min-width: 0;
+        }
+        .st-key-vd_etfs [data-testid="stButtonGroup"] { flex-wrap: wrap; row-gap: 4px; }
 
         [data-testid="stPopoverButton"] {
           font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em;
@@ -638,6 +682,12 @@ _ESTILOS = """
           }
           [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
             padding: 10px 12px;
+          }
+          /* Con botones de ETF la ruta contiene un `stButtonGroup`, así que la regla de
+             arriba la parte a propósito: los botones bajan debajo de la categoría
+             (Daniel 2026-09-29). El «|» quedaría colgando al final de la primera línea. */
+          [data-testid="stHorizontalBlock"]:has(.st-key-vd_etfs) > div:has(.vd-sep) {
+            display: none;
           }
           /* La fila de la ruta usa `nowrap` + `overflow-x: auto` (línea 385) para no
              reintroducir el bug de #47 (partirse en dos líneas). Pero con
