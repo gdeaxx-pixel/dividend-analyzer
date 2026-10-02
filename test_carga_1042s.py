@@ -148,3 +148,83 @@ def test_bloque3_no_gatea_resultados():
     assert "_vd_ir_resultados" in claves
     boton = next(b for b in at.button if b.key == "_vd_ir_resultados")
     assert not boton.disabled
+
+
+# ── f) «Usar <país>» del 1042-S y el selector de residencia ──────────────────
+#
+# Bug medido el 2026-10-02 con un 1042-S real (casilla 13b = CO): pulsar «Usar Colombia»
+# no cambiaba nada. El botón declaraba el país y hacía `st.rerun()`, pero el `selectbox`
+# con `key` conservaba «sin declarar» e `index=` no lo movía; la línea que declaraba en
+# cada render con el valor del selector lo borraba. Elegir a mano sí funcionaba.
+
+def _forms_1042s(codigo="CO"):
+    return {"tax_year": 2025, "source": "pdfplumber", "recipient_country_code": codigo,
+            "forms": [{"unique_form_id": "1", "income_code": "06", "gross_income": 28.0,
+                       "federal_tax_withheld": 8.0, "withholding_credit": 8.0,
+                       "conflict": False}]}
+
+
+def _selector(at):
+    return next(s for s in at.selectbox if "residencia fiscal" in (s.label or "").lower())
+
+
+def _boton_usar(at):
+    return next(b for b in at.button if b.proto.id.endswith("_vd_conf_pais_1042s"))
+
+
+def test_usar_pais_del_1042s_declara_la_residencia():
+    at = _at_con_posiciones_confirmadas(broker="schwab")
+    at.session_state["_wizard_1042s"] = _forms_1042s("CO")
+    at.run()
+    assert at.exception == []
+    assert _selector(at).value.startswith("—")
+    _boton_usar(at).click()
+    at.run()
+    assert at.exception == []
+    assert at.session_state["_perfil_fiscal_pais"] == "Colombia"
+    assert at.session_state["_perfil_fiscal_fuente"] == "1042s"
+    sel = _selector(at)
+    assert sel.value == "Colombia"
+    assert sel.proto.set_value, "el navegador seguiría mostrando «sin declarar»"
+    assert not [b for b in at.button if b.proto.id.endswith("_vd_conf_pais_1042s")]
+    at.run()                                         # y sobrevive al render siguiente
+    assert at.session_state["_perfil_fiscal_pais"] == "Colombia"
+    assert at.session_state["_perfil_fiscal_fuente"] == "1042s"
+
+
+def test_volver_a_sin_declarar_tras_usar_el_1042s():
+    at = _at_con_posiciones_confirmadas(broker="schwab")
+    at.session_state["_wizard_1042s"] = _forms_1042s("CO")
+    at.run()
+    _boton_usar(at).click()
+    at.run()
+    _selector(at).select(_selector(at).options[0]).run()
+    assert at.exception == []
+    assert "_perfil_fiscal_pais" not in at.session_state
+
+
+@pytest.mark.parametrize("via", ["selector", "boton"])
+def test_el_anillo_ve_la_residencia_en_el_mismo_render(monkeypatch, via):
+    """La dona se dibuja ARRIBA del selector: si el país se declarase al dibujar el
+    selector, la dona de ese render leería el perfil viejo e iría un paso atrasada."""
+    from ui import adapters
+    vistos = []
+    real = adapters.cobertura_data
+
+    def _espia(resultados):
+        datos = real(resultados)
+        vistos.append(bool(__import__("ui.estado", fromlist=["x"]).perfil_fiscal()["rate_declared"]))
+        return datos
+
+    monkeypatch.setattr(adapters, "cobertura_data", _espia)
+    at = _at_con_posiciones_confirmadas(broker="schwab")
+    at.session_state["_wizard_1042s"] = _forms_1042s("CO")
+    at.run()
+    assert vistos[-1] is False
+    if via == "selector":
+        _selector(at).select("Colombia")
+    else:
+        _boton_usar(at).click()
+    at.run()
+    assert at.exception == []
+    assert vistos[-1] is True, "la dona dibujó el perfil del render anterior"
