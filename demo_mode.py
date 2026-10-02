@@ -65,17 +65,8 @@ def _load_bundle(case_id):
     if any(c not in df_clean.columns for c in ['Date', 'Ticker', 'Amount']):
         return None
 
-    csv_td = {}
-    if 'Ticker' in df_clean.columns and 'Action' in df_clean.columns:
-        for t, g in df_clean.groupby('Ticker'):
-            buys = g[g['Action'].str.lower().str.contains('buy', na=False)]
-            divs = g[g['Action'].str.lower().str.contains('div', na=False)]
-            csv_td[t] = {
-                'shares': float(buys['Quantity'].sum()) if 'Quantity' in buys.columns and not buys.empty else 0.0,
-                'invested': abs(float(buys['Amount'].sum())) if not buys.empty else 0.0,
-                'dividends_csv': float(divs['Amount'].sum()) if not divs.empty else 0.0,
-                'first_date': str(g['Date'].min())[:10] if not g.empty else 'N/A',
-            }
+    from ui.carga import _resumen_por_ticker            # import perezoso: ver abajo
+    csv_td = _resumen_por_ticker(df_clean)
 
     tickers = df_clean['Ticker'].dropna().unique().tolist()
     mmap = logic.classify_tickers(tickers)

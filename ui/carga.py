@@ -147,11 +147,17 @@ def _resumen_por_ticker(df_limpio) -> dict:
     OJO: filtra por `Action.contains('buy')`, así que NO suma las reinversiones ni resta
     las ventas. Es una vista previa del archivo, **no la posición**, que se confirma en el
     Bloque 2. Ver `fixtures/*/expected.json` § csv_preview_expected.
+
+    Las filas sin símbolo (intereses, transferencias) llegan como ticker «nan» y no son
+    una posición: contaban como un ticker más en «N tickers leídos». Mismo filtro que el
+    Bloque 2. El demo (`demo_mode`) usa esta función, no una copia.
     """
     datos = {}
     if "Ticker" not in df_limpio.columns or "Action" not in df_limpio.columns:
         return datos
     for ticker, grupo in df_limpio.groupby("Ticker"):
+        if str(ticker).strip().lower() in ("", "nan", "none"):
+            continue
         compras = grupo[grupo["Action"].str.lower().str.contains("buy", na=False)]
         dividendos = grupo[grupo["Action"].str.lower().str.contains("div", na=False)]
         datos[ticker] = {
