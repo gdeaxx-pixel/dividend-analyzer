@@ -23,6 +23,12 @@ pasó (cierre de la ronda 1): se anotó como «flake» un rojo que era el mutant
 
 - Mediciones auxiliares (efecto en dólares, verificar un test nuevo): `git worktree add` aparte,
   con su propia rama. El arnés acepta `M4_REPO=<worktree>`.
+- **Un worktree no hereda lo que ignora git.** En local, antes de la línea base, enlaza los datos
+  reales y copia el CSV de CONY (ignorado por `*.csv`); sin ellos la base sale 1065/74 o una menos
+  que la de `CLAUDE.md` (ronda 3):
+  `ln -s <repo>/real_examples real_examples && cp <repo>/CONY_test.csv .`
+  Al terminar, borra el enlace con `rm real_examples` (sin barra final) antes de
+  `git worktree remove`.
 - Nube: `python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt pytest`.
 - Si esperas un proceso en segundo plano, usa `pgrep -f "[m]4.py"` (con corchetes). Sin ellos,
   el bucle de espera se encuentra a sí mismo y nunca termina. Le pasó a la ronda 2.
