@@ -181,7 +181,7 @@ _AYUDA_BROKER = (
 )
 
 
-TAM_ROC_CARGA = 28
+TAM_ROC_CARGA = componentes.TAM_ROC_ENCABEZADO
 
 
 def _roc_bloque1(hueco, estado_roc: str, frase: str | None = None,

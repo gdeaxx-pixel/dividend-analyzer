@@ -321,7 +321,7 @@ def test_encabezado_lleva_a_roc(con_datos):
         return
     assert len(rocs) == 1
     assert 'var ESTADO = "vigilante";' in rocs[0].proto.srcdoc
-    assert "var TAM = 36;" in rocs[0].proto.srcdoc
+    assert "var TAM = 28;" in rocs[0].proto.srcdoc
     orden = []
     for el in _en_orden(at.main):
         if "function rocGrid" in (getattr(getattr(el, "proto", None), "srcdoc", "") or ""):
@@ -347,7 +347,7 @@ def test_un_solo_buho_la_vista_llena_el_del_encabezado_y_la_frase_queda_abajo():
     assert len(buhos) == 1 and len(frases) == 1, (len(buhos), len(frases))
     assert 'var ESTADO = "alerta";' in buhos[0]
     assert "var FRASE = null;" in buhos[0]
-    assert "var TAM = 36;" in buhos[0]
+    assert "var TAM = 28;" in buhos[0]
     assert "Ojo: NAV -38%/año." in frases[0]
 
 
