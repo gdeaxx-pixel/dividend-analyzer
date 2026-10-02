@@ -21,6 +21,8 @@ import ui.componentes as componentes
 from ui.adapters import roc_csv_frase, roc_impuestos_data
 
 _IB = os.path.join(_RAIZ, "fixtures", "ib_synth_1", "synthetic_transactions.csv")
+# 4 tickers (AAPL, MSTY, SCHB, TSLY) y 2 filas SIN símbolo (interés y transferencia).
+_SCHWAB = os.path.join(_RAIZ, "fixtures", "schwab_synth_1", "synthetic_transactions.csv")
 
 
 # ── 1. Frases ───────────────────────────────────────────────────────────────────────────
@@ -119,11 +121,13 @@ _CASOS = {
     "vacio": (b"", "x.csv"),
     "dos_columnas": (b"a,b\\n1,2\\n", "x.csv"),
     "ib": (open(__IB__, "rb").read(), "ib.csv"),
+    "schwab": (open(__SCHWAB__, "rb").read(), "schwab.csv"),
 }
 _caso = _CASOS[st.session_state["_prueba_caso"]]
 st.file_uploader = lambda *a, **k: (_Archivo(*_caso) if _caso else None)
 carga.render_bloque_transacciones()
-""".replace("__RAIZ__", repr(_RAIZ)).replace("__IB__", repr(_IB))
+""".replace("__RAIZ__", repr(_RAIZ)).replace("__IB__", repr(_IB)).replace(
+    "__SCHWAB__", repr(_SCHWAB))
 
 
 def _bloque1(monkeypatch, caso):
@@ -190,6 +194,18 @@ def test_bloque1_csv_valido_asiente_una_sola_vez_con_la_cifra_del_resumen(monkey
     assert len(rocs) == 1
     assert 'var FRASE = "Interactive Brokers: 3 tickers leídos.";' in rocs[0]
     assert "var REACCION = null;" in rocs[0]
+
+
+def test_bloque1_no_cuenta_las_filas_sin_simbolo_como_ticker(monkeypatch):
+    """Intereses y transferencias llegan con `Symbol` vacío y la limpieza los deja como
+    ticker «nan». Contaban como un ticker más en la mascota y el resumen (medido
+    2026-10-02: 5 en vez de 4 aquí, 615 en un CSV real). El paso 2 ya los filtraba."""
+    at = _bloque1(monkeypatch, "schwab")
+    assert at.exception == []
+    rocs = _rocs(at)
+    assert len(rocs) == 1
+    assert 'var FRASE = "Charles Schwab: 4 tickers leídos.";' in rocs[0]
+    assert any("schwab.csv · Charles Schwab · 4 tickers" in m.value for m in at.markdown)
 
 
 _SCRIPT_CARGA = """

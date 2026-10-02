@@ -193,3 +193,24 @@ def test_aviso_de_tickers_ausentes_en_la_foto(lectura):
     texto = _textos(at)
     assert "SLV no aparece en tu captura: los pusimos en 0" in texto
     assert "MSTY no aparece" not in texto
+
+
+# ── Vista previa del paso 1: las filas sin símbolo no son un ticker ──────────────────
+
+def test_resumen_por_ticker_ignora_las_filas_sin_simbolo():
+    from ui.carga import _resumen_por_ticker
+    ruta = os.path.join(BASE, "fixtures", "schwab_synth_1", "synthetic_transactions.csv")
+    limpio = logic.normalize_csv(pd.read_csv(ruta))
+    assert set(_resumen_por_ticker(limpio)) == {"AAPL", "MSTY", "SCHB", "TSLY"}
+
+
+def test_el_demo_usa_la_misma_vista_previa():
+    """`demo_mode` tenía su propia copia de la agregación (con el mismo «nan»)."""
+    import demo_mode
+    from ui.carga import _resumen_por_ticker
+    if not demo_mode.demo_available():
+        pytest.skip("sin real_examples/: el demo no carga (un skip no es un pass)")
+    caso = demo_mode.load_demo_case("schwab")
+    previa = caso["_wizard_csv_ticker_data"]
+    assert previa == _resumen_por_ticker(caso["_wizard_df_clean"])
+    assert not [t for t in previa if str(t).strip().lower() in ("", "nan", "none")]
