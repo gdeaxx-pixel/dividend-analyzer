@@ -48,7 +48,7 @@ _SKIP_REASON = {
 
 _V1042S_ESTILO = {
     "match":             ("--cash", "Coincide"),
-    "portfolio_higher":  ("--warn", "Tu análisis reporta más"),
+    "portfolio_higher":  ("--warn", "Tu archivo reporta más"),
     "form_higher":       ("--warn", "El 1042-S reporta más"),
     "no_overlap":        ("--ink-mut", "Sin año en común"),
 }
@@ -73,7 +73,7 @@ def _render_1042s(resultados: dict) -> dict | None:
         f'<div class="vd-1042s-card" style="border-left-color: var({accent_var});">'
         f'<p class="vd-1042s-titulo">Validación 1042-S · <span style="color: var({accent_var});">'
         f'{etiqueta}</span></p>'
-        f'<p class="vd-1042s-detalle">Dividendo bruto {validacion["tax_year"]} — Tu análisis: '
+        f'<p class="vd-1042s-detalle">Dividendo bruto {validacion["tax_year"]} — Tu archivo: '
         f'<b>${validacion["bruto_portafolio"]:,.2f}</b> · 1042-S: <b>${validacion["bruto_1042s"]:,.2f}</b> · '
         f'Retenido: <b>${validacion["retenido_1042s"]:,.2f}</b> · ROC: '
         f'<b>${validacion["roc_1042s"]:,.2f}</b> ({validacion["roc_pct"]:.1f}%)</p>'
