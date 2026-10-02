@@ -3047,7 +3047,7 @@ def cobertura_data(resultados: dict) -> dict:
     import streamlit as st
 
     from ui import estado
-    from ui.validacion import _separar_excluidos
+    from ui.validacion import excluidos_pendientes_de_sesion, validacion_1042s
 
     def _segmento(clave: str, nombre: str, ok: bool,
                   variante: str | None = None) -> dict:
@@ -3079,11 +3079,9 @@ def cobertura_data(resultados: dict) -> dict:
 
     fiscal_ok = bool(estado.perfil_fiscal()["rate_declared"])
     if fiscal_ok:
-        wizard_1042s = st.session_state.get("_wizard_1042s")
-        if wizard_1042s:
-            v1042s = logic.build_1042s_validation(resultados, wizard_1042s)
-            if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
-                fiscal_ok = False
+        v1042s = validacion_1042s(resultados)
+        if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
+            fiscal_ok = False
     if fiscal_ok:
         ingreso = st.session_state.get("_wizard_income_summary")
         if ingreso and ingreso.get("tickers"):
@@ -3110,8 +3108,7 @@ def cobertura_data(resultados: dict) -> dict:
     if val_ok and len(fechas) != 1:
         val_ok = False
 
-    tuyos, _ruido = _separar_excluidos(resultados)
-    excl_ok = not tuyos
+    excl_ok = not excluidos_pendientes_de_sesion(resultados)
 
     estados = {"movimientos": mov_ok, "posiciones": pos_ok, "fiscal": fiscal_ok,
                "valoracion": val_ok, "excluidos": excl_ok}

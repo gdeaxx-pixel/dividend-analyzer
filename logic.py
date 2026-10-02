@@ -478,7 +478,31 @@ def extract_1042s(pdf_bytes, api_key=None):
     return parse_1042s_pdf(pdf_bytes)
 
 
-def build_1042s_validation(results: dict, parsed: dict):
+def _dividendos_cuenta_fuente_eeuu(df: pd.DataFrame, start, end) -> tuple:
+    """Dividendo BRUTO de la cuenta entera en [start, end], sin los de fuente extranjera.
+
+    El 1042-S solo declara renta de fuente EE.UU. Un emisor extranjero (medido: ZIM, Israel,
+    2024) paga con la retención de SU país, que Schwab registra como 'Foreign Tax Paid' y no
+    como 'NRA Tax Adj'; ese dividendo nunca entra al formulario. La acción se compara
+    EXACTA: en IB 'Dividend - Foreign Tax Withholding' es la retención de EE.UU. y excluirla
+    vaciaría la cuenta. Devuelve (bruto, {ticker: bruto_excluido}).
+    """
+    if df is None or len(df) == 0:
+        return 0.0, {}
+    d = pd.to_datetime(df['Date'], errors='coerce')
+    ventana = df[(d >= start) & (d <= end)]
+    accion = ventana['Action'].astype(str).str.strip().str.lower()
+    extranjeros = set(ventana.loc[accion == 'foreign tax paid', 'Ticker'].dropna())
+    excluidos = {}
+    for t in sorted(extranjeros):
+        monto = _csv_dividends_in_window(ventana[ventana['Ticker'] == t])
+        if abs(monto) > 0.005:
+            excluidos[str(t)] = round(monto, 2)
+    total = _csv_dividends_in_window(ventana[~ventana['Ticker'].isin(extranjeros)])
+    return round(total, 2), excluidos
+
+
+def build_1042s_validation(results: dict, parsed: dict, df_cuenta: pd.DataFrame = None):
     """Cruza el Formulario 1042-S contra el analisis del portafolio, a nivel cuenta.
 
     Es PURAMENTE INFORMATIVO: no muta `results`, no recalcula impuestos, ROC ni
@@ -491,6 +515,16 @@ def build_1042s_validation(results: dict, parsed: dict):
       - `bruto_portafolio` sale de _csv_dividends_in_window, que tambien es BRUTO
         (antes de la retencion NRA). Misma base a ambos lados: la comparacion es valida.
       - El codigo 01 (interes de cash) NO entra en el bruto: no proviene de un ETF.
+      - Momento: ano fiscal al cobro (la fecha de la fila de dividendo), igual que el
+        formulario.
+
+    Alcance: el 1042-S es de CUENTA COMPLETA, acciones sueltas incluidas. Con `df_cuenta`
+    (el CSV limpio entero) el bruto del portafolio suma todos los dividendos del ano, como
+    el formulario (`alcance='cuenta'`). Sin el, suma solo los tickers analizados
+    (`alcance='analizados'`) y una cartera con acciones sueltas sale `form_higher` sin
+    error alguno: medido el 2026-10-02 con un 1042-S real, 298.12 frente a 304 por
+    $6.05 de dividendos de acciones fuera del analisis. Los dividendos de fuente
+    extranjera se excluyen y se declaran en `fuente_extranjera`.
 
     Devuelve el dict de validacion, o None si `parsed` no trae formularios.
     """
@@ -546,6 +580,7 @@ def build_1042s_validation(results: dict, parsed: dict):
         'delta': 0.0,
         'status': 'no_overlap',
         'roc_pct': round(roc_pct, 2),
+        'alcance': 'cuenta' if df_cuenta is not None else 'analizados',
         'note': '',
     }
 
@@ -557,11 +592,15 @@ def build_1042s_validation(results: dict, parsed: dict):
     start = pd.Timestamp(year=int(year), month=1, day=1)
     end = pd.Timestamp(year=int(year), month=12, day=31, hour=23, minute=59, second=59)
 
-    bruto_portafolio = 0.0
-    for _tk, s in (results or {}).items():
-        if not isinstance(s, dict) or s.get('skipped') or 'error' in s:
-            continue
-        bruto_portafolio += _csv_dividends_in_window(s.get('history'), start=start, end=end)
+    if df_cuenta is not None:
+        bruto_portafolio, extranjeros = _dividendos_cuenta_fuente_eeuu(df_cuenta, start, end)
+        out['fuente_extranjera'] = extranjeros
+    else:
+        bruto_portafolio = 0.0
+        for _tk, s in (results or {}).items():
+            if not isinstance(s, dict) or s.get('skipped') or 'error' in s:
+                continue
+            bruto_portafolio += _csv_dividends_in_window(s.get('history'), start=start, end=end)
 
     out['bruto_portafolio'] = round(bruto_portafolio, 2)
 
