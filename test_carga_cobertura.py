@@ -245,9 +245,25 @@ def test_segmento_excluidos_mira_tuyos_no_el_ruido(sesion):
     cartera["AAA"] = {"skipped": True, "reason": "not_known_etf"}
     assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "ok"
 
-    # Una posición TUYA excluida por datos insuficientes → pendiente.
+    # Cerrada en <14 días según el CSV (así se asigna la razón): un trade ya liquidado,
+    # no le falta nada → sigue verde. Medido 2026-10-02: SLV y XLB atascaban la dona.
     cartera["ZZZ"] = {"skipped": True, "reason": "held_less_than_14_days", "holding_days": 5}
-    assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "pendiente"
+    assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "ok"
+
+    # La vista previa no es otra fuente: sale del mismo CSV y suma compras sin ventas.
+    st.session_state["_wizard_positions"] = {"ZZZ": {"shares": 5.0, "cost_basis": 50.0}}
+    st.session_state["_captura_origen"] = {"ZZZ": {"shares": "vista_previa"}}
+    assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "ok"
+
+    # Confirmada abierta con captura o a mano: el historial está incompleto → pendiente.
+    for fuente in ("captura", "editado"):
+        st.session_state["_captura_origen"] = {"ZZZ": {"shares": fuente}}
+        assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "pendiente", fuente
+
+    # Confirmada a 0: cerrada también para el cliente → verde.
+    st.session_state["_wizard_positions"] = {"ZZZ": {"shares": 0.0, "cost_basis": 0.0}}
+    st.session_state["_captura_origen"] = {"ZZZ": {"shares": "captura"}}
+    assert _seg(cobertura_data(cartera), "excluidos")["estado"] == "ok"
 
 
 def test_sin_resultados_todo_pendiente(sesion):
@@ -297,6 +313,9 @@ def test_contrato_del_adapter_sin_cifras(sesion):
 # fixtures: la etiqueta no la lee y sin ella `posiciones` va pendiente por diseño
 # (§4.1/§4.3), no por contradicción. Lo que varía son las señales que AMBAS partes leen.
 
+_ZZZ_ABIERTA = {"_wizard_positions": {"ZZZ": {"shares": 5.0, "cost_basis": 50.0}},
+                "_captura_origen": {"ZZZ": {"shares": "captura", "cost_basis": "captura"}}}
+
 _CARTERAS_3B = {
     # nombre: (cartera, claves de sesión extra, nivel esperado escrito A MANO)
     # Las 4 que mueven señales que la etiqueta Y los tres segmentos del invariante
@@ -304,7 +323,10 @@ _CARTERAS_3B = {
     "limpia": ({}, {}, "Alta"),
     "unreliable": ({"MSTY_mod": "history_incomplete"}, {}, "Baja"),
     "reconciliada": ({"SCHB_mod": "reconciled"}, {}, "Media"),
-    "posicion_propia_excluida": ({"ZZZ_extra": True}, {}, "Media"),
+    # ZZZ cerrada en <14 días según el CSV pero confirmada ABIERTA con la captura: el
+    # historial está incompleto. Sin esa confirmación es un trade cerrado (2026-10-02).
+    "posicion_propia_excluida": ({"ZZZ_extra": True}, _ZZZ_ABIERTA, "Media"),
+    "trade_cerrado_excluido": ({"ZZZ_extra": True}, {}, "Alta"),
 }
 
 _CASOS_SENAL_FISCAL = {
@@ -848,3 +870,62 @@ def test_editar_paso2_no_borra_el_contexto_de_captura():
     assert at.exception == []
     assert at.session_state["_wizard_ocr_positions"] == ocr
     assert at.session_state["_wizard_photo_sig"] == (("captura_A.png", 100),)
+
+
+# ── 1042-S de cuenta completa: la dona y la etiqueta leen la MISMA validación ──
+#
+# Medido 2026-10-02: un 1042-S correcto salía `form_higher` porque la validación sumaba
+# solo los ETFs analizados y el formulario es de toda la cuenta. El segmento fiscal se
+# quedaba pendiente para siempre. Cifras sintéticas escritas a mano.
+
+_CUENTA = pd.DataFrame({
+    "Date": pd.to_datetime(["2025-03-10", "2025-05-02", "2025-05-02"]),
+    "Action": ["Cash Dividend", "Qualified Dividend", "NRA Tax Adj"],
+    "Ticker": ["MSTY", "AAA", "AAA"],
+    "Amount": [295.0, 9.0, -2.7],
+})                                                  # 295 + 9 = 304 de la cuenta
+
+
+def _form_1042s(bruto):
+    return {"tax_year": 2025, "forms": [
+        {"unique_form_id": "1", "income_code": "06", "gross_income": bruto,
+         "federal_tax_withheld": round(bruto * 0.3), "withholding_credit": 0.0}]}
+
+
+@pytest.mark.parametrize("bruto_form, estado_fiscal, nivel", [
+    (304.0, "ok", "Alta"),                          # cuadra con la cuenta completa
+    (295.0, "pendiente", "Media"),                  # cuadraría solo con los analizados
+])
+def test_1042s_cuenta_completa_dona_y_etiqueta_coinciden(sesion, bruto_form,
+                                                          estado_fiscal, nivel):
+    from ui.validacion import validacion_1042s
+    cartera = _cartera_limpia()
+    sesion.update({"_wizard_df_clean": _CUENTA, "_wizard_1042s": _form_1042s(bruto_form)})
+
+    v = validacion_1042s(cartera)
+    assert v["alcance"] == "cuenta"
+    assert v["bruto_portafolio"] == 304.0
+
+    assert _seg(cobertura_data(cartera), "fiscal")["estado"] == estado_fiscal
+    nivel_got, razones = _puntuacion_acertividad(cartera)
+    assert nivel_got == nivel
+    assert (v["note"] in razones) == (estado_fiscal == "pendiente")
+
+
+def test_solo_un_punto_de_la_ui_llama_a_la_validacion_1042s():
+    """Si una vista vuelve a llamar `logic.build_1042s_validation` por su cuenta, puede
+    olvidar el CSV completo y contradecir a la dona. Guard por AST, no por texto."""
+    import ast
+    import glob
+    llamadas = []
+    for ruta in glob.glob(os.path.join(os.path.dirname(__file__), "ui", "*.py")):
+        arbol = ast.parse(open(ruta, encoding="utf-8").read())
+        for fn in ast.walk(arbol):
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            for n in ast.walk(fn):
+                if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                        and n.func.attr == "build_1042s_validation"):
+                    llamadas.append((os.path.basename(ruta), fn.name,
+                                     {k.arg for k in n.keywords}))
+    assert llamadas == [("validacion.py", "validacion_1042s", {"df_cuenta"})], llamadas

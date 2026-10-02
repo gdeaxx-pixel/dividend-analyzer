@@ -581,3 +581,67 @@ def test_refund_sin_withholding_credit_es_indeterminado_no_cero_desde_pdf():
     assert r["devuelto"] is None
     assert r["devuelto"] != 0.0
     assert r["pendiente"] is None
+
+
+# ── Alcance de cuenta completa (2026-10-02) ──────────────────────────────────
+#
+# El 1042-S es de toda la cuenta, acciones sueltas incluidas. Comparado contra los ETFs
+# analizados salía `form_higher` con un formulario correcto (medido con uno real: 298.12
+# frente a 304 por $6.05 de acciones sueltas). Cifras sintéticas escritas a mano.
+
+def _cuenta(filas):
+    return pd.DataFrame(filas, columns=["Date", "Action", "Ticker", "Amount"]).assign(
+        Date=lambda d: pd.to_datetime(d["Date"]))
+
+
+_CUENTA_SCHWAB = _cuenta([
+    ("2025-03-10", "Cash Dividend", "MSTY", 290.0),        # ETF analizado
+    ("2025-03-10", "NRA Tax Adj", "MSTY", -87.0),
+    ("2025-05-02", "Qualified Dividend", "AAA", 9.0),      # acción suelta, fuente EE.UU.
+    ("2025-05-02", "NRA Tax Adj", "AAA", -2.7),
+    ("2025-06-01", "Reinvest Dividend", "SCHB", 5.5),      # bruto del DRIP: cuenta
+    ("2025-06-01", "Reinvest Shares", "SCHB", -3.85),      # compra neta: no cuenta
+    ("2025-07-15", "Qualified Dividend", "ZZF", 40.0),     # emisor extranjero
+    ("2025-07-15", "Foreign Tax Paid", "ZZF", -10.0),
+    ("2024-12-20", "Cash Dividend", "MSTY", 500.0),        # otro año: fuera
+])
+# 290 + 9 + 5.5 = 304.5 de fuente EE.UU. en 2025; ZZF (40) no va al formulario.
+
+
+def test_cuenta_completa_cuadra_con_un_1042s_que_incluye_acciones_sueltas():
+    analizados = _results_con_dividendos(290.0)             # solo MSTY
+    v = logic.build_1042s_validation(analizados, _parsed(), df_cuenta=_CUENTA_SCHWAB)
+    assert v["alcance"] == "cuenta"
+    assert v["bruto_portafolio"] == 304.5
+    assert v["delta"] == 0.5
+    assert v["status"] == "match"
+    assert v["fuente_extranjera"] == {"ZZF": 40.0}
+
+
+def test_sin_cuenta_se_conserva_el_alcance_de_analizados():
+    v = logic.build_1042s_validation(_results_con_dividendos(290.0), _parsed())
+    assert v["alcance"] == "analizados"
+    assert v["bruto_portafolio"] == 290.0
+    assert v["status"] == "form_higher"
+
+
+def test_la_retencion_de_ib_no_se_confunde_con_fuente_extranjera():
+    """En IB «Dividend - Foreign Tax Withholding» ES la retención de EE.UU.: excluir por
+    la palabra «foreign» vaciaría la cuenta entera."""
+    cuenta = _cuenta([
+        ("2025-02-28", "Dividend", "NVDY", 300.0),
+        ("2025-02-28", "Dividend - Foreign Tax Withholding", "NVDY", -90.0),
+        ("2025-04-30", "Dividend", "SMH", 4.0),
+        ("2025-04-30", "Dividend - Foreign Tax Withholding", "SMH", -1.2),
+    ])
+    v = logic.build_1042s_validation({}, _parsed(), df_cuenta=cuenta)
+    assert v["bruto_portafolio"] == 304.0
+    assert v["fuente_extranjera"] == {}
+    assert v["status"] == "match"
+
+
+def test_cuenta_sin_dividendos_en_el_anio_no_es_error():
+    cuenta = _cuenta([("2024-12-20", "Cash Dividend", "MSTY", 500.0)])
+    v = logic.build_1042s_validation({}, _parsed(), df_cuenta=cuenta)
+    assert v["status"] == "no_overlap"
+    assert v["bruto_portafolio"] == 0.0

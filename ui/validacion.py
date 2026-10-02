@@ -65,10 +65,7 @@ def _render_1042s(resultados: dict) -> dict | None:
     persistente bajo el encabezado en toda la app; ahora solo se dibuja dentro de este
     panel. Devuelve la validación (o `None`) para que `_puntuacion_acertividad` la
     reutilice sin recalcular."""
-    wizard_1042s = st.session_state.get("_wizard_1042s")
-    if not wizard_1042s:
-        return None
-    validacion = logic.build_1042s_validation(resultados, wizard_1042s)
+    validacion = validacion_1042s(resultados)
     if not validacion:
         return None
     accent_var, etiqueta = _V1042S_ESTILO.get(validacion["status"], _V1042S_ESTILO["no_overlap"])
@@ -205,6 +202,45 @@ def _separar_excluidos(resultados: dict) -> tuple[dict, dict]:
     return tuyos, ruido
 
 
+def _excluidos_pendientes(resultados: dict, posiciones: dict | None = None,
+                          origen: dict | None = None) -> dict:
+    """Los `tuyos` que de verdad le piden algo al cliente.
+
+    `held_less_than_14_days` solo se asigna a posiciones que el CSV da por CERRADAS
+    (`logic.is_held_too_briefly`: neto ≤ 0.01), así que por sí solo no falta nada: es un
+    trade corto ya liquidado (medido 2026-10-02: SLV y XLB atascaban la dona). Solo es
+    pendiente si el paso 2 confirmó acciones vivas con una fuente que no es ese CSV
+    (captura o tecleadas): entonces el historial está incompleto. La vista previa no
+    cuenta: sale del mismo CSV y suma compras sin ventas.
+    """
+    tuyos, _ruido = _separar_excluidos(resultados)
+    pendientes = {}
+    for t, s in tuyos.items():
+        acciones = ((posiciones or {}).get(t) or {}).get("shares") or 0.0
+        fuente = ((origen or {}).get(str(t).strip().upper()) or {}).get("shares")
+        if acciones > 0.01 and fuente in ("captura", "editado"):
+            pendientes[t] = s
+    return pendientes
+
+
+def excluidos_pendientes_de_sesion(resultados: dict) -> dict:
+    """`_excluidos_pendientes` con las posiciones confirmadas de la sesión. La dona y la
+    etiqueta de confiabilidad pasan por aquí para leer la misma señal (Regla 3b)."""
+    return _excluidos_pendientes(resultados, st.session_state.get("_wizard_positions"),
+                                 st.session_state.get("_captura_origen"))
+
+
+def validacion_1042s(resultados: dict) -> dict | None:
+    """Único punto de la UI que cruza el 1042-S: con el CSV limpio ENTERO, porque el
+    formulario es de cuenta completa (ver `logic.build_1042s_validation`). La dona, la
+    tarjeta y la etiqueta de confiabilidad leen esta misma cifra."""
+    wizard_1042s = st.session_state.get("_wizard_1042s")
+    if not wizard_1042s:
+        return None
+    return logic.build_1042s_validation(
+        resultados, wizard_1042s, df_cuenta=st.session_state.get("_wizard_df_clean"))
+
+
 def _etiqueta_excluido(s: dict) -> str:
     razon = s.get("reason", "")
     if razon == "held_less_than_14_days":
@@ -258,12 +294,10 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     nivel = "Alta"
     razones: list[str] = []
 
-    wizard_1042s = st.session_state.get("_wizard_1042s")
-    if wizard_1042s:
-        v1042s = logic.build_1042s_validation(resultados, wizard_1042s)
-        if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
-            nivel = "Media"
-            razones.append(v1042s["note"])
+    v1042s = validacion_1042s(resultados)
+    if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
+        nivel = "Media"
+        razones.append(v1042s["note"])
 
     classify_map = logic.classify_tickers(list(resultados.keys()))
     dq = logic.assess_data_quality(resultados, classify_map)
@@ -287,7 +321,7 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
                 nivel = "Media"
             razones.append(f"{len(warns)} posición(es) con alerta en la validación de ingresos.")
 
-    tuyos, _ruido = _separar_excluidos(resultados)
+    tuyos = excluidos_pendientes_de_sesion(resultados)
     if tuyos:
         if nivel == "Alta":
             nivel = "Media"
