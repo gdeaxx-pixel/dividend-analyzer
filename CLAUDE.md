@@ -96,7 +96,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1392 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
+Línea base: **1395 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
+`main` = `f643791` (#195), con `real_examples/` y `CONY_test.csv`. +3 de #195: el conteo de
+tickers del paso 1 sin las filas sin símbolo, en `test_roc_reacciones.py` y
+`test_carga_foto.py`.)
+
+Antes: **1392 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
 `main` = `009af39` (#193), con `real_examples/` y `CONY_test.csv`. +26 sobre la de #189
 (`4d2ad1b`, medida ese día: 1366): #190 +6 (`test_carga_foto.py` y el origen de
 `test_capture.py`), #191 +4 (`test_carga_1042s.py`), #192 +9 (`test_1042s.py`,
