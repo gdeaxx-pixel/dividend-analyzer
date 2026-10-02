@@ -929,3 +929,61 @@ def test_solo_un_punto_de_la_ui_llama_a_la_validacion_1042s():
                     llamadas.append((os.path.basename(ruta), fn.name,
                                      {k.arg for k in n.keywords}))
     assert llamadas == [("validacion.py", "validacion_1042s", {"df_cuenta"})], llamadas
+
+
+# ── Pop-out de «Información fiscal»: la causa concreta, con el dato (Daniel, 2-oct) ──
+
+_TEXTO_FISCAL_GENERICO = "Falta revisar las fuentes fiscales aplicables a tu caso."
+
+
+def test_fiscal_pide_confirmar_la_residencia_que_dice_el_1042s(sesion, monkeypatch):
+    monkeypatch.setattr(estado, "perfil_fiscal",
+                        lambda: {"rate_declared": False, "country": None})
+    sesion.update({"_wizard_df_clean": _CUENTA,
+                   "_wizard_1042s": dict(_form_1042s(304.0), recipient_country_code="CO")})
+    seg = _seg(cobertura_data(_cartera_limpia()), "fiscal")
+    assert seg["estado"] == "pendiente"
+    assert seg["nombre"] == "Información fiscal"
+    assert seg["falta"] == "Confirma tu residencia: tu 1042-S dice Colombia."
+    assert seg["como"] == ("Pulsa «Usar Colombia» en el paso 3 o elígela en el selector "
+                           "de residencia.")
+
+
+@pytest.mark.parametrize("forms", [None, dict(_form_1042s(304.0), recipient_country_code="ZZ")])
+def test_fiscal_sin_pais_detectable_conserva_el_texto_generico(sesion, monkeypatch, forms):
+    monkeypatch.setattr(estado, "perfil_fiscal",
+                        lambda: {"rate_declared": False, "country": None})
+    if forms:
+        sesion.update({"_wizard_df_clean": _CUENTA, "_wizard_1042s": forms})
+    seg = _seg(cobertura_data(_cartera_limpia()), "fiscal")
+    assert seg["estado"] == "pendiente"
+    assert seg["falta"] == _TEXTO_FISCAL_GENERICO
+
+
+@pytest.mark.parametrize("bruto_form", [295.0, 313.0])   # archivo +9 y formulario +9
+def test_fiscal_dice_cuanto_difieren_el_1042s_y_el_archivo(sesion, bruto_form):
+    sesion.update({"_wizard_df_clean": _CUENTA, "_wizard_1042s": _form_1042s(bruto_form)})
+    seg = _seg(cobertura_data(_cartera_limpia()), "fiscal")
+    assert seg["estado"] == "pendiente"
+    assert seg["falta"] == "Tu 1042-S y tu archivo difieren en $9.00 en 2025."
+    assert seg["como"] == "Revisa que el archivo cubra el año completo y una sola cuenta."
+
+
+def test_fiscal_verde_no_lleva_variante(sesion):
+    sesion.update({"_wizard_df_clean": _CUENTA,
+                   "_wizard_1042s": dict(_form_1042s(304.0), recipient_country_code="CO")})
+    seg = _seg(cobertura_data(_cartera_limpia()), "fiscal")
+    assert seg["estado"] == "ok"
+    assert seg["falta"] == _TEXTO_FISCAL_GENERICO
+
+
+def test_tarjeta_1042s_dice_tu_archivo(sesion, monkeypatch):
+    """La cifra es la de todo el CSV, no la del análisis de ETFs (Daniel, 2-oct)."""
+    from ui import validacion
+    pintado = []
+    monkeypatch.setattr(validacion.st, "markdown", lambda html, **k: pintado.append(html))
+    sesion.update({"_wizard_df_clean": _CUENTA, "_wizard_1042s": _form_1042s(304.0)})
+    validacion._render_1042s(_cartera_limpia())
+    html = " ".join(pintado)
+    assert "Tu archivo: <b>$304.00</b>" in html
+    assert "Tu análisis" not in html

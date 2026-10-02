@@ -618,17 +618,17 @@ def build_1042s_validation(results: dict, parsed: dict, df_cuenta: pd.DataFrame 
 
     if abs(delta) <= tol:
         out['status'] = 'match'
-        out['note'] = (f'Tu analisis y el 1042-S de {year} coinciden en el dividendo bruto '
+        out['note'] = (f'Tu archivo y el 1042-S de {year} coinciden en el dividendo bruto '
                        f'(diferencia de {abs(delta):.2f} dolares, dentro del redondeo).')
     elif delta > 0:
         out['status'] = 'portfolio_higher'
-        out['note'] = (f'Tu analisis registra {delta:.2f} dolares mas de dividendo bruto en {year} '
+        out['note'] = (f'Tu archivo registra {delta:.2f} dolares mas de dividendo bruto en {year} '
                        f'que el 1042-S. Suele pasar si el formulario cubre una sola cuenta y tu '
                        f'archivo de transacciones trae varias.')
     else:
         out['status'] = 'form_higher'
         out['note'] = (f'El 1042-S de {year} declara {abs(delta):.2f} dolares mas de dividendo '
-                       f'bruto que tu analisis. Suele pasar si tu archivo de transacciones no '
+                       f'bruto que tu archivo. Suele pasar si tu archivo de transacciones no '
                        f'cubre el ano completo.')
     return out
 

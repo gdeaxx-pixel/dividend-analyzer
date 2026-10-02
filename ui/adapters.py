@@ -2969,6 +2969,17 @@ _COBERTURA_TEXTOS = {
         "Añade solo lo que corresponda: no todos los documentos aplican a todos los "
         "clientes.",
     ),
+    # Dos causas concretas del MISMO segmento, con el dato a la vista (aprobadas por
+    # Daniel el 2-oct): antes el pop-out decía «Añade solo lo que corresponda» aunque el
+    # 1042-S ya estuviera subido. `{pais}`, `{dif}` y `{anio}` los rellena `cobertura_data`.
+    "fiscal_residencia": (
+        "Confirma tu residencia: tu 1042-S dice {pais}.",
+        "Pulsa «Usar {pais}» en el paso 3 o elígela en el selector de residencia.",
+    ),
+    "fiscal_1042s": (
+        "Tu 1042-S y tu archivo difieren en ${dif} en {anio}.",
+        "Revisa que el archivo cubra el año completo y una sola cuenta.",
+    ),
     "valoracion": (
         "Falta verificar los precios para la fecha de valoración.",
         "Este control depende de la fuente de precios; no exige otro documento al "
@@ -3050,13 +3061,16 @@ def cobertura_data(resultados: dict) -> dict:
     from ui.validacion import excluidos_pendientes_de_sesion, validacion_1042s
 
     def _segmento(clave: str, nombre: str, ok: bool,
-                  variante: str | None = None) -> dict:
+                  variante: str | None = None, datos: dict | None = None) -> dict:
         """`variante` elige otro texto (y otro nombre visible) para la MISMA clave cuando
         el segmento está pendiente por una causa distinta. `clave` no cambia: es la
-        identidad del segmento para el componente y para los tests."""
+        identidad del segmento para el componente y para los tests. `datos` rellena los
+        huecos del texto de la variante."""
         falta, como = _COBERTURA_TEXTOS[variante or clave]
+        if datos:
+            falta, como = falta.format(**datos), como.format(**datos)
         if variante:
-            nombre = _COBERTURA_NOMBRE_ALT[variante]
+            nombre = _COBERTURA_NOMBRE_ALT.get(variante, nombre)
         return {"clave": clave, "nombre": nombre,
                 "estado": "ok" if ok else "pendiente",
                 "falta": falta, "como": como}
@@ -3077,11 +3091,21 @@ def cobertura_data(resultados: dict) -> dict:
     pos_confirmadas = st.session_state.get("_wizard_pos_confirmed") is True
     pos_ok = pos_confirmadas and not parcial
 
+    variantes, datos_variante = {}, {}
     fiscal_ok = bool(estado.perfil_fiscal()["rate_declared"])
+    if not fiscal_ok:
+        codigo = (st.session_state.get("_wizard_1042s") or {}).get("recipient_country_code")
+        pais = logic.pais_desde_codigo_1042s(codigo) if codigo else None
+        if pais:
+            variantes["fiscal"] = "fiscal_residencia"
+            datos_variante["fiscal"] = {"pais": pais}
     if fiscal_ok:
         v1042s = validacion_1042s(resultados)
         if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
             fiscal_ok = False
+            variantes["fiscal"] = "fiscal_1042s"
+            datos_variante["fiscal"] = {"dif": f"{abs(v1042s['delta']):,.2f}",
+                                        "anio": v1042s["tax_year"]}
     if fiscal_ok:
         ingreso = st.session_state.get("_wizard_income_summary")
         if ingreso and ingreso.get("tickers"):
@@ -3114,10 +3138,9 @@ def cobertura_data(resultados: dict) -> dict:
                "valoracion": val_ok, "excluidos": excl_ok}
     # La variante solo aplica cuando la causa es el historial y NO la falta de
     # confirmación: si el cliente todavía no confirmó, el texto original es el correcto.
-    variantes = {}
     if pos_confirmadas and parcial:
         variantes["posiciones"] = "posiciones_historial"
-    segmentos = [_segmento(c, n, estados[c], variantes.get(c))
+    segmentos = [_segmento(c, n, estados[c], variantes.get(c), datos_variante.get(c))
                  for c, n in COBERTURA_SEGMENTOS]
     return {"segmentos": segmentos,
             "verificados": sum(1 for s in segmentos if s["estado"] == "ok")}
