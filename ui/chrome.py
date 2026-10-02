@@ -461,7 +461,7 @@ _ESTILOS = """
            del texto (medido 28-sep en la carga). */
         .st-key-vd_marca [data-testid="stMarkdownContainer"],
         .st-key-vd_marca_carga [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
-        .st-key-vd_marca, .st-key-vd_marca_carga { gap: 5px; }
+        .st-key-vd_marca, .st-key-vd_marca_carga { gap: 3px; }
 
         .vd-sep { color: var(--ink-mut); opacity: .6; font-size: 13px; margin: 0 6px; }
 
