@@ -461,7 +461,7 @@ _ESTILOS = """
            del texto (medido 28-sep en la carga). */
         .st-key-vd_marca [data-testid="stMarkdownContainer"],
         .st-key-vd_marca_carga [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
-        .st-key-vd_marca, .st-key-vd_marca_carga { gap: 3px; }
+        .st-key-vd_marca, .st-key-vd_marca_carga { gap: 6px; }
         .st-key-vd_marca iframe, .st-key-vd_marca_carga iframe { position: relative; top: -2px; }
         /* El h2 de Streamlit trae un icono de enlace de encabezado que ocupa ~24px a la
            derecha del texto aunque esté oculto: separaba el búho más que en resultados. */
