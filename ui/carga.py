@@ -281,6 +281,9 @@ def render_bloque_transacciones() -> bool:
 _SIN_DECLARAR = "— No lo sé / prefiero no decirlo —"
 
 
+_CLAVE_SELECTOR_PAIS = "_vd_residencia"
+
+
 def _render_residencia_fiscal() -> None:
     """Residencia fiscal del cliente — vive aquí porque es una propiedad de ÉL, no de una
     vista. Antes el único selector estaba enterrado en Detalle → Proyección, dentro de un
@@ -290,21 +293,28 @@ def _render_residencia_fiscal() -> None:
     Sin declarar es el default a propósito. La alternativa —asumir 30%— le inventa a un
     mexicano una retención tres veces mayor a la que le corresponde; y asumir 0% le dice a
     cualquiera que toda su retención vuelve. Ninguna de las dos es un dato.
+
+    El perfil manda y el selector lo refleja. Declarar al dibujar el selector fallaba de
+    dos formas (medido 2026-10-02): la dona, que se dibuja ARRIBA, leía el perfil del
+    render anterior; y «Usar <país>» del 1042-S quedaba borrado porque el selector, con
+    `key`, conservaba «sin declarar». Ahora el cambio entra por `on_change` (corre antes
+    del script) y el valor del selector se reescribe por `session_state` cuando el perfil
+    cambió por otra vía: eso marca `set_value` y el navegador lo muestra.
     """
     opciones = [_SIN_DECLARAR] + list(logic.NRA_COUNTRY_RATES.keys())
-    actual = estado.perfil_fiscal()["country"]
-    idx = opciones.index(actual) if actual in opciones else 0
+    estado.reflejar_en_selector(_CLAVE_SELECTOR_PAIS, opciones, _SIN_DECLARAR)
 
     col_sel, col_nota = st.columns([1, 1.4])
     with col_sel:
-        elegido = st.selectbox(
-            "Tu residencia fiscal", opciones, index=idx, key="_vd_residencia",
+        st.selectbox(
+            "Tu residencia fiscal", opciones, key=_CLAVE_SELECTOR_PAIS,
+            on_change=estado.declarar_desde_selector,
+            args=(_CLAVE_SELECTOR_PAIS, _SIN_DECLARAR),
             help="Determina la retención a la que tienes DERECHO sobre dividendos de "
                  "fuente EE.UU.: 30% base para no-residentes, 10% México y 15% Chile, "
                  "España y Venezuela por "
                  "tratado, 0% si eres residente fiscal en EE.UU. Sin este dato no "
                  "estimamos cuánto de lo retenido puedes recuperar.")
-    estado.declarar_pais(None if elegido == _SIN_DECLARAR else elegido)
 
     perfil = estado.perfil_fiscal()
     with col_nota:
@@ -510,10 +520,9 @@ def _render_residencia_detectada() -> None:
     st.info(f"{aviso} Con ese país la retención con derecho es del **{tasa:.0f}%**.")
     col, _ = st.columns([1, 2])
     with col:
-        if st.button(f"Usar {detectado}", key="_vd_conf_pais_1042s", type="primary",
-                     use_container_width=True):
-            estado.declarar_pais(detectado, source="1042s")
-            st.rerun()
+        st.button(f"Usar {detectado}", key="_vd_conf_pais_1042s", type="primary",
+                  use_container_width=True, on_click=estado.declarar_pais,
+                  args=(detectado,), kwargs={"source": "1042s"})
 
 
 def _render_1042s_resumen() -> None:

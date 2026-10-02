@@ -52,6 +52,23 @@ def declarar_pais(country: str | None, source: str = "manual") -> None:
         st.session_state.pop(_CLAVE_FUENTE, None)
 
 
+def reflejar_en_selector(clave: str, opciones: list, sin_declarar: str) -> None:
+    """Antes de dibujar el selector de residencia, iguala su valor al perfil. Solo escribe
+    si difieren: así el perfil declarado por otra vía (el botón del 1042-S) llega al
+    navegador (`set_value`) y un selector con `key` no lo pisa con su valor viejo."""
+    pais = perfil_fiscal()["country"]
+    esperado = pais if pais in opciones else sin_declarar
+    if st.session_state.get(clave) != esperado:
+        st.session_state[clave] = esperado
+
+
+def declarar_desde_selector(clave: str, sin_declarar: str) -> None:
+    """`on_change` del selector: corre antes del script, así que todo lo que se dibuja
+    arriba del selector (la dona) ya ve el país nuevo en ese mismo render."""
+    elegido = st.session_state.get(clave)
+    declarar_pais(None if elegido == sin_declarar else elegido)
+
+
 def tasa_y_pais() -> tuple:
     """`(base_rate_pct, country)` listos para `logic.build_tax_summaries(...)`.
 
