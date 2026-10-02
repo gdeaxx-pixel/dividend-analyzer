@@ -393,11 +393,18 @@ def render_bloque_posiciones() -> bool:
                         payload, analizables, clave) or {}
                 st.session_state["_wizard_ocr_positions"] = leido
                 st.session_state["_wizard_photo_sig"] = firma
+                st.session_state["_wizard_ocr_aplicar"] = True
                 st.rerun()
         if leido:
             st.markdown(bloque_resumen("Capturas leídas",
                                        f"{len(leido)} de {len(analizables)} instrumentos"),
                         unsafe_allow_html=True)
+            ausentes = [t for t in analizables if t not in leido]
+            if ausentes:
+                lista = ", ".join(ausentes)
+                verbo = "no aparece" if len(ausentes) == 1 else "no aparecen"
+                st.info(f"{lista} {verbo} en tu captura: los pusimos en 0. Si aún los "
+                        "tienes, corrige sus acciones y su costo.")
 
     previa = st.session_state.get("_wizard_csv_ticker_data") or {}
     posiciones = {}
@@ -406,28 +413,47 @@ def render_bloque_posiciones() -> bool:
     col_h2.markdown('<p class="vd-col-header">Acciones</p>', unsafe_allow_html=True)
     col_h3.markdown('<p class="vd-col-header">Costo base</p>', unsafe_allow_html=True)
 
+    # Una lectura nueva se EMPUJA a los campos una sola vez. Con `key` fijo, Streamlit
+    # ignora un `value=` distinto y el navegador conserva su número viejo (misma id) salvo
+    # que el valor llegue por `session_state`, en el mismo render que crea el widget: eso
+    # marca `set_value` en el proto. Pasar además `value=` ese render pintaría el aviso de
+    # «default value + Session State API». Lo que el cliente edite después ya no se pisa.
+    aplicar = bool(st.session_state.pop("_wizard_ocr_aplicar", False)) and bool(leido)
+
     for ticker in analizables:
         fila = previa.get(ticker, {})
         ocr = leido.get(ticker) or {}
 
         # Lo leído de la captura MANDA sobre la vista previa del CSV: la captura muestra la
         # posición real del bróker (con reinversiones y ventas ya aplicadas), mientras el
-        # CSV solo suma compras. Ese es el motivo de subir la foto.
-        acciones_def = ocr.get("shares")
-        if acciones_def is None:
-            acciones_def = fila.get("shares", 0.0)
-        costo_def = ocr.get("cost_basis") or fila.get("invested", 0.0)
+        # CSV solo suma compras. Ese es el motivo de subir la foto. Un ticker que la
+        # captura no trae va a 0 (decidido por Daniel, 2026-10-02) con aviso arriba.
+        if leido and not ocr:
+            acciones_def, costo_def = 0.0, 0.0
+        else:
+            acciones_def = ocr.get("shares")
+            if acciones_def is None:
+                acciones_def = fila.get("shares", 0.0)
+            costo_def = ocr.get("cost_basis") or fila.get("invested", 0.0)
+
+        k_sh, k_cb = f"_vd_sh_{ticker}", f"_vd_cb_{ticker}"
+        if aplicar:
+            st.session_state[k_sh] = float(acciones_def)
+            st.session_state[k_cb] = float(costo_def)
+            v_sh, v_cb = {}, {}
+        else:
+            v_sh, v_cb = {"value": float(acciones_def)}, {"value": float(costo_def)}
 
         col_t, col_a, col_c = st.columns([1.2, 1, 1.4])
         marca = '<span class="vd-ocr">captura</span>' if ocr else ""
         col_t.markdown(f'<p class="vd-ticker">{ticker} {marca}</p>',
                        unsafe_allow_html=True)
         acciones = col_a.number_input(
-            "Acciones", min_value=0.0, value=float(acciones_def),
-            step=0.0001, format="%.4f", key=f"_vd_sh_{ticker}", label_visibility="collapsed")
+            "Acciones", min_value=0.0, **v_sh,
+            step=0.0001, format="%.4f", key=k_sh, label_visibility="collapsed")
         costo = col_c.number_input(
-            "Costo base", min_value=0.0, value=float(costo_def),
-            step=0.01, format="%.2f", key=f"_vd_cb_{ticker}", label_visibility="collapsed")
+            "Costo base", min_value=0.0, **v_cb,
+            step=0.01, format="%.2f", key=k_cb, label_visibility="collapsed")
         posiciones[ticker] = {"shares": acciones, "cost_basis": costo}
 
     st.markdown(

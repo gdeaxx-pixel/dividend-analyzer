@@ -6836,18 +6836,25 @@ def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None) 
 
     'vista_previa' sale del MISMO CSV que se va a probar: usarlo como esperado haría
     un test que se compara consigo mismo. `promote_case.py` no lo promueve.
+
+    Con captura leída, un ticker que no sale en ella tiene defecto 0 y origen 'captura'
+    (lo pone a 0 la ausencia en la foto). `promotable_shares` descarta las acciones 0.
     """
     out = {}
     for t, v in (confirmadas or {}).items():
         v = v or {}
         o = (ocr or {}).get(t) or {}
         p = (previa or {}).get(t) or {}
+        ausente = bool(ocr) and not o
         res = {}
         for campo, campo_previa, hay_lectura in (
-                ('shares', 'shares', o.get('shares') is not None),
-                ('cost_basis', 'invested', bool(o.get('cost_basis')))):
+                ('shares', 'shares', ausente or o.get('shares') is not None),
+                ('cost_basis', 'invested', ausente or bool(o.get('cost_basis')))):
             val = _safe_round(v.get(campo), 6)
-            defecto = _safe_round(o.get(campo) if hay_lectura else (p.get(campo_previa) or 0.0), 6)
+            if ausente:
+                defecto = 0.0
+            else:
+                defecto = _safe_round(o.get(campo) if hay_lectura else (p.get(campo_previa) or 0.0), 6)
             if val is None:
                 res[campo] = None
             elif defecto is not None and abs(val - defecto) <= 1e-6 * max(1.0, abs(defecto)):

@@ -223,8 +223,18 @@ def test_origen_posiciones_replica_los_defectos_de_la_ui():
     o = logic.origen_posiciones(confirmadas, ocr, previa)
     assert o["MSTY"] == {"shares": "captura", "cost_basis": "captura"}
     assert o["NVDY"] == {"shares": "captura", "cost_basis": "vista_previa"}
-    assert o["SCHB"] == {"shares": "vista_previa", "cost_basis": "vista_previa"}
+    # Con captura leída, lo que no sale en ella nace en 0 (Daniel, 2026-10-02): volver a
+    # teclear la vista previa es una edición; dejarlo en 0 es lo que puso la captura.
+    assert o["SCHB"] == {"shares": "editado", "cost_basis": "editado"}
     assert o["XLK"] == {"shares": "editado", "cost_basis": "editado"}
+    cero = logic.origen_posiciones({"SCHB": {"shares": 0.0, "cost_basis": 0.0}}, ocr, previa)
+    assert cero["SCHB"] == {"shares": "captura", "cost_basis": "captura"}
+
+
+def test_origen_posiciones_sin_captura_es_vista_previa():
+    previa = {"SCHB": {"shares": 10.0, "invested": 300.0}}
+    o = logic.origen_posiciones({"SCHB": {"shares": 10.0, "cost_basis": 300.0}}, {}, previa)
+    assert o["SCHB"] == {"shares": "vista_previa", "cost_basis": "vista_previa"}
 
 
 def test_bundle_guarda_origen_senales_y_1042s_sin_identificadores():
