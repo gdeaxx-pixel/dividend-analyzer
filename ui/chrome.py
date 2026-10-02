@@ -446,19 +446,26 @@ _ESTILOS = """
            Oculta en desktop: ahí cada paso ya trae su propia etiqueta. */
         .vd-rail-legend { display: none; }
 
-        .vd-brand {
-          font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--ink); margin: 0;
+        /* Un solo tamaño de marca en toda la app (carga y resultados). Selector con el
+           contenedor para ganarle al `h2`/`p` de Streamlit, que pisaban el tamaño propio. */
+        .vd-brand, .vd-wordmark {
+          font-family: var(--font-mono); text-transform: uppercase; color: var(--ink);
         }
-        .vd-wordmark {
-          text-transform: uppercase; letter-spacing: .10em;
-          font-size: clamp(20px, 3vw, 27px);
+        .st-key-vd_marca .vd-brand,
+        .st-key-vd_marca_carga .vd-wordmark {
+          font-size: 16px; font-weight: 700; letter-spacing: .12em;
+          line-height: 1.2; margin: 0; padding: 0; max-width: none;
         }
         /* Marca + ROC en una fila: Streamlit le pone `margin-bottom: -1rem` al markdown, y
            el centrado vertical usaba esa caja recortada — el búho quedaba 10px por encima
            del texto (medido 28-sep en la carga). */
         .st-key-vd_marca [data-testid="stMarkdownContainer"],
         .st-key-vd_marca_carga [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
+        .st-key-vd_marca, .st-key-vd_marca_carga { gap: 3px; }
+        .st-key-vd_marca iframe, .st-key-vd_marca_carga iframe { position: relative; top: -2px; }
+        /* El h2 de Streamlit trae un icono de enlace de encabezado que ocupa ~24px a la
+           derecha del texto aunque esté oculto: separaba el búho más que en resultados. */
+        .st-key-vd_marca_carga [data-testid="stHeaderActionElements"] { display: none; }
 
         .vd-sep { color: var(--ink-mut); opacity: .6; font-size: 13px; margin: 0 6px; }
 

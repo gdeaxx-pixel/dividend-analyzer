@@ -366,7 +366,7 @@ def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
 # hueco; la vista lo llena con `roc_de_vista` y, si ninguna lo llenó, `cerrar_roc_encabezado`
 # lo deja en «vigilante». Sin encabezado (tests, bloques sueltos) se dibuja completo en sitio.
 HUECO_ROC_VISTA = "_vd_hueco_roc_vista"
-TAM_ROC_ENCABEZADO = 36
+TAM_ROC_ENCABEZADO = 28
 
 
 def roc_de_vista(estado: str, tema: str, frase: str | None = None,
