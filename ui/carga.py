@@ -653,8 +653,8 @@ def _render_aviso_1042s_tda(lectura: dict) -> None:
     st.warning(
         f"Tu cuenta estuvo en TD Ameritrade {hasta}, así que {anio} tiene **dos** 1042-S: "
         f"{nombres['schwab']} (lo que cobraste ya en Schwab) y {nombres['tda']} (lo de TD "
-        "Ameritrade). En Schwab: Accounts → Statements & Tax Forms → Tax Forms → Previous "
-        "year → Search. Pulsa «editar» y súbelos juntos para comparar el año completo. "
+        "Ameritrade). En Schwab: Accounts → Statements & Tax Forms → Document Types «Tax "
+        "Forms» → Date range «Previous year» → Search. Pulsa «editar» y súbelos juntos para comparar el año completo. "
         f"Te falta: {' y '.join(nombres[k] for k in falta['falta'])}.")
 
 
@@ -664,7 +664,8 @@ def _render_aviso_1042s_viejo(lectura: dict) -> None:
     if not anio or anio >= esperado:
         return
     st.info(f"Este 1042-S es de {anio}. Ya debería estar disponible el de {esperado}: en "
-            "Schwab, Tax Forms → Current year → Search. Si ya lo subiste o prefieres validar "
+            "Schwab, Statements & Tax Forms → Document Types «Tax Forms» → Date range «Current "
+            "year» → Search. Si ya lo subiste o prefieres validar "
             f"{anio}, ignora este aviso.")
 
 
@@ -709,8 +710,8 @@ def _render_1042s_uploader() -> None:
                                 key="_vd_upload_1042s", label_visibility="collapsed") or []
     st.caption(
         "Schwab lo publica a mediados de marzo. Accounts → Statements & Tax Forms "
-        "(Estados de cuenta y formularios) → pestaña Tax Forms → Current year → Search; si no "
-        "aparece «1042S - año», elige Previous year. Descarga el que se llama «1042S - año» "
+        "(Estados de cuenta y formularios) → Document Types «Tax Forms» → Date range «Current "
+        "year» → Search; si no aparece «1042S - año», elige Previous year y pulsa Search. Descarga el que se llama «1042S - año» "
         "con el año más alto. "
         "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
         "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
@@ -749,7 +750,7 @@ def _render_1042s_uploader() -> None:
     if error == "ilegible":
         st.error("No pudimos leer este PDF de forma automática.")
         st.caption("Verifica que sea el 1042-S que te envió tu broker (Schwab: Accounts → "
-                   "Statements & Tax Forms → Tax Forms). Si es escaneado, pide la versión digital. También "
+                   "Statements & Tax Forms → Document Types «Tax Forms»). Si es escaneado, pide la versión digital. También "
                    "puedes saltar este paso: la app funciona sin el 1042-S; solo pierdes la "
                    "validación contra el documento oficial.")
     elif error == "sin_dividendos":
