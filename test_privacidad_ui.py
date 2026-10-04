@@ -305,7 +305,9 @@ def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypa
 
     monkeypatch.setenv("GEMINI_API_KEY", "falsa")
     fotos_actuales = [foto_a]
-    monkeypatch.setattr(st, "file_uploader", lambda *a, **k: fotos_actuales)
+    monkeypatch.setattr(
+        st, "file_uploader",
+        lambda *a, **k: fotos_actuales if k.get("key") == "_vd_fotos" else None)
     resultados_ocr = iter([ocr_a, ocr_b])
     monkeypatch.setattr(logic, "extract_positions_from_images",
                         lambda *a, **k: next(resultados_ocr))

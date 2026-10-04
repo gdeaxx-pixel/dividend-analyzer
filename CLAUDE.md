@@ -96,7 +96,16 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1395 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
+Línea base: **1428 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`feat/carga-csv-posiciones-schwab`, base `main` = `097b10e`, con `real_examples/` y `CONY_test.csv`
+enlazados en el worktree —sin ellos da 1291/87 antes de la auditoría—. +33: `test_carga_posiciones_csv.py`
+(lector del CSV de posiciones de Schwab, uploader del paso 2, origen `archivo`, textos de ayuda, el
+`.XLSX` en mayúsculas y, tras la auditoría, el CSV sin ningún analizable y la foto ilegible que no pisa
+lo tecleado). `main` sin la rama daba 1395. La auditoría encontró una aserción vacía: el stub del
+AppTest sustituye al uploader de fotos sin dibujar widget, así que buscarlo en el árbol no puede
+fallar nunca; ahora se mira qué claves se pidieron.)
+
+Antes: **1395 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
 `main` = `f643791` (#195), con `real_examples/` y `CONY_test.csv`. +3 de #195: el conteo de
 tickers del paso 1 sin las filas sin símbolo, en `test_roc_reacciones.py` y
 `test_carga_foto.py`.)

@@ -218,7 +218,7 @@ def _excluidos_pendientes(resultados: dict, posiciones: dict | None = None,
     for t, s in tuyos.items():
         acciones = ((posiciones or {}).get(t) or {}).get("shares") or 0.0
         fuente = ((origen or {}).get(str(t).strip().upper()) or {}).get("shares")
-        if acciones > 0.01 and fuente in ("captura", "editado"):
+        if acciones > 0.01 and fuente in ("captura", "archivo", "editado"):
             pendientes[t] = s
     return pendientes
 

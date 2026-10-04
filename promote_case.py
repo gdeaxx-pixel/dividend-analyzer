@@ -50,7 +50,7 @@ def _parse(files: dict):
 
 # Un esperado tiene que venir de fuera del CSV que se va a probar: la captura del bróker
 # o lo que el cliente tecleó. 'vista_previa' sale del propio CSV → test tautológico.
-ORIGENES_PROMOVIBLES = ("captura", "editado")
+ORIGENES_PROMOVIBLES = ("captura", "archivo", "editado")
 
 
 def promotable_shares(gt: dict, q: dict) -> dict:
