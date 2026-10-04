@@ -96,7 +96,12 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1461 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+Línea base: **1464 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`fix/textos-tax-forms-schwab`, base `main` = `423b40f` (#200, que daba 1461), con `real_examples/` y
+`CONY_test.csv` enlazados. +3: la guarda de rutas viejas fija que la ayuda del 1042-S ya no dice
+«pestaña Tax Forms» —en Schwab es el filtro Document Types— ni el orden viejo del rango.)
+
+Antes: **1461 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
 `feat/1042s-tda-varios-pdf`, base `main` = `4c31652` (#199, que daba 1428), con `real_examples/` y
 `CONY_test.csv` enlazados en el worktree. +33: `test_1042s_tda.py` — el 1042-S de TD Ameritrade
 (palabras pegadas → respaldo `x_tolerance=1.5`; identificador en la línea anterior a su etiqueta;

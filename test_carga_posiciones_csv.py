@@ -417,10 +417,10 @@ def _fuente_ui():
 @pytest.mark.parametrize("ruta", [
     "Accounts → Transaction History (Historial de transacciones)",
     "Date range «All» → Search → ícono de descarga (Export) → CSV",
-    "Accounts → Statements & Tax Forms (Estados de cuenta y formularios) → pestaña Tax Forms"
-    " → Current year → Search",
+    "Accounts → Statements & Tax Forms (Estados de cuenta y formularios) → Document Types "
+    "«Tax Forms» → Date range «Current year» → Search",
     "Descarga el que se llama «1042S - año» con el año más alto",
-    "Accounts → Statements & Tax Forms → Tax Forms)",
+    "Accounts → Statements & Tax Forms → Document Types «Tax Forms»)",
     "Accounts → Investment Income (Ingresos de inversión) → ícono de descarga → Date Range "
     "«All» → Download",
     "elige «All» en el menú **Date Range** del cuadro de exportación",
@@ -430,7 +430,8 @@ def test_rutas_nuevas_presentes(ruta):
 
 
 @pytest.mark.parametrize("vieja", ["Cuenta → Documentos", "Historial → Transacciones",
-                                   "amplía el rango", "Cuenta → Historial"])
+                                   "amplía el rango", "Cuenta → Historial",
+                                   "pestaña Tax Forms", "Tax Forms → Current year", "Tax Forms → Previous"])
 def test_rutas_viejas_ausentes(vieja):
     assert vieja not in _fuente_ui()
 
