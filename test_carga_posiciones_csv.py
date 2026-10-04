@@ -145,7 +145,11 @@ class _Subido:
 _real = st.file_uploader
 
 
+st.session_state["_test_llamados"] = []
+
+
 def _uploader(*args, **kwargs):
+    st.session_state["_test_llamados"].append(kwargs.get("key"))
     if kwargs.get("key") == "_vd_upload_pos_csv":
         return _Subido("_test_pos_bytes") if st.session_state.get("_test_pos_bytes") else None
     if kwargs.get("key") == "_vd_fotos":
@@ -241,6 +245,7 @@ def test_csv_llena_los_campos_y_el_ausente_va_a_cero(sin_clave):
     assert "SLV no aparece en tu archivo de posiciones: lo pusimos en 0" in texto
     assert "MSTY no aparece" not in texto
     assert "Archivo de posiciones leído" in texto
+    assert "2 de 3 instrumentos" in texto                # AAPL no cuenta: no se analiza
     assert "Los valores vienen de tu archivo de posiciones de Schwab" in texto
     assert '<span class="vd-ocr">archivo</span>' in texto
     assert "captura</span>" not in texto
@@ -252,13 +257,22 @@ def test_csv_gana_a_la_foto(con_foto):
     at.session_state["_test_foto_bytes"] = b"foto"
     at.run()
     assert _campo(at, "_vd_sh_MSTY") == 1.0              # sin CSV manda la foto
+    texto = _textos(at)
+    assert '<span class="vd-ocr">captura</span>' in texto
+    assert "archivo</span>" not in texto
+    assert "vista previa" in texto
+    assert "Los valores vienen de tu archivo de posiciones" not in texto
     at.session_state["_wizard_pos_csv_sig"] = None
     _subir_pos(at)
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 12.5             # con CSV manda el CSV
     assert _campo(at, "_vd_sh_SLV") == 0.0               # SLV está en la foto pero no en el CSV
-    assert not [u for u in at.get("file_uploader")
-                if getattr(u.proto, "label", "") == "Fotos del portafolio"]
+    # El stub del script sustituye al uploader de fotos sin dibujar widget, así que no se
+    # puede buscar en el árbol: se mira si se pidió.
+    assert "_vd_fotos" not in at.session_state["_test_llamados"]
+    texto = _textos(at)
+    assert "Capturas leídas" not in texto
+    assert "en tu captura" not in texto
 
 
 def test_el_origen_es_archivo_tras_confirmar(sin_clave):
@@ -351,6 +365,32 @@ def test_archivo_no_reconocido(sin_clave):
     assert not at.exception
     assert "No reconocimos este archivo como el CSV de posiciones de Schwab" in _textos(at)
     assert _campo(at, "_vd_sh_MSTY") == 40.0
+
+
+def test_csv_sin_ningun_analizable(sin_clave):
+    solo_acciones = (_TITULO + _CABECERA + _fila("AAPL", "3", "$600.00", "$500.00",
+                                                 tipo="Equity") + _COLA).encode()
+    at = _at()
+    at.run()
+    _subir_pos(at, solo_acciones)
+    assert not at.exception
+    assert "no trae ninguno de los instrumentos" in _textos(at)
+    assert "_wizard_pos_csv" not in at.session_state.filtered_state
+    assert _campo(at, "_vd_sh_MSTY") == 40.0
+
+
+def test_foto_ilegible_no_pisa_lo_tecleado(monkeypatch):
+    """Una foto que Gemini no lee devuelve {}: no hay nada que empujar, y empujar la vista
+    previa con `set_value` borraría en el navegador lo que el cliente ya escribió."""
+    monkeypatch.setenv("GEMINI_API_KEY", "clave-de-prueba")
+    monkeypatch.setattr(logic, "extract_positions_from_images", lambda *a, **k: {})
+    at = _at()
+    at.run()
+    [w for w in at.number_input if w.proto.id.endswith("_vd_sh_MSTY")][0].set_value(7.0).run()
+    at.session_state["_test_foto_bytes"] = b"foto"
+    at.run()
+    assert not at.exception
+    assert not _proto(at, "_vd_sh_MSTY").set_value
 
 
 def test_archivo_con_varias_cuentas(sin_clave):

@@ -403,6 +403,7 @@ def render_bloque_posiciones() -> bool:
             for k in ("_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error"):
                 st.session_state.pop(k, None)
             st.session_state["_wizard_ocr_aplicar"] = True
+            st.session_state["_wizard_pos_csv_quitado"] = True
             st.rerun()
     else:
         archivo_pos = st.file_uploader(
@@ -495,7 +496,11 @@ def render_bloque_posiciones() -> bool:
     # que el valor llegue por `session_state`, en el mismo render que crea el widget: eso
     # marca `set_value` en el proto. Pasar además `value=` ese render pintaría el aviso de
     # «default value + Session State API». Lo que el cliente edite después ya no se pisa.
-    aplicar = bool(st.session_state.pop("_wizard_ocr_aplicar", False))
+    # Sin lectura no se empuja nada: una foto que Gemini no lee (`{}`) no debe borrar lo que el
+    # cliente ya tecleó. La excepción es «quitar archivo», que devuelve la vista previa a
+    # propósito.
+    quitado = bool(st.session_state.pop("_wizard_pos_csv_quitado", False))
+    aplicar = bool(st.session_state.pop("_wizard_ocr_aplicar", False)) and (bool(leido) or quitado)
 
     for ticker in analizables:
         fila = previa.get(ticker, {})

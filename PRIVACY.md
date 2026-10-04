@@ -35,7 +35,7 @@ inteligencia artificial.**
 
 - **Qué guardamos:** de cada movimiento, la fecha, el tipo (compra, dividendo, retención,
   depósito…), el ticker, la cantidad, el precio y el importe; las acciones y el costo que
-  confirmas; lo que se leyó de tus capturas o de tu archivo de posiciones (acciones, costo, valor, precio); los números del
+  confirmas; lo que se leyó de tus capturas (acciones, costo, valor, precio); los números del
   1042-S; el país que declaraste; qué ETFs tuvieron avisos en el análisis; y el día (sin hora)
   en que se guardó.
 - **Qué no guardamos:** el archivo original, su nombre, tus capturas, tu archivo de posiciones, el PDF del 1042-S, tu
