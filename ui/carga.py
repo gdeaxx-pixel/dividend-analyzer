@@ -10,6 +10,7 @@ Ningún color se escribe a mano aquí: se usan las variables CSS que inyecta `ui
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import os
 
@@ -24,6 +25,7 @@ CLAVES_CONTEXTO_CARTERA = (
     "_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker", "_wizard_csv_name",
     "_wizard_positions", "_wizard_income_summary", "_wizard_income_df", "_wizard_income_multi",
     "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
+    "_wizard_1042s_ilegibles",
     "_wizard_ocr_positions",
     "_wizard_photo_sig",
     "_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error",
@@ -627,32 +629,84 @@ def _render_residencia_detectada() -> None:
                   args=(detectado,), kwargs={"source": "1042s"})
 
 
+_MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+          "septiembre", "octubre", "noviembre", "diciembre")
+_CLAVES_1042S = ("_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
+                 "_wizard_1042s_ilegibles")
+
+
+def _hoy() -> datetime.date:
+    return datetime.date.today()
+
+
+def _render_aviso_1042s_tda(lectura: dict) -> None:
+    """Año partido entre TD Ameritrade y Schwab con uno de sus dos 1042-S sin subir. Solo
+    sale en Schwab y en años con dividendos de la época TDA en el CSV: caduca solo."""
+    falta = logic.falta_1042s_tda(st.session_state.get("_wizard_df_clean"), lectura,
+                                  st.session_state.get("_wizard_broker"))
+    if not falta:
+        return
+    anio = falta["anio"]
+    nombres = {"schwab": f"«1042S - {anio}»", "tda": f"«TDA - 1042S - {anio}»"}
+    hasta = (f"hasta {_MESES[falta['ultimo_mes_tda'] - 1]} de {anio}"
+             if falta.get("ultimo_mes_tda") else f"parte de {anio}")
+    st.warning(
+        f"Tu cuenta estuvo en TD Ameritrade {hasta}, así que {anio} tiene **dos** 1042-S: "
+        f"{nombres['schwab']} (lo que cobraste ya en Schwab) y {nombres['tda']} (lo de TD "
+        "Ameritrade). En Schwab: Accounts → Statements & Tax Forms → Tax Forms → Previous "
+        "year → Search. Pulsa «editar» y súbelos juntos para comparar el año completo. "
+        f"Te falta: {' y '.join(nombres[k] for k in falta['falta'])}.")
+
+
+def _render_aviso_1042s_viejo(lectura: dict) -> None:
+    anio = lectura.get("tax_year")
+    esperado = logic.tax_year_esperado(_hoy())
+    if not anio or anio >= esperado:
+        return
+    st.info(f"Este 1042-S es de {anio}. Ya debería estar disponible el de {esperado}: en "
+            "Schwab, Tax Forms → Current year → Search. Si ya lo subiste o prefieres validar "
+            f"{anio}, ignora este aviso.")
+
+
 def _render_1042s_resumen() -> None:
     """1042-S ya leído: tarjeta resumen + editar. Extraído de `render_bloque_1042s` para
     poder mostrarse junto al resumen de ingresos (fila 5: las dos fuentes conviven)."""
-    forms = (st.session_state.get("_wizard_1042s") or {}).get("forms") or []
+    lectura = st.session_state.get("_wizard_1042s") or {}
+    forms = lectura.get("forms") or []
     n = len(forms)
     credito = sum(f.get("withholding_credit") or 0.0 for f in forms
                   if logic.income_code_str(f.get("income_code")) == "37")
     detalle = f"{n} formularios"
+    if (lectura.get("documentos") or 1) > 1:
+        detalle += f" · {lectura['documentos']} documentos"
     if credito:
         detalle += f" · crédito ROC ${credito:,.2f}"
     st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+    if lectura.get("anios_descartados"):
+        descartados = ", ".join(str(a) for a in lectura["anios_descartados"])
+        st.info(f"Subiste 1042-S de años distintos; usamos el de {lectura.get('tax_year')} "
+                f"y dejamos fuera {descartados}. Para validar otro año, súbelo solo.")
+    ilegibles = st.session_state.get("_wizard_1042s_ilegibles") or []
+    if ilegibles:
+        st.warning("No pudimos leer " + ", ".join(f"el {i}.º archivo" for i in ilegibles)
+                   + "; usamos los demás.")
+    _render_aviso_1042s_tda(lectura)
+    _render_aviso_1042s_viejo(lectura)
     _render_residencia_detectada()
     _, col = st.columns([5, 1])
     with col:
         if st.button("editar", key="_vd_edit_1042s", type="tertiary",
                      use_container_width=True):
-            st.session_state.pop("_wizard_1042s", None)
-            st.session_state.pop("_wizard_1042s_sig", None)
-            st.session_state.pop("_wizard_1042s_error", None)
+            for k in _CLAVES_1042S:
+                st.session_state.pop(k, None)
             st.rerun()
 
 
 def _render_1042s_uploader() -> None:
-    """Sube y parsea el 1042-S. Literal de `app_old.py:1624-1674`."""
-    archivo = st.file_uploader("Formulario 1042-S", type=["pdf"],
-                               key="_vd_upload_1042s", label_visibility="collapsed")
+    """Sube y parsea el 1042-S. Acepta varios PDF: un año partido entre TD Ameritrade y
+    Schwab tiene dos documentos, y solo sumados cuadran con el CSV (`logic.combinar_1042s`)."""
+    archivos = st.file_uploader("Formulario 1042-S", type=["pdf"], accept_multiple_files=True,
+                                key="_vd_upload_1042s", label_visibility="collapsed") or []
     st.caption(
         "Schwab lo publica a mediados de marzo. Accounts → Statements & Tax Forms "
         "(Estados de cuenta y formularios) → pestaña Tax Forms → Current year → Search; si no "
@@ -663,17 +717,19 @@ def _render_1042s_uploader() -> None:
         "El PDF no se guarda: se lee en memoria, no se envía a ningún servicio externo y se "
         "descarta.")
 
-    if archivo is None:
+    if not archivos:
         return
 
     # El fallo se guarda en sesión, no se pinta y se olvida: la guarda por firma corta
     # antes de releer el mismo archivo, así que sin persistirlo el mensaje desaparecía en
     # el primer rerun y el usuario quedaba con su PDF adjunto, sin error y sin resultado.
-    sig = (archivo.name, archivo.size)
+    # Firma por CONTENIDO: dos PDF distintos con el mismo nombre y tamaño no se confunden.
+    sig = tuple(hashlib.sha256(a.getvalue()).hexdigest() for a in archivos)
     if sig != st.session_state.get("_wizard_1042s_sig"):
         with st.spinner("Leyendo tu 1042-S…"):
-            resultado = logic.extract_1042s(archivo.getvalue())
+            lecturas = [logic.extract_1042s(a.getvalue()) for a in archivos]
         st.session_state["_wizard_1042s_sig"] = sig
+        resultado = logic.combinar_1042s(lecturas)
 
         if resultado is None:
             st.session_state["_wizard_1042s_error"] = "ilegible"
@@ -685,6 +741,8 @@ def _render_1042s_uploader() -> None:
             else:
                 st.session_state.pop("_wizard_1042s_error", None)
                 st.session_state["_wizard_1042s"] = resultado
+                st.session_state["_wizard_1042s_ilegibles"] = [
+                    i for i, l in enumerate(lecturas, 1) if l is None]
                 st.rerun()
 
     error = st.session_state.get("_wizard_1042s_error")

@@ -96,7 +96,15 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1428 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+Línea base: **1461 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`feat/1042s-tda-varios-pdf`, base `main` = `4c31652` (#199, que daba 1428), con `real_examples/` y
+`CONY_test.csv` enlazados en el worktree. +33: `test_1042s_tda.py` — el 1042-S de TD Ameritrade
+(palabras pegadas → respaldo `x_tolerance=1.5`; identificador en la línea anterior a su etiqueta;
+año de la cabecera, no del identificador), varios 1042-S del mismo año sumados sin duplicar ni
+mezclar años, el aviso del documento que falta en años partidos TDA/Schwab, el aviso de 1042-S
+viejo y la herramienta `tools/diagnostico_1042s.py`, que no imprime nada del documento.)
+
+Antes: **1428 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
 `feat/carga-csv-posiciones-schwab`, base `main` = `097b10e`, con `real_examples/` y `CONY_test.csv`
 enlazados en el worktree —sin ellos da 1291/87 antes de la auditoría—. +33: `test_carga_posiciones_csv.py`
 (lector del CSV de posiciones de Schwab, uploader del paso 2, origen `archivo`, textos de ayuda, el
