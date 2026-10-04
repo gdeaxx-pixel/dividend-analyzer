@@ -138,6 +138,74 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
     return {}
 
 
+_TICKER_POSICIONES = re.compile(r'^[A-Z][A-Z0-9./-]{0,9}$')
+
+
+def _num_posiciones(txt):
+    """Número de una celda del CSV de posiciones de Schwab ('$1,234.56', '-$12.34', '--')."""
+    t = str(txt or '').strip().replace('$', '').replace(',', '').replace(' ', '')
+    if t in ('', '--', 'N/A', '-', '+'):
+        return None
+    neg = t.startswith('-') or t.endswith('-')
+    t = t.strip('-+')
+    try:
+        v = float(t)
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def parse_schwab_positions_csv(raw: bytes):
+    """Lee el CSV de posiciones de Charles Schwab (Accounts > Positions > descargar).
+
+    Devuelve {TICKER: {'shares', 'cost_basis', 'market_value'}} con todos los tickers del
+    archivo (mismo formato que `extract_positions_from_images`; el filtro a analizables lo
+    hace la UI). `None` si no es este archivo; `{'error': 'varias_cuentas'}` si trae más de
+    una cabecera `Symbol`. Nunca lanza. El Cost Basis es el mismo dato que la foto lee de la
+    columna «Cost Basis» (costo total): no cambia ninguna semántica fiscal.
+    """
+    try:
+        import csv
+        texto = raw.decode('utf-8-sig') if isinstance(raw, (bytes, bytearray)) else str(raw)
+        filas = list(csv.reader(io.StringIO(texto)))
+        cabeceras = [i for i, f in enumerate(filas) if f and f[0].strip() == 'Symbol']
+        if not cabeceras or cabeceras[0] >= 10:
+            return None
+        if len(cabeceras) > 1:
+            return {'error': 'varias_cuentas'}
+        nombres = [c.strip() for c in filas[cabeceras[0]]]
+
+        def _col(prefijo):
+            return next((i for i, c in enumerate(nombres) if c.startswith(prefijo)), None)
+
+        i_sym, i_qty = 0, _col('Qty')
+        i_cost, i_mkt, i_tipo = _col('Cost Basis'), _col('Mkt Val'), _col('Asset Type')
+        if i_qty is None:
+            return None
+
+        def _celda(fila, i):
+            return fila[i] if i is not None and i < len(fila) else ''
+
+        out = {}
+        for fila in filas[cabeceras[0] + 1:]:
+            if not fila:
+                continue
+            simbolo = fila[i_sym].strip().upper()
+            if not _TICKER_POSICIONES.match(simbolo):
+                continue
+            if _celda(fila, i_tipo).strip() in ('Cash and Money Market', '--'):
+                continue
+            qty = _num_posiciones(_celda(fila, i_qty))
+            if qty is None or qty <= 0:
+                continue
+            out[simbolo] = {'shares': qty,
+                            'cost_basis': _num_posiciones(_celda(fila, i_cost)),
+                            'market_value': _num_posiciones(_celda(fila, i_mkt))}
+        return out
+    except Exception:
+        return None
+
+
 def extract_cost_basis_from_images(images, candidate_tickers, api_key):
     """Wrapper de compatibilidad: devuelve solo {TICKER: costo_base_float}."""
     rich = extract_positions_from_images(images, candidate_tickers, api_key)
@@ -6814,7 +6882,7 @@ def filter_growth_assets(results, proj=None, min_yield_pct=INCOME_ASSET_MIN_YIEL
 CAPTURE_MIN_COLUMNS = ['Date', 'Action', 'Ticker', 'Quantity', 'Price', 'Amount']
 CAPTURE_MIN_OK_TICKERS = 2          # mínimo de tickers nivel 'ok' para considerar el caso "sólido"
 CAPTURE_SCHEMA_VERSION = '1.1'
-CAPTURE_ORIGENES = ('captura', 'editado', 'vista_previa')
+CAPTURE_ORIGENES = ('captura', 'archivo', 'editado', 'vista_previa')
 CAPTURE_1042S_CAMPOS = ('income_code', 'gross_income', 'federal_tax_withheld',
                         'withholding_credit', 'tax_rate')
 
@@ -6865,7 +6933,8 @@ def load_capture_fixture(src) -> pd.DataFrame:
                        na_values={c: [''] for c in ('Date', 'Quantity', 'Price', 'Amount')})
 
 
-def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None) -> dict:
+def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None,
+                      fuente_lectura: str = 'captura') -> dict:
     """De dónde salió cada cifra confirmada en el paso 2, por ticker y campo.
 
     Replica los valores por defecto de `ui/carga.py::render_bloque_posiciones`
@@ -6878,6 +6947,9 @@ def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None) 
 
     Con captura leída, un ticker que no sale en ella tiene defecto 0 y origen 'captura'
     (lo pone a 0 la ausencia en la foto). `promotable_shares` descarta las acciones 0.
+
+    `fuente_lectura` es 'captura' (foto) o 'archivo' (CSV de posiciones del bróker): el
+    origen que lleva lo que vino de la lectura.
     """
     out = {}
     for t, v in (confirmadas or {}).items():
@@ -6897,7 +6969,7 @@ def origen_posiciones(confirmadas: dict, ocr: dict = None, previa: dict = None) 
             if val is None:
                 res[campo] = None
             elif defecto is not None and abs(val - defecto) <= 1e-6 * max(1.0, abs(defecto)):
-                res[campo] = 'captura' if hay_lectura else 'vista_previa'
+                res[campo] = fuente_lectura if hay_lectura else 'vista_previa'
             else:
                 res[campo] = 'editado'
         out[str(t).strip().upper()] = res

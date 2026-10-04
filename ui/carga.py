@@ -26,6 +26,7 @@ CLAVES_CONTEXTO_CARTERA = (
     "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
     "_wizard_ocr_positions",
     "_wizard_photo_sig",
+    "_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error",
     # F2 §4.4: la captura de casos se limpia al «editar» el CSV del paso 1 (cartera nueva,
     # consentimiento nuevo). `_captura_consent` es la instantánea del consentimiento
     # (ver `_capturar_caso`); `_consent_capture` es clave de widget y también se purga aquí.
@@ -135,7 +136,7 @@ def notificar_progreso(con_datos: bool) -> None:
 
 def _leer_transacciones(archivo) -> tuple:
     """Parseo del CSV/Excel — misma ruta que `app_old.py`, sin lógica propia."""
-    if archivo.name.endswith(".xlsx"):
+    if archivo.name.lower().endswith(".xlsx"):
         import pandas as pd
         return pd.read_excel(archivo), "generic"
     return logic.load_and_detect_csv(archivo)
@@ -177,7 +178,8 @@ BROKER_LABEL = {
 
 _AYUDA_BROKER = (
     "Interactive Brokers: Informes → Extractos → Transaction History · "
-    "Charles Schwab: Historial → Transacciones → Exportar"
+    "Charles Schwab: Accounts → Transaction History (Historial de transacciones) → "
+    "Date range «All» → Search → ícono de descarga (Export) → CSV"
 )
 
 
@@ -383,14 +385,73 @@ def render_bloque_posiciones() -> bool:
         st.warning("No encontramos ETFs analizables en este archivo.")
         return False
 
+    # ── CSV de posiciones de Schwab ───────────────────────────────────────────
+    # Fuente más fiable que la foto: sale del bróker y no depende de ninguna clave. Si hay
+    # CSV leído, manda sobre la foto y sobre la vista previa (CSV > foto > vista previa).
+    csv_leido = st.session_state.get("_wizard_pos_csv") or {}
+    if csv_leido:
+        st.markdown(bloque_resumen("Archivo de posiciones leído",
+                                   f"{len(csv_leido)} de {len(analizables)} instrumentos"),
+                    unsafe_allow_html=True)
+        ausentes = [t for t in analizables if t not in csv_leido]
+        if ausentes:
+            lista = ", ".join(ausentes)
+            verbo = "no aparece" if len(ausentes) == 1 else "no aparecen"
+            st.info(f"{lista} {verbo} en tu archivo de posiciones: lo pusimos en 0 (no lo "
+                    "tienes hoy). Si es un error, corrige sus acciones y su costo.")
+        if st.button("quitar archivo", key="_vd_quitar_pos_csv", type="tertiary"):
+            for k in ("_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error"):
+                st.session_state.pop(k, None)
+            st.session_state["_wizard_ocr_aplicar"] = True
+            st.rerun()
+    else:
+        archivo_pos = st.file_uploader(
+            "CSV de posiciones (Charles Schwab)", type=["csv"], key="_vd_upload_pos_csv",
+            help="Accounts → Positions (Posiciones) → ícono de descarga → OK.")
+        st.caption("**CSV de posiciones (Charles Schwab).** Accounts → Positions "
+                   "(Posiciones) → ícono de descarga → OK. Si lo subes, no hace falta foto.")
+        if archivo_pos is None:
+            st.session_state.pop("_wizard_pos_csv_sig", None)
+            st.session_state.pop("_wizard_pos_csv_error", None)
+        else:
+            crudo = archivo_pos.getvalue()
+            firma_csv = hashlib.sha256(crudo).hexdigest()
+            if firma_csv != st.session_state.get("_wizard_pos_csv_sig"):
+                lectura = logic.parse_schwab_positions_csv(crudo)
+                st.session_state["_wizard_pos_csv_sig"] = firma_csv
+                propias = ({t: v for t, v in lectura.items() if t in analizables}
+                           if lectura and "error" not in lectura else {})
+                if propias:
+                    st.session_state["_wizard_pos_csv"] = propias
+                    st.session_state.pop("_wizard_pos_csv_error", None)
+                    st.session_state["_wizard_ocr_aplicar"] = True
+                else:
+                    st.session_state.pop("_wizard_pos_csv", None)
+                    st.session_state["_wizard_pos_csv_error"] = (
+                        "varias_cuentas" if lectura and "error" in lectura
+                        else "sin_analizables" if lectura else "no_reconocido")
+                st.rerun()
+        error_csv = st.session_state.get("_wizard_pos_csv_error")
+        if error_csv == "varias_cuentas":
+            st.error("El archivo trae más de una cuenta; exporta las posiciones de una sola.")
+        elif error_csv == "sin_analizables":
+            st.error("El archivo no trae ninguno de los instrumentos que la calculadora "
+                     "analiza en tu historial. Revisa que sea el de la misma cuenta.")
+        elif error_csv:
+            st.error("No reconocimos este archivo como el CSV de posiciones de Schwab "
+                     "(Accounts → Positions → ícono de descarga). Si es de otro bróker, usa "
+                     "la foto o completa a mano.")
+
     # ── Lectura de fotos con Gemini ───────────────────────────────────────────
     # Rellena la tabla desde capturas del bróker, igual que `app_old.py:1455`. Reusa
     # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
     # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
-    # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde.
+    # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde. Con un CSV
+    # de posiciones leído no se dibuja: el CSV manda.
     clave = _clave_gemini()
-    leido = st.session_state.get("_wizard_ocr_positions") or {}
-    if clave and analizables:
+    ocr_leido = st.session_state.get("_wizard_ocr_positions") or {}
+    leido = csv_leido or ocr_leido
+    if clave and analizables and not csv_leido:
         fotos = st.file_uploader(
             "Fotos del portafolio", type=["png", "jpg", "jpeg"],
             accept_multiple_files=True, label_visibility="collapsed",
@@ -405,17 +466,17 @@ def render_bloque_posiciones() -> bool:
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
-                    leido = logic.extract_positions_from_images(
+                    ocr_leido = logic.extract_positions_from_images(
                         payload, analizables, clave) or {}
-                st.session_state["_wizard_ocr_positions"] = leido
+                st.session_state["_wizard_ocr_positions"] = ocr_leido
                 st.session_state["_wizard_photo_sig"] = firma
                 st.session_state["_wizard_ocr_aplicar"] = True
                 st.rerun()
-        if leido:
+        if ocr_leido:
             st.markdown(bloque_resumen("Capturas leídas",
-                                       f"{len(leido)} de {len(analizables)} instrumentos"),
+                                       f"{len(ocr_leido)} de {len(analizables)} instrumentos"),
                         unsafe_allow_html=True)
-            ausentes = [t for t in analizables if t not in leido]
+            ausentes = [t for t in analizables if t not in ocr_leido]
             if ausentes:
                 lista = ", ".join(ausentes)
                 verbo = "no aparece" if len(ausentes) == 1 else "no aparecen"
@@ -434,7 +495,7 @@ def render_bloque_posiciones() -> bool:
     # que el valor llegue por `session_state`, en el mismo render que crea el widget: eso
     # marca `set_value` en el proto. Pasar además `value=` ese render pintaría el aviso de
     # «default value + Session State API». Lo que el cliente edite después ya no se pisa.
-    aplicar = bool(st.session_state.pop("_wizard_ocr_aplicar", False)) and bool(leido)
+    aplicar = bool(st.session_state.pop("_wizard_ocr_aplicar", False))
 
     for ticker in analizables:
         fila = previa.get(ticker, {})
@@ -461,7 +522,8 @@ def render_bloque_posiciones() -> bool:
             v_sh, v_cb = {"value": float(acciones_def)}, {"value": float(costo_def)}
 
         col_t, col_a, col_c = st.columns([1.2, 1, 1.4])
-        marca = '<span class="vd-ocr">captura</span>' if ocr else ""
+        marca = (f'<span class="vd-ocr">{"archivo" if csv_leido else "captura"}</span>'
+                 if ocr else "")
         col_t.markdown(f'<p class="vd-ticker">{ticker} {marca}</p>',
                        unsafe_allow_html=True)
         acciones = col_a.number_input(
@@ -473,6 +535,8 @@ def render_bloque_posiciones() -> bool:
         posiciones[ticker] = {"shares": acciones, "cost_basis": costo}
 
     st.markdown(
+        ('<p class="vd-nota">Los valores vienen de tu archivo de posiciones de '
+         'Schwab.</p>') if csv_leido else
         '<p class="vd-nota">Los valores vienen del archivo como <b>vista previa</b>: '
         'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
         'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
@@ -508,7 +572,8 @@ def render_bloque_posiciones() -> bool:
         # (MEDIDO: al confirmar, esta rama deja de dibujar la casilla y
         # `_consent_capture` desaparece de la sesión antes de llegar a
         # «Ver resultados»). `_capturar_caso` lee la instantánea.
-        st.session_state["_captura_origen"] = logic.origen_posiciones(posiciones, leido, previa)
+        st.session_state["_captura_origen"] = logic.origen_posiciones(
+            posiciones, leido, previa, fuente_lectura="archivo" if csv_leido else "captura")
         st.session_state["_captura_consent"] = st.session_state.get("_consent_capture") is True
         # La captura entra a `analyze_portfolio` como base de costo (ver `ui/vistas.py`
         # :_resultados), así que unos resultados calculados ANTES de confirmarla se quedarían
@@ -584,7 +649,10 @@ def _render_1042s_uploader() -> None:
     archivo = st.file_uploader("Formulario 1042-S", type=["pdf"],
                                key="_vd_upload_1042s", label_visibility="collapsed")
     st.caption(
-        "Tu broker te lo envía a inicio de año (Schwab: Cuenta → Documentos → Impuestos). "
+        "Schwab lo publica a mediados de marzo. Accounts → Statements & Tax Forms "
+        "(Estados de cuenta y formularios) → pestaña Tax Forms → Current year → Search; si no "
+        "aparece «1042S - año», elige Previous year. Descarga el que se llama «1042S - año» "
+        "con el año más alto. "
         "**Solo se emite a extranjeros no residentes** — si declaras como residente fiscal "
         "de EE.UU., recibes un 1099-DIV y puedes saltarte este paso. "
         "El PDF no se guarda: se lee en memoria, no se envía a ningún servicio externo y se "
@@ -617,8 +685,8 @@ def _render_1042s_uploader() -> None:
     error = st.session_state.get("_wizard_1042s_error")
     if error == "ilegible":
         st.error("No pudimos leer este PDF de forma automática.")
-        st.caption("Verifica que sea el 1042-S que te envió tu broker (Schwab: Cuenta → "
-                   "Documentos → Impuestos). Si es escaneado, pide la versión digital. También "
+        st.caption("Verifica que sea el 1042-S que te envió tu broker (Schwab: Accounts → "
+                   "Statements & Tax Forms → Tax Forms). Si es escaneado, pide la versión digital. También "
                    "puedes saltar este paso: la app funciona sin el 1042-S; solo pierdes la "
                    "validación contra el documento oficial.")
     elif error == "sin_dividendos":
@@ -668,9 +736,10 @@ def _render_income_uploader() -> None:
             st.error(
                 "No reconocimos este archivo como un **Investment Income** de Charles Schwab.")
             st.caption(
-                "Verifica que sea el reporte de **ingresos** (Cuenta → Historial → "
-                "*Investment Income* → Exportar) en formato **CSV** — no el de transacciones, "
-                "ni un Excel (.xls/.xlsx), ni un PDF.")
+                "Verifica que sea el reporte de **ingresos**: Accounts → "
+                "Investment Income (Ingresos de inversión) → ícono de descarga → Date Range "
+                "«All» → Download, en formato **CSV** — no el de transacciones, "
+                "ni un Excel, ni un PDF.")
         elif len(inc_df) == 0:
             st.session_state["_wizard_income_summary"] = None
             st.session_state["_wizard_income_df"] = None
@@ -688,9 +757,10 @@ def _render_income_uploader() -> None:
                 st.session_state["_wizard_income_df"] = None
                 st.error("Tu archivo solo trae proyecciones **“Estimated”**, no pagos **“Received”**.")
                 st.caption(
-                    "Para validar necesitamos el histórico de ingresos **recibidos**. En Schwab, "
-                    "amplía el rango de fechas hacia el pasado al exportar (la proyección futura "
-                    "viene primero y se ignora).")
+                    "Para validar necesitamos el histórico de ingresos **recibidos**. "
+                    "Al exportar, elige «All» en el menú **Date Range** del cuadro de "
+                    "exportación: el valor por defecto solo trae el año seleccionado en la "
+                    "página.")
             else:
                 st.session_state["_wizard_income_summary"] = inc_summ
                 st.session_state["_wizard_income_df"] = inc_df

@@ -1,7 +1,7 @@
 # Aviso de privacidad — Calculadora de Dividendos
-*Actualizado: 2026-09-25*
+*Actualizado: 2026-10-04*
 
-**Tus archivos.** El archivo de transacciones, las capturas y el 1042-S se procesan en la
+**Tus archivos.** El archivo de transacciones, el CSV de posiciones, las capturas y el 1042-S se procesan en la
 memoria del servidor mientras dura tu sesión. La app no los escribe a disco. El resultado del
 análisis se conserva en memoria hasta 1 hora para no recalcularlo y luego se descarta. La única
 excepción es la copia reducida que se describe abajo, y solo si tú la autorizas.
@@ -15,6 +15,10 @@ excepción es la copia reducida que se describe abajo, y solo si tú la autoriza
 | Auth0 | Tu correo, para enviarte el código de acceso | Al entrar |
 | Backblaze B2 | La copia reducida de tu caso (ver abajo), sin tu correo | Solo si marcas la casilla del paso 2 |
 | Streamlit Community Cloud | Aloja la app | Siempre |
+
+**Tu CSV de posiciones.** Se lee en memoria con un lector propio: no se envía a ningún servicio
+externo y no se guarda. Si marcas la casilla del paso 2, se guardan solo las acciones y el costo
+de tus ETFs, nunca el archivo.
 
 **Tu 1042-S.** Se lee con un lector propio y el PDF no se envía a ningún servicio externo. Si
 marcas la casilla del paso 2, se guardan solo los números leídos (año, país, código de renta,
@@ -31,10 +35,10 @@ inteligencia artificial.**
 
 - **Qué guardamos:** de cada movimiento, la fecha, el tipo (compra, dividendo, retención,
   depósito…), el ticker, la cantidad, el precio y el importe; las acciones y el costo que
-  confirmas; lo que se leyó de tus capturas (acciones, costo, valor, precio); los números del
+  confirmas; lo que se leyó de tus capturas o de tu archivo de posiciones (acciones, costo, valor, precio); los números del
   1042-S; el país que declaraste; qué ETFs tuvieron avisos en el análisis; y el día (sin hora)
   en que se guardó.
-- **Qué no guardamos:** el archivo original, su nombre, tus capturas, el PDF del 1042-S, tu
+- **Qué no guardamos:** el archivo original, su nombre, tus capturas, tu archivo de posiciones, el PDF del 1042-S, tu
   nombre, tu correo, tu número de cuenta, tu número de identificación fiscal ni tu IP. La copia
   no queda asociada a tu correo.
 - **Dónde:** en un almacenamiento privado y cifrado de Backblaze B2, en Estados Unidos. La app
