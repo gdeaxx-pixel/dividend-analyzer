@@ -97,11 +97,11 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1473 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-09 sobre
-el árbol de `main` = `416ab2f`, con `real_examples/` y `CONY_test.csv`. Antes: 1470 sobre `a71aa7f`,
+Línea base: **1476 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-09 sobre
+`main` = `644ad3d` + los 3 tests de FC-1/FC-2/RY-1, con `real_examples/` y `CONY_test.csv`. Antes: 1470 sobre `a71aa7f`,
 tras los PRs de la auditoría app-audit 2026-10-07 (#202 +3, #203 +2, #204 +0, #205 +1, #206 +0).
 Después: #208 y #210 +0 (F4, `metricas.py` y `movimientos.py`), #211 +3 (huecos de mutante CA-1,
-TP-3 y HB-1b). Desde #203 la suite corre también en CI en cada PR: allí, sin datos privados, da
+TP-3 y HB-1b), #213 +0 (`filas_csv.py`), +3 (huecos FC-1, FC-2, RY-1 de `filas_csv.py`). Desde #203 la suite corre también en CI en cada PR: allí, sin datos privados, da
 ~1362 passed / 87 skipped — el gate es exit 0, no la cuenta.)
 
 Antes: **1464 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
