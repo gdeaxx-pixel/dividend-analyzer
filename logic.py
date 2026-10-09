@@ -1215,6 +1215,244 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     return daily_history, benchmark_value, benchmark_roi
 
 
+# Helper for defensive parsing
+def safe_float(val):
+    try:
+        if pd.isna(val): return 0.0
+        return float(val)
+    except ValueError:
+        # Cleaning fallback
+        clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
+        try:
+            return float(clean_val)
+        except ValueError:
+            return 0.0
+
+
+def _recorrer_transacciones(ticker_df, _splits_col):
+    # --- Analysis Variables ---
+    pocket_investment = 0.0 # Net cash flow from user's pocket
+    shares_owned = 0.0
+    shares_owned_pocket = 0.0
+    shares_owned_drip = 0.0
+    total_shares_bought = 0.0  # gross buys (before sells)
+    total_shares_sold = 0.0    # gross sells
+    dividends_collected_cash = 0.0
+    dividends_collected_drip = 0.0 # Value of dividends reinvested
+    # Efectivo que entró o salió de la cuenta SIN ser una distribución (rama I5). Va
+    # aparte de `dividends_collected_cash` a propósito: su base no es «dividendo», y
+    # mezclarlas rompía la identidad `neto = reinvertido + efectivo` del recorrido.
+    misc_cash_total = 0.0
+    misc_cash_breakdown = {}
+    history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
+    
+    # Iterate through transactions to build history
+    cash_flows      = []
+    irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
+    divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
+    for idx, row in ticker_df.iterrows():
+        action = str(row['Action']).lower()
+        qty = safe_float(row.get('Quantity', 0))
+        amount = safe_float(row.get('Amount', 0))
+        
+        # --- Semantic Classification (Robust) ---
+        # Determine intent based on description keywords
+        
+        # 1. DRIP (Reinversión)
+        # Keywords: reinvest, reinversión, drip
+        is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
+        
+        # 2. Buy (Compra)
+        # Keywords: buy, bought, compra
+        # Exclusion: Ensure it's not a 'reinvest' buy (which is handled by DRIP logic)
+        is_buy = ('buy' in action or 'bought' in action or 'compra' in action) and not is_drip
+        
+        # 3. Sell (Venta)
+        # Keywords: sell, sold, venta
+        is_sell = 'sell' in action or 'sold' in action or 'venta' in action
+        
+        # 5. Deposit / Transfer (Depósito / Transferencia)
+        # Keywords: deposit, deposito, transfer, journal, contribution
+        is_deposit = 'deposit' in action or 'depósito' in action or 'transfer' in action or 'journal' in action or 'contribution' in action
+        
+        # 6. Dividend Payout (Pago de Dividendo en Efectivo)
+        # Keywords: dividend, payout, yield, interest (excluding reinvestment)
+        is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
+
+        # I5 (spec S5 §3): 'Cash In Lieu', 'Special Qual Div', 'ADR Mgmt Fee' y 'Wire
+        # Received' no traen ninguna de las palabras de arriba, así que caían SIN
+        # RAMA — dinero real que no movía ni pocket_investment ni el efectivo
+        # cobrado, ni el cronograma de IRR. Rama propia, no `is_div_payout`, para no
+        # mezclar su semántica fiscal (no son dividendos) con el mismo tratamiento
+        # de caja (si no se reinvierten, es efectivo que entró o salió de la cuenta).
+        # `Reverse Split` NO entra aquí: suma $0.00 y su terreno (splits) está cerrado
+        # sin defectos — moverlo exige evidencia nueva, no esta spec.
+        is_misc_cash = any(k in action for k in
+                          ('cash in lieu', 'special qual div', 'adr mgmt fee', 'wire received'))
+
+        # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
+        # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
+        # ('Dividend - Foreign Tax Withholding') SÍ contiene 'dividend' y ya la cubre
+        # is_div_payout de arriba -> se excluye aquí con `not is_div_payout` para no
+        # procesarla dos veces. Sin este branch, el retiro de caja por impuesto era
+        # invisible para el cronograma de IRR (mismo bug de fondo que gross_value, pero
+        # de timing): IRR salía sobreestimado igual que ROI/Retorno Total.
+        is_tax_only = (_is_tax_row_action(action)
+                       and not is_div_payout)
+
+        # Logic
+        row_cash_flow = 0.0
+        
+        # Split adjustment: shares from this transaction may have multiplied since
+        # the purchase date due to forward splits (or reduced via reverse splits).
+        _tx_date = row.get('Date', None)
+        _sf = _cumul_split_factor(_tx_date, _splits_col)
+
+        if is_buy:
+            _adj_qty = abs(qty) * _sf
+            pocket_investment += abs(amount)
+            shares_owned += _adj_qty
+            shares_owned_pocket += _adj_qty
+            total_shares_bought += _adj_qty
+            row_cash_flow = abs(amount)
+            irr_flows_dated.append((_tx_date, -abs(amount)))
+        elif is_deposit:
+            is_internal = 'transfer' in action or 'journal' in action
+            if is_internal:
+                # Internal transfers: signed qty so transfer-out(-) + transfer-in(+) = 0 net shares
+                # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
+                _adj_qty = qty * _sf
+                # Entrada de una migración (`_net_transfer_pairs`): deja la posición en las
+                # acciones traspasadas — entra lo que el CSV no traía de antes, o sale lo
+                # que contaba de más (TSLY: una fila TDA «MANDATORY REVERSE SPLIT» sumaba
+                # +22). La cantidad se reescribe para que la serie diaria cuente lo mismo.
+                if not pd.isna(row.get('_migracion_q', np.nan)):
+                    _adj_qty = abs(qty) * _sf - shares_owned
+                    ticker_df.at[idx, 'Quantity'] = _adj_qty / _sf if _sf else 0.0
+                shares_owned += _adj_qty
+                shares_owned_pocket += _adj_qty
+                if _adj_qty > 0:
+                    total_shares_bought += _adj_qty
+                    if amount != 0:
+                        pocket_investment += abs(amount)
+                        row_cash_flow = abs(amount)
+                        # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
+                        irr_flows_dated.append((_tx_date, -abs(amount)))
+            else:
+                # External deposit / contribution: new money from pocket
+                _adj_qty = abs(qty) * _sf
+                pocket_investment += abs(amount)
+                shares_owned += _adj_qty
+                shares_owned_pocket += _adj_qty
+                total_shares_bought += _adj_qty
+                row_cash_flow = abs(amount)
+                # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
+                irr_flows_dated.append((_tx_date, -abs(amount)))
+
+        elif is_drip:
+            # Pattern 1: "Reinvest Shares" / "Comprar Acciones"
+            if 'share' in action or 'acciones' in action:
+                _adj_qty = abs(qty) * _sf
+                shares_owned += _adj_qty
+                shares_owned_drip += _adj_qty
+                dividends_collected_drip += abs(amount)
+                _dy = _row_year(_tx_date)
+                if _dy is not None:
+                    divs_by_year[_dy] += abs(amount)
+
+            # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
+            elif 'dividend' in action or 'dividendo' in action:
+                pass
+
+            # Pattern 3: Ambiguous fallback
+            else:
+                _adj_qty = abs(qty) * _sf
+                shares_owned += _adj_qty
+                shares_owned_drip += _adj_qty
+                if amount < 0:
+                    dividends_collected_drip += abs(amount)
+                    _dy = _row_year(_tx_date)
+                    if _dy is not None:
+                        divs_by_year[_dy] += abs(amount)
+
+        elif is_div_payout:
+            # Cash dividend NOT reinvested. Use signed amount so IB correction
+            # entries (negative) reduce the total instead of inflating it.
+            if not is_drip:
+                dividends_collected_cash += amount
+                _dy = _row_year(_tx_date)
+                if _dy is not None:
+                    divs_by_year[_dy] += amount
+                irr_flows_dated.append((_tx_date, amount))
+
+        elif is_misc_cash:
+            # I5: mismo tratamiento de CAJA que is_div_payout (signed amount: un
+            # cargo como 'ADR Mgmt Fee' es negativo y resta) pero sin pasar por
+            # `dividends_gross_by_year`/objeto fiscal — no son distribuciones.
+            #
+            # Y por eso mismo NO suma a `dividends_collected_cash`. Hasta el
+            # 2026-09-24 sí lo hacía, y el efectivo del recorrido quedaba con dos
+            # bases dentro del mismo total (Regla 2 del contrato): el «Cash In Lieu»
+            # del split inverso de MSTY ($18.32) hacía que `DRIP + CASH` superara al
+            # NETO del objeto fiscal en exactamente esa cifra, y el guard de
+            # `verificar_identidades` bloqueaba Cash flow y Hoja Excel — con razón.
+            # La caja no cambia: `gross_value` suma este acumulador aparte, más abajo.
+            misc_cash_total += amount
+            misc_cash_breakdown[str(row.get('Action', '')).strip()] = round(
+                misc_cash_breakdown.get(str(row.get('Action', '')).strip(), 0.0) + amount, 2)
+            irr_flows_dated.append((_tx_date, amount))
+
+        elif is_sell:
+            _adj_qty = abs(qty) * _sf
+            pocket_investment -= abs(amount)
+            shares_owned -= _adj_qty
+            shares_owned_pocket -= _adj_qty
+            total_shares_sold += _adj_qty
+            row_cash_flow = -abs(amount)
+            irr_flows_dated.append((_tx_date, abs(amount)))
+            # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
+            if shares_owned < 0:
+                shares_owned = 0.0
+                history_incomplete = True
+            if shares_owned_pocket < 0:
+                shares_owned_pocket = 0.0
+
+        elif is_tax_only:
+            # No mueve shares ni pocket_investment: solo el timing de IRR (el efecto
+            # en dólares sobre ROI/Retorno Total se resuelve más abajo con
+            # `build_dividend_tax_totals`, que ya distingue la convención por ticker).
+            irr_flows_dated.append((_tx_date, amount))
+
+        # Special Handling: Splits in CSV
+        # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
+        # But the SKILL says: "Balance Reset: Al detectar un 'Reverse Split' con una cantidad positiva en el CSV, trátalo como un Reinicio de Balance."
+        if 'split' in action:
+            if qty > 0:
+                if shares_owned > 0:
+                    ratio = qty / shares_owned
+                    shares_owned_pocket *= ratio
+                    shares_owned_drip *= ratio
+                shares_owned = qty
+                 
+        cash_flows.append(row_cash_flow)
+        
+    ticker_df['Cash_Flow_In'] = cash_flows
+    return {
+        'pocket_investment': pocket_investment,
+        'shares_owned': shares_owned,
+        'shares_owned_pocket': shares_owned_pocket,
+        'shares_owned_drip': shares_owned_drip,
+        'total_shares_bought': total_shares_bought,
+        'total_shares_sold': total_shares_sold,
+        'dividends_collected_cash': dividends_collected_cash,
+        'dividends_collected_drip': dividends_collected_drip,
+        'misc_cash_total': misc_cash_total,
+        'misc_cash_breakdown': misc_cash_breakdown,
+        'history_incomplete': history_incomplete,
+        'irr_flows_dated': irr_flows_dated,
+    }
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1325,226 +1563,19 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             for _sd, _sr in _splits_col.items():
                 splits_detected.append({"date": str(_sd)[:10], "ratio": float(_sr)})
 
-        # --- Analysis Variables ---
-        pocket_investment = 0.0 # Net cash flow from user's pocket
-        shares_owned = 0.0
-        shares_owned_pocket = 0.0
-        shares_owned_drip = 0.0
-        total_shares_bought = 0.0  # gross buys (before sells)
-        total_shares_sold = 0.0    # gross sells
-        dividends_collected_cash = 0.0
-        dividends_collected_drip = 0.0 # Value of dividends reinvested
-        # Efectivo que entró o salió de la cuenta SIN ser una distribución (rama I5). Va
-        # aparte de `dividends_collected_cash` a propósito: su base no es «dividendo», y
-        # mezclarlas rompía la identidad `neto = reinvertido + efectivo` del recorrido.
-        misc_cash_total = 0.0
-        misc_cash_breakdown = {}
-        history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
-        
-        # Helper for defensive parsing
-        def safe_float(val):
-            try:
-                if pd.isna(val): return 0.0
-                return float(val)
-            except ValueError:
-                # Cleaning fallback
-                clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
-                try:
-                    return float(clean_val)
-                except ValueError:
-                    return 0.0
-
-        # Iterate through transactions to build history
-        cash_flows      = []
-        irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
-        divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
-        for idx, row in ticker_df.iterrows():
-            action = str(row['Action']).lower()
-            qty = safe_float(row.get('Quantity', 0))
-            amount = safe_float(row.get('Amount', 0))
-            
-            # --- Semantic Classification (Robust) ---
-            # Determine intent based on description keywords
-            
-            # 1. DRIP (Reinversión)
-            # Keywords: reinvest, reinversión, drip
-            is_drip = 'reinvest' in action or 'reinversión' in action or 'drip' in action
-            
-            # 2. Buy (Compra)
-            # Keywords: buy, bought, compra
-            # Exclusion: Ensure it's not a 'reinvest' buy (which is handled by DRIP logic)
-            is_buy = ('buy' in action or 'bought' in action or 'compra' in action) and not is_drip
-            
-            # 3. Sell (Venta)
-            # Keywords: sell, sold, venta
-            is_sell = 'sell' in action or 'sold' in action or 'venta' in action
-            
-            # 5. Deposit / Transfer (Depósito / Transferencia)
-            # Keywords: deposit, deposito, transfer, journal, contribution
-            is_deposit = 'deposit' in action or 'depósito' in action or 'transfer' in action or 'journal' in action or 'contribution' in action
-            
-            # 6. Dividend Payout (Pago de Dividendo en Efectivo)
-            # Keywords: dividend, payout, yield, interest (excluding reinvestment)
-            is_div_payout = ('dividend' in action or 'dividendo' in action or 'yield' in action or 'interest' in action) and not is_drip
-
-            # I5 (spec S5 §3): 'Cash In Lieu', 'Special Qual Div', 'ADR Mgmt Fee' y 'Wire
-            # Received' no traen ninguna de las palabras de arriba, así que caían SIN
-            # RAMA — dinero real que no movía ni pocket_investment ni el efectivo
-            # cobrado, ni el cronograma de IRR. Rama propia, no `is_div_payout`, para no
-            # mezclar su semántica fiscal (no son dividendos) con el mismo tratamiento
-            # de caja (si no se reinvierten, es efectivo que entró o salió de la cuenta).
-            # `Reverse Split` NO entra aquí: suma $0.00 y su terreno (splits) está cerrado
-            # sin defectos — moverlo exige evidencia nueva, no esta spec.
-            is_misc_cash = any(k in action for k in
-                              ('cash in lieu', 'special qual div', 'adr mgmt fee', 'wire received'))
-
-            # 7. Retención de impuesto en fila aparte (convención Schwab: 'NRA Tax Adj' sin
-            # 'dividend' en el Action -> is_div_payout no la agarra). La convención IB
-            # ('Dividend - Foreign Tax Withholding') SÍ contiene 'dividend' y ya la cubre
-            # is_div_payout de arriba -> se excluye aquí con `not is_div_payout` para no
-            # procesarla dos veces. Sin este branch, el retiro de caja por impuesto era
-            # invisible para el cronograma de IRR (mismo bug de fondo que gross_value, pero
-            # de timing): IRR salía sobreestimado igual que ROI/Retorno Total.
-            is_tax_only = (_is_tax_row_action(action)
-                           and not is_div_payout)
-
-            # Logic
-            row_cash_flow = 0.0
-            
-            # Split adjustment: shares from this transaction may have multiplied since
-            # the purchase date due to forward splits (or reduced via reverse splits).
-            _tx_date = row.get('Date', None)
-            _sf = _cumul_split_factor(_tx_date, _splits_col)
-
-            if is_buy:
-                _adj_qty = abs(qty) * _sf
-                pocket_investment += abs(amount)
-                shares_owned += _adj_qty
-                shares_owned_pocket += _adj_qty
-                total_shares_bought += _adj_qty
-                row_cash_flow = abs(amount)
-                irr_flows_dated.append((_tx_date, -abs(amount)))
-            elif is_deposit:
-                is_internal = 'transfer' in action or 'journal' in action
-                if is_internal:
-                    # Internal transfers: signed qty so transfer-out(-) + transfer-in(+) = 0 net shares
-                    # Only count cost basis when shares are arriving (qty > 0 = transfer-in)
-                    _adj_qty = qty * _sf
-                    # Entrada de una migración (`_net_transfer_pairs`): deja la posición en las
-                    # acciones traspasadas — entra lo que el CSV no traía de antes, o sale lo
-                    # que contaba de más (TSLY: una fila TDA «MANDATORY REVERSE SPLIT» sumaba
-                    # +22). La cantidad se reescribe para que la serie diaria cuente lo mismo.
-                    if not pd.isna(row.get('_migracion_q', np.nan)):
-                        _adj_qty = abs(qty) * _sf - shares_owned
-                        ticker_df.at[idx, 'Quantity'] = _adj_qty / _sf if _sf else 0.0
-                    shares_owned += _adj_qty
-                    shares_owned_pocket += _adj_qty
-                    if _adj_qty > 0:
-                        total_shares_bought += _adj_qty
-                        if amount != 0:
-                            pocket_investment += abs(amount)
-                            row_cash_flow = abs(amount)
-                            # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
-                            irr_flows_dated.append((_tx_date, -abs(amount)))
-                else:
-                    # External deposit / contribution: new money from pocket
-                    _adj_qty = abs(qty) * _sf
-                    pocket_investment += abs(amount)
-                    shares_owned += _adj_qty
-                    shares_owned_pocket += _adj_qty
-                    total_shares_bought += _adj_qty
-                    row_cash_flow = abs(amount)
-                    # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
-                    irr_flows_dated.append((_tx_date, -abs(amount)))
-
-            elif is_drip:
-                # Pattern 1: "Reinvest Shares" / "Comprar Acciones"
-                if 'share' in action or 'acciones' in action:
-                    _adj_qty = abs(qty) * _sf
-                    shares_owned += _adj_qty
-                    shares_owned_drip += _adj_qty
-                    dividends_collected_drip += abs(amount)
-                    _dy = _row_year(_tx_date)
-                    if _dy is not None:
-                        divs_by_year[_dy] += abs(amount)
-
-                # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
-                elif 'dividend' in action or 'dividendo' in action:
-                    pass
-
-                # Pattern 3: Ambiguous fallback
-                else:
-                    _adj_qty = abs(qty) * _sf
-                    shares_owned += _adj_qty
-                    shares_owned_drip += _adj_qty
-                    if amount < 0:
-                        dividends_collected_drip += abs(amount)
-                        _dy = _row_year(_tx_date)
-                        if _dy is not None:
-                            divs_by_year[_dy] += abs(amount)
-
-            elif is_div_payout:
-                # Cash dividend NOT reinvested. Use signed amount so IB correction
-                # entries (negative) reduce the total instead of inflating it.
-                if not is_drip:
-                    dividends_collected_cash += amount
-                    _dy = _row_year(_tx_date)
-                    if _dy is not None:
-                        divs_by_year[_dy] += amount
-                    irr_flows_dated.append((_tx_date, amount))
-
-            elif is_misc_cash:
-                # I5: mismo tratamiento de CAJA que is_div_payout (signed amount: un
-                # cargo como 'ADR Mgmt Fee' es negativo y resta) pero sin pasar por
-                # `dividends_gross_by_year`/objeto fiscal — no son distribuciones.
-                #
-                # Y por eso mismo NO suma a `dividends_collected_cash`. Hasta el
-                # 2026-09-24 sí lo hacía, y el efectivo del recorrido quedaba con dos
-                # bases dentro del mismo total (Regla 2 del contrato): el «Cash In Lieu»
-                # del split inverso de MSTY ($18.32) hacía que `DRIP + CASH` superara al
-                # NETO del objeto fiscal en exactamente esa cifra, y el guard de
-                # `verificar_identidades` bloqueaba Cash flow y Hoja Excel — con razón.
-                # La caja no cambia: `gross_value` suma este acumulador aparte, más abajo.
-                misc_cash_total += amount
-                misc_cash_breakdown[str(row.get('Action', '')).strip()] = round(
-                    misc_cash_breakdown.get(str(row.get('Action', '')).strip(), 0.0) + amount, 2)
-                irr_flows_dated.append((_tx_date, amount))
-
-            elif is_sell:
-                _adj_qty = abs(qty) * _sf
-                pocket_investment -= abs(amount)
-                shares_owned -= _adj_qty
-                shares_owned_pocket -= _adj_qty
-                total_shares_sold += _adj_qty
-                row_cash_flow = -abs(amount)
-                irr_flows_dated.append((_tx_date, abs(amount)))
-                # Guard: CSV missing prior history → sells exceed tracked buys → floor at 0
-                if shares_owned < 0:
-                    shares_owned = 0.0
-                    history_incomplete = True
-                if shares_owned_pocket < 0:
-                    shares_owned_pocket = 0.0
-
-            elif is_tax_only:
-                # No mueve shares ni pocket_investment: solo el timing de IRR (el efecto
-                # en dólares sobre ROI/Retorno Total se resuelve más abajo con
-                # `build_dividend_tax_totals`, que ya distingue la convención por ticker).
-                irr_flows_dated.append((_tx_date, amount))
-
-            # Special Handling: Splits in CSV
-            # Ideally the CSV has the adjusted quantity. If we see a massive quantity change without amount, likely split.
-            # But the SKILL says: "Balance Reset: Al detectar un 'Reverse Split' con una cantidad positiva en el CSV, trátalo como un Reinicio de Balance."
-            if 'split' in action:
-                if qty > 0:
-                    if shares_owned > 0:
-                        ratio = qty / shares_owned
-                        shares_owned_pocket *= ratio
-                        shares_owned_drip *= ratio
-                    shares_owned = qty
-                     
-            cash_flows.append(row_cash_flow)
-            
-        ticker_df['Cash_Flow_In'] = cash_flows
+        _rec = _recorrer_transacciones(ticker_df, _splits_col)
+        pocket_investment = _rec['pocket_investment']
+        shares_owned = _rec['shares_owned']
+        shares_owned_pocket = _rec['shares_owned_pocket']
+        shares_owned_drip = _rec['shares_owned_drip']
+        total_shares_bought = _rec['total_shares_bought']
+        total_shares_sold = _rec['total_shares_sold']
+        dividends_collected_cash = _rec['dividends_collected_cash']
+        dividends_collected_drip = _rec['dividends_collected_drip']
+        misc_cash_total = _rec['misc_cash_total']
+        misc_cash_breakdown = _rec['misc_cash_breakdown']
+        history_incomplete = _rec['history_incomplete']
+        irr_flows_dated = _rec['irr_flows_dated']
 
         # --- Final High-Level Calculations ---
         market_value = shares_owned * current_price

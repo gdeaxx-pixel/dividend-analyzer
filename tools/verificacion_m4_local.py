@@ -37,8 +37,8 @@ def _ruta(m):
     """Archivo que muta cada entrada: `logic.py` salvo que declare otro en `archivo`."""
     return os.path.join(REPO, m.get("archivo", "logic.py"))
 
-_VENTA = ("                pocket_investment -= abs(amount)\n"
-          "                shares_owned -= _adj_qty\n")
+_VENTA = ("            pocket_investment -= abs(amount)\n"
+          "            shares_owned -= _adj_qty\n")
 
 MUTANTES = [
     {
