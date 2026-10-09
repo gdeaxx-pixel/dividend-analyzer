@@ -1,12 +1,3 @@
----
-title: Dividend Analyzer
-emoji: 📈
-colorFrom: green
-colorTo: blue
-sdk: docker
-pinned: false
----
-
 # Dividend Analyzer App
 
 Esta aplicación te permite analizar tu portafolio de dividendos (forense) o simular estrategias de inversión (DRIP vs No-DRIP).
@@ -24,14 +15,16 @@ python3 -m pip install -r requirements.txt
 Para iniciar la aplicación, abre una terminal en esta carpeta y ejecuta:
 
 ```bash
-python3 -m streamlit run app.py
+./.venv/bin/python -m streamlit run app.py
 ```
 
 O si estás en otra carpeta, usa la ruta completa:
 
 ```bash
-cd "/Users/danielzambrano/Desktop/Habilidades de agentes/dividend-analyzer-app" && python3 -m streamlit run app.py
+cd "/Users/danielzambrano/Desktop/Habilidades de agentes/dividend-analyzer-app" && ./.venv/bin/python -m streamlit run app.py
 ```
+
+Usa siempre el Python del venv del repo, no `python3` del sistema. En sesiones de agente que heredan un `PYTHONPATH`, antepón `env -u PYTHONPATH` (si no, numpy falla al importar).
 
 ## Acceso desde el sitio web
 

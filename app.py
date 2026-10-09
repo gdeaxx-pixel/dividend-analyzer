@@ -60,6 +60,8 @@ if _demo_param and st.session_state.get("_demo_case") != _demo_param:
         st.session_state["_demo_case"] = _demo_param
     elif demo_mode.demo_available():
         st.caption(f"demo '{_demo_param}' no disponible · casos: {', '.join(demo_mode.demo_keys())}")
+    else:
+        st.caption("Los casos de ejemplo solo están disponibles en la instalación local (usan datos privados).")
 
 # Hasta que el usuario pulsa «Ver resultados →» (al final del Bloque 3, opcional) no hay
 # recorrido que enseñar: la hoja de carga ocupa toda la superficie y la ruta no se dibuja —
