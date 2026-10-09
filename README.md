@@ -1,12 +1,3 @@
----
-title: Dividend Analyzer
-emoji: 📈
-colorFrom: green
-colorTo: blue
-sdk: docker
-pinned: false
----
-
 # Dividend Analyzer App
 
 Esta aplicación te permite analizar tu portafolio de dividendos (forense) o simular estrategias de inversión (DRIP vs No-DRIP).
