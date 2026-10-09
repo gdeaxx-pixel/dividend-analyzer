@@ -844,6 +844,96 @@ def _descargar_benchmark(df, ticker=BENCHMARK_TICKER):
     return data
 
 
+def _metricas_riesgo(daily_history):
+    # ============================================================
+    # MÉTRICAS CUANTITATIVAS AJUSTADAS POR RIESGO
+    # Generadas por quant-analyst — inserción no destructiva
+    # ============================================================
+
+    # 1. Retornos diarios desde la serie TWR acumulada (evita contaminación por flujos de capital)
+    # User Return % es TWR acumulado en %. Convertimos a factor y derivamos retornos diarios.
+    twr_factor = (1 + daily_history['User Return %'] / 100).replace(0, np.nan)
+    daily_returns_q = twr_factor.pct_change().dropna()
+
+    # Beta/alpha contra el retorno TOTAL de VOO (precio + dividendos reinvertidos), NO contra
+    # 'SPY Profit' (valor de la cartera VOO simulada, que salta cada vez que entra capital y
+    # mete "retornos" falsos en el benchmark). Fallback a SPY Profit si no hay serie de precio.
+    if ('VOO Price' in daily_history.columns
+            and daily_history['VOO Price'].replace(0, np.nan).notna().sum() > 2):
+        _vp = daily_history['VOO Price'].replace(0, np.nan)
+        _vd = (daily_history['VOO Div'] if 'VOO Div' in daily_history.columns
+               else pd.Series(0.0, index=daily_history.index)).fillna(0.0)
+        spy_daily_returns_q = ((_vp + _vd) / _vp.shift(1) - 1).dropna()
+    else:
+        spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
+        spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
+
+    # 1b. Winsorizar retornos diarios (robustez ante saltos que NO son rendimientos):
+    # transferencias de acciones a $0 de efectivo (Internal Transfer / Journaled Shares),
+    # desfases de split o ticks malos de la API crean un "retorno" diario espurio de miles
+    # de % que disparaba la volatilidad/Sharpe/Sortino/beta. Acotar al rango [1%, 99%] de la
+    # propia serie elimina esos outliers sin tocar la reconstrucción de P&L/ROI/equity curve.
+    # (Caso real: SCHB transfer 18.9 acc. el 2024-05-13 → MV $16→$1164 → vol falsa de 3443%.)
+    daily_returns_q = _winsorize_returns(daily_returns_q)
+    spy_daily_returns_q = _winsorize_returns(spy_daily_returns_q)
+
+    # 2. Volatilidad anualizada
+    if len(daily_returns_q) >= 2:
+        volatilidad_anualizada = float(daily_returns_q.std() * np.sqrt(252) * 100)
+    else:
+        volatilidad_anualizada = None
+
+    # 3. Sharpe Ratio (Rf = 5% anual)
+    RF_ANUAL = 0.05
+    rf_diario = RF_ANUAL / 252
+    if len(daily_returns_q) >= 2 and daily_returns_q.std() > 1e-9:
+        exceso = daily_returns_q.mean() - rf_diario
+        sharpe_ratio = float((exceso / daily_returns_q.std()) * np.sqrt(252))
+    else:
+        sharpe_ratio = None
+
+    # 4. Sortino Ratio — downside deviation estándar (no std de solo los negativos)
+    sortino_ratio = _sortino_ratio(daily_returns_q, rf_diario)
+
+    # 5. Maximum Drawdown sobre la riqueza unitizada (TWR), no sobre el valor absoluto de la
+    # cartera: una venta a precio constante o un aporte no deben leerse como caída/recuperación.
+    max_drawdown, _dd_serie = _drawdown_twr(daily_returns_q)
+    daily_history['Drawdown %'] = _dd_serie.reindex(daily_history.index) if len(_dd_serie) else np.nan
+
+    # 6. Calmar Ratio — CAGR compuesto desde los retornos diarios YA winsorizados (no desde el
+    # TWR acumulado crudo, que puede estar corrupto por transferencias / costo incompleto).
+    if max_drawdown is not None and max_drawdown < -1e-9 and len(daily_returns_q) >= 2:
+        cum_twr_final = float((1 + daily_returns_q).prod())
+        anios_twr = len(daily_returns_q) / 252
+        if anios_twr > 0 and cum_twr_final > 0:
+            cagr_twr = ((cum_twr_final ** (1 / anios_twr)) - 1) * 100
+            calmar_ratio = float(cagr_twr / abs(max_drawdown))
+        else:
+            calmar_ratio = None
+    else:
+        calmar_ratio = None
+
+    # 7. Beta vs VOO
+    retornos_alineados = pd.DataFrame({
+        'portfolio': daily_returns_q,
+        'spy': spy_daily_returns_q
+    }).dropna()
+    if len(retornos_alineados) >= 10 and retornos_alineados['spy'].var() > 1e-12:
+        cov_mat = retornos_alineados.cov()
+        beta = float(cov_mat.loc['portfolio', 'spy'] / retornos_alineados['spy'].var())
+    else:
+        beta = None
+
+    # 8. Alpha de Jensen
+    if beta is not None and len(retornos_alineados) >= 10:
+        rp_anual = float(retornos_alineados['portfolio'].mean() * 252 * 100)
+        rm_anual = float(retornos_alineados['spy'].mean() * 252 * 100)
+        alpha = float(rp_anual - (RF_ANUAL * 100 + beta * (rm_anual - RF_ANUAL * 100)))
+    else:
+        alpha = None
+    return volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta, alpha
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1612,92 +1702,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             
         daily_history['User Return %'] = twr_series
 
-        # ============================================================
-        # MÉTRICAS CUANTITATIVAS AJUSTADAS POR RIESGO
-        # Generadas por quant-analyst — inserción no destructiva
-        # ============================================================
-
-        # 1. Retornos diarios desde la serie TWR acumulada (evita contaminación por flujos de capital)
-        # User Return % es TWR acumulado en %. Convertimos a factor y derivamos retornos diarios.
-        twr_factor = (1 + daily_history['User Return %'] / 100).replace(0, np.nan)
-        daily_returns_q = twr_factor.pct_change().dropna()
-
-        # Beta/alpha contra el retorno TOTAL de VOO (precio + dividendos reinvertidos), NO contra
-        # 'SPY Profit' (valor de la cartera VOO simulada, que salta cada vez que entra capital y
-        # mete "retornos" falsos en el benchmark). Fallback a SPY Profit si no hay serie de precio.
-        if ('VOO Price' in daily_history.columns
-                and daily_history['VOO Price'].replace(0, np.nan).notna().sum() > 2):
-            _vp = daily_history['VOO Price'].replace(0, np.nan)
-            _vd = (daily_history['VOO Div'] if 'VOO Div' in daily_history.columns
-                   else pd.Series(0.0, index=daily_history.index)).fillna(0.0)
-            spy_daily_returns_q = ((_vp + _vd) / _vp.shift(1) - 1).dropna()
-        else:
-            spy_vals = daily_history['SPY Profit'].replace(0, np.nan)
-            spy_daily_returns_q = spy_vals.pct_change(fill_method=None).dropna()
-
-        # 1b. Winsorizar retornos diarios (robustez ante saltos que NO son rendimientos):
-        # transferencias de acciones a $0 de efectivo (Internal Transfer / Journaled Shares),
-        # desfases de split o ticks malos de la API crean un "retorno" diario espurio de miles
-        # de % que disparaba la volatilidad/Sharpe/Sortino/beta. Acotar al rango [1%, 99%] de la
-        # propia serie elimina esos outliers sin tocar la reconstrucción de P&L/ROI/equity curve.
-        # (Caso real: SCHB transfer 18.9 acc. el 2024-05-13 → MV $16→$1164 → vol falsa de 3443%.)
-        daily_returns_q = _winsorize_returns(daily_returns_q)
-        spy_daily_returns_q = _winsorize_returns(spy_daily_returns_q)
-
-        # 2. Volatilidad anualizada
-        if len(daily_returns_q) >= 2:
-            volatilidad_anualizada = float(daily_returns_q.std() * np.sqrt(252) * 100)
-        else:
-            volatilidad_anualizada = None
-
-        # 3. Sharpe Ratio (Rf = 5% anual)
-        RF_ANUAL = 0.05
-        rf_diario = RF_ANUAL / 252
-        if len(daily_returns_q) >= 2 and daily_returns_q.std() > 1e-9:
-            exceso = daily_returns_q.mean() - rf_diario
-            sharpe_ratio = float((exceso / daily_returns_q.std()) * np.sqrt(252))
-        else:
-            sharpe_ratio = None
-
-        # 4. Sortino Ratio — downside deviation estándar (no std de solo los negativos)
-        sortino_ratio = _sortino_ratio(daily_returns_q, rf_diario)
-
-        # 5. Maximum Drawdown sobre la riqueza unitizada (TWR), no sobre el valor absoluto de la
-        # cartera: una venta a precio constante o un aporte no deben leerse como caída/recuperación.
-        max_drawdown, _dd_serie = _drawdown_twr(daily_returns_q)
-        daily_history['Drawdown %'] = _dd_serie.reindex(daily_history.index) if len(_dd_serie) else np.nan
-
-        # 6. Calmar Ratio — CAGR compuesto desde los retornos diarios YA winsorizados (no desde el
-        # TWR acumulado crudo, que puede estar corrupto por transferencias / costo incompleto).
-        if max_drawdown is not None and max_drawdown < -1e-9 and len(daily_returns_q) >= 2:
-            cum_twr_final = float((1 + daily_returns_q).prod())
-            anios_twr = len(daily_returns_q) / 252
-            if anios_twr > 0 and cum_twr_final > 0:
-                cagr_twr = ((cum_twr_final ** (1 / anios_twr)) - 1) * 100
-                calmar_ratio = float(cagr_twr / abs(max_drawdown))
-            else:
-                calmar_ratio = None
-        else:
-            calmar_ratio = None
-
-        # 7. Beta vs VOO
-        retornos_alineados = pd.DataFrame({
-            'portfolio': daily_returns_q,
-            'spy': spy_daily_returns_q
-        }).dropna()
-        if len(retornos_alineados) >= 10 and retornos_alineados['spy'].var() > 1e-12:
-            cov_mat = retornos_alineados.cov()
-            beta = float(cov_mat.loc['portfolio', 'spy'] / retornos_alineados['spy'].var())
-        else:
-            beta = None
-
-        # 8. Alpha de Jensen
-        if beta is not None and len(retornos_alineados) >= 10:
-            rp_anual = float(retornos_alineados['portfolio'].mean() * 252 * 100)
-            rm_anual = float(retornos_alineados['spy'].mean() * 252 * 100)
-            alpha = float(rp_anual - (RF_ANUAL * 100 + beta * (rm_anual - RF_ANUAL * 100)))
-        else:
-            alpha = None
+        (volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta,
+         alpha) = _metricas_riesgo(daily_history)
 
         # --- v2.0: Classify ticker mode ---
         ticker_mode = classify_tickers([ticker]).get(ticker, 'mode_b')
