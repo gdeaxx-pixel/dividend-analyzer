@@ -1215,6 +1215,20 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     return daily_history, benchmark_value, benchmark_roi
 
 
+# Helper for defensive parsing
+def safe_float(val):
+    try:
+        if pd.isna(val): return 0.0
+        return float(val)
+    except ValueError:
+        # Cleaning fallback
+        clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
+        try:
+            return float(clean_val)
+        except ValueError:
+            return 0.0
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1341,19 +1355,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         misc_cash_breakdown = {}
         history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
         
-        # Helper for defensive parsing
-        def safe_float(val):
-            try:
-                if pd.isna(val): return 0.0
-                return float(val)
-            except ValueError:
-                # Cleaning fallback
-                clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
-                try:
-                    return float(clean_val)
-                except ValueError:
-                    return 0.0
-
         # Iterate through transactions to build history
         cash_flows      = []
         irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
