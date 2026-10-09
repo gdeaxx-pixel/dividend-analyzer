@@ -44,7 +44,7 @@ _RAIZ = os.path.dirname(os.path.abspath(__file__))
 # Lo que no esté aquí se recarga al final, que es el lugar seguro por defecto —
 # `test_stale_guard.py` avisa cuando aparece un módulo nuevo sin sitio asignado.
 _ORDEN = (
-    "logic", "storage", "report", "demo_mode", "backtest", "price_cache",
+    "fiscal_1042s", "logic", "storage", "report", "demo_mode", "backtest", "price_cache",
     # `ui.estado` va antes que sus consumidores (carga, vistas, heredadas): es el dueño de
     # las claves de sesión compartidas, y recargarlo después dejaría a los demás apuntando
     # al módulo viejo.
