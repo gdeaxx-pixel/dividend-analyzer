@@ -831,10 +831,16 @@ def _script_puerta_error_avisa(lanza):
     avisos = []
 
     class _Avisador:
-        def puerta_abierta_por_error(self, nombre):
-            avisos.append(nombre)
+        def _registrar(self, metodo, nombre):
+            avisos.append((metodo, nombre))
             if lanza:
                 raise RuntimeError("Telegram caído")
+
+        def puerta_abierta_por_error(self, nombre):
+            self._registrar("puerta_abierta_por_error", nombre)
+
+        def puerta_cerrada_por_error(self, nombre):
+            self._registrar("puerta_cerrada_por_error", nombre)
 
     def _usuario_que_falla():
         raise RuntimeError("fallo con a@ejemplo.com adentro")
@@ -845,22 +851,30 @@ def _script_puerta_error_avisa(lanza):
     st.session_state["avisos"] = avisos
 
 
+@pytest.mark.parametrize("modo, resultado, aviso", [
+    ("aplicar", False, "puerta_cerrada_por_error"),
+    ("observar", True, "puerta_abierta_por_error"),
+])
 @pytest.mark.parametrize("lanza", [False, True])
-def test_puerta_abierta_por_error_avisa_sin_datos(lanza):
+def test_puerta_por_error_avisa_su_desenlace_sin_datos(lanza, modo, resultado, aviso):
     """FAIL-CLOSED (Daniel, 2026-09-23). Antes este test fijaba `resultado is True`: el
     fail-open del resto de errores era deliberado («decisión 3»). Se cerró al pasar el modo a
     `aplicar` con clientes reales — en el `except` no se puede confiar en nada, ni siquiera se
     sabe el modo, porque la excepción puede venir de leer los propios secrets. Lo que se
     conserva es que NO sea mudo: avisa por Telegram con el nombre de la excepción y nada más
     (el mensaje puede traer un correo). Ese aviso es ahora la única alarma de que los clientes
-    están bloqueados."""
+    están bloqueados.
+
+    Auditoría 2026-10-07: hasta entonces el aviso decía «Puerta ABIERTA» también en `aplicar`,
+    donde la puerta ya se cerraba — la alarma contaba lo contrario de lo que veían los
+    clientes. El aviso tiene que corresponder al desenlace del modo."""
     at = AppTest.from_function(_script_puerta_error_avisa, args=(lanza,))
     at.secrets["auth"] = {}
-    at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
+    at.secrets["acceso"] = {"modo": modo, "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
     at.run()
     assert len(at.exception) == 0
-    assert at.session_state["resultado"] is False
-    assert at.session_state["avisos"] == ["RuntimeError"]
+    assert at.session_state["resultado"] is resultado
+    assert at.session_state["avisos"] == [(aviso, "RuntimeError")]
 
 
 def test_avisos_de_puerta_con_freno_6h():
@@ -872,12 +886,16 @@ def test_avisos_de_puerta_con_freno_6h():
     avisador.login_roto("StreamlitAuthError")
     avisador.puerta_abierta_por_error("RuntimeError")
     avisador.puerta_abierta_por_error("RuntimeError")
-    assert len(enviados) == 2
+    avisador.puerta_cerrada_por_error("RuntimeError")
+    avisador.puerta_cerrada_por_error("RuntimeError")
+    assert len(enviados) == 3
+    assert "ABIERTA" in enviados[1] and "CERRADA" in enviados[2]
 
     reloj["t"] += timedelta(hours=6, seconds=1)
     avisador.login_roto("StreamlitAuthError")
     avisador.puerta_abierta_por_error("RuntimeError")
-    assert len(enviados) == 4
+    avisador.puerta_cerrada_por_error("RuntimeError")
+    assert len(enviados) == 6
     assert all("@" not in mensaje for mensaje in enviados)
 
 

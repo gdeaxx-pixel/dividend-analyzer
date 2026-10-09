@@ -118,6 +118,26 @@ def test_f4_expander_sin_titulo_duplicado():
     assert contenido.startswith("**Tus archivos.**")
 
 
+
+def test_f4_privacy_avisa_de_las_cookies_de_la_plataforma():
+    """Auditoría 2026-10-07: Streamlit Community Cloud instala cookies de analítica en el
+    dominio de la app (`_ga`, Segment, Heap, Datadog, `_fbp`) que la app no pone ni lee.
+    El aviso lo dice, y lo dice en la parte que ve el cliente, no en el anexo."""
+    from ui.carga import _privacy_visible
+
+    frase = "Esta app no las configura, no las lee ni las usa para nada"
+    visible = _privacy_visible(_privacy())
+    assert "**Cookies de la plataforma.**" in visible
+    assert frase in " ".join(visible.split())
+
+    at = AppTest.from_string(_SCRIPT, default_timeout=25)
+    at.run()
+    assert at.exception == []
+    expanders = [e for e in at.get("expander") if e.label == "Cómo tratamos tus datos"]
+    contenido = "\n".join(m.value for m in expanders[0].get("markdown"))
+    assert frase in " ".join(contenido.split())
+
+
 def test_f4_privacy_no_promete_telegram():
     with open(_PRIVACY_PATH, encoding="utf-8") as f:
         texto = f.read()

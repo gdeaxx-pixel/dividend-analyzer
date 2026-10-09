@@ -263,6 +263,12 @@ class Avisador:
     def puerta_abierta_por_error(self, nombre_error: str) -> None:
         self._con_freno_6h("puerta_abierta", f"Puerta ABIERTA por error ({nombre_error}).")
 
+    def puerta_cerrada_por_error(self, nombre_error: str) -> None:
+        self._con_freno_6h(
+            "puerta_cerrada",
+            f"Puerta CERRADA por error ({nombre_error}) en modo aplicar: los visitantes ven la "
+            "pantalla de reintento. Revisa Auth0/allowlist.")
+
 
 def _fetch_allowlist(pat: str) -> dict:
     request = urllib.request.Request(
@@ -359,25 +365,30 @@ def puerta() -> bool:
     try:
         return _puerta()
     except Exception as e:
-        print(f"acceso: puerta abierta por error {type(e).__name__}")
-        try:
-            acceso_secrets = st.secrets.get("acceso", {})
-            _avisador_singleton(
-                acceso_secrets.get("telegram_token", ""),
-                acceso_secrets.get("telegram_chat_id", ""),
-            ).puerta_abierta_por_error(type(e).__name__)
-        except Exception:
-            pass
         # Fail-CLOSED (Daniel, 2026-09-23), pero SOLO en `aplicar`. Si aquí se abriera, un
         # error residual daría acceso a cualquiera; si se cerrara siempre, se rompen los casos
         # en que la app debe correr sin puerta —sin `secrets.toml` el modo efectivo es
         # `apagado`, que es desarrollo local (`test_sin_secrets_toml_es_apagado`)—. Por eso se
         # vuelve a preguntar el modo con su propio `try`: si ni el modo se puede leer, no hay
-        # puerta que cerrar.
+        # puerta que cerrar. Se decide ANTES de avisar para que el aviso diga lo que pasó.
         try:
             cerrar = resolver_modo(st.secrets) == "aplicar"
         except Exception:
             cerrar = False
+        nombre_error = type(e).__name__
+        print(f"acceso: puerta {'cerrada' if cerrar else 'abierta'} por error {nombre_error}")
+        try:
+            acceso_secrets = st.secrets.get("acceso", {})
+            avisador = _avisador_singleton(
+                acceso_secrets.get("telegram_token", ""),
+                acceso_secrets.get("telegram_chat_id", ""),
+            )
+            if cerrar:
+                avisador.puerta_cerrada_por_error(nombre_error)
+            else:
+                avisador.puerta_abierta_por_error(nombre_error)
+        except Exception:
+            pass
         if cerrar:
             try:
                 _pantalla_sin_verificar()

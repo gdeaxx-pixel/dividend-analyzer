@@ -1,5 +1,5 @@
 # Aviso de privacidad — Calculadora de Dividendos
-*Actualizado: 2026-10-04*
+*Actualizado: 2026-10-09*
 
 **Tus archivos.** El archivo de transacciones, el CSV de posiciones, las capturas y el 1042-S se procesan en la
 memoria del servidor mientras dura tu sesión. La app no los escribe a disco. El resultado del
@@ -15,6 +15,12 @@ excepción es la copia reducida que se describe abajo, y solo si tú la autoriza
 | Auth0 | Tu correo, para enviarte el código de acceso | Al entrar |
 | Backblaze B2 | La copia reducida de tu caso (ver abajo), sin tu correo | Solo si marcas la casilla del paso 2 |
 | Streamlit Community Cloud | Aloja la app | Siempre |
+
+**Cookies de la plataforma.** Streamlit Community Cloud, el servicio que aloja la app, instala en
+tu navegador sus propias cookies de sesión y de analítica (por ejemplo, de Google Analytics) para
+operar su servicio. Esta app no las configura, no las lee ni las usa para nada, y el responsable
+de la calculadora no recibe esos datos. El detalle está en la
+[política de privacidad de Streamlit](https://streamlit.io/privacy-policy).
 
 **Tu CSV de posiciones.** Se lee en memoria con un lector propio: no se envía a ningún servicio
 externo y no se guarda. Si marcas la casilla del paso 2, se guardan solo las acciones y el costo
