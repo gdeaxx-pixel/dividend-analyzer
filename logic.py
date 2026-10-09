@@ -934,6 +934,287 @@ def _metricas_riesgo(daily_history):
     return volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta, alpha
 
 
+def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment):
+    # --- Calculate Daily History (For Chart) ---
+    # 1. Resample transactions to daily to handle multiple trades per day
+    # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
+    # sometimes carry a non-zero Quantity that would inflate the running share count.
+    # 'split' is excluded: the split loop below (Stock Splits column from yfinance) is
+    # the authoritative handler. If the broker CSV also records splits as share-adding rows,
+    # including 'split' here would double-count (CSV shares + loop multiplication).
+    qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
+        r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
+        na=False, regex=True
+    )].copy()
+    # Schwab (y algunos otros brokers) exporta Quantity positiva para ventas.
+    # Negamos explícitamente las filas de venta para que el cumsum reste shares correctamente.
+    sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
+    qty_rows.loc[sell_mask, 'Quantity'] = -qty_rows.loc[sell_mask, 'Quantity'].abs()
+    qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
+    daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
+    daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
+    # Alinea al calendario bursátil ANTES de reindexar: sin esto, una transacción
+    # fechada en día no bursátil se perdía entera (importe Y cantidad). Ver
+    # `_snap_to_trading_days`.
+    daily_activity = _snap_to_trading_days(daily_activity, market_data.index)
+
+    # 2. Reindex to market data (daily)
+    daily_history = daily_activity.reindex(market_data.index).fillna(0)
+    
+    # 3. Calculate Cumulative Shares (Iterative Fix for Splits)
+    # The simple cumsum() fails when price is adjusted but shares aren't.
+    # We must apply the split factor to the *accumulated* shares.
+    
+    # Ensure we have split data from market_data (it comes from yf.download(actions=True))
+    if 'Stock Splits' in market_data.columns:
+         splits = market_data['Stock Splits'].reindex(daily_history.index).fillna(0)
+    else:
+         splits = pd.Series(0, index=daily_history.index)
+
+    running_shares = 0.0
+    shares_series = []
+
+    for date in daily_history.index:
+        split_val = splits.loc[date]
+        if split_val != 0 and split_val > 0:
+            loc = daily_history.index.get_loc(date)
+            if loc > 0:
+                prev_date = daily_history.index[loc - 1]
+                try:
+                    price_today = float(market_data['Close'].loc[date])
+                    price_prev  = float(market_data['Close'].loc[prev_date])
+                    actual_ratio   = price_today / price_prev if price_prev > 0 else 1.0
+                    expected_ratio = 1.0 / float(split_val)
+                    # yfinance sometimes returns already-adjusted prices even with
+                    # auto_adjust=False (confirmed for SCHB 3-for-1, Oct 2024).
+                    # When prices didn't drop by ~1/split_val, they're pre-adjusted:
+                    # retroactively scale all past share counts so the chart is smooth.
+                    if abs(actual_ratio - expected_ratio) / expected_ratio > 0.15:
+                        shares_series = [s * split_val for s in shares_series]
+                    running_shares *= split_val
+                except Exception:
+                    running_shares *= split_val
+            else:
+                running_shares *= split_val
+
+        net_qty = daily_history.loc[date, 'Quantity']
+        running_shares += net_qty
+        if running_shares < 0:
+            running_shares = 0.0
+        shares_series.append(running_shares)
+
+    daily_history['Shares Held'] = shares_series
+    
+    # 4. Calculate Values
+    daily_history['Price'] = market_data['Close']
+    daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
+    
+    # 5. Calculate Cumulative Investment (Cost Basis) over time
+    # Investment = Sum of (Buys - Sells). 
+    # Using explicit Cash_Flow_In which avoids CSV sign parsing issues
+    daily_history['Daily Invested'] = daily_activity['Cash_Flow_In'].reindex(market_data.index).fillna(0)
+    daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
+
+    # 5b. Flujo por TRANSFERENCIA de acciones sin efectivo (Internal Transfer / Journaled
+    # Shares / ACATS): valor = cantidad × cierre del día. Una transferencia entra a $0 de
+    # efectivo, así que sin esto ni el benchmark VOO ni el TWR la ven como capital → el chart
+    # haría ver que la posición "aplasta" al S&P (falso). 'Flujo Efectivo' = efectivo +
+    # transferencias se usa en AMBOS (benchmark y TWR). NO se toca Invested Capital (ROI).
+    # Caso real: SCHB +18.9 acc. el 2024-05-13 (benchmark pasaba a $0).
+    transfer_flow = pd.Series(0.0, index=daily_history.index)
+    try:
+        _xfer = ticker_df[ticker_df['Action'].str.lower().str.contains(
+            'transfer|journal|acats|in kind|en especie', na=False)]
+        for _, _xr in _xfer.iterrows():
+            _xd = pd.Timestamp(_xr['Date']).normalize()
+            _xq = pd.to_numeric(_xr.get('Quantity'), errors='coerce')
+            _xa = _clean_money(_xr.get('Amount', 0))
+            if _xd in transfer_flow.index and pd.notna(_xq) and _xq != 0 and (pd.isna(_xa) or abs(_xa) < 0.01):
+                _xpx = float(daily_history['Price'].get(_xd, 0) or 0)
+                if _xpx > 0:
+                    transfer_flow.loc[_xd] += float(_xq) * _xpx
+    except Exception:
+        pass
+    daily_history['Transfer Flow'] = transfer_flow
+    daily_history['Flujo Efectivo'] = daily_history['Daily Invested'] + daily_history['Transfer Flow']
+
+    # 6. Calculate User Profit (Real)
+    # We need to track Cumulative Cash Dividends to add to Market Value
+    # Identify Cash Dividend rows in original DF.
+    # Schwab records DRIP as two rows: "Cash Dividend" + "Reinvestment".
+    # The "Cash Dividend" row must be excluded when a reinvestment happened on
+    # the same date — otherwise it is double-counted (once as shares in Market
+    # Value, once as cash in Cumulative Cash Div).
+    drip_dates = set(
+        ticker_df[ticker_df['Action'].str.lower().str.contains(
+            r'reinvest|reinversión|drip', na=False, regex=True
+        )]['Date'].tolist()
+    )
+    cash_div_rows = ticker_df[
+        (ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|interest', na=False)) &
+        (~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip', na=False)) &
+        (~ticker_df['Date'].isin(drip_dates))
+    ]
+    
+    # Resample cash divs to daily
+    if not cash_div_rows.empty:
+        daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().abs()
+        # Mismo alineamiento que la actividad: un dividendo pagado en día no bursátil
+        # desaparecía del acumulado de efectivo cobrado.
+        daily_cash_divs = _snap_to_trading_days(daily_cash_divs, market_data.index)
+        daily_history['Daily Cash Div'] = daily_cash_divs.reindex(market_data.index).fillna(0)
+    else:
+        daily_history['Daily Cash Div'] = 0.0
+        
+    daily_history['Cumulative Cash Div'] = daily_history['Daily Cash Div'].cumsum()
+    
+    # User Profit = (Market Value + Cumulative Cash Received) - Invested Capital
+    daily_history['User Profit'] = (daily_history['Market Value'] + daily_history['Cumulative Cash Div']) - daily_history['Invested Capital']
+
+    # 7. Calculate Time-Weighted Return (TWR) & SPY Benchmark
+    # ---------------------------------------------------------
+    
+    # A. SPY/VOO Benchmark Simulation
+    try:
+        benchmark_ticker = 'VOO'
+        session = None
+        try:
+            session = get_session()
+        except:
+            pass
+
+        # La serie ya se bajó una sola vez antes del bucle (ver `_descargar_benchmark`);
+        # aquí solo se recorta a la ventana de ESTE ticker. Las columnas ya vienen planas
+        # y el índice tz-naive.
+        spy_data = _bench_df[_bench_df.index >= pd.to_datetime(first_date)] \
+            if not _bench_df.empty else _bench_df
+        if spy_data.empty:
+            raise ValueError("benchmark sin datos en la ventana del ticker")
+
+        spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
+        voo_divs   = (spy_data['Dividends'].reindex(daily_history.index).fillna(0)
+                      if 'Dividends' in spy_data.columns
+                      else pd.Series(0.0, index=daily_history.index))
+
+        daily_history['VOO Price'] = spy_prices
+        safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).ffill().bfill()
+
+        # Simulación con reinversión de dividendos de VOO (Total Return apples-to-apples).
+        # Usa 'Flujo Efectivo' (efectivo + transferencias de acciones) para que el benchmark
+        # refleje el capital que realmente entró, incluido el que llegó por transferencia.
+        voo_shares_running = 0.0
+        voo_shares_series  = []
+        daily_invested_s   = daily_history['Flujo Efectivo']
+
+        for date in daily_history.index:
+            vp = float(safe_voo_price.loc[date]) if not pd.isna(safe_voo_price.loc[date]) else 0.0
+            if vp > 0:
+                voo_shares_running += float(daily_invested_s.loc[date]) / vp
+                div = float(voo_divs.loc[date])
+                if div > 0 and voo_shares_running > 0:
+                    voo_shares_running += (div * voo_shares_running) / vp
+            voo_shares_running = max(voo_shares_running, 0.0)
+            voo_shares_series.append(voo_shares_running)
+
+        daily_history['VOO Shares Held'] = voo_shares_series
+        daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price']
+        # Guardado para beta/alpha: retorno TOTAL de VOO (precio + dividendos), sin flujos.
+        daily_history['VOO Div'] = voo_divs
+
+    except Exception as e:
+        print(f"Error calculating benchmark (VOO): {e}")
+        daily_history['SPY Profit'] = 0.0
+
+    # ── Fase 8: Benchmark con timing real (extraído de SPY Profit ya calculado) ─
+    try:
+        _spy_final    = float(daily_history['SPY Profit'].replace(0, np.nan).dropna().iloc[-1])
+        benchmark_value = _spy_final
+        # El benchmark invierte 'Flujo Efectivo' (efectivo + valor de transferencias), así que
+        # su ROI debe medirse sobre ESA misma base, no sobre pocket_investment (que excluye
+        # transferencias) — de lo contrario numerador y denominador hablan de capitales distintos.
+        _bench_base = float(daily_history['Flujo Efectivo'][daily_history['Flujo Efectivo'] > 0].sum()) \
+            if 'Flujo Efectivo' in daily_history.columns else pocket_investment
+        if _bench_base <= 0:
+            _bench_base = pocket_investment
+        benchmark_roi   = (_spy_final - _bench_base) / _bench_base * 100 if _bench_base > 0 else None
+    except Exception:
+        benchmark_value = None
+        benchmark_roi   = None
+
+    # Also compute User Total Value for graphing
+    daily_history['User Total Value'] = daily_history['Market Value'] + daily_history['Cumulative Cash Div']
+
+    # B. User Portfolio TWR (Time-Weighted Return)
+    # Formula: Unit Return r_t = (EndVal_t - (StartVal_t + NetFlow_t)) / (StartVal_t + NetFlow_t)
+    # But commonly: r_t = (EndVal_t - EndVal_{t-1} - NetFlow_t) / (EndVal_{t-1} + 0.5 * NetFlow_t) 
+    # (Modified Dietz) ... OR True TWR if we have exact daily vals.
+    
+    # We have:
+    # EndVal_t = 'Market Value' + 'Daily Cash Div' (Total value at end of day, assuming divs collected)
+    # StartVal_t = EndVal_{t-1}
+    # NetFlow_t = 'Daily Invested' (Positive for deposits vs Negative for withdrawals? 
+    #              Wait, 'Daily Invested' was calc as: Amount * -1. 
+    #              So Buy (Neg Amount) -> Pos Invested (Inflow). Correct.)
+    
+    # El flujo por transferencia de acciones sin efectivo ya se computó arriba
+    # ('Transfer Flow' / 'Flujo Efectivo') y lo usa también el benchmark VOO.
+
+    twr_series = []
+    cum_twr = 1.0 # Start at 1.0 (100%)
+
+    prev_total_val = 0.0
+
+    for date, row in daily_history.iterrows():
+        # End Value of standard assets
+        market_val = row['Market Value']
+        
+        # Add dividends received today to the "End Value" of the period
+        cash_div = row['Daily Cash Div']
+        
+        # Total Value Owner Has at End of Day
+        end_val = market_val + cash_div
+        
+        # Net Flow (New money coming in/out) — efectivo + transferencias de acciones sin efectivo
+        net_flow = row['Flujo Efectivo']
+        
+        # Start Value is yesterday's end value
+        start_val = prev_total_val
+        
+        # Calculate Period Return
+        # We use "End of Day" flow assumption for subsequent deposits to avoid dilution.
+        # If we add $1000 and price jumps 10%, we assume the $1000 didn't catch the jump (conservative/safe).
+        # If start_val is 0 (First day), we must assume Start of Day.
+        
+        if start_val > 0.0001:
+            # End of Day Flow Formula: r = (End - Flow - Start) / Start
+            # Simplified: (End - Flow) / Start - 1
+            period_return = ((end_val - net_flow) / start_val) - 1
+        elif net_flow > 0.0001:
+            # First Day (Start of Day Flow)
+            # r = (End - Start - Flow) / (Start + Flow)
+            # Since Start=0: r = (End - Flow) / Flow
+            # Simplified: End / Flow - 1
+            period_return = (end_val / net_flow) - 1
+        else:
+            period_return = 0.0
+            
+        # Chain it
+        cum_twr *= (1 + period_return)
+        
+        # Store Percentage (e.g. 1.05 -> 5.0)
+        twr_series.append((cum_twr - 1) * 100)
+        
+        # Update for next day. 
+        # Note: For TWR, the "Start Value" for tomorrow excludes likely withdrawals? 
+        # But here `end_val` included Cash Div. 
+        # If we pocket the cash, it's gone.
+        # So `prev_total_val` should be just the `market_val` (assets remaining).
+        prev_total_val = market_val 
+        
+    daily_history['User Return %'] = twr_series
+    return daily_history, benchmark_value, benchmark_roi
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
                       position_overrides: dict = None) -> dict:
@@ -1424,283 +1705,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # Total Dividends (Informational)
         total_dividends = dividends_collected_cash + dividends_collected_drip
         
-        # --- Calculate Daily History (For Chart) ---
-        # 1. Resample transactions to daily to handle multiple trades per day
-        # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
-        # sometimes carry a non-zero Quantity that would inflate the running share count.
-        # 'split' is excluded: the split loop below (Stock Splits column from yfinance) is
-        # the authoritative handler. If the broker CSV also records splits as share-adding rows,
-        # including 'split' here would double-count (CSV shares + loop multiplication).
-        qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
-            r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
-            na=False, regex=True
-        )].copy()
-        # Schwab (y algunos otros brokers) exporta Quantity positiva para ventas.
-        # Negamos explícitamente las filas de venta para que el cumsum reste shares correctamente.
-        sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
-        qty_rows.loc[sell_mask, 'Quantity'] = -qty_rows.loc[sell_mask, 'Quantity'].abs()
-        qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
-        daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
-        daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
-        # Alinea al calendario bursátil ANTES de reindexar: sin esto, una transacción
-        # fechada en día no bursátil se perdía entera (importe Y cantidad). Ver
-        # `_snap_to_trading_days`.
-        daily_activity = _snap_to_trading_days(daily_activity, market_data.index)
-
-        # 2. Reindex to market data (daily)
-        daily_history = daily_activity.reindex(market_data.index).fillna(0)
-        
-        # 3. Calculate Cumulative Shares (Iterative Fix for Splits)
-        # The simple cumsum() fails when price is adjusted but shares aren't.
-        # We must apply the split factor to the *accumulated* shares.
-        
-        # Ensure we have split data from market_data (it comes from yf.download(actions=True))
-        if 'Stock Splits' in market_data.columns:
-             splits = market_data['Stock Splits'].reindex(daily_history.index).fillna(0)
-        else:
-             splits = pd.Series(0, index=daily_history.index)
-
-        running_shares = 0.0
-        shares_series = []
-
-        for date in daily_history.index:
-            split_val = splits.loc[date]
-            if split_val != 0 and split_val > 0:
-                loc = daily_history.index.get_loc(date)
-                if loc > 0:
-                    prev_date = daily_history.index[loc - 1]
-                    try:
-                        price_today = float(market_data['Close'].loc[date])
-                        price_prev  = float(market_data['Close'].loc[prev_date])
-                        actual_ratio   = price_today / price_prev if price_prev > 0 else 1.0
-                        expected_ratio = 1.0 / float(split_val)
-                        # yfinance sometimes returns already-adjusted prices even with
-                        # auto_adjust=False (confirmed for SCHB 3-for-1, Oct 2024).
-                        # When prices didn't drop by ~1/split_val, they're pre-adjusted:
-                        # retroactively scale all past share counts so the chart is smooth.
-                        if abs(actual_ratio - expected_ratio) / expected_ratio > 0.15:
-                            shares_series = [s * split_val for s in shares_series]
-                        running_shares *= split_val
-                    except Exception:
-                        running_shares *= split_val
-                else:
-                    running_shares *= split_val
-
-            net_qty = daily_history.loc[date, 'Quantity']
-            running_shares += net_qty
-            if running_shares < 0:
-                running_shares = 0.0
-            shares_series.append(running_shares)
-
-        daily_history['Shares Held'] = shares_series
-        
-        # 4. Calculate Values
-        daily_history['Price'] = market_data['Close']
-        daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
-        
-        # 5. Calculate Cumulative Investment (Cost Basis) over time
-        # Investment = Sum of (Buys - Sells). 
-        # Using explicit Cash_Flow_In which avoids CSV sign parsing issues
-        daily_history['Daily Invested'] = daily_activity['Cash_Flow_In'].reindex(market_data.index).fillna(0)
-        daily_history['Invested Capital'] = daily_history['Daily Invested'].cumsum()
-
-        # 5b. Flujo por TRANSFERENCIA de acciones sin efectivo (Internal Transfer / Journaled
-        # Shares / ACATS): valor = cantidad × cierre del día. Una transferencia entra a $0 de
-        # efectivo, así que sin esto ni el benchmark VOO ni el TWR la ven como capital → el chart
-        # haría ver que la posición "aplasta" al S&P (falso). 'Flujo Efectivo' = efectivo +
-        # transferencias se usa en AMBOS (benchmark y TWR). NO se toca Invested Capital (ROI).
-        # Caso real: SCHB +18.9 acc. el 2024-05-13 (benchmark pasaba a $0).
-        transfer_flow = pd.Series(0.0, index=daily_history.index)
-        try:
-            _xfer = ticker_df[ticker_df['Action'].str.lower().str.contains(
-                'transfer|journal|acats|in kind|en especie', na=False)]
-            for _, _xr in _xfer.iterrows():
-                _xd = pd.Timestamp(_xr['Date']).normalize()
-                _xq = pd.to_numeric(_xr.get('Quantity'), errors='coerce')
-                _xa = _clean_money(_xr.get('Amount', 0))
-                if _xd in transfer_flow.index and pd.notna(_xq) and _xq != 0 and (pd.isna(_xa) or abs(_xa) < 0.01):
-                    _xpx = float(daily_history['Price'].get(_xd, 0) or 0)
-                    if _xpx > 0:
-                        transfer_flow.loc[_xd] += float(_xq) * _xpx
-        except Exception:
-            pass
-        daily_history['Transfer Flow'] = transfer_flow
-        daily_history['Flujo Efectivo'] = daily_history['Daily Invested'] + daily_history['Transfer Flow']
-
-        # 6. Calculate User Profit (Real)
-        # We need to track Cumulative Cash Dividends to add to Market Value
-        # Identify Cash Dividend rows in original DF.
-        # Schwab records DRIP as two rows: "Cash Dividend" + "Reinvestment".
-        # The "Cash Dividend" row must be excluded when a reinvestment happened on
-        # the same date — otherwise it is double-counted (once as shares in Market
-        # Value, once as cash in Cumulative Cash Div).
-        drip_dates = set(
-            ticker_df[ticker_df['Action'].str.lower().str.contains(
-                r'reinvest|reinversión|drip', na=False, regex=True
-            )]['Date'].tolist()
-        )
-        cash_div_rows = ticker_df[
-            (ticker_df['Action'].str.lower().str.contains('dividend|dividendo|yield|interest', na=False)) &
-            (~ticker_df['Action'].str.lower().str.contains('reinvest|reinversión|drip', na=False)) &
-            (~ticker_df['Date'].isin(drip_dates))
-        ]
-        
-        # Resample cash divs to daily
-        if not cash_div_rows.empty:
-            daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().abs()
-            # Mismo alineamiento que la actividad: un dividendo pagado en día no bursátil
-            # desaparecía del acumulado de efectivo cobrado.
-            daily_cash_divs = _snap_to_trading_days(daily_cash_divs, market_data.index)
-            daily_history['Daily Cash Div'] = daily_cash_divs.reindex(market_data.index).fillna(0)
-        else:
-            daily_history['Daily Cash Div'] = 0.0
-            
-        daily_history['Cumulative Cash Div'] = daily_history['Daily Cash Div'].cumsum()
-        
-        # User Profit = (Market Value + Cumulative Cash Received) - Invested Capital
-        daily_history['User Profit'] = (daily_history['Market Value'] + daily_history['Cumulative Cash Div']) - daily_history['Invested Capital']
-
-        # 7. Calculate Time-Weighted Return (TWR) & SPY Benchmark
-        # ---------------------------------------------------------
-        
-        # A. SPY/VOO Benchmark Simulation
-        try:
-            benchmark_ticker = 'VOO'
-            session = None
-            try:
-                session = get_session()
-            except:
-                pass
-
-            # La serie ya se bajó una sola vez antes del bucle (ver `_descargar_benchmark`);
-            # aquí solo se recorta a la ventana de ESTE ticker. Las columnas ya vienen planas
-            # y el índice tz-naive.
-            spy_data = _bench_df[_bench_df.index >= pd.to_datetime(first_date)] \
-                if not _bench_df.empty else _bench_df
-            if spy_data.empty:
-                raise ValueError("benchmark sin datos en la ventana del ticker")
-
-            spy_prices = spy_data['Close'].reindex(daily_history.index).ffill()
-            voo_divs   = (spy_data['Dividends'].reindex(daily_history.index).fillna(0)
-                          if 'Dividends' in spy_data.columns
-                          else pd.Series(0.0, index=daily_history.index))
-
-            daily_history['VOO Price'] = spy_prices
-            safe_voo_price = daily_history['VOO Price'].replace(0, pd.NA).ffill().bfill()
-
-            # Simulación con reinversión de dividendos de VOO (Total Return apples-to-apples).
-            # Usa 'Flujo Efectivo' (efectivo + transferencias de acciones) para que el benchmark
-            # refleje el capital que realmente entró, incluido el que llegó por transferencia.
-            voo_shares_running = 0.0
-            voo_shares_series  = []
-            daily_invested_s   = daily_history['Flujo Efectivo']
-
-            for date in daily_history.index:
-                vp = float(safe_voo_price.loc[date]) if not pd.isna(safe_voo_price.loc[date]) else 0.0
-                if vp > 0:
-                    voo_shares_running += float(daily_invested_s.loc[date]) / vp
-                    div = float(voo_divs.loc[date])
-                    if div > 0 and voo_shares_running > 0:
-                        voo_shares_running += (div * voo_shares_running) / vp
-                voo_shares_running = max(voo_shares_running, 0.0)
-                voo_shares_series.append(voo_shares_running)
-
-            daily_history['VOO Shares Held'] = voo_shares_series
-            daily_history['SPY Profit'] = daily_history['VOO Shares Held'] * daily_history['VOO Price']
-            # Guardado para beta/alpha: retorno TOTAL de VOO (precio + dividendos), sin flujos.
-            daily_history['VOO Div'] = voo_divs
-
-        except Exception as e:
-            print(f"Error calculating benchmark (VOO): {e}")
-            daily_history['SPY Profit'] = 0.0
-
-        # ── Fase 8: Benchmark con timing real (extraído de SPY Profit ya calculado) ─
-        try:
-            _spy_final    = float(daily_history['SPY Profit'].replace(0, np.nan).dropna().iloc[-1])
-            benchmark_value = _spy_final
-            # El benchmark invierte 'Flujo Efectivo' (efectivo + valor de transferencias), así que
-            # su ROI debe medirse sobre ESA misma base, no sobre pocket_investment (que excluye
-            # transferencias) — de lo contrario numerador y denominador hablan de capitales distintos.
-            _bench_base = float(daily_history['Flujo Efectivo'][daily_history['Flujo Efectivo'] > 0].sum()) \
-                if 'Flujo Efectivo' in daily_history.columns else pocket_investment
-            if _bench_base <= 0:
-                _bench_base = pocket_investment
-            benchmark_roi   = (_spy_final - _bench_base) / _bench_base * 100 if _bench_base > 0 else None
-        except Exception:
-            benchmark_value = None
-            benchmark_roi   = None
-
-        # Also compute User Total Value for graphing
-        daily_history['User Total Value'] = daily_history['Market Value'] + daily_history['Cumulative Cash Div']
-
-        # B. User Portfolio TWR (Time-Weighted Return)
-        # Formula: Unit Return r_t = (EndVal_t - (StartVal_t + NetFlow_t)) / (StartVal_t + NetFlow_t)
-        # But commonly: r_t = (EndVal_t - EndVal_{t-1} - NetFlow_t) / (EndVal_{t-1} + 0.5 * NetFlow_t) 
-        # (Modified Dietz) ... OR True TWR if we have exact daily vals.
-        
-        # We have:
-        # EndVal_t = 'Market Value' + 'Daily Cash Div' (Total value at end of day, assuming divs collected)
-        # StartVal_t = EndVal_{t-1}
-        # NetFlow_t = 'Daily Invested' (Positive for deposits vs Negative for withdrawals? 
-        #              Wait, 'Daily Invested' was calc as: Amount * -1. 
-        #              So Buy (Neg Amount) -> Pos Invested (Inflow). Correct.)
-        
-        # El flujo por transferencia de acciones sin efectivo ya se computó arriba
-        # ('Transfer Flow' / 'Flujo Efectivo') y lo usa también el benchmark VOO.
-
-        twr_series = []
-        cum_twr = 1.0 # Start at 1.0 (100%)
-
-        prev_total_val = 0.0
-
-        for date, row in daily_history.iterrows():
-            # End Value of standard assets
-            market_val = row['Market Value']
-            
-            # Add dividends received today to the "End Value" of the period
-            cash_div = row['Daily Cash Div']
-            
-            # Total Value Owner Has at End of Day
-            end_val = market_val + cash_div
-            
-            # Net Flow (New money coming in/out) — efectivo + transferencias de acciones sin efectivo
-            net_flow = row['Flujo Efectivo']
-            
-            # Start Value is yesterday's end value
-            start_val = prev_total_val
-            
-            # Calculate Period Return
-            # We use "End of Day" flow assumption for subsequent deposits to avoid dilution.
-            # If we add $1000 and price jumps 10%, we assume the $1000 didn't catch the jump (conservative/safe).
-            # If start_val is 0 (First day), we must assume Start of Day.
-            
-            if start_val > 0.0001:
-                # End of Day Flow Formula: r = (End - Flow - Start) / Start
-                # Simplified: (End - Flow) / Start - 1
-                period_return = ((end_val - net_flow) / start_val) - 1
-            elif net_flow > 0.0001:
-                # First Day (Start of Day Flow)
-                # r = (End - Start - Flow) / (Start + Flow)
-                # Since Start=0: r = (End - Flow) / Flow
-                # Simplified: End / Flow - 1
-                period_return = (end_val / net_flow) - 1
-            else:
-                period_return = 0.0
-                
-            # Chain it
-            cum_twr *= (1 + period_return)
-            
-            # Store Percentage (e.g. 1.05 -> 5.0)
-            twr_series.append((cum_twr - 1) * 100)
-            
-            # Update for next day. 
-            # Note: For TWR, the "Start Value" for tomorrow excludes likely withdrawals? 
-            # But here `end_val` included Cash Div. 
-            # If we pocket the cash, it's gone.
-            # So `prev_total_val` should be just the `market_val` (assets remaining).
-            prev_total_val = market_val 
-            
-        daily_history['User Return %'] = twr_series
+        daily_history, benchmark_value, benchmark_roi = _serie_diaria(
+            ticker_df, market_data, _bench_df, first_date, pocket_investment)
 
         (volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta,
          alpha) = _metricas_riesgo(daily_history)
