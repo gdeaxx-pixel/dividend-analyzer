@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # En un PR el checkout deja un HEAD separado sin `main` ni `origin/main`, y hay tests
+      # que comparan contra main (`git show origin/main:…`, p. ej. test_vista_impuestos_render).
+      - name: Traer main como origin/main
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'   # obligatorio: numpy==1.26.4 no tiene wheel cp313
