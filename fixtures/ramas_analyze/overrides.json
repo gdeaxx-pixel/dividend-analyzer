@@ -1,0 +1,13 @@
+{
+  "case_id": "ramas_analyze",
+  "broker": "schwab",
+  "csv_glob": "synthetic_transactions.csv",
+  "source": "SINTETICO — cifras inventadas, estructura del export de Charles Schwab.",
+  "notes": "Entrada 16 de tools/referencia_analyze.py. Cada fila ejecuta una rama de analyze_portfolio que ningún otro caso recorre: depósito externo con acciones ('Contribution'), transferencia interna ENTRANTE con importe, DRIP ambiguo con importe negativo, y — con las acciones de abajo, que difieren del CSV (19.14) en más del 2% — la reconciliación de ACCIONES con el bróker. NO es ground truth: por eso no se llama expected.json, que validate_real_cases y demo_mode tomarían como tal.",
+  "tickers": {
+    "SCHB": {
+      "shares": 25.0,
+      "cost_basis": 0
+    }
+  }
+}
