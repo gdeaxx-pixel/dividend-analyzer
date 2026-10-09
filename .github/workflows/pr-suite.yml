@@ -1,0 +1,35 @@
+name: Suite en PR
+
+# Corre la suite completa en cada PR contra main, ANTES del merge (main auto-despliega a
+# Streamlit Cloud). Sin real_examples/ los tests de datos privados se saltan: el gate es
+# exit 0, no una cuenta de tests. No pinear cifras aquí — un verde en CI no sustituye la
+# corrida local con real_examples/ montado.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # obligatorio: numpy==1.26.4 no tiene wheel cp313
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt pytest
+
+      - name: Suite completa
+        run: python -m pytest -q
