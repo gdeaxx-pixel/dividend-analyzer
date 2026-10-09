@@ -1071,6 +1071,20 @@ def test_net_transfer_pairs_una_entrada_empareja_con_una_sola_salida():
     assert out["Quantity"].sum() == pytest.approx(0.0)
 
 
+def test_net_transfer_pairs_no_empareja_cantidades_distintas():
+    """Auditoría #208/#209 (TP-3): la salida y la entrada del mismo día no son gemelas si las
+    cantidades no coinciden. Las dos son movimientos reales y se conservan."""
+    df = pd.DataFrame({
+        "Date": pd.to_datetime(["2024-05-13", "2024-05-13"]),
+        "Action": ["Journaled Shares", "Internal Transfer"],
+        "Ticker": ["SCHB", "SCHB"],
+        "Quantity": [-10.0, 7.0],
+    })
+    out = logic._net_transfer_pairs(df)
+    assert len(out) == 2
+    assert "_migracion_q" not in out.columns
+
+
 _MKT_DIARIO = lambda t, d: (pd.DataFrame(
     {"Close": 20.0, "Dividends": 0.0, "Stock Splits": 0.0},
     index=pd.bdate_range("2024-01-02", "2025-03-31")), None)
@@ -2370,6 +2384,14 @@ def test_simulate_hold_value_invests_flow_and_reinvests_divs():
     assert logic._simulate_hold_value(price, div2, flow) == pytest.approx(220.0)
 
 
+def test_annualized_cagr_anualiza():
+    """Auditoría #208/#209 (CA-1): de $100 a $121 en dos años es un 10 % anual, no el 21 % del
+    periodo completo."""
+    close = pd.Series([100.0, 104.0, 110.0, 115.0, 121.0],
+                      index=pd.date_range("2020-01-01", "2022-01-01", periods=5))
+    assert logic._annualized_cagr(close) == pytest.approx(10.0, abs=0.05)
+
+
 def test_underlying_exposure_includes_hold_comparison():
     results = {'NVDY': {'underlying_ticker': 'NVDA', 'underlying_cagr_recent': 42.0,
                         'price_cagr_recent': -22.0, 'underlying_hold_value': 13000.0,
@@ -3156,6 +3178,17 @@ def test_held_too_briefly_ignora_transfers():
     too_brief, days = logic.is_held_too_briefly(tdf, threshold_days=14)
     assert too_brief is True
     assert days == 4
+
+
+def test_held_too_briefly_resto_fraccionario_sigue_abierto():
+    """Auditoría #208/#209 (HB-1b): queda media acción, típico resto de DRIP. La posición sigue
+    abierta y no se filtra; solo un neto de 0.01 o menos cuenta como cerrada."""
+    tdf = pd.DataFrame({
+        "Date": pd.to_datetime(["2025-01-01", "2025-01-03"]),
+        "Action": ["Buy", "Sell"],
+        "Quantity": [10.0, -9.5],
+    })
+    assert logic.is_held_too_briefly(tdf) == (False, None)
 
 
 # ── Ronda 3 (2026-07-13): desglose por año de la devolución ROC + ROC forward reciente ──
