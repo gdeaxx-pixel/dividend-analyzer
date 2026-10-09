@@ -1,7 +1,8 @@
 """PRODUCCIÓN. Punto de entrada de la app desplegada en Streamlit Cloud.
 
 Es el port de «Viaje del dinero» del artifact; sustituyó al `app.py` anterior el
-2026-08-09 por renombre (el anterior se conserva como `app_old.py`, no se ejecuta).
+2026-08-09 por renombre. El anterior, `app_old.py`, se borró en oct-2026: vive en el tag
+`archivo/app_old-2026-10`, y las referencias `app_old.py:N` del código apuntan a ese árbol.
 La interfaz vive en `ui/`; `logic.py` es la capa de cálculo compartida.
 
 Estado y controles en widgets nativos; el HTML del artifact es render visual:

@@ -669,13 +669,13 @@ def diagnose_broker_refund_from_forms(per_form):
             "veredicto": veredicto, "per_form": filas, "retenido_completo": retenido_completo}
 
 
-def extract_1042s(pdf_bytes, api_key=None):
+def extract_1042s(pdf_bytes):
     """Punto de entrada unico del Bloque 3: lee el 1042-S con el parser determinista
     (pdfplumber, sin red). Devuelve el dict de parse_1042s_pdf (source='pdfplumber') o None.
 
-    `api_key` se ignora desde el 2026-09-18 (auditoria de privacidad, S1): el 1042-S trae
-    nombre, TIN, direccion, fecha de nacimiento y numero de cuenta, y el fallback a Gemini
-    mandaba el PDF completo a Google. El parametro sigue porque `app_old.py` pasa dos argumentos.
+    Sin Gemini desde el 2026-09-18 (auditoria de privacidad, S1): el 1042-S trae nombre, TIN,
+    direccion, fecha de nacimiento y numero de cuenta, y el fallback mandaba el PDF completo a
+    Google. El parametro `api_key`, que ya se ignoraba, se retiro con `app_old.py` (2026-10).
     """
     return parse_1042s_pdf(pdf_bytes)
 

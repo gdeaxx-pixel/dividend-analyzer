@@ -1,4 +1,5 @@
-"""Categoría «Detalle» — secciones de `app_old.py` que el artifact nunca cubrió.
+"""Categoría «Detalle» — secciones del viejo `app_old.py` (tag `archivo/app_old-2026-10`)
+que el artifact nunca cubrió.
 
 Fase 5 (traspaso § Fase 5 — Arquitectura): estas 4 vistas agrupan las secciones
 heredadas que Daniel decidió que vivan en su propia categoría de la ruta, en vez de
