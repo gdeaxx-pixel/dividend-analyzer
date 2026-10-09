@@ -10,6 +10,9 @@ import io
 import os
 from collections import Counter, defaultdict
 
+from filas_csv import (  # noqa: F401 — re-export: consumidores históricos vía logic.X
+    _clean_money, _row_year,
+)
 from fiscal_1042s import (  # noqa: F401 — re-export: consumidores históricos vía logic.X
     _1042S_COUNTRY_CODES, _ANIO_CABECERA_1042S, _UFI_1042S, _anio_1042s, _parse_1042s_text,
     _sum_roc_credit_from_forms, _tasa_3b, combinar_1042s, diagnose_broker_refund_from_forms,
@@ -2311,35 +2314,6 @@ CUSIP_ALIAS = {
 _INCOME_DESC_HINTS = [
     ("YIELDMAX MSTR", "MSTY"),
 ]
-
-
-def _row_year(dt):
-    """Año calendario de la fecha de una fila de transacción, o None si no es una fecha
-    válida (ausente/NaT). Usado para agrupar dividendos y retención por año fiscal."""
-    if dt is None:
-        return None
-    try:
-        if pd.isna(dt):
-            return None
-        return pd.Timestamp(dt).year
-    except (TypeError, ValueError):
-        return None
-
-
-def _clean_money(raw) -> float:
-    """Convierte un monto del broker ('$1,234.56', '6.57', '') a float; nan si no se puede."""
-    try:
-        if pd.isna(raw):
-            return float('nan')
-    except (TypeError, ValueError):
-        pass
-    s = str(raw).replace('$', '').replace(',', '').strip()
-    if s in ('', '-', 'nan', 'N/A', 'None'):
-        return float('nan')
-    try:
-        return float(s)
-    except (ValueError, TypeError):
-        return float('nan')
 
 
 def _resolve_income_ticker(symbol, description):
