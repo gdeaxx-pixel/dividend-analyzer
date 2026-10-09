@@ -1,0 +1,529 @@
+# Historial de líneas base e incidentes
+
+Movido textualmente desde `CLAUDE.md` (2026-10-09), en el mismo orden. Las reglas vivas de cada bloque quedan resumidas en `CLAUDE.md`; esto es solo registro. La línea base vigente está en `CLAUDE.md`.
+
+> ✅ **CERRADO (2026-08-30).** Hubo un incidente: el commit automático `127e2f6` («refresh
+> price/dividend/split cache») guardó una fila final `2026-08-28` con `Close = NaN` en los 14
+> parquets — la sesión del día en curso, que yfinance devuelve sin publicar. El NaN se propagó
+> por el motor de backtest, dejó **12 tests en rojo** y puso producción a mostrar
+> «VALOR MER. $0.00» en todos los fondos, con el veredicto del DRIP invertido ($67,535 «a favor
+> del efectivo»). **Verificado en la app desplegada, no inferido.** Mitigado con
+> `git revert 127e2f6` (`20d2ca7`) y cerrado en el **#95**: `fetch_price_cache.py` descarta las
+> filas finales con `Close` nulo, trata un nulo a media serie como fallo (conserva el cache
+> previo, workflow en rojo) y hay un guard sobre los parquets versionados. La discriminación es
+> segura porque yfinance **no emite fila** para festivos ni días sin sesión: una fila que existe
+> con `Close` nulo solo puede ser una barra pendiente.
+>
+> Lección: el refresco automático es un commit a `main` como cualquier otro, y **no pasa por
+> PR ni por review**. Si vuelve a romper algo, el síntoma será el mismo — series en cero — y el
+> primer sitio donde mirar es la última fila de los parquets.
+
+> **Reincidencia 2026-09-05, y ya no hay que tropezarse con ella.** Volvió a pasar, con otro
+> síntoma: `67365d1` («refresh ROC 19a») recalculó el `weighted_pct` de todos los fondos
+> (MSTY 71.94 → 72.31) y movió unos centavos toda cifra que cae al respaldo de
+> `logic.py:3509` — casilla 9, peldaño 2, crédito EE.UU. **6 tests en rojo sobre `main`
+> durante tres días**, descubiertos de casualidad al mergear el #116, que no tenía nada que
+> ver. Producción llevaba desplegado ese dato desde el sábado. Aquí NO había bug: el cálculo
+> estaba bien y el dato fresco era el correcto; lo roto era la expectativa hardcodeada.
+> Cerrado en el #117 (este): los dos workflows de refresco corren la suite **después** de
+> commitear y avisan por Telegram si queda roja. No bloquean el push a propósito — congelar
+> el refresco de datos por una expectativa hardcodeada sería peor que el problema.
+> Qué hacer con cada aviso de Telegram: [`docs/runbook-refrescos.md`](docs/runbook-refrescos.md).
+> Alcance real de esa red, medido: los tests que dependen de `real_examples/` (datos privados,
+> no versionados) **se saltan en CI** — de los 6 que rompieron, allí solo muerde
+> `test_credito_no_cuenta_lo_que_el_broker_devuelve`. Alcanza para el aviso; un verde en CI no
+> sustituye una corrida local.
+>
+> El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
+> **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
+
+
+Antes: **1464 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`fix/textos-tax-forms-schwab`, base `main` = `423b40f` (#200, que daba 1461), con `real_examples/` y
+`CONY_test.csv` enlazados. +3: la guarda de rutas viejas fija que la ayuda del 1042-S ya no dice
+«pestaña Tax Forms» —en Schwab es el filtro Document Types— ni el orden viejo del rango.)
+
+Antes: **1461 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`feat/1042s-tda-varios-pdf`, base `main` = `4c31652` (#199, que daba 1428), con `real_examples/` y
+`CONY_test.csv` enlazados en el worktree. +33: `test_1042s_tda.py` — el 1042-S de TD Ameritrade
+(palabras pegadas → respaldo `x_tolerance=1.5`; identificador en la línea anterior a su etiqueta;
+año de la cabecera, no del identificador), varios 1042-S del mismo año sumados sin duplicar ni
+mezclar años, el aviso del documento que falta en años partidos TDA/Schwab, el aviso de 1042-S
+viejo y la herramienta `tools/diagnostico_1042s.py`, que no imprime nada del documento.)
+
+Antes: **1428 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+`feat/carga-csv-posiciones-schwab`, base `main` = `097b10e`, con `real_examples/` y `CONY_test.csv`
+enlazados en el worktree —sin ellos da 1291/87 antes de la auditoría—. +33: `test_carga_posiciones_csv.py`
+(lector del CSV de posiciones de Schwab, uploader del paso 2, origen `archivo`, textos de ayuda, el
+`.XLSX` en mayúsculas y, tras la auditoría, el CSV sin ningún analizable y la foto ilegible que no pisa
+lo tecleado). `main` sin la rama daba 1395. La auditoría encontró una aserción vacía: el stub del
+AppTest sustituye al uploader de fotos sin dibujar widget, así que buscarlo en el árbol no puede
+fallar nunca; ahora se mira qué claves se pidieron.)
+
+Antes: **1395 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
+`main` = `f643791` (#195), con `real_examples/` y `CONY_test.csv`. +3 de #195: el conteo de
+tickers del paso 1 sin las filas sin símbolo, en `test_roc_reacciones.py` y
+`test_carga_foto.py`.)
+
+Antes: **1392 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-02 sobre
+`main` = `009af39` (#193), con `real_examples/` y `CONY_test.csv`. +26 sobre la de #189
+(`4d2ad1b`, medida ese día: 1366): #190 +6 (`test_carga_foto.py` y el origen de
+`test_capture.py`), #191 +4 (`test_carga_1042s.py`), #192 +9 (`test_1042s.py`,
+`test_carga_cobertura.py`), #193 +7 (`test_carga_cobertura.py`). Los +6 entre #186 y #189
+no se midieron por PR.)
+
+Antes: **1360 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+`feat/ruta-botones-etf`, base `main` = `eef4416` (#186), con `real_examples/` y `CONY_test.csv`.
++6: `test_ruta_botones_etf.py`.)
+
+Antes: **1354 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+`fix/leyenda-sin-drip`, base `main` = `dab657d` (#185), con `real_examples/` y `CONY_test.csv`.
++1: `test_sin_drip_la_leyenda_no_lo_nombra`.)
+
+Antes: **1353 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-29 sobre la rama
+`fix/cuadritos-mercado-y-escala`, base `main` = `22de1ed` (#184), con `real_examples/` y `CONY_test.csv`.
++18 de `test_mosaico_cashflow.py`: el mosaico del Cash flow refleja el mercado desde el paso
+«Mercado», su techo cubre toda pila que dibuja y la cascada acumula bolsillo + bruto, no el techo.
+`main` sin la rama, derivado y no medido: 1335.)
+
+Antes: **1322 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre `main` = `b56f1ea`
+FUSIONADO (#180 y #179), con `real_examples/` y `CONY_test.csv`. #179 aportó +5 netos y #180 +1
+(`test_la_caida_nunca_pasa_del_100_por_ciento`); cada rama por separado daba 1321 y 1317.)
+
+Antes: **1321 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`feat/portafolios-lo-que-toca-vigilar`, base `main` = `e7fa22d` (#178), con `real_examples/` y `CONY_test.csv`.
+−7 de `test_heredadas_base_mixta.py` (probaban la ficha por fondo, retirada) +11 de `test_vigilar_data.py`
++1 de `test_auto_alto.py` (el componente nuevo entra por glob). Sin datos privados: **1218 passed, 86 skipped,
+1 deselected**.)
+
+Antes: **1316 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/cascada-drip-doble-conteo`, base `main` = `22a210d` (#177), con `real_examples/` y `CONY_test.csv`.
++2 en `test_portafolios_data.py`: la cascada de Portafolios cierra con DRIP (`precio + dividendos =
+retorno`) y la barra Precio ya no promete «invertiste · hoy vale».)
+
+Antes: **1314 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/auto-alto-flex-basis-huerfano`, base `main` = `ffbde3e` (#176), con `real_examples/` y
+`CONY_test.csv`. +2: `test_flex_basis_huerfano.py`, que mide en Chromium (Playwright) que el
+`flex-basis` inline del auto-alto no estira a un elemento sin iframe; sin Chromium se salta.
+Sin datos privados: no medido en esta rama.)
+
+Antes: **1312 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/huerfanas-compra-dias-despues` = `9b09daf` (base `main` = `18a08b2`, #175 dentro), con `real_examples/`
+y `CONY_test.csv`. +1: `test_una_distribucion_respalda_la_compra_de_los_dias_siguientes`.
+Sin datos privados (worktree limpio): **1209 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1311 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-28 sobre la rama
+`fix/aviso-huerfanas-sin-culpar`, base `main` = `d5f55a6` (#172, #173 y #174 dentro), con `real_examples/`
+y `CONY_test.csv`. +3 sobre la de abajo: `test_migracion_deja_exactamente_las_acciones_traspasadas` del
+#174 (tres casos). El #175 no añade tests: cambia el texto del aviso y reescribe dos.
+Sin datos privados (worktree limpio): **1208 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1308 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-27 sobre la rama
+`fix/qdr-nativo` = `0ca3a21` (base `main` = `2361156`, que ya trae el #172 del historial TDA), con
+`real_examples/` y `CONY_test.csv`. +48 desde la línea de abajo; de ellos, 10 son `test_historial_tda.py`
+(el resto entró con los PR de main entre medias, sin desglose medido). `main` = `2361156` daba 1307.
+Sin datos privados (worktree limpio): **1205 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1260 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+`feat/roc-mascota` = `e090d75` (base `main` = `9b52fc4`), en la máquina de Daniel con `real_examples/` y
+`CONY_test.csv`, Streamlit 1.52.2. +36: `test_roc.py` (35: ROC, la mascota — mapeo veredicto→estado,
+frases con la misma cifra que el detalle técnico, sprite en Node, favicon, carga, encabezado,
+Impuestos y el resumen de la fila 9) + 1 de `test_auto_alto.py` (ahora también recorre `roc.html`).
+Sin datos privados (worktree limpio): **1157 passed, 86 skipped, 1 deselected**.)
+
+Antes: **1224 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-26 sobre la rama
+`fix/auto-alto-streamlit-152` = `fb375e1`, cuyo árbol es idéntico al de `main` = `d379c93` (#165), en la
+máquina de Daniel con `real_examples/` y `CONY_test.csv`, con **Streamlit 1.52.2 + Authlib 1.6.12**.
++12: `test_auto_alto.py` (el script de auto-alto corre en Node y el contenedor de Streamlit 1.52
+sigue al iframe; cada componente lleva la versión vigente). Login real en producción verificado por
+Daniel tras el merge.)
+
+Antes: **1212 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`docs/privacy-captura`, cuyo árbol es idéntico al de `main` = `08e0fa7` (#162), en la máquina de
+Daniel con `real_examples/` y `CONY_test.csv` en el worktree. Sobre `a70b7eb` (#160), antes del
+#162, daba 1209. +30 respecto a 1182: 27 entre #159, #160 y #161 (Fases 3-B y 2 de la captura) y los 3 tests del aviso de
+privacidad del #162 —días del aviso == `CAPTURA_RETENCION_DIAS`, aviso y casilla prometen lo mismo,
+ningún teléfono en archivos versionados—.)
+
+Antes: **1182 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`feat/captura-fidelidad-fixture`, base `main` = `3274eac` (#156), en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +20: Fase 1 de la captura de casos — el fixture
+anonimizado conserva las filas sin ticker (sin ellas `build_dividend_tax_totals` cambiaba en los 3
+casos Schwab), lector único `load_capture_fixture`, procedencia por ticker (`origen_posiciones`) y
+promoción que excluye la vista previa. Ninguno mueve una cifra de la app: la captura sigue apagada.)
+
+Antes: **1162 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`test/m4-ronda3-huecos`, base `main` = `f0864c2` (#154), en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +5: los tests que cierran los huecos de la ronda 3
+de M4 —split posterior múltiple y corte del mismo día (SF-1, SF-2), traspasos entre brókers de
+distinto día o con dos salidas iguales (TP-1, TP-2), impuesto extranjero en la retención por año
+(WT-2)—. Ninguno mueve una cifra de los 3 casos reales; son huecos latentes.)
+
+Antes: **1157 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre la rama
+`fix/r3-h1-devolucion-un-anio-cierre-fiscal`, base `main` = `06e96c7`, en la máquina de Daniel con
+`real_examples/` y `CONY_test.csv` en el worktree. +1: el test de R3-H1 (ronda 3 de M4). Un solo
+año cerrado con retención ya usa su cierre fiscal (Regla 4b); antes caía al 19(a) —MSTY solo
+2025: $235.20 de $300 en vez de $300—. $0 en los 3 casos reales: ninguna posición tiene un solo
+año con retención. 7 tests usaban «MSTY» como ticker de relleno con un %ROC inventado y la
+rama nueva les hacía leer el cierre real; pasan a `ZZZY` sin tocar ninguna aserción, y siguen
+verdes sobre el código de antes. **Un worktree no hereda lo ignorado por git**: sin
+`real_examples/` y `CONY_test.csv` da 1065/74 o 1155/3.)
+
+Antes: **1156 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+`60de8ae` —tras los #148 a #151—, en la máquina de Daniel con `real_examples/` montado, con
+`tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +26
+respecto a la de abajo: 14 del #149, 6 del #150 y 6 del #151, ninguno depende de datos reales.
+La línea de la base quedó fuera de la captura; la cifra sale exacta de la misma corrida: en las
+pasadas con un solo rojo, 1155 + 1 = 1156, y en las de dos, 1154 + 2 = 1156.)
+
+Antes: **1130 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-25 sobre `main` =
+`0600774` **fusionado**, en la máquina de Daniel con `real_examples/` montado, con
+`tools/verificacion_m4_local.py` y la carpeta **sin ninguna otra sesión trabajando**. Son +6 respecto
+a la de abajo: los tests del #146. La línea de la base quedó fuera de la captura, pero la cifra sale
+exacta de la misma corrida: en las dos pasadas con mutante, 1093 + 37 = 1129 + 1 = 1130.)
+
+Antes: **1124 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la rama
+`fix/mensaje-de-bloqueo-dice-que-le-falta-al-csv`, base `main` = `af6bf1f`, tras hacer que el
+aviso del guard diga QUÉ le falta al export en vez de «las cifras no cuadran entre sí»:
+`logic.drip_huerfanas` cuenta las compras del DRIP sin su fila fuente el mismo día y
+`ui.adapters.diagnosticar_bloqueo` lo traduce con cifras del propio CSV. Medido: ese importe
+coincide con el descuadre en 8 de las 9 posiciones bloqueadas (TSLY del caso 1 es la excepción,
+$260.16 contra $232.77 — por eso el aviso publica las dos cifras por separado). Cuando el que
+falla es el guard independiente, el aviso dice que el fallo es NUESTRO y no manda al cliente a
+pedirle nada a su bróker. 4 sabotajes M4 verificados. +6 tests.
+
+> **Corregido el 2026-09-25: aquel rojo NO fue flake.**
+> `test_capital_aportado_resta_lo_que_devuelve_una_venta[NVDY-770.0]` falló porque esa suite corrió
+> en la MISMA carpeta mientras `tools/verificacion_m4_local.py` tenía aplicado el mutante G5-b (una
+> venta SUMA al capital aportado) sobre `logic.py`: había tres sesiones trabajando en paralelo en el
+> mismo working tree. Es exactamente el test que mata ese mutante y, medido con los datos reales,
+> el **único** de toda la suite que lo hace. Hizo su trabajo. Nunca hay que atribuir un rojo de
+> este test a «un servidor compitiendo».
+> Lección general: **una sesión por working tree** (`git worktree`). Una mutación temporal en una
+> carpeta compartida se ve desde las otras sesiones como un rojo «flaky», y en sentido contrario
+> un cambio de rama de otra sesión mezcla el código que mide un arnés. El script ya detecta lo
+> segundo y aborta.
+
+Antes: **1118 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-09-24 sobre la
+rama `fix/efectivo-no-distributivo-fuera-del-balde-dividendos` **ya fusionada** con `main` =
+`5714469` — en la rama sola, antes de traerse el #141 y el #142, daban 1107; el número que vale
+es el del árbol que existirá tras el merge. Tras
+sacar el efectivo NO distributivo del balde del dividendo: `Cash In Lieu` —la fracción liquidada
+en un split inverso— sumaba a `dividends_collected_cash`, de donde el recorrido lee el efectivo
+del dividendo, y hacía que `DRIP + CASH` superara al NETO del objeto fiscal por su importe
+exacto. `verificar_identidades` bloqueaba Cash flow y Hoja Excel en 9 posiciones de los 3 CSV
+reales de Schwab (MSTY $18.32, XLK $8.47, SCHB $3.55, TSLY $15.56…). Ahora vive en
+`misc_cash_total` y llega a las vistas como `OTROS`, sumando aparte del capital actual.
+**ROI y `net_profit` idénticos al centavo** en las 24 posiciones de los 4 casos (A/B medido):
+`gross_value` lo suma por su cuenta. 4 sabotajes M4 verificados. +4 tests netos.
+
+**Y esta línea llevaba 201 tests de desfase**: decía 906 (2026-09-04) cuando `main` = `333bcc2`
+corría **1103**. Nadie la actualizó en ~20 PRs. Es el mismo descuido que ya se documenta más
+abajo dos veces.
+
+Línea base en la **nube** (sesión sin `real_examples/` y sin red hacia Yahoo): **1059 passed,
+80 skipped, 0 failed, 1 deselected**, con `python -m pytest -q` a secas y exit 0 (medido
+2026-09-25 sobre la rama `claude/titular-roc-centavo` fusionada con `main` tras el #150, que daba
+1053: +6 casos de `test_titular_y_tarjeta_del_roc_no_se_contradicen`, R2-H4 de la ronda 2 de M4.
+Antes, el #150 sumó +6 (crédito con cobertura incompleta, R2-H2) y el #149 +14 sobre los 1033 de
+`e53bd97`, los que cierran los huecos de
+`docs/auditorias/2026-09-25-m4-ronda2-e53bd97.md`). La suite queda verde fuera de la máquina de Daniel desde el
+2026-09-25. Llegar ahí costó dos PRs de la auditoría M4:
+- **#142**: `test_spy_math.py` pasó a `tools/`, los tests que dependían de Yahoo sin medir el
+  mercado lo mockean y los de splits se saltan con motivo cuando yfinance no responde.
+- **#144**: los dos rojos de entorno se saltan **solo** cuando falta su recurso privado:
+  - `test_los_contratos_vivos_siguen_pasando_su_check`, cuando falta el demo del vault;
+  - `test_s1_demo_no_hereda_capturas_de_la_sesion_previa`, cuando falta `real_examples/`.
+  Los dos fallaban también en CI y disparaban el aviso de Telegram de cada refresco semanal
+  por algo que nadie había roto; en la máquina de Daniel siguen corriendo como antes.
+El detalle está en `docs/auditorias/2026-09-24-m4-298ae66.md`.
+**Esta cifra NO sustituye a la línea local de arriba**: los tests que aquí se saltan son los de
+datos reales. La nube recolecta 1139 tests (1059 + 80) y la local 1158 (1156 + 2). Para volver a
+medir la local, con `real_examples/` montado y **la carpeta para ti sola**:
+`./.venv/bin/python tools/verificacion_m4_local.py`. Mide la línea base y repite los mutantes de las
+dos rondas de la auditoría que solo se pueden medir con los datos reales (G1-d, G5-b, H-3, CG-1,
+CG-4, CG-6).
+
+Antes: **906 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+`ui/impuestos-gap-residual`, base `main` = `989d244`. El titular del veredicto contradecía
+una tarjeta de la MISMA pantalla: con el gap de W-8BEN en exactamente **$0.01** el umbral
+`gap > 0.01` no lo capturaba, así que decía «Todo el exceso vuelve solo» mientras la
+tercera tarjeta de la barra 3 mostraba «W-8BEN · $0.01». Visto en producción con la cartera
+real de Daniel ($123.88 = $42.65 + $81.22 + $0.01).
+El umbral pasa a un predicado con nombre (`GAP_MATERIAL` / `gapMaterial` / `gapResidual`)
+que gobierna las tres ramas, y el titular dice «prácticamente» y **nombra el resto** en vez
+de callarlo. NO se redondea la tarjeta a $0.00: el centavo existe, y taparlo sería su propia
+mentira.
+El gate que vale es de **regla 3b** (dos vistas del mismo número comparadas entre sí):
+`test_titular_y_tarjeta_de_w8ben_no_se_contradicen` lee la tarjeta coral RENDERIZADA —sin
+fallback, si no la encuentra falla— y exige que el titular no afirme «todo»/«justo» mientras
+esa tarjeta muestre un monto. No conoce el umbral, así que sigue valiendo si alguien lo
+cambia. 5 mutantes, incluido el que revierte al bug original.
+
+Antes: **896 passed, 2 skipped, 3 deselected** (medido 2026-09-04 sobre la rama
+`ui/impuestos-ventana-reembolso`, base `main` = `05a8484`, tras el **PR 4 «la ventana del
+reembolso»**: «Cómo recuperarlo» deja de recitar las dos ventanas de reclasificación y
+resalta la del cliente. El bróker **no se deduce de las cifras** — llega por parámetro
+desde `session_state['_wizard_broker']` (lo que leyó `logic.detect_broker`), mismo patrón
+que `codigo_pais_1042s`; `'generic'` se normaliza a `None` porque «no lo reconocí» no es un
+bróker con ventana conocida. `ruta_a.broker` + `ruta_a.ventanas`, y un test que verifica
+que **ninguna cifra se mueve** con el bróker (Regla 3).
+La franja va sin año y sin marca de «hoy» a propósito: la ventana es el cierre fiscal del
+año ANALIZADO y cae en el calendario siguiente (Regla 2), y hay un test que impide que
+alguien se los añada. Única entrada de `_PERDIDAS_APROBADAS` de todo el rediseño —los meses
+salen de la prosa a la franja—, sostenida por un test que comprueba que la franja marca
+ene-mar y jun-sep de verdad.
+5 mutantes: dos vivían solo en la capa de render y sobrevivieron a la primera tanda
+(`'generic'` colándose como bróker, y las ventanas cambiando en `ui/adapters.py` sin que
+nadie se enterara **porque el fixture del test las duplicaba** — tautología clásica); se
+cerraron con tests que leen lo que el adapter publica de verdad.
+
+Antes: **882 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-letra-chica`, base `main` = `defbdd0`, tras el **PR 3 «La letra chica»** de
+la vista «Impuestos» — cierra el rediseño. La letra chica de los peldaños deja de competir
+con las cifras: vive a un clic en modales ⓘ (`.imp-modal` + helpers `modalHTML`/`wireModal`,
+patrón copiado de `cashflow.html`/`metodo.html`). `corte`: `.imp-corte-notas` retirado, sus
+4 frases + las notas largas de las 3 tarjetas de barra 3 → 6 modales; tarjetas a las notas
+cortas de la §4.4. `fondos`: un SOLO ⓘ en el título → modal-leyenda con las 9 columnas +
+qué es `no publ.` y `—`. `venta`: notas de método/captura → modal. `pais`: avisos de crédito
+neto/ROC → modal. `recuperar`: la frase «Cuándo llega» (IB ene–mar, Schwab jun–sep, año
+analizado) sustituye a la línea de tiempo descartada — `impuestos_data` no expone `broker`
+(candidata a PR 4). Ni una frase se reescribe al moverla: guard
+`test_ninguna_frase_desaparece_al_moverla_a_un_modal` compara el texto RENDERIZADO por
+vista (modales incluidos) contra `main`. +11 tests netos. `logic.py` / `impuestos_data` /
+`test_vista_impuestos.py` **sin tocar**.
+
+Antes: **871 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-el-corte`, base `main` = `c10cd7a`, tras el **PR 2 «El corte»** de la vista
+«Impuestos»: la rama `corte` deja de ser 4 peldaños y pasa a **veredicto** (borde y verbo
+derivados del dato, nunca cableados) + **barra 1 y barra 2 a escala compartida** (misma
+base `bruto`, mismo borde izquierdo — el exceso se ve sin leer) + **barra 3** (zoom sobre
+`retenido`, Regla 2 del contrato) + las 3 líneas de contexto literales + las notas de los
+peldaños 1-4 (PR 3 las manda a los ⓘ). `--anchor`/`--drip` entran a los 4 bloques de
+tokens del iframe (§5.2 — sin eso la barra 1 salía invisible; guard nuevo
+`test_todo_token_usado_esta_en_los_cuatro_bloques`). Fix de paso: `var(--ambar)` →
+`var(--warn)` en `pais` (token inexistente). +15 tests: barra 1 normalizada / barra 2 NO
+normalizada (test espejo — si se normaliza, las barras dejan de compartir escala y toda
+la suite lo dejaría pasar) / barra 3 zoom sobre `retenido` no `bruto` (§9.1) con 2
+mutantes vivos; veredicto por dato con 1 fixture por rama + mutante de reorden que mata
+el script (buckets `null` salvo estado `ok`); 3 estados de `retenido`; guard `--ambar`.
+`logic.py` / `impuestos_data` / `test_vista_impuestos.py` **sin tocar**.
+
+Antes: **856 passed, 2 skipped, 3 deselected** (medido 2026-09-03 sobre la rama
+`ui/impuestos-mudanza-5-vistas`, base `main` = `bfa9014`, tras el **PR 1 «la mudanza»** de
+la vista «Impuestos»: la escalera de 6 peldaños en un solo iframe se parte en 5 vistas
+del segundo menú —`corte` · `fondos` · `venta` · `pais` · `recuperar` (`ui.impuestos.
+VIEW_ORDER`)—. El JS del componente lee `{{VISTA_ACTIVA}}` y CONSTRUYE solo el trozo de
+esa vista; las secciones que no toca se `.remove()` del DOM para que el auto-alto mida
+`body.scrollHeight` real. Cada vista lleva su propio h2 (afirmación, no etiqueta) y su
+lede; `venta`/`pais` suben la 1ª frase de su cuerpo al lede (misma palabra, un solo
+sitio); `fondos`/`recuperar` van sin lede. `ALTO_IMPUESTOS` pasa de escalar a dict por
+vista, medido a 300–337px. `logic.py`, `ui/adapters.py::impuestos_data` y
+`test_vista_impuestos.py` **sin tocar** — pinean por datos, no por marcado. +19 tests en
+`test_vista_impuestos_render.py`: 13 de despacho + 5 de CONSECUENCIA (se ejecuta el
+`<script>` en Node con un `document` de juguete y se mira el DOM resultante) + 1 gate que
+exige que el mutante `if(true)` en las 6 ramas de vista los ponga rojos. El estado vacío
+«sin CSV» de `ui/impuestos.py` pasa a un lede genérico (ya no enumera los peldaños de
+`corte`); el «sin dividendos» se queda —ya era cierto para las 5 vistas.
+
+Antes: **837 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`perf/benchmark-una-sola-descarga`, base `main` = `37f009f`. `yf.download('VOO',
+start=first_date)` vivía DENTRO del bucle por ticker: de las 19 descargas de una corrida de
+`?demo=schwab`, **8 eran VOO** — el 42% del tráfico para traer ocho veces la misma serie.
+Sacada del bucle: **19 → 12 descargas (−37%)**, **11.3 s → 7.8 s (−31%)**, y A/B contra `main`
+sobre los 4 demos con **cero** diferencias en `benchmark_value` / `benchmark_roi` (24 posiciones).
+4 mutantes M4, incluido el que devuelve la descarga al bucle.
+
+> 🔴 **El «batch de yfinance» quedó DESCARTADO, y con medición.** `yf.download(lista)` hace
+> **una petición HTTP por ticker** — Yahoo sirve `/v8/finance/chart/{ticker}` por ticker y
+> yfinance solo las paraleliza con hilos. Medido: uno-a-uno 9 peticiones / 4.5 s contra batch
+> 8 peticiones / 1.2 s. **No reduce peticiones** (que es por donde limita yfinance, la lección
+> de la Fase 3.3); solo reduce latencia, y a cambio pediría reescribir `fetch_market_data`
+> perdiendo su fallback de 3 capas por ticker. Si algún día hace falta la latencia, se
+> paraleliza `fetch_market_data` con hilos conservando el fallback — no con `yf.download(lista)`.
+
+Antes: **831 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/base-desde-captura`, base `main` = `19b775a`. La captura de posiciones que el cliente
+confirma en el paso 2 **nunca llegaba al motor**: `ui/vistas.py::_resultados` corría
+`analyze_portfolio(df)` a secas, y `_wizard_positions` solo lo leía `ui/carga.py` para pintar
+su propia tabla. Efecto medido en `?demo=schwab`: SCHB mostraba capital invertido de
+**−$100.46** y ROI **−1,834.60%** a un cliente que ya había dado el costo correcto; ahora
+$946.04 y 84.20%. Y el peldaño 5 pasa de cubrir 3 de 8 fondos a 5, con **+$2,918.94** de
+ganancia latente que antes se declaraba no medible.
+Entra `position_overrides` y **NO** `ib_cost_basis_map`: el segundo alimenta la ruta 'broker'
+del ROC —la resta que M1 §4 descarta— y metía a SMH, un ETF amplio sin avisos 19a, en la
+cobertura del peldaño 2 con un ROC del 0% que es ruido de comisiones. Medido: con él,
+`cubiertos` 3→4 con el gravable inmóvil; sin él, 3.
+La casilla 9 **no se mueve**: la convergencia del bloque de abajo se conserva.
+La auditoría del diff completo añadió cuatro cosas más: el predicado 19a se calculaba DOS
+veces (motor y flag de las vistas) y quedó en un solo `_publica_19a`; una guarda de precio,
+sin la cual un precio 0 publicaba `gain = −base`, una pérdida del 100% sobre una base recién
+tomada de la captura —no es hipotético aquí, el #95 nació de un `Close = NaN`—; una guarda de
+forma sobre `broker_position`, que viene de sesión/OCR; y un hueco de caché **preexistente**:
+el handler de editar-CSV no borraba `_vd_resultados`, así que un CSV nuevo se mostraba con las
+cifras del anterior.
+11 mutantes M4 cazados, cada uno en su propio test.)
+
+Antes: **815 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/umbral-roc-tolerancia`, base `main` = `691cfdc`. El umbral que decide la ruta del ROC
+(`_prefer_19a_roc`) comparaba con `<` ESTRICTO mientras la rama `elif` de al lado, sobre las
+MISMAS dos cifras, ya usaba `max(2%, $0.50)`. Por esa asimetría PLTY quedaba fuera de la
+cobertura fiscal por **72 centavos** (costo de bróker $535.32 contra $534.60 aportados,
+0.13% — comisiones): caía a la ruta 'broker', su ROC salía −$0.72, el #101 lo rotulaba «sin
+dato» y el fondo tributaba sobre el 100% del bruto teniendo un ROC oficial 19a del 66.48%.
+Efecto medido: PLTY −0.78→66.48, cobertura 5/9→6/9, gravable $6,200.66→$6,113.61; SCHB, SMH
+y XLK **no se mueven** porque no publican 19a y el gate los sigue frenando.
+**Y hace converger las dos rutas de carga**: la casilla 9 de `ib_1` daba $1,340.21 sin
+captura y $1,314.14 con captura — los $26.07 eran PLTY. Ahora las dos dan $1,340.21: subir
+una foto ya no cambia cuánto impuesto te devuelven.
+3 mutantes M4 cazados, dos de ellos SOLO tras añadir los tests de límite —«tolerancia
+infinita» y «sin gate de 19a» sobrevivían a la primera tanda.)
+
+Antes: **810 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre la rama
+`fiscal/credito-eeuu-momento`, base `main` = `cc7bd8a`, tras partir el CRÉDITO del peldaño 6
+en sus dos momentos: lo retenido al cobro NO es todo acreditable, porque la parte que vuelve
+al reclasificar el ROC nunca llegó a ser impuesto. Medido en `schwab_synth_1`: de $60.75
+retenidos vuelven $41.29, así que el crédito real es **$19.46** — la vista mostraba los
+$60.75 enteros, 3.1× inflado. `vuelve_por_roc` LEE `ruta_a.casilla9_esperada` (#102), no la
+recalcula; `definitivo` es `None` —con motivo— cuando no hay con qué medir la devolución,
+porque «medí cero» y «no pude medirlo» no son lo mismo. 3 mutantes M4 cazados.)
+
+Antes: **804 passed, 2 skipped, 3 deselected** (medido 2026-09-02 sobre `main` = `40abad7`
+FUSIONADO, no sobre la rama, tras la **Fase 4** — el peldaño 6 «¿Y en tu país?». Publica la BASE
+declarable (dividendos en bruto, y aparte la parte que EE.UU. trató como renta y el ROC) y el
+CRÉDITO por impuesto ya pagado a EE.UU., más las ganancias REALIZADAS separadas por el corte de
+2 años y lo no realizado rotulado EXCLUIDO. **No publica tarifa ni total, a propósito**: la
+tarifa del país de residencia es progresiva sobre la renta GLOBAL del contribuyente, que la app
+no ve — publicarla sería inventar la base (Regla 2), y sumar dividendos con ganancias mezcla
+naturalezas, casillas y momentos. El objeto lo declara en `tarifa_motivo` / `total_motivo`, no lo
+omite. `logic.py` sin tocar: la capa solo LEE los peldaños 1, 2 y 4 (Regla 3). Los 4 mutantes M4
+—recalcular el bruto, publicar tarifa, sumar en un total, mandar todas las ventas a `ge_2y`—
+cayeron donde debían; el último solo lo caza un test que pinea el REPARTO por tramo, porque los
+de reconciliación comparan la SUMA y ninguna fixture tiene una venta ≥2 años.
+Ya no queda ningún peldaño «PRÓXIMAMENTE» en la escalera.
+
+Antes: **785 passed, 2 skipped, 3 deselected** (medido 2026-09-01 sobre la rama
+`fiscal/casilla9-sin-pais`, base `main` = `1389cfc`, tras sumar 7 tests — la Ruta A publica el
+ROC recuperable (`ruta_a.casilla9_esperada`) aunque falte el país: `build_withholding_diagnosis`
+antes cortaba en `sin_declarar` y devolvía `refund_roc: 0.0` sin calcularlo. Helper único
+`logic._roc_refund_recuperable` (misma fórmula, sin duplicar) llamado también en la rama
+`sin_declarar`; en `ui/adapters.py` un acumulador propio `refund_roc_casilla9_total` gateado solo
+por `reconcilia` (no por `declarado`). El peldaño 4 NO amplía su alcance. Los 4 sabotajes de M4
+—revertir la llamada en `sin_declarar`, quitar el guard `implausible`, gatear por `desglose_ok`,
+forzar `retenido_estado='ok'`— fallaron donde debían.
+
+Antes: **778 passed, 2 skipped, 3 deselected** (medido 2026-08-31 sobre la rama
+`fiscal/peldano2-roc-sin-pais`, base `main` = `54381ae`, tras sumar 11 tests — el peldaño 2
+de la vista de Impuestos publica el % de ROC aunque falte el país o la retención NRA
+(`build_tax_summary._null` lo propaga por las dos rutas nulas), y un `roc_percent` NEGATIVO
+—resta del método 'broker' que no cuadra— se rotula «sin dato» en el carril fiscal sin tocar
+`stats['roc_percent']` (Regla 4). El cero MEDIDO se conserva. La vista declara la cobertura
+(`gravable.sin_roc`/`cubiertos`/`total`) antes de la cifra. Los 3 sabotajes de M4 (guard del
+negativo, guard del cero, `_null` deja de publicar) fallaron donde debían.
+
+Antes: **767 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+`fiscal/roc-base-costo`, base `main` = `c998feb`, tras sumar 11 tests en
+`test_ganancias_capital.py` — **el ROC ya ajusta la base fiscal**, en una cifra APARTE
+(`basis_roc_adjusted` / `gain_roc_adjusted`) que nunca pisa `basis`/`gain`: son dos momentos
+distintos y la Regla 2 prohíbe mezclarlos. El ROC entra **fechado**
+(`logic._roc_events_from_19a`) y se aplica dentro del mismo recorrido cronológico, porque a las
+acciones vendidas solo les toca el ROC devengado ANTES de la venta — restar el acumulado al
+final, o repartirlo a prorrata, da cifras distintas y medibles (MSTY del demo de IB: −$178.78
+contra −$85.13 contra +$32.81). Solo se acepta la serie de los **19a**: el método `'broker'` no
+tiene fecha que repartir y subestima el ROC al reinvertir (M1 §4). Los 4 sabotajes del protocolo
+M4 fallaron donde debían y se restauraron.
+
+> **Borde conocido, medido y NO cerrado.** La ruta del ROC (`_prefer_19a_roc`, `logic.py:1591`)
+> se decide por si el costo del bróker quedó por DEBAJO de (aportado + reinvertido). PLTY del
+> demo de IB cae a **$0.72** de ese umbral: dos centavos al otro lado mueven su ROC de −$0.01 a
+> **$96.26** y cambian si su base se ajusta o no. El defecto de fondo es más ancho que el borde
+> —cuando el snapshot del bróker es anterior a la reclasificación anual, la app concluye ROC ≈ 0
+> para un fondo que publica 46% en sus 19a—. No se tocó: mueve `roc_percent` en toda la app y
+> merece su propia auditoría. La vista sí lo declara: `fiscal_roc.tickers_19a_sin_ajuste` nombra
+> esos fondos para que el alcance no se lea como «los demás no tienen ROC».
+
+Antes: **756 passed, 2 skipped, 3 deselected** (medido 2026-08-30 sobre la rama
+`fiscal/ganancias-capital`, base `main` = `4366f20`, tras sumar 31 tests en
+`test_ganancias_capital.py` — el motor de ganancia de capital por **costo promedio ponderado**
+(`logic.build_capital_gains`) y el quinto peldaño de la vista de Impuestos. Eje NUEVO: ni
+`pocket_investment` (flujo de caja neto) ni `net_profit` sirven de base fiscal. **El gate que
+vale es el cruzado sobre los demos** (`test_cruce_contra_analyze_portfolio_sobre_los_casos_reales`),
+que cazó dos defectos que los fixtures sintéticos no vieron: acciones llegadas por traspaso con
+`Amount $0.00` diluyendo la base (XLK de `?demo=schwab`, $1,087.00 de ganancia fantasma) y el
+doble ajuste por split cuando la fila viene DENTRO del CSV (MSTY de `?demo=schwab2`, 5.39% en
+las acciones). En aquel momento el ROC **todavía no ajustaba esta base** (lo declaraba en
+`roc_basis_adjustment_applied: False`); entró después, en `fiscal/roc-base-costo`. Antes: **725 passed, 2 skipped, 3 deselected** (medido
+2026-08-30 sobre la rama `fiscal/fixtures-fuente-unica`, base `main` = `e8c1924`, tras sumar 2 guards en
+`test_contrato_componentes.py`: `fixtures/generate_fixtures.py` queda **desarmado** —decía ser la
+fuente de los fixtures y dejó de serlo hace ~5 commits; correrlo revertía 4 correcciones
+auditadas (MLK Day, shares split-ajustadas, clasificaciones `unreliable`, `Received`→`Reported`)—
+y `schwab_synth_1` se contradecía a sí mismo sobre el bruto de MSTY: $156 en el income CSV y en
+`expected.json`, $116 en las transacciones, por una fila `Reinvest Dividend` escrita en negativo.
+`verify_fixtures.py` cruza ahora las transacciones contra `income_expected` y lo habría cazado.
+Antes: **723 passed, 2 skipped, 3 deselected**
+(medido 2026-08-30, `main` = `c650d4f`, tras los #95 y #96). Los #95 (guard de la barra pendiente, +6 tests) y #96 (el veredicto de
+W-8BEN compara en dólares, +9 tests) entraron sobre los 708 de `20d2ca7`. Del #96:
+el VEREDICTO de W-8BEN compara EN DÓLARES (`exceso` vs `holgura = bruto·TASA_TOLERANCIA_PP/100 +
+N·0.01`), reusando el `n_tax_rows` que ya expone `applied_withholding_rate` — mismo principio que
+el guard `implausible` del #94, una capa más abajo. En producción MU (cliente colombiano) daba
+«Revisa tu W-8BEN» por un exceso real de $0.0040. Antes: **708 passed, 2 skipped, 3 deselected**
+(medido 2026-08-29 sobre la rama
+`fiscal/guard-falsos-positivos`, base `main` = `21384da` = #93, tras sumar 8 tests: el guard de
+la tasa imposible compara EN DÓLARES con un término absoluto `N·0.01` (N = nº de filas de
+impuesto) en vez de en puntos porcentuales — el redondeo de centavos del bróker es absoluto y
+se acumula por pago (perfil YieldMax semanal). El techo del 30% y `TASA_TOLERANCIA_PP` no se
+tocan. Antes: **700 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+`fiscal/foreign-tax-paid`, base `main` = `e4fb6c5` = #92, tras sumar 10 tests: separar
+`Foreign Tax Paid` (impuesto extranjero, ZIM/Israel) del eje de retención NRA vía
+`_is_nra_withholding_action` — coherente en `withheld_tax_total`, `_classify_tax_rows` y familia
+—, el campo `foreign_tax_paid_total` en `stats` y su línea propia en la vista de Impuestos.
+Antes: **690 passed, 2 skipped, 3 deselected** (medido 2026-08-29 sobre la rama
+`fiscal/ib-reversos-split`, base `main` = `0ba86c9`, tras sumar 7 tests: el clasificador único
+de reversos de split de IB —`_classify_tax_rows`— con su invariante `al cobro == neteado +
+devuelto` contra el CSV real, la guarda de la tasa aplicada imposible, y la reescritura de los
+3 tests que codificaban la vieja exclusión de IB en bloque). Antes: **683 passed, 2 skipped, 3
+deselected** (medido 2026-08-28 sobre la rama
+`fiscal/vista-impuestos`, base `main` = `319a5d0`, tras sumar 9 tests en
+`test_vista_impuestos.py` — la escalera fiscal de cartera Fase 2 + el fix del bucket gris
+negativo: reconciliación cruzada del peldaño 1 contra `cashflow_data`/`hoja_data`; el residuo
+al cobro contra `withheld_at_payment` con reembolso positivo (repro de auditoría); el guard
+'parcial' cuando `withheld_at_payment` no reconcilia (reversos de split inverso en IB); «sin
+país ⇒ peldaño 3 None»; la regresión ROC 100 %). OJO: `main` corría **674** de verdad al
+ramificar, no los 668 que esta línea seguía afirmando — desfasado otra vez (nadie actualizó
+tras el #90). Antes: **668 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre la rama de la
+tercera línea de «Sin DRIP» — cosechar el efectivo hacia `CMP_COSECHA_DESTINO`/SCHB en vez
+de dejarlo quieto, base `main` = `0fbaa73` —, tras sumar 21 tests en
+`test_comparacion_data.py`: 12 en `TestCosechaHaciaDestino` —ground truth congelado,
+ausencia para el propio destino y para tickers sin dividendo, arranque común con
+`idxSin`/`precioSin`—, 7 en `TestIdentidadCosechaAlPropioTicker` —gate de identidad: cosechar
+al propio ticker reproduce «Con DRIP» exacto en `bruto`/`plano`, y por qué NO en `roc`
+(más acciones ⇒ más `roc_receivable`, divergencia esperada, no un bug)—, y 2 en
+`TestDobleConteoDeEfectivo` —TRI constante debe reproducir `idxSin` sin sumar `cash_accum`
+de más, y un destino que no cubre la ventana devuelve `None` en vez de interpolar). Antes:
+**647 passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+`9d95dbf`, tras podar el menú Detalle a solo Portafolios: `ui/heredadas.py` pierde las
+vistas Ingresos, Proyección y Estrategias —1136 líneas—, y `test_estrategias_datos.py`
+se jubila completo porque su sujeto ya no existe; se van 7 tests netos). Antes: **654
+passed, 2 skipped, 3 deselected** (medido 2026-08-25 sobre `main` =
+`e17a639`, tras podar 4 claves de `metodo_data()` sin consumidor —`ratiosTot`, `nra`,
+`paybackContraejemplo`, `ymMedido`— y `pbn` de `ratios[]`: se van 9 tests, no 4 —
+`test_ymmedido_real_yield_reconcilia_contra_matriz` estaba parametrizado ×5 tickers, la
+cuenta a ojo lo pasó por alto la primera vez—. 663 en `main` antes de esta poda (661 más
+los 2 del guard de sintaxis, PR #86). Antes: **660**, medido 2026-08-23 sobre `main` =
+`b72f4ae` — y quedó desfasado enseguida, porque el #84 añadió su guard de balance sin tocar
+esta línea; `main` corría 661 de verdad. Con el #71 —vistas heredadas con base mixta, A2/A3— y el #72 —las 3 copias inline
+del predicado de fila-de-impuesto al predicado único, más cobertura IB de la tasa aplicada—
+dentro. **Ninguno de los dos PRs actualizó este número, y menos mal**: cada uno medía sobre su
+propia rama (658 y 657), habrían chocado al mergear y los dos habrían quedado mal — el real
+post-merge sólo se sabe midiendo el árbol fusionado. Antes: 655 tras el #68 —enrutar la familia
+`_dividend_*` al predicado único— y el #69 —congelar la entrada del caché en los tests de
+cifras—. Antes: 651 passed, 2 skipped, 3
+deselected, medido 2026-08-21 tras poner el cierre
+fiscal por delante de la estimación 19(a): 644 antes; 636 tras jubilar el motor fiscal viejo —la poda quitó 15 tests del motor retirado y añadió 15 sobre el objeto vivo
+`_politica_fiscal`, la cuenta no se movió pero la cobertura sí cambió de dueño—, más 8 de
+`test_roc_ici.py` — el parser del ICI histórico, ver
+`Obsidian/IA/traspaso-2026-08-21-roc-historico-ici.md`). Este número envejece en cuanto alguien añade tests: si tu PR
+cambia la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 74 tests sin que
+nadie lo notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y
+`95c0932` (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este
+número.
