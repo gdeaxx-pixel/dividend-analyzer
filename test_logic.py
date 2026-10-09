@@ -1910,6 +1910,27 @@ def test_withheld_tax_total_nets_refunds_not_abs():
     assert wby.get(2026) == 0.0
 
 
+def test_clean_money_quita_el_signo_de_dolar():
+    """Auditoría F4, corte 3 (FC-1): Schwab exporta los montos con `$`."""
+    assert logic._clean_money("$6.57") == pytest.approx(6.57)
+    assert logic._clean_money("-$12.30") == pytest.approx(-12.30)
+
+
+def test_clean_money_quita_el_separador_de_miles():
+    """Auditoría F4, corte 3 (FC-2): `1,234.56` no es NaN."""
+    assert logic._clean_money("1,234.56") == pytest.approx(1234.56)
+    assert logic._clean_money("$1,234.56") == pytest.approx(1234.56)
+
+
+def test_row_year_fecha_ausente_es_none():
+    """Auditoría F4, corte 3 (RY-1): una fila sin fecha no tiene año: devuelve
+    None, no el `nan` que sale de `NaT.year` sin la guarda."""
+    assert logic._row_year(pd.NaT) is None
+    assert logic._row_year(float("nan")) is None
+    assert logic._row_year(None) is None
+    assert logic._row_year(pd.Timestamp("2025-03-14")) == 2025
+
+
 def test_observed_tax_refund_by_year_detects_positive_rows():
     # El reembolso real (fila de impuesto POSITIVA, p.ej. la devolución del ROC) se detecta por
     # año; la retención (negativa) y las filas que no son de impuesto no cuentan.
