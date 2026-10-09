@@ -88,6 +88,7 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > Cerrado en el #117 (este): los dos workflows de refresco corren la suite **después** de
 > commitear y avisan por Telegram si queda roja. No bloquean el push a propósito — congelar
 > el refresco de datos por una expectativa hardcodeada sería peor que el problema.
+> Qué hacer con cada aviso de Telegram: [`docs/runbook-refrescos.md`](docs/runbook-refrescos.md).
 > Alcance real de esa red, medido: los tests que dependen de `real_examples/` (datos privados,
 > no versionados) **se saltan en CI** — de los 6 que rompieron, allí solo muerde
 > `test_credito_no_cuenta_lo_que_el_broker_devuelve`. Alcanza para el aviso; un verde en CI no
@@ -96,7 +97,14 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 > El primer sitio donde mirar sigue siendo el mismo, ampliado: la última fila de los parquets
 > **o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`**.
 
-Línea base: **1464 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
+Línea base: **1470 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-09 sobre
+`main` = `a71aa7f`, con `real_examples/` y `CONY_test.csv`, tras los PRs de la auditoría
+app-audit 2026-10-07: #202 +3 (aviso de puerta CERRADA, cookies de la plataforma en PRIVACY.md),
+#203 +2 (caption de `?demo=` sin `real_examples/`), #204 +0, #205 +1 (`test_fiscal_1042s.py`),
+#206 +0. Desde #203 la suite corre también en CI en cada PR: allí, sin datos privados, da
+~1362 passed / 87 skipped — el gate es exit 0, no la cuenta.)
+
+Antes: **1464 passed, 2 skipped, 3 deselected, 0 xfailed** (medido 2026-10-04 sobre la rama
 `fix/textos-tax-forms-schwab`, base `main` = `423b40f` (#200, que daba 1461), con `real_examples/` y
 `CONY_test.csv` enlazados. +3: la guarda de rutas viejas fija que la ayuda del 1042-S ya no dice
 «pestaña Tax Forms» —en Schwab es el filtro Document Types— ni el orden viejo del rango.)
@@ -643,7 +651,7 @@ no está montado, los tests hacen **skip** — y un skip no es un pass: hay que 
 - **No hace falta registrar funciones nuevas en ninguna lista.** El guard por símbolos
   (`_LOGIC_SENTINELS`) se retiró: solo veía símbolos nuevos, había que alimentarlo a mano en cada
   PR y no detectaba el caso más común —un arreglo dentro de una función existente—. Hoy solo vive
-  en `app_old.py`, que no se ejecuta; editarlo ahí no hace nada.
+  en el tag `archivo/app_old-2026-10` (`app_old.py` se borró en oct-2026, #204).
 - `git pull --rebase` antes de push: el workflow de refresco del caché commitea solo.
 
 ## Skills
