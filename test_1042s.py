@@ -160,14 +160,14 @@ def test_sum_roc_dedupe_con_identificador(synthetic_1042s_bytes):
 def test_extract_1042s_camino_determinista_sin_api_key(synthetic_1042s_bytes):
     """Sin GEMINI_API_KEY el Bloque 3 debe seguir funcionando: pdfplumber no la
     necesita (criterio de aceptación del traspaso)."""
-    result = logic.extract_1042s(synthetic_1042s_bytes, api_key=None)
+    result = logic.extract_1042s(synthetic_1042s_bytes)
     assert result is not None
     assert result["source"] == "pdfplumber"
     assert len(result["forms"]) == 3
 
 
 def test_extract_1042s_pdf_ajeno_sin_api_key_devuelve_none():
-    result = logic.extract_1042s(_build_unrelated_pdf(), api_key=None)
+    result = logic.extract_1042s(_build_unrelated_pdf())
     assert result is None
 
 
@@ -189,7 +189,11 @@ def test_extract_1042s_pdf_ilegible_no_llama_a_gemini(monkeypatch):
             raise RuntimeError("el 1042-S no debe llegar aquí")
 
     monkeypatch.setattr(genai, "Client", _ClienteEspia)
-    resultado = logic.extract_1042s(_build_unrelated_pdf(), "KEY-FALSA")
+    # La clave va por el entorno, que es por donde la resuelve la app (`ui.carga._clave_gemini`):
+    # antes llegaba como segundo argumento, retirado con `app_old.py`. Sin ella, un fallback
+    # condicionado a «hay clave» pasaría este test sin mirar.
+    monkeypatch.setenv("GEMINI_API_KEY", "KEY-FALSA")
+    resultado = logic.extract_1042s(_build_unrelated_pdf())
     assert llamadas == [], f"el 1042-S intentó salir a Gemini: {llamadas}"
     assert resultado is None
 
