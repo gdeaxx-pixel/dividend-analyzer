@@ -1077,12 +1077,6 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     # A. SPY/VOO Benchmark Simulation
     try:
         benchmark_ticker = 'VOO'
-        session = None
-        try:
-            session = get_session()
-        except:
-            pass
-
         # La serie ya se bajó una sola vez antes del bucle (ver `_descargar_benchmark`);
         # aquí solo se recorta a la ventana de ESTE ticker. Las columnas ya vienen planas
         # y el índice tz-naive.
@@ -1134,8 +1128,6 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
         # transferencias) — de lo contrario numerador y denominador hablan de capitales distintos.
         _bench_base = float(daily_history['Flujo Efectivo'][daily_history['Flujo Efectivo'] > 0].sum()) \
             if 'Flujo Efectivo' in daily_history.columns else pocket_investment
-        if _bench_base <= 0:
-            _bench_base = pocket_investment
         benchmark_roi   = (_spy_final - _bench_base) / _bench_base * 100 if _bench_base > 0 else None
     except Exception:
         benchmark_value = None
@@ -1249,7 +1241,6 @@ def _recorrer_transacciones(ticker_df, _splits_col):
     # Iterate through transactions to build history
     cash_flows      = []
     irr_flows_dated = []   # (date, signed_amount) para cálculo de IRR real
-    divs_by_year    = defaultdict(float)  # año calendario -> dividendos netos del año (cash + drip)
     for idx, row in ticker_df.iterrows():
         action = str(row['Action']).lower()
         qty = safe_float(row.get('Quantity', 0))
@@ -1356,9 +1347,6 @@ def _recorrer_transacciones(ticker_df, _splits_col):
                 shares_owned += _adj_qty
                 shares_owned_drip += _adj_qty
                 dividends_collected_drip += abs(amount)
-                _dy = _row_year(_tx_date)
-                if _dy is not None:
-                    divs_by_year[_dy] += abs(amount)
 
             # Pattern 2: "Reinvest Dividend" — source row, skip to avoid double count
             elif 'dividend' in action or 'dividendo' in action:
@@ -1371,18 +1359,12 @@ def _recorrer_transacciones(ticker_df, _splits_col):
                 shares_owned_drip += _adj_qty
                 if amount < 0:
                     dividends_collected_drip += abs(amount)
-                    _dy = _row_year(_tx_date)
-                    if _dy is not None:
-                        divs_by_year[_dy] += abs(amount)
 
         elif is_div_payout:
             # Cash dividend NOT reinvested. Use signed amount so IB correction
             # entries (negative) reduce the total instead of inflating it.
             if not is_drip:
                 dividends_collected_cash += amount
-                _dy = _row_year(_tx_date)
-                if _dy is not None:
-                    divs_by_year[_dy] += amount
                 irr_flows_dated.append((_tx_date, amount))
 
         elif is_misc_cash:
@@ -1787,21 +1769,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         except Exception:
             pass
 
-        # ── Fase 6: Cobertura del CSV vs historial completo disponible ───
-        csv_coverage_pct  = None
-        csv_inception_yf  = None
-        try:
-            _fi = yf.Ticker(ticker).fast_info
-            _ep = getattr(_fi, 'first_trade_date', None)
-            if _ep:
-                _inc = pd.Timestamp(_ep).tz_localize(None)
-                _tot = (pd.Timestamp.today() - _inc).days
-                _cov = (pd.Timestamp.today() - pd.Timestamp(first_date).tz_localize(None)).days
-                csv_coverage_pct = min(round(_cov / _tot * 100, 1), 100.0) if _tot > 0 else 100.0
-                csv_inception_yf = str(_inc)[:10]
-        except Exception:
-            pass
-
         # ── Fase 3: Acciones corporativas en el período ──────────────────
         corporate_actions = []
         try:
@@ -1998,8 +1965,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "price_discrepancies": price_discrepancies,
             "benchmark_value":     benchmark_value,
             "benchmark_roi":       benchmark_roi,
-            "csv_coverage_pct":    csv_coverage_pct,
-            "csv_inception_yf":    csv_inception_yf,
             "corporate_actions":   corporate_actions,
             # Ganancia de capital (Fase 3). Eje propio: ni `pocket_investment` (flujo de caja
             # neto — las ventas restan el importe recibido) ni `net_profit` (incluye dividendos
