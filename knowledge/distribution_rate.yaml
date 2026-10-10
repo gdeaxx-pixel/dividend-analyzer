@@ -1,54 +1,54 @@
 # Generado por fetch_roc_19a.py: tasa de distribución TITULAR que anuncia YieldMax por fondo.
 # Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.
 AMDY:
-  rate_pct: 100.87
-  as_of: '2026-09-30'
+  rate_pct: 100.32
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/amdy/
 AMZY:
-  rate_pct: 25.2
-  as_of: '2026-09-30'
+  rate_pct: 26.18
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/amzy/
 CONY:
-  rate_pct: 65.85
-  as_of: '2026-09-30'
+  rate_pct: 58.22
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/cony/
 GOOY:
-  rate_pct: 25.25
-  as_of: '2026-09-30'
+  rate_pct: 25.19
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/gooy/
 JPMO:
-  rate_pct: 18.22
-  as_of: '2026-09-30'
+  rate_pct: 18.55
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/jpmo/
 MSFO:
-  rate_pct: 24.28
-  as_of: '2026-09-30'
+  rate_pct: 25.43
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/msfo/
 MSTY:
-  rate_pct: 100.43
-  as_of: '2026-09-30'
+  rate_pct: 75.81
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/msty/
 NFLY:
-  rate_pct: 25.17
-  as_of: '2026-09-30'
+  rate_pct: 25.55
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/nfly/
 NVDY:
-  rate_pct: 35.79
-  as_of: '2026-09-30'
+  rate_pct: 30.34
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/nvdy/
 PLTY:
-  rate_pct: 32.75
-  as_of: '2026-09-30'
+  rate_pct: 40.25
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/plty/
 TSLY:
-  rate_pct: 55.75
-  as_of: '2026-09-30'
+  rate_pct: 50.1
+  as_of: '2026-10-07'
   source_url: https://yieldmaxetfs.com/our-etfs/tsly/
 YMAG:
-  rate_pct: 36.34
-  as_of: '2026-09-29'
+  rate_pct: 38.68
+  as_of: '2026-10-06'
   source_url: https://yieldmaxetfs.com/our-etfs/ymag/
 YMAX:
-  rate_pct: 40.55
-  as_of: '2026-09-29'
+  rate_pct: 40.67
+  as_of: '2026-10-06'
   source_url: https://yieldmaxetfs.com/our-etfs/ymax/
