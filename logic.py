@@ -1769,21 +1769,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         except Exception:
             pass
 
-        # ── Fase 6: Cobertura del CSV vs historial completo disponible ───
-        csv_coverage_pct  = None
-        csv_inception_yf  = None
-        try:
-            _fi = yf.Ticker(ticker).fast_info
-            _ep = getattr(_fi, 'first_trade_date', None)
-            if _ep:
-                _inc = pd.Timestamp(_ep).tz_localize(None)
-                _tot = (pd.Timestamp.today() - _inc).days
-                _cov = (pd.Timestamp.today() - pd.Timestamp(first_date).tz_localize(None)).days
-                csv_coverage_pct = min(round(_cov / _tot * 100, 1), 100.0) if _tot > 0 else 100.0
-                csv_inception_yf = str(_inc)[:10]
-        except Exception:
-            pass
-
         # ── Fase 3: Acciones corporativas en el período ──────────────────
         corporate_actions = []
         try:
@@ -1980,8 +1965,6 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             "price_discrepancies": price_discrepancies,
             "benchmark_value":     benchmark_value,
             "benchmark_roi":       benchmark_roi,
-            "csv_coverage_pct":    csv_coverage_pct,
-            "csv_inception_yf":    csv_inception_yf,
             "corporate_actions":   corporate_actions,
             # Ganancia de capital (Fase 3). Eje propio: ni `pocket_investment` (flujo de caja
             # neto — las ventas restan el importe recibido) ni `net_profit` (incluye dividendos
