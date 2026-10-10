@@ -527,3 +527,7 @@ cambia la cuenta, **actualízalo aquí en el mismo PR**. Ya estuvo desfasado en 
 nadie lo notara, y volvió a desfasarse en 2 entre `a2dd335` (538, lo que decía esta línea) y
 `95c0932` (540, que es lo que `main` corría de verdad): el #57 añadió dos tests sin tocar este
 número.
+
+## 2026-10-09 — 1477 → 1481 (`test/huecos-analyze-portfolio`)
+
+`main` = `81b40c9`: 1477 passed, 2 skipped, 3 deselected (`CLAUDE.md` decía 1476, desfasado en 1). El PR añade `test_huecos_analyze_portfolio.py` (+4: R3 ×2, C6, PD) y deja 1481. Cero cambios en `logic.py`. El hueco S3 (`_bench_base = pocket_investment`) no se cubre: la rama es inalcanzable por construcción (ver descripción del PR).
