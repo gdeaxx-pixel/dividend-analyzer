@@ -1,0 +1,52 @@
+name: Auditoría de dependencias
+
+# Escanea con osv-scanner las versiones que de verdad instala Streamlit Cloud (Python 3.11,
+# Linux), resolviendo requirements.txt con uv. Escanear requirements.txt a secas deja que
+# osv-scanner adivine las transitivas (sacaba Pillow 9.5.0 con prod en 12.3.0).
+# Las excepciones aceptadas viven en osv-scanner.toml y caducan.
+# El cron semanal es el aviso: un CVE nuevo en algo instalado pone el workflow en rojo.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - requirements.txt
+      - osv-scanner.toml
+      - .github/workflows/deps-audit.yml
+  schedule:
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OSV_SCANNER_VERSION: v2.3.8
+
+jobs:
+  osv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Resolver el set de producción
+        run: |
+          pip install uv
+          mkdir -p resuelto
+          uv pip compile requirements.txt --python-version 3.11 \
+            --python-platform x86_64-manylinux_2_28 --no-header --no-annotate \
+            -o resuelto/requirements.txt
+
+      - name: Instalar osv-scanner
+        run: |
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          chmod +x osv-scanner
+
+      - name: Escanear
+        run: ./osv-scanner scan source -L resuelto/requirements.txt --no-resolve --config osv-scanner.toml
