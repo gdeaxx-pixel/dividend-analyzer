@@ -376,7 +376,7 @@ def test_ui_editar_borra_tambien_los_ilegibles(hoy_2026_oct):
     at.session_state["_wizard_1042s_ilegibles"] = [1]
     at.run()
     [b for b in at.button if b.proto.id.endswith("_vd_edit_1042s")][0].click().run()
-    assert "_wizard_1042s_ilegibles" not in at.session_state.filtered_state
+    assert "_wizard_1042s_ilegibles" not in at.session_state
 
 
 # ── Herramienta de soporte ────────────────────────────────────────────────────

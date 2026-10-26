@@ -843,7 +843,7 @@ def test_editar_paso2_vuelve_al_formulario_conservando_el_csv():
     # una clave de widget y lanza KeyError — mismo helper que `test_privacidad_ui.py`.)
     assert _ss(at, "_wizard_pos_confirmed") is False
     assert _ss(at, "_wizard_listo") is False
-    assert "_vd_resultados" not in at.session_state.filtered_state
+    assert "_vd_resultados" not in at.session_state
 
 
 def test_editar_paso2_no_borra_el_contexto_de_captura():

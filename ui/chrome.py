@@ -635,12 +635,15 @@ _ESTILOS = """
         /* La opción NO seleccionada (`kind=segmented_control`, sin el sufijo `Active`)
            trae de fábrica el fondo cálido/casi blanco de `app_old.py` con texto casi blanco
            encima — ilegible en modo oscuro. La seleccionada (`…Active`) ya usa el azul de
-           marca de `.streamlit/config.toml` y no se toca. */
-        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"] {
+           marca de `.streamlit/config.toml` y no se toca. Desde Streamlit 1.66 los botones
+           ya no llevan `data-testid`/`kind`: el estado va en `aria-checked`. */
+        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"],
+        [data-testid="stButtonGroup"] button[aria-checked="false"] {
           background: var(--panel) !important; color: var(--ink) !important;
           border-color: var(--hair) !important;
         }
-        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"]:hover {
+        [data-testid="stButtonGroup"] [data-testid="stBaseButton-segmented_control"]:hover,
+        [data-testid="stButtonGroup"] button[aria-checked="false"]:hover {
           background: var(--accent-tint) !important; color: var(--accent) !important;
         }
 

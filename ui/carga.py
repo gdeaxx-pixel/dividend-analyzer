@@ -1144,17 +1144,20 @@ ESTILOS_CARGA = """
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
         .st-key-_vd_fotos [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
         .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
-        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span,
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
           font-size: 0 !important; white-space: normal;
         }
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button,
         .st-key-_vd_fotos [data-testid="stFileUploaderDropzone"] button,
         .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzone"] button,
-        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button { font-size: 0 !important; }
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button,
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzone"] button { font-size: 0 !important; }
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button::after,
         .st-key-_vd_fotos [data-testid="stFileUploaderDropzone"] button::after,
         .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzone"] button::after,
-        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button::after {
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button::after,
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzone"] button::after {
           content: "Elegir archivo"; font-size: 14px;
         }
         .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
@@ -1180,6 +1183,49 @@ ESTILOS_CARGA = """
         }
         .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
           content: "CSV o XLSX"; font-size: 12px;
+        }
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {
+          content: "Arrastra aquí tu CSV de posiciones"; font-size: 14px;
+        }
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzoneInstructions"] > div > span:last-child::after {
+          content: "CSV de Charles Schwab"; font-size: 12px;
+        }
+
+        /* Streamlit 1.66 cambió el DOM: el botón va antes de las instrucciones y trae icono y
+           «Upload» dentro, las instrucciones tienen un solo span (el título se perdía) y ya no
+           hay nube. Estas reglas solo casan con esa forma (`:only-child`, `:has`). */
+        [data-testid="stFileUploaderDropzone"] > span:has(> button) { order: 2; margin-left: auto; }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzone"] button > div,
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzone"] button > div,
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzone"] button > div,
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzone"] button > div,
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzone"] button > div { display: none; }
+        [data-testid="stFileUploaderDropzone"]:has([data-testid="stFileUploaderDropzoneInstructions"] > div:only-child) { padding-left: 16px; }
+        [data-testid="stFileUploaderDropzoneInstructions"]:has(> div:only-child) {
+          display: flex; align-items: center; gap: 16px;
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"]:has(> div:only-child)::before {
+          content: ""; flex: 0 0 auto; width: 36px; height: 36px; background: var(--ink);
+          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95A5.469 5.469 0 0112 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11A2.98 2.98 0 0122 15c0 1.65-1.35 3-3 3zM8 13h2.55v3h2.9v-3H16l-4-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+                  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95A5.469 5.469 0 0112 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11A2.98 2.98 0 0122 15c0 1.65-1.35 3-3 3zM8 13h2.55v3h2.9v-3H16l-4-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          display: block; font-size: 14px; color: var(--ink);
+        }
+        .st-key-_vd_upload_txn [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          content: "Arrastra aquí tu archivo de transacciones";
+        }
+        .st-key-_vd_fotos [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          content: "Arrastra aquí tus capturas del portafolio";
+        }
+        .st-key-_vd_upload_1042s [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          content: "Arrastra aquí tu formulario 1042-S";
+        }
+        .st-key-_vd_upload_inc [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          content: "Arrastra aquí tu archivo de ingresos";
+        }
+        .st-key-_vd_upload_pos_csv [data-testid="stFileUploaderDropzoneInstructions"] > div > span:only-child::before {
+          content: "Arrastra aquí tu CSV de posiciones";
         }
 
         /* Pie de privacidad: una línea gris y el aviso completo como enlace. */
