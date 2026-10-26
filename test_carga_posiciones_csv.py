@@ -332,7 +332,7 @@ def test_editar_paso_1_borra_las_claves_del_csv():
     assert not at.exception
     [b for b in at.button if b.proto.id.endswith("_vd_edit_csv")][0].click().run()
     assert not at.exception
-    filtrado = at.session_state.filtered_state
+    filtrado = at.session_state
     for clave in ("_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error"):
         assert clave not in filtrado, clave
 
@@ -342,7 +342,7 @@ def test_editar_paso_2_conserva_el_csv(sin_clave):
     at.run()
     [b for b in at.button if b.proto.id.endswith("_vd_edit_pos")][0].click().run()
     assert not at.exception
-    assert at.session_state.filtered_state.get("_wizard_pos_csv")
+    assert "_wizard_pos_csv" in at.session_state and at.session_state["_wizard_pos_csv"]
     assert _campo(at, "_vd_sh_MSTY") == 12.5
 
 
@@ -353,7 +353,7 @@ def test_quitar_archivo_devuelve_la_vista_previa(sin_clave):
     at.session_state["_test_pos_bytes"] = None
     [b for b in at.button if b.proto.id.endswith("_vd_quitar_pos_csv")][0].click().run()
     assert not at.exception
-    assert "_wizard_pos_csv" not in at.session_state.filtered_state
+    assert "_wizard_pos_csv" not in at.session_state
     assert _campo(at, "_vd_sh_MSTY") == 40.0
     assert _proto(at, "_vd_sh_MSTY").set_value
 
@@ -375,7 +375,7 @@ def test_csv_sin_ningun_analizable(sin_clave):
     _subir_pos(at, solo_acciones)
     assert not at.exception
     assert "no trae ninguno de los instrumentos" in _textos(at)
-    assert "_wizard_pos_csv" not in at.session_state.filtered_state
+    assert "_wizard_pos_csv" not in at.session_state
     assert _campo(at, "_vd_sh_MSTY") == 40.0
 
 

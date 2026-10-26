@@ -820,7 +820,10 @@ def test_app_login_roto_no_abre_la_app(monkeypatch, lanza_en):
     assert len(at.get("file_uploader")) == 0, "la app se abrió a un visitante sin sesión"
     assert any("no está disponible" in e.value for e in at.error)
     assert at.title[0].value == "Calculadora de Dividendos · acceso para miembros"
-    assert ("login_roto", "StreamlitAuthError") in espia.avisos
+    # Streamlit ≥1.66 lanza la subclase StreamlitMissingAuthlibError; vale cualquier StreamlitAuthError.
+    import streamlit.errors as st_errors
+    rotos = [a[1] for a in espia.avisos if a[0] == "login_roto"]
+    assert rotos and all(issubclass(getattr(st_errors, n), st_errors.StreamlitAuthError) for n in rotos), rotos
 
 
 def _script_puerta_error_avisa(lanza):

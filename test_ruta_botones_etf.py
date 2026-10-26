@@ -42,7 +42,7 @@ def test_botones_solo_habilitados_y_etf_invalido_cae_al_primero():
     at = _app(_hab={"dividendos": ("TSLY", "NVDY"), "largo": ("SCHB",)},
               vd_categoria="dividendos", vd_etf_dividendos="MSTY")
     grupo = at.button_group(key="vd_etf_w_dividendos")
-    assert [o.content for o in grupo.options] == ["TSLY", "NVDY"]
+    assert list(grupo.options) == ["TSLY", "NVDY"]
     assert grupo.value == "TSLY"
     assert at.session_state["_ruta"] == ("dividendos", "TSLY")
 
@@ -50,7 +50,7 @@ def test_botones_solo_habilitados_y_etf_invalido_cae_al_primero():
 def test_elegir_boton_cambia_el_etf():
     at = _app(_hab={"dividendos": ("TSLY", "NVDY"), "largo": ("SCHB",)},
               vd_categoria="dividendos")
-    at.button_group(key="vd_etf_w_dividendos").set_value(["NVDY"]).run()
+    at.button_group(key="vd_etf_w_dividendos").set_value("NVDY").run()
     assert at.session_state["vd_etf_dividendos"] == "NVDY"
     assert at.session_state["_ruta"] == ("dividendos", "NVDY")
 
@@ -58,7 +58,7 @@ def test_elegir_boton_cambia_el_etf():
 def test_deseleccionar_el_activo_conserva_el_etf():
     at = _app(_hab={"dividendos": ("TSLY", "NVDY"), "largo": ("SCHB",)},
               vd_categoria="dividendos", vd_etf_dividendos="NVDY")
-    at.button_group(key="vd_etf_w_dividendos").set_value([]).run()
+    at.button_group(key="vd_etf_w_dividendos").set_value(None).run()
     assert at.session_state["_ruta"] == ("dividendos", "NVDY")
     assert at.button_group(key="vd_etf_w_dividendos").value == "NVDY"
 
