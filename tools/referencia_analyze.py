@@ -18,7 +18,10 @@ demo. Sus manifiestos no se llaman `expected.json` a propósito: llevan acciones
 CSV para forzar la reconciliación, y un runner que las tomara por ground truth fallaría.
 
 Al reproducir, `fetch_market_data`, `_descargar_benchmark` y `yf.Ticker` leen del cassette; la
-red y el reloj quedan bloqueados. `analyze_portfolio` está llena de `try/except Exception`, así
+red y el reloj quedan bloqueados. Los YAML de `knowledge/` que lee `analyze_portfolio` se toman
+del árbol git del SHA congelado, no del disco: los refrescos automáticos los reescriben cada
+semana en `main` (`distribution_rate.yaml` movió 32 `advertised_yield` del 3ca8473 al 575fb0f) y
+eso es deriva de datos, no un cambio de lógica. `analyze_portfolio` está llena de `try/except Exception`, así
 que una clave ausente o un intento de red se anotan en una lista y se comprueban al final: un
 error tragado no puede congelar un hueco.
 
@@ -33,8 +36,10 @@ import io
 import json
 import os
 import socket
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -326,6 +331,47 @@ def entorno(cassette, grabando, errores, hoy):
         yield
 
 
+# (atributo de ruta en logic, caché que hay que vaciar, archivo bajo knowledge/)
+DATOS_FIJADOS = (
+    ("_INSTRUMENTS_PATH", None, "instruments.yaml"),
+    ("_ROC19A_PATH", "_ROC19A_CACHE", "roc_19a.yaml"),
+    ("_ROCICI_PATH", "_ROCICI_CACHE", "roc_ici.yaml"),
+    ("_DISTRATE_PATH", "_DISTRATE_CACHE", "distribution_rate.yaml"),
+    ("_ROCHEALTH_PATH", "_ROCHEALTH_CACHE", "roc_health_history.yaml"),
+)
+
+
+def _vaciar_caches_datos():
+    logic.load_instruments.clear()
+    for _, cache, _ in DATOS_FIJADOS:
+        if cache:
+            getattr(logic, cache).clear()
+
+
+@contextlib.contextmanager
+def datos_fijados(sha):
+    tmp = tempfile.mkdtemp(prefix="referencia_knowledge_")
+    try:
+        with contextlib.ExitStack() as pila:
+            for attr, _, nombre in DATOS_FIJADOS:
+                r = subprocess.run(["git", "show", f"{sha}:knowledge/{nombre}"], cwd=BASE,
+                                   capture_output=True)
+                if r.returncode != 0:
+                    sys.exit(f"no se pudo leer knowledge/{nombre} en {sha}: "
+                             f"{r.stderr.decode().strip()}")
+                ruta = os.path.join(tmp, nombre)
+                with open(ruta, "wb") as f:
+                    f.write(r.stdout)
+                pila.enter_context(_parche(logic, attr, ruta))
+            _vaciar_caches_datos()
+            try:
+                yield
+            finally:
+                _vaciar_caches_datos()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ── Forma canónica ────────────────────────────────────────────────────────────────────
 
 def _canon(x):
@@ -550,11 +596,12 @@ def cmd_grabar(args):
     print(f"  {n} llamadas externas distintas: {tipos}; {dt:.1f} s en vivo")
 
 
-def _reproducir(carpeta, traza=None):
+def _reproducir(carpeta, sha_datos, traza=None):
     cas = Cassette.cargar(os.path.join(carpeta, "cassette"))
     hoy = pd.Timestamp(cas.meta["hoy"])
     t0 = time.time()
-    salida, errores, n = correr(cas, grabando=False, hoy=hoy, traza=traza)
+    with datos_fijados(sha_datos):
+        salida, errores, n = correr(cas, grabando=False, hoy=hoy, traza=traza)
     if n:
         errores.append(f"el cassette creció en {n} entradas durante la reproducción")
     return salida, errores, time.time() - t0
@@ -564,7 +611,7 @@ def cmd_congelar(args):
     carpeta = _carpeta(args.base)
     if carpeta is None:
         sys.exit(f"no hay cassette en {RAIZ}: correr `grabar` primero")
-    salida, errores, dt = _reproducir(carpeta)
+    salida, errores, dt = _reproducir(carpeta, "HEAD")
     if errores:
         sys.exit("NO se congela; errores en la reproducción:\n  " + "\n  ".join(errores))
     _guardar_json(os.path.join(carpeta, "referencia.json"), salida)
@@ -586,11 +633,11 @@ def cmd_comparar(args):
     if carpeta is None or not os.path.exists(os.path.join(carpeta, "referencia.json")):
         sys.exit(f"no hay referencia en {RAIZ}: correr `grabar` y `congelar` primero")
     meta = _leer_json(os.path.join(carpeta, "referencia.meta.json"))
-    salida, errores, dt = _reproducir(carpeta)
+    salida, errores, dt = _reproducir(carpeta, meta["sha_congelado"])
     difs = diferencias(_leer_json(os.path.join(carpeta, "referencia.json")), salida)
     print(f"referencia {carpeta} (congelada sobre {meta['sha_congelado']}); HEAD {_sha()}, "
           f"logic.py {'intacto' if _logic_limpio() else 'MODIFICADO'}")
-    print(f"  {_resumen(salida)}; {dt:.1f} s sin red")
+    print(f"  {_resumen(salida)}; {dt:.1f} s sin red; knowledge/ de {meta['sha_congelado']}")
     for e in errores:
         print(f"  ERROR {e}")
     print(f"{len(difs)} diferencias")
@@ -620,7 +667,7 @@ def cmd_cobertura(args):
             return local
         return None
 
-    _, errores, _ = _reproducir(carpeta, traza=traza)
+    _, errores, _ = _reproducir(carpeta, "HEAD", traza=traza)
     for e in errores:
         print(f"  ERROR {e}")
     for a, b in rangos:
