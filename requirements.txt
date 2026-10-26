@@ -18,3 +18,4 @@ pdfplumber==0.11.10
 Authlib==1.6.12
 httpx==0.28.1
 boto3==1.43.103
+certifi>=2026.10.19
