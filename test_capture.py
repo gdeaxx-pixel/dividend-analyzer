@@ -39,7 +39,7 @@ def _df_with_pii():
         "Quantity": [10, -5],
         "Price": [20.0, 22.0],
         "Amount": [-200.0, 110.0],
-        "Account Number": ["U15179613", "U15179613"],
+        "Account Number": ["U87654321", "U87654321"],
         "Holder Name": ["Daniel Zambrano", "Daniel Zambrano"],
         "Description": ["DIV PAGADO A JOHN DOE", "VENTA"],
         "Address": ["Calle 123, Bogota", "Calle 123, Bogota"],
@@ -55,7 +55,7 @@ def test_anonymize_whitelist_only():
 
 def test_anonymize_no_pii_in_serialized_csv():
     csv = logic.anonymize_to_min_rows(_df_with_pii()).to_csv(index=False)
-    for pii in ("U15179613", "Daniel", "Zambrano", "JOHN DOE", "Bogota", "Calle 123"):
+    for pii in ("U87654321", "Daniel", "Zambrano", "JOHN DOE", "Bogota", "Calle 123"):
         assert pii not in csv, f"fuga de PII: {pii}"
 
 
@@ -83,7 +83,7 @@ def test_build_bundle_is_pii_free():
     header = b["transactions_min_csv"].splitlines()[0].split(",")
     assert set(header) <= set(logic.CAPTURE_MIN_COLUMNS)
     blob = json.dumps(b, default=str)
-    for pii in ("Daniel", "Zambrano", "U15179613", "JOHN DOE", "Bogota"):
+    for pii in ("Daniel", "Zambrano", "U87654321", "JOHN DOE", "Bogota"):
         assert pii not in blob, f"fuga de PII en bundle: {pii}"
 
 
@@ -147,8 +147,8 @@ def _ida_y_vuelta(dfc):
 
 def test_filas_sin_ticker_se_conservan_vacias():
     df = _con_filas(_df_with_pii(), [
-        ["2026-03-01", "NRA Tax Adj", None, None, None, -3.3, "U15179613", "Daniel Zambrano", "x", "y"],
-        ["2026-03-02", "Cash Dividend", "", None, None, 12.0, "U15179613", "Daniel Zambrano", "x", "y"]])
+        ["2026-03-01", "NRA Tax Adj", None, None, None, -3.3, "U87654321", "Daniel Zambrano", "x", "y"],
+        ["2026-03-02", "Cash Dividend", "", None, None, 12.0, "U87654321", "Daniel Zambrano", "x", "y"]])
     mn = logic.anonymize_to_min_rows(df)
     assert len(mn) == 4
     assert list(mn["Ticker"]) == ["MSTY", "MSTY", "", ""]
@@ -239,7 +239,7 @@ def test_origen_posiciones_sin_captura_es_vista_previa():
 
 def test_bundle_guarda_origen_senales_y_1042s_sin_identificadores():
     df = _con_filas(_df_with_pii(),
-                    [["2026-03-01", "Stock Split", "MSTY", 10, None, None, "U15179613", "D", "x", "y"]])
+                    [["2026-03-01", "Stock Split", "MSTY", 10, None, None, "U87654321", "D", "x", "y"]])
     ov = {"MSTY": {"shares": 250.0, "cost_basis": 100.0}}
     origen = logic.origen_posiciones(ov, {"MSTY": {"shares": 250.0}}, {})
     parsed = {"tax_year": 2025, "recipient_country_code": "CO", "source": "pdfplumber",
@@ -262,7 +262,7 @@ def test_bundle_guarda_origen_senales_y_1042s_sin_identificadores():
                            "withholding_credit": 90.0, "tax_rate": 30.0}]
     assert b["meta"]["pais"] == "Colombia"
     blob = json.dumps(b, default=str)
-    for pii in ("0000123456", "123456789", "Daniel", "U15179613"):
+    for pii in ("0000123456", "123456789", "Daniel", "U87654321"):
         assert pii not in blob, f"fuga en bundle: {pii}"
 
 

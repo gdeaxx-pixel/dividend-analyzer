@@ -35,12 +35,11 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import backtest as bt   # noqa: E402
 import logic            # noqa: E402
+from conftest import ib_real_csv  # noqa: E402
 
 REAL = os.environ.get("DIVIDEND_REAL_EXAMPLES_DIR", os.path.join(BASE, "real_examples"))
-MSTY_CSV = os.path.join(
-    REAL, "interactive_brokers_data", "1",
-    "U15179613.TRANSACTIONS.20240820.20260514.csv",
-)
+MSTY_CSV = ib_real_csv(
+    REAL, "interactive_brokers_data", "1")
 BACKTEST_PATH = os.path.join(BASE, "backtest.py")
 
 # Tolerancia del gate de reconciliacion: diferencia observada real, con el corte de

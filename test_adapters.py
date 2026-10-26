@@ -12,6 +12,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 import logic                                            # noqa: E402
 from ui.adapters import cashflow_data, verificar_identidades  # noqa: E402
+from conftest import ib_real_csv                         # noqa: E402
 
 
 class FakeFile:
@@ -56,8 +57,7 @@ def _ib_msty_stats(monkeypatch):
     """`stats["MSTY"]` real vía analyze_portfolio sobre real_examples/interactive_brokers_data/1
     — ground truth: bruto $7,224.59, retención $545.52, neto $6,679.07."""
     base = os.path.dirname(__file__)
-    csv_path = os.path.join(base, "real_examples", "interactive_brokers_data", "1",
-                             "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    csv_path = ib_real_csv(base, "real_examples", "interactive_brokers_data", "1")
     if not os.path.exists(csv_path):
         pytest.skip("real_examples/interactive_brokers_data/1 no disponible")
     with open(csv_path, "rb") as f:
@@ -184,8 +184,7 @@ def _ib_msty_stats_saboteada(monkeypatch):
     """Como `_ib_msty_stats` pero corriendo `analyze_portfolio` CON el predicado ya
     saboteado (necesita su propia cache key — ver la nota en `_schwab_msty_stats`)."""
     base = os.path.dirname(__file__)
-    csv_path = os.path.join(base, "real_examples", "interactive_brokers_data", "1",
-                             "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    csv_path = ib_real_csv(base, "real_examples", "interactive_brokers_data", "1")
     if not os.path.exists(csv_path):
         pytest.skip("real_examples/interactive_brokers_data/1 no disponible")
     with open(csv_path, "rb") as f:
