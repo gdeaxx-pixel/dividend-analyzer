@@ -8,9 +8,21 @@ con el refresh semanal del caché vivo — ver traspaso 2026-08-23 y Regla 6 del
 pytest_plugins = ["deriva_oraculos", "pytester"]
 
 import contextlib
+import glob
 import os
 
 import price_cache as pc
+
+IB_REAL_CSV_PATRON = "*.TRANSACTIONS.20240820.20260514.csv"
+
+
+def ib_real_csv(*carpeta):
+    """El CSV real de IB lleva el número de cuenta en el nombre: se busca por patrón para no
+    versionar el número en un repo público. Sin archivo devuelve una ruta inexistente, así el
+    `os.path.exists` de cada test sigue decidiendo el skip."""
+    d = os.path.join(*carpeta)
+    hallados = sorted(glob.glob(os.path.join(d, IB_REAL_CSV_PATRON)))
+    return hallados[0] if hallados else os.path.join(d, IB_REAL_CSV_PATRON.replace("*", "IB"))
 
 FROZEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "knowledge", "price_cache_frozen")

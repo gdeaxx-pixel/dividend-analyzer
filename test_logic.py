@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest
 sys.path.insert(0, os.path.dirname(__file__))
 import backtest
 import logic
+from conftest import ib_real_csv
 import price_cache
 from ui.adapters import _tiene_datos, trg_real_data
 from ui.heredadas import _agregados
@@ -296,8 +297,7 @@ def test_normalize_real_ib_file():
     reportaba $0 de retención para todos los tickers IB.
     """
     base = os.path.dirname(__file__)
-    real_path = os.path.join(base, "interactive_brokers_data",
-                             "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    real_path = ib_real_csv(base, "interactive_brokers_data")
     if not os.path.exists(real_path):
         pytest.skip("Archivo IB real no disponible")
     with open(real_path, "rb") as f:
@@ -334,9 +334,8 @@ def _load_real_ib_1():
     base = os.path.dirname(__file__)
     real_dir = os.environ.get(
         "DIVIDEND_REAL_EXAMPLES_DIR", os.path.join(base, "real_examples"))
-    csv_path = os.path.join(
-        real_dir, "interactive_brokers_data", "1",
-        "U15179613.TRANSACTIONS.20240820.20260514.csv")
+    csv_path = ib_real_csv(
+        real_dir, "interactive_brokers_data", "1")
     if not os.path.exists(csv_path):
         pytest.skip("real_examples/interactive_brokers_data/1 no disponible")
     with open(csv_path, "rb") as f:

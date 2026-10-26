@@ -299,7 +299,7 @@ def test_un_fallo_de_subida_no_rompe_los_resultados(con_backend, monkeypatch):
 # ── T6 · el nombre del archivo no viaja ─────────────────────────────────────
 
 def test_el_nombre_del_csv_no_aparece_en_el_caso(con_backend):
-    nombre = "U15179613.TRANSACTIONS.20240820.csv"   # el nombre real de IB lleva la cuenta
+    nombre = "U87654321.TRANSACTIONS.20240820.csv"   # el nombre real de IB lleva la cuenta
     at = _at()
     _seed(at, csv_name=nombre)
     at.run()
@@ -313,10 +313,10 @@ def test_el_nombre_del_csv_no_aparece_en_el_caso(con_backend):
         for archivo in archivos:
             with open(os.path.join(ruta, archivo), encoding="utf-8") as f:
                 contenido = f.read()
-            assert "U15179613" not in contenido, archivo
+            assert "U87654321" not in contenido, archivo
             assert "TRANSACTIONS" not in contenido, archivo
         for parte in os.path.basename(ruta).split("/"):
-            assert "U15179613" not in parte and "TRANSACTIONS" not in parte
+            assert "U87654321" not in parte and "TRANSACTIONS" not in parte
 
 
 # ── T7 · origen por ticker (editado vs vista_previa) ────────────────────────
