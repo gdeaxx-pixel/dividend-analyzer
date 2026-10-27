@@ -647,6 +647,11 @@ _ESTILOS = """
           background: var(--accent-tint) !important; color: var(--accent) !important;
         }
 
+        /* Etiquetas de widget y su icono de ayuda: Streamlit los pinta #1a1a1a fijo,
+           invisibles sobre el fondo del tema oscuro. */
+        [data-testid="stWidgetLabel"] p { color: var(--ink-2); }
+        [data-testid="stTooltipIcon"] svg { stroke: var(--ink-mut) !important; }
+
         .vd-badge {
           display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
           font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
