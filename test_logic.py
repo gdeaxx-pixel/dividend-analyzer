@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import re
 import sys
@@ -4503,8 +4504,10 @@ render_portafolios(resultados)
     iframes = at.get("iframe")
     rocs = [f for f in iframes if "function rocGrid" in f.proto.srcdoc]
     vigilar = [f for f in iframes if 'id="vig-root"' in f.proto.srcdoc]
+    riesgo = [f for f in iframes if 'id="riesgo-root"' in f.proto.srcdoc]
     portafolios = [f for f in iframes if "function rocGrid" not in f.proto.srcdoc
-                   and 'id="vig-root"' not in f.proto.srcdoc]
+                   and 'id="vig-root"' not in f.proto.srcdoc
+                   and 'id="riesgo-root"' not in f.proto.srcdoc]
     assert len(rocs) == 1, "la erosión del NAV lleva un solo ROC arriba"
     assert len(portafolios) == 1, "el componente Portafolios v3 debe dibujarse en un iframe"
     srcdoc = portafolios[0].proto.srcdoc
@@ -4516,6 +4519,16 @@ render_portafolios(resultados)
     assert len(vigilar) == 1, "«Lo que toca vigilar» debe dibujarse en su propio iframe"
     assert "SMH" not in vigilar[0].proto.srcdoc and "TSLY" not in vigilar[0].proto.srcdoc, (
         "un ticker skipped no debe llegar al resumen")
+
+    # «Riesgo de la mezcla» (oct-2026): se mira el modo «Tus fondos» del JSON y no el texto,
+    # porque con el secreto local la canasta de referencia puede nombrar esos mismos tickers.
+    assert len(riesgo) == 1, "«Riesgo de la mezcla» debe dibujarse en su propio iframe"
+    src = riesgo[0].proto.srcdoc
+    inicio = src.index("var DATA = ") + len("var DATA = ")
+    datos = json.loads(src[inicio:src.index(";\n", inicio)])
+    tus = next(m for m in datos["modos"] if m["clave"] == "tus")
+    fondos = [t for g in tus["grupos"] if not g["referencia"] for t in g["fondos"]]
+    assert sorted(fondos) == ["MSTY", "SCHB"], "un ticker skipped no debe entrar a la mezcla"
 
     texto = "\n".join(m.value for m in at.markdown)
     assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"

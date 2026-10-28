@@ -1,0 +1,663 @@
+<!-- Escrito y mantenido A MANO. Sección «Riesgo de la mezcla» de la vista Portafolios: la dona es
+     el control de la mezcla Dividendos/Crecimiento (con tus fondos o con la canasta de referencia)
+     y debajo se ve hasta dónde bajó el dinero. Diseño aprobado en el artifact «Riesgo de la mezcla»
+     (oct-2026). Fuente: `Obsidian/APPs/Dividend-Analyzer/demos/riesgo-componente.html`.
+     Python manda los retornos diarios de cada grupo ya ponderados (`riesgo_mezcla.datos_seccion`);
+     el motor de abajo compone la mezcla elegida y `test_riesgo_mezcla.py` lo compara con
+     `riesgo_mezcla.resumen_escenario`. Sin cifras ni nombres de canasta en el HTML: todo llega
+     en DATA. El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
+<meta charset="utf-8">
+<style>
+  :root {
+    --font-mono: "JetBrains Mono", "Fira Code", "Space Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a; --ink-mut:#6a7b8a;
+    --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497; --cash:#1f8a5b; --loss:#A32D2D;
+    --loss-bg:rgba(163,45,45,0.10); --warn:#a06a1a; --crec:#021C36; --div:#006497; --on-fill:#ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de; --ink-mut:#8598a9;
+      --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d; --loss:#e07a7a;
+      --loss-bg:rgba(224,122,122,0.14); --warn:#d9a441; --crec:#dbe6ef; --div:#3ea0d6; --on-fill:#0b1420;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground:#f4f7fa; --panel:#ffffff; --panel-tint:#eef4f9; --ink:#021C36; --ink-2:#33475a; --ink-mut:#6a7b8a;
+    --hair:#d5e0ea; --hair-soft:#e6edf3; --accent:#006497; --cash:#1f8a5b; --loss:#A32D2D;
+    --loss-bg:rgba(163,45,45,0.10); --warn:#a06a1a; --crec:#021C36; --div:#006497; --on-fill:#ffffff;
+  }
+  :root[data-theme="dark"] {
+    --ground:#0b1420; --panel:#101d2b; --panel-tint:#142639; --ink:#eaf1f7; --ink-2:#c3d1de; --ink-mut:#8598a9;
+    --hair:#26394c; --hair-soft:#1c2c3c; --accent:#3ea0d6; --cash:#35b07d; --loss:#e07a7a;
+    --loss-bg:rgba(224,122,122,0.14); --warn:#d9a441; --crec:#dbe6ef; --div:#3ea0d6; --on-fill:#0b1420;
+  }
+
+  * { box-sizing: border-box; border-radius: 0; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 8px; }
+
+  .panel { background: var(--panel); padding: clamp(20px, 4vw, 40px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; text-wrap: balance; }
+  .lede { margin: 6px 0 0; color: var(--ink-2); max-width: 58ch; text-wrap: pretty; }
+  .k { margin: 0; font-size: 13px; color: var(--ink-mut); }
+  .aviso { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); max-width: 70ch; }
+
+  .alloc-grid { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 540px); gap: clamp(28px, 7vw, 88px); align-items: center; justify-content: start; }
+  .donut { position: relative; width: 100%; max-width: 280px; aspect-ratio: 1; margin-inline: auto; }
+  .donut svg { width: 100%; height: 100%; display: block; }
+  .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; grid-template-rows: 20px 44px 20px; gap: 2px; pointer-events: none; }
+  .c-k { font-size: 13px; color: var(--ink-mut); }
+  .c-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 34px; line-height: 44px; letter-spacing: -.02em; }
+  .c-s { font-size: 13px; color: var(--ink-2); }
+
+  .ctrl { display: grid; gap: 24px; min-width: 0; }
+  .presets { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 8px; }
+  .chip, .tg button {
+    appearance: none; background: transparent; border: 1px solid var(--hair); cursor: pointer; text-align: left;
+    transition: background-color .15s ease, box-shadow .15s ease, transform .16s var(--ease-out);
+  }
+  .chip { display: grid; grid-template-rows: 1fr auto; gap: 6px; padding: 10px 12px; min-height: 66px; }
+  .chip span { font-size: 13px; font-weight: 600; line-height: 1.3; }
+  .chip small { font-family: var(--font-mono); font-size: 12px; color: var(--ink-mut); }
+  .chip[aria-pressed="true"], .tg button[aria-pressed="true"] { background: var(--panel-tint); box-shadow: inset 2px 0 0 var(--ink); }
+  .chip:active, .tg button:active { transform: scale(.97); }
+  @media (hover: hover) and (pointer: fine) {
+    .chip:hover, .tg button:hover { background: var(--panel-tint); }
+  }
+
+  .slider { display: grid; gap: 4px; }
+  .range { -webkit-appearance: none; appearance: none; width: 100%; height: 32px; margin: 0; background: transparent; cursor: pointer; --p: 50%; }
+  .range::-webkit-slider-runnable-track { height: 8px; background: linear-gradient(to right, var(--div) 0 var(--p), var(--crec) var(--p) 100%); }
+  .range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 26px; margin-top: -9px; background: var(--panel); border: 2px solid var(--ink); }
+  .range::-moz-range-track { height: 8px; background: var(--crec); }
+  .range::-moz-range-progress { height: 8px; background: var(--div); }
+  .range::-moz-range-thumb { width: 14px; height: 22px; background: var(--panel); border: 2px solid var(--ink); border-radius: 0; }
+  .range:focus-visible { outline-offset: 4px; }
+  .ends { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--ink-mut); }
+
+  .legend { display: grid; border-block: 1px solid var(--hair); }
+  .lrow { display: grid; grid-template-columns: 10px minmax(0, 1fr) 4rem; gap: 12px; align-items: center; min-height: 54px; padding: 6px 12px; }
+  .lrow + .lrow { border-top: 1px solid var(--hair-soft); }
+  .lrow i { width: 10px; height: 10px; }
+  .g-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+  .tks { display: block; font-size: 13px; color: var(--ink-mut); letter-spacing: .02em; text-wrap: balance; }
+  .tks em { font-style: normal; color: var(--accent); }
+  .lrow b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 16px; text-align: right; }
+  .nota { margin: -12px 0 0; font-size: 13px; color: var(--ink-mut); }
+  .nota.reserva { min-height: calc(1.55em * 2); }
+  .nota:empty:not(.reserva) { display: none; }
+
+  .level { display: grid; gap: 10px; }
+  .level-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .info { appearance: none; background: none; border: 0; padding: 0; cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  .info::after { content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super; }
+  .level-v { font-size: 14px; color: var(--ink-2); }
+  .level-v strong { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--ink); }
+  .scale { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .scale li { height: 34px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 13px; color: var(--ink-mut); border: 1px solid var(--hair); transition: background-color .16s ease, color .16s ease, border-color .16s ease; }
+  .scale li.is-on { background: var(--tono); border-color: var(--tono); color: var(--on-fill); font-weight: 700; }
+  .income { margin: 0; font-size: 14px; color: var(--ink-2); }
+  .income b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .entry { display: grid; gap: 8px; margin-top: 16px; }
+  .tg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: 520px; }
+  .tg button { display: grid; align-content: start; gap: 2px; padding: 10px 14px; min-height: 44px; font-size: 13px; font-weight: 600; }
+  .tg small { font-family: var(--font-mono); font-weight: 400; font-size: 12px; color: var(--ink-mut); white-space: nowrap; }
+
+  .loss-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: clamp(28px, 5vw, 56px); align-items: start; }
+  .big { margin: 2px 0 8px; display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+  .big .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(38px, 5vw, 48px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .big .delta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; }
+  .neg { color: var(--loss); }
+  .pos { color: var(--cash); }
+  .verdict { margin: 0 0 22px; font-size: 15px; color: var(--ink-2); max-width: 44ch; min-height: calc(1.55em * 3); text-wrap: pretty; }
+  .bars { display: grid; gap: 16px; border-top: 1px solid var(--hair); padding-top: 18px; }
+  .bar-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; margin-bottom: 8px; font-size: 14px; }
+  .bar-head .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  .bar-head .v em { font-style: normal; font-weight: 400; color: var(--loss); margin-left: 6px; }
+  .track { height: 10px; background: var(--loss-bg); overflow: hidden; }
+  .track i { display: block; height: 100%; transform-origin: left center; transition: transform .24s var(--ease-out); }
+  .hoy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); }
+  .hoy dt { font-size: 13px; color: var(--ink-mut); }
+  .hoy dd { margin: 2px 0 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 700; white-space: nowrap; }
+  .hoy dd small { display: block; font-size: 13px; font-weight: 600; }
+
+  .fig { margin: 0; min-width: 0; }
+  .chart-k { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 6px; }
+  .chart-nota { margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink-mut); min-height: calc(1.5em * 2); }
+  .keys { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  .keys span { display: inline-flex; align-items: center; gap: 6px; }
+  .keys svg { width: 22px; height: 8px; }
+  #chart { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: crosshair; }
+  #chart:focus-visible { outline-offset: 4px; }
+  #chart text { font-family: var(--font-mono); fill: var(--ink-mut); }
+  #chart .t-ink { fill: var(--ink); font-weight: 600; }
+  #chart .t-loss { fill: var(--loss); font-weight: 600; }
+  .readout { margin: 8px 0 0; min-height: 1.6em; font-size: 13px; color: var(--ink-2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  .foot { margin: 0; font-size: 13px; color: var(--ink-mut); max-width: 92ch; }
+  .link { appearance: none; background: none; border: 0; padding: 0; cursor: pointer; font-size: 13px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+  #modal-riesgo { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px; }
+  #modal-riesgo.open { display: flex; }
+  .modal-box { background: var(--panel); border: 1px solid var(--hair); max-width: 500px; width: 100%; padding: clamp(22px, 4vw, 34px); position: relative; max-height: 90vh; overflow-y: auto; animation: fadeIn .18s ease both; }
+  .modal-close { position: absolute; top: 12px; right: 14px; font-family: var(--font-mono); font-size: 20px; font-weight: 700; background: none; border: none; color: var(--ink-mut); cursor: pointer; line-height: 1; padding: 4px 8px; transition: color .12s ease; }
+  .modal-close:hover { color: var(--ink); }
+  .modal-eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .modal-title { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); margin: 0 0 14px; letter-spacing: -0.01em; }
+  .modal-lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+  .modal-lede b { color: var(--ink); font-weight: 600; }
+  .modal-formula { background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 14px 16px; margin: 0 0 16px; }
+  .mf-eq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); display: block; margin-bottom: 14px; line-height: 1.4; }
+  .mf-table { width: 100%; border-collapse: collapse; }
+  .mf-table td { font-family: var(--font-mono); font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: baseline; }
+  .mf-table tr:last-child td { border-bottom: none; padding-top: 10px; font-weight: 700; font-size: 13px; }
+  .mf-table td:last-child { text-align: right; }
+  .mf-label { color: var(--ink-mut); }
+  .mf-val { color: var(--ink); }
+  .mf-table tr.is-on .mf-label, .mf-table tr.is-on .mf-val { color: var(--accent); font-weight: 700; }
+  .modal-note { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.6; }
+  .modal-note b { color: var(--ink-2); font-weight: 600; }
+  @keyframes fadeIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 860px) {
+    .alloc-grid, .loss-grid { grid-template-columns: minmax(0, 1fr); }
+    .donut { max-width: 240px; }
+  }
+  @media (max-width: 560px) {
+    .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .title { font-size: 23px; }
+    .hoy dd small { font-size: 12px; }
+    .readout { min-height: calc(1.55em * 2); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap" id="riesgo-root">
+  <section class="panel" aria-labelledby="t-mezcla">
+    <header>
+      <h2 class="title" id="t-mezcla">¿Cuánto riesgo cargas?</h2>
+      <p class="lede">Mueve la mezcla entre dividendos y crecimiento y mira hasta dónde podría bajar tu dinero.</p>
+      <div class="entry" id="selector-modo" hidden>
+        <span class="k" id="l-modo">Con qué fondos</span>
+        <div class="tg" role="group" aria-labelledby="l-modo" id="modos"></div>
+      </div>
+      <p class="aviso" id="aviso" hidden></p>
+    </header>
+    <div class="alloc-grid">
+      <div class="donut">
+        <svg id="donut" viewBox="0 0 280 280" role="img" aria-label="Dona de la mezcla"></svg>
+        <div class="center">
+          <span class="c-k">En dividendos</span>
+          <span class="c-v" id="c-v"></span>
+          <span class="c-s" id="c-s"></span>
+        </div>
+      </div>
+      <div class="ctrl">
+        <div class="presets" role="group" aria-label="Mezclas rápidas" id="presets"></div>
+        <div class="slider">
+          <label class="k" for="mix">Parte en dividendos</label>
+          <input type="range" class="range" id="mix" min="0" max="100" step="1" value="50">
+          <div class="ends"><span>Solo crecimiento</span><span>Solo dividendos</span></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <p class="nota" id="nota"></p>
+        <div class="level">
+          <div class="level-head">
+            <button type="button" class="info" data-modal="riesgo">Nivel de riesgo</button>
+            <span class="level-v"><strong id="lvl"></strong> de 7 · <span id="lvl-t"></span></span>
+          </div>
+          <ol class="scale" id="scale" aria-hidden="true"><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li><li>7</li></ol>
+          <div class="ends"><span>Menor riesgo</span><span>Mayor riesgo</span></div>
+        </div>
+        <p class="income">Dividendos del último año: <b id="inc"></b> por cada $10,000</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="t-caida">
+    <header>
+      <h2 class="title" id="t-caida">¿Hasta dónde bajó tu dinero?</h2>
+      <div class="entry">
+        <span class="k" id="l-entry">Contar desde</span>
+        <div class="tg" role="group" aria-labelledby="l-entry">
+          <button type="button" data-e="compra" aria-pressed="true">Tu fecha de compra<small id="compra-f"></small></button>
+          <button type="button" data-e="peor" aria-pressed="false">El peor día para entrar<small id="peor-f"></small></button>
+        </div>
+      </div>
+    </header>
+    <div class="loss-grid">
+      <div>
+        <p class="k">Lo más bajo que llegaron tus $10,000</p>
+        <div class="big"><span class="num" id="b-num"></span><span class="delta" id="b-delta"></span></div>
+        <p class="verdict" id="b-verdict"></p>
+        <div class="bars">
+          <div>
+            <div class="bar-head"><span id="b0-l">Tu mezcla</span><span class="v" id="b0-v"></span></div>
+            <div class="track"><i id="b0-f" style="background:var(--div)"></i></div>
+          </div>
+          <div>
+            <div class="bar-head"><span>Solo crecimiento</span><span class="v" id="b1-v"></span></div>
+            <div class="track"><i id="b1-f" style="background:var(--crec)"></i></div>
+          </div>
+        </div>
+        <dl class="hoy">
+          <div><dt>Hoy con tu mezcla</dt><dd id="hoy0"></dd></div>
+          <div><dt>Hoy solo crecimiento</dt><dd id="hoy1"></dd></div>
+        </dl>
+      </div>
+      <figure class="fig">
+        <div class="chart-k">
+          <p class="k" id="c-title"></p>
+          <div class="keys" aria-hidden="true">
+            <span><svg viewBox="0 0 22 8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--div)" stroke-width="2.5"/></svg>Tu mezcla</span>
+            <span><svg viewBox="0 0 22 8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--crec)" stroke-width="2" stroke-dasharray="5 3"/></svg>Solo crecimiento</span>
+            <span><svg viewBox="0 0 22 8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--ink-mut)" stroke-width="1" stroke-dasharray="2 3"/></svg>Lo invertido</span>
+          </div>
+        </div>
+        <p class="chart-nota" id="chart-nota"></p>
+        <svg id="chart" viewBox="0 0 640 300" role="img" tabindex="0" aria-label="Camino de 10,000 dólares desde la fecha de entrada"></svg>
+        <p class="readout" id="readout"></p>
+      </figure>
+    </div>
+  </section>
+
+  <p class="foot"><span id="foot-datos"></span> <button type="button" class="link" data-modal="riesgo">¿Cómo se mide el riesgo?</button></p>
+</div>
+
+<div id="modal-riesgo" role="dialog" aria-modal="true" aria-labelledby="m-title">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="modal-riesgo-close" aria-label="Cerrar">×</button>
+    <p class="modal-eyebrow">Cómo se mide</p>
+    <h3 class="modal-title" id="m-title">Nivel de riesgo de 1 a 7</h3>
+    <p class="modal-lede">Usamos la escala con la que el reglamento europeo clasifica los fondos. Mide <b>cuánto sube y baja el valor en un año</b>: mientras más se mueve, más alto el nivel.</p>
+    <div class="modal-formula">
+      <span class="mf-eq">Cuánto se mueve en un año → nivel</span>
+      <table class="mf-table"><tbody id="mf-rows"></tbody></table>
+    </div>
+    <p class="modal-note" id="m-nota"></p>
+  </div>
+</div>
+
+<script id="motor">
+var Motor = (function () {
+  "use strict";
+  var CORTES = [0.5, 5, 12, 20, 30, 80];
+  function crear(M) {
+    var n = M.div.length;
+    function retornos(q) { var r = new Array(n); for (var i = 0; i < n; i++) r[i] = q * M.div[i] + (1 - q) * M.crec[i]; return r; }
+    function indice(q) { var r = retornos(q), v = new Array(n + 1); v[0] = 1; for (var i = 0; i < n; i++) v[i + 1] = v[i] * (1 + r[i]); return v; }
+    var vCrec = indice(0);
+    function volatilidad(q) {
+      var r = retornos(q), m = 0, s = 0, i;
+      for (i = 0; i < n; i++) m += r[i];
+      m /= n;
+      for (i = 0; i < n; i++) s += (r[i] - m) * (r[i] - m);
+      return Math.sqrt(s / (n - 1)) * Math.sqrt(252) * 100;
+    }
+    function nivel(vol) { var l = 1; for (var i = 0; i < CORTES.length; i++) if (vol >= CORTES[i]) l++; return l; }
+    function peorEntrada(v) {
+      var pico = 0, mejor = 0, ent = 0;
+      for (var i = 1; i < v.length; i++) {
+        if (v[i] > v[pico]) pico = i;
+        var dd = 1 - v[i] / v[pico];
+        if (dd > mejor) { mejor = dd; ent = pico; }
+      }
+      return ent;
+    }
+    function camino(v, desde) { var c = []; for (var i = desde; i < v.length; i++) c.push(10000 * v[i] / v[desde]); return c; }
+    function minimo(c) { var k = 0; for (var i = 1; i < c.length; i++) if (c[i] < c[k]) k = i; return k; }
+    function recupera(c, k) { for (var i = k; i < c.length; i++) if (c[i] >= 10000) return i; return -1; }
+    function escenario(q, entrada) {
+      var vm = indice(q);
+      var desde = entrada === "peor" ? peorEntrada(vm) : Math.max(0, Math.min(n - 1, M.compra.i));
+      var cm = camino(vm, desde), cg = camino(vCrec, desde);
+      var km = minimo(cm), kg = minimo(cg);
+      return { desde: desde, mezcla: cm, crec: cg, minM: km, minG: kg, recM: cm[km] < 10000 ? recupera(cm, km) : 0 };
+    }
+    function dividendos(q) { return 10000 * (q * M.rend_div + (1 - q) * M.rend_crec); }
+    return { n: n, volatilidad: volatilidad, nivel: nivel, escenario: escenario, dividendos: dividendos };
+  }
+  return { crear: crear };
+})();
+if (typeof module !== "undefined") module.exports = Motor;
+</script>
+<script>
+(function () {
+  "use strict";
+  var DATA = {{DATA_JSON}};
+  var root = document.getElementById("riesgo-root");
+  if (!DATA || !DATA.modos || !DATA.modos.length) { root.hidden = true; return; }
+
+  var MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  var NIVEL = ["", "muy bajo", "bajo", "moderado bajo", "moderado", "medio alto", "alto", "muy alto"];
+  var BANDAS = ["menos de 0.5%", "0.5% a 5%", "5% a 12%", "12% a 20%", "20% a 30%", "30% a 80%", "más de 80%"];
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var mqMovil = window.matchMedia("(max-width: 560px)");
+  var $ = function (id) { return document.getElementById(id); };
+  var each = function (sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); };
+  var money = function (v) { return "$" + Math.round(Math.abs(v)).toLocaleString("en-US"); };
+  var signed = function (v) { return (Math.round(v) < 0 ? "−" : "+") + money(v); };
+  var esc = function (s) { return String(s).split("&").join("&amp;").split("<").join("&lt;").split(">").join("&gt;"); };
+  function plural(n, s, p) { return n + " " + (n === 1 ? s : p); }
+  function tono(l) { return l >= 6 ? "var(--loss)" : l >= 4 ? "var(--warn)" : "var(--cash)"; }
+  function isoLarga(iso) { var p = iso.split("-"); return (+p[2]) + "-" + MESES[+p[1] - 1] + "-" + p[0]; }
+
+  var estado = { modo: 0, p: 50, pVis: 50, entrada: "compra" };
+  var M = null, MOT = null, base = 0, DIAS = [0], esc0 = null, hoverI = -1;
+  for (var k = 0; k < DATA.modos.length; k++) if (DATA.modos[k].clave === DATA.modo_inicial) estado.modo = k;
+  estado.p = estado.pVis = DATA.modos[estado.modo].p_inicial;
+
+  function fecha(i) { var d = new Date(base + DIAS[i] * 864e5); return { d: d.getUTCDate(), m: MESES[d.getUTCMonth()], y: d.getUTCFullYear(), t: d.getTime() }; }
+  function fCorta(i) { var f = fecha(i); return f.m + "-" + String(f.y).slice(2); }
+  function fLarga(i) { var f = fecha(i); return f.d + "-" + f.m + "-" + f.y; }
+  function meses(a, b) { return Math.max(1, Math.round((fecha(b).t - fecha(a).t) / (30.44 * 864e5))); }
+
+  function arco(a0, a1, r0, r1) {
+    var rad = function (a) { return (a - 90) * Math.PI / 180; };
+    var big = a1 - a0 > 180 ? 1 : 0;
+    var pt = function (r, a) { return (140 + r * Math.cos(rad(a))).toFixed(2) + " " + (140 + r * Math.sin(rad(a))).toFixed(2); };
+    return "M" + pt(r1, a0) + " A" + r1 + " " + r1 + " 0 " + big + " 1 " + pt(r1, a1) + " L" + pt(r0, a1) + " A" + r0 + " " + r0 + " 0 " + big + " 0 " + pt(r0, a0) + "Z";
+  }
+  function dona(pv) {
+    var a = pv * 3.6, g = pv > 0.5 && pv < 99.5 ? 2.25 : 0, h;
+    if (pv >= 99.5) h = '<circle cx="140" cy="140" r="102" fill="none" stroke="var(--div)" stroke-width="32"/>';
+    else if (pv <= 0.5) h = '<circle cx="140" cy="140" r="102" fill="none" stroke="var(--crec)" stroke-width="32"/>';
+    else h = '<path fill="var(--div)" d="' + arco(g, a - g, 86, 118) + '"/><path fill="var(--crec)" d="' + arco(a + g, 360 - g, 86, 118) + '"/>';
+    $("donut").innerHTML = h;
+    var r = Math.round(pv);
+    $("c-v").textContent = r + "%";
+    $("c-s").textContent = (100 - r) + "% en crecimiento";
+  }
+
+  function pintarModo() {
+    M = DATA.modos[estado.modo];
+    MOT = Motor.crear(M);
+    base = Date.UTC(+M.inicio.slice(0, 4), +M.inicio.slice(5, 7) - 1, +M.inicio.slice(8, 10));
+    DIAS = [0].concat(M.dias);
+    each("#modos button", function (b, i) { b.setAttribute("aria-pressed", String(i === estado.modo)); });
+    var pres = $("presets");
+    pres.style.setProperty("--n", String(M.atajos.length));
+    pres.innerHTML = M.atajos.map(function (a) {
+      return '<button type="button" class="chip" data-p="' + a.p + '" aria-pressed="false"><span>' + esc(a.etiqueta) + "</span><small>" + esc(a.detalle) + "</small></button>";
+    }).join("");
+    each(".chip", function (b) { b.addEventListener("click", function () { irA(+b.dataset.p, true); }); });
+    $("legend").innerHTML = M.grupos.map(function (g) {
+      var color = g.clave === "div" ? "var(--div)" : "var(--crec)";
+      var ref = g.referencia && M.clave !== "greco" ? " <em>· " + esc(g.referencia) + "</em>" : "";
+      return '<div class="lrow"><i style="background:' + color + '"></i><div><span class="g-name">' + esc(g.nombre) + '</span><span class="tks">' +
+        g.fondos.map(esc).join("&nbsp;· ") + ref + '</span></div><b id="p-' + g.clave + '"></b></div>';
+    }).join("");
+    $("nota").textContent = M.nota || "";
+    $("compra-f").textContent = fLarga(Math.max(0, Math.min(MOT.n - 1, M.compra.i)));
+    $("foot-datos").textContent = "Datos reales del " + isoLarga(M.inicio) + " al " + isoLarga(M.fin) + ", con los dividendos reinvertidos.";
+    $("m-nota").innerHTML = "Es una aproximación: el folleto oficial de cada fondo hace este cálculo con 5 años de datos. Aquí usamos precios y dividendos reales del <b>" +
+      isoLarga(M.inicio) + " al " + isoLarga(M.fin) + "</b>, con los dividendos reinvertidos; dentro de cada grupo los fondos pesan " +
+      (M.clave === "tus" ? "lo que pesan hoy en tu portafolio" : "lo mismo") + " y la mezcla se reequilibra cada día." +
+      (M.inicio >= "2023-01-01" ? " <b>Esta ventana no incluye la caída de 2022</b>, así que el peor caso real podría ser mayor." : "");
+    pintarMezcla();
+  }
+
+  function tablaModal(vol, l) {
+    var h = "";
+    for (var i = 0; i < 7; i++) h += "<tr" + (i === l - 1 ? ' class="is-on"' : "") + '><td class="mf-label">Nivel ' + (i + 1) + " · " + NIVEL[i + 1] + '</td><td class="mf-val">' + BANDAS[i] + "</td></tr>";
+    h += '<tr><td class="mf-label">Tu mezcla ' + estado.p + "/" + (100 - estado.p) + '</td><td class="mf-val">se mueve ' + Math.round(vol) + "% → nivel " + l + "</td></tr>";
+    $("mf-rows").innerHTML = h;
+  }
+
+  function pintarMezcla() {
+    var p = estado.p, q = p / 100, rango = $("mix");
+    rango.value = p;
+    rango.style.setProperty("--p", "calc(9px + (100% - 18px) * " + q + ")");
+    rango.setAttribute("aria-valuetext", p + "% en dividendos, " + (100 - p) + "% en crecimiento");
+    if ($("p-div")) $("p-div").textContent = p + "%";
+    if ($("p-crec")) $("p-crec").textContent = (100 - p) + "%";
+    var vol = MOT.volatilidad(q), l = MOT.nivel(vol);
+    $("lvl").textContent = l;
+    $("lvl-t").textContent = NIVEL[l];
+    each("#scale li", function (li, i) { li.classList.toggle("is-on", i === l - 1); li.style.setProperty("--tono", tono(l)); });
+    $("inc").textContent = money(MOT.dividendos(q));
+    each(".chip", function (b) { b.setAttribute("aria-pressed", String(+b.dataset.p === p)); });
+    tablaModal(vol, l);
+    caida();
+  }
+
+  var anim = 0;
+  function irA(p, animar) {
+    var desde = estado.pVis;
+    estado.p = p;
+    pintarMezcla();
+    cancelAnimationFrame(anim);
+    if (!animar || reduce || desde === p) { estado.pVis = p; dona(p); return; }
+    var t0 = 0, dur = 240;
+    function paso(ts) {
+      if (!t0) t0 = ts;
+      var k = Math.min(1, (ts - t0) / dur), e = 1 - Math.pow(1 - k, 4);
+      estado.pVis = desde + (p - desde) * e;
+      dona(estado.pVis);
+      if (k < 1) anim = requestAnimationFrame(paso);
+    }
+    anim = requestAnimationFrame(paso);
+    setTimeout(function () { if (estado.p === p && estado.pVis !== p) { cancelAnimationFrame(anim); estado.pVis = p; dona(p); } }, dur + 80);
+  }
+
+  function barra(i, c, k) {
+    var v = c[k], lo = Math.max(0, 10000 - v);
+    $("b" + i + "-v").innerHTML = money(v) + (lo > 0 ? "<em>−" + money(lo) + "</em>" : "");
+    $("b" + i + "-f").style.transform = "scaleX(" + Math.min(1, v / 10000).toFixed(4) + ")";
+  }
+  function hoy(id, v) {
+    var d = v - 10000;
+    $(id).innerHTML = money(v) + '<small class="' + (Math.round(d) < 0 ? "neg" : "pos") + '">' + signed(d) + (Math.round(d) < 0 ? " de pérdida" : " de ganancia") + "</small>";
+  }
+
+  function caida() {
+    var q = estado.p / 100, e = MOT.escenario(q, estado.entrada);
+    esc0 = e;
+    var cm = e.mezcla, km = e.minM, vmin = cm[km], fin = cm.length - 1;
+    var idx = function (k) { return e.desde + k; };
+    $("peor-f").textContent = fLarga(MOT.escenario(q, "peor").desde);
+    each('[data-e]', function (b) { b.setAttribute("aria-pressed", String(b.dataset.e === estado.entrada)); });
+    $("b-num").textContent = money(vmin);
+    $("b-delta").textContent = vmin < 10000 ? "−" + money(10000 - vmin) : "nunca bajó";
+    $("b-delta").className = "delta " + (vmin < 10000 ? "neg" : "pos");
+    var txt;
+    if (vmin >= 10000) txt = "Nunca bajó de lo que invertiste.";
+    else if (10000 - vmin < 100) txt = "Casi nunca estuvo por debajo de lo que invertiste: lo peor fueron " + money(10000 - vmin) + " menos.";
+    else if (cm[fin] < 10000) txt = "Tocó fondo el " + fLarga(idx(km)) + ". Hoy, " + plural(meses(idx(0), idx(fin)), "mes", "meses") + " después de entrar, está debajo de lo invertido.";
+    else if (estado.entrada === "peor") txt = "Tocó fondo el " + fLarga(idx(km)) + " y tardó " + plural(meses(idx(0), idx(e.recM)), "mes", "meses") + " en volver a lo invertido (" + fCorta(idx(e.recM)) + ").";
+    else txt = "Tocó fondo el " + fLarga(idx(km)) + " y en " + fCorta(idx(e.recM)) + " ya había vuelto a lo invertido.";
+    $("b-verdict").textContent = txt;
+    $("b0-l").textContent = "Tu mezcla · " + estado.p + "/" + (100 - estado.p);
+    barra(0, cm, km);
+    barra(1, e.crec, e.minG);
+    hoy("hoy0", cm[fin]);
+    hoy("hoy1", e.crec[fin]);
+    $("c-title").textContent = "Así se movieron tus $10,000 desde el " + fLarga(e.desde);
+    var notas = [];
+    if (estado.entrada === "compra" && M.compra.recortada) notas.push("Tu primera compra fue el " + isoLarga(M.compra.fecha_real) + "; contamos desde el " + isoLarga(M.inicio) + ", el primer día con datos de todos los fondos.");
+    else notas.push("Historia común desde el " + isoLarga(M.inicio) + ": " + M.limitante + " es el fondo más joven.");
+    if (M.corta) notas.push("Solo hay " + plural(M.meses, "mes", "meses") + " de historia: tómalo como orientación.");
+    $("chart-nota").textContent = notas.join(" ");
+    $("chart").setAttribute("aria-label", "Camino de 10,000 dólares desde el " + fLarga(e.desde) + ": tu mezcla llegó a " + money(vmin) + " y hoy vale " + money(cm[fin]) + "; solo crecimiento hoy vale " + money(e.crec[fin]) + ".");
+    hoverI = -1;
+    grafica();
+  }
+
+  var G = {};
+  function grafica() {
+    var e = esc0, cm = e.mezcla, cg = e.crec, n = cm.length;
+    var fs = mqMovil.matches ? 20 : 11, W = 640, H = mqMovil.matches ? 420 : 300;
+    var L = Math.round(2.6 * fs + 12), R = Math.round(4.6 * fs + 16), T = Math.round(fs * 0.9), B = Math.round(fs * 2.4);
+    var lo = 10000, hi = 10000, k;
+    for (k = 0; k < n; k++) { lo = Math.min(lo, cm[k], cg[k]); hi = Math.max(hi, cm[k], cg[k]); }
+    var paso = (hi - lo) > 9000 ? 4000 : (hi - lo) > 4500 ? 2000 : 1000;
+    var y0 = Math.floor(lo / paso) * paso, y1 = Math.ceil(hi / paso) * paso;
+    var X = function (i) { return L + (W - L - R) * i / (n - 1); };
+    var Y = function (v) { return T + (H - T - B) * (1 - (v - y0) / (y1 - y0)); };
+    G = { X: X, Y: Y, L: L, R: R, W: W, n: n };
+    var f = function (v) { return v.toFixed(1); };
+    var h = "";
+    if (y0 < 10000) {
+      h += '<rect x="' + L + '" y="' + f(Y(10000)) + '" width="' + (W - L - R) + '" height="' + f(Y(y0) - Y(10000)) + '" fill="var(--loss-bg)"/>';
+      if (Y(y0) - Y(10000) > fs * 1.8) h += '<text x="' + f(W - R - 6) + '" y="' + f(Y(y0) - fs * 0.5) + '" text-anchor="end" font-size="' + fs + '" style="fill:var(--loss)">Debajo de lo invertido</text>';
+    }
+    for (var y = y0; y <= y1 + 1; y += paso) {
+      h += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + f(Y(y)) + '" y2="' + f(Y(y)) + '" stroke="var(--hair-soft)"/>';
+      h += '<text x="' + (L - 8) + '" y="' + f(Y(y) + fs * 0.35) + '" text-anchor="end" font-size="' + fs + '">$' + (y / 1000) + "k</text>";
+    }
+    var anchoEtq = fs * 0.62 * 6 + fs * 1.5, nLab = Math.max(2, Math.min(7, Math.floor((W - L - R) / anchoEtq) + 1)), visto = {};
+    for (var j = 0; j < nLab; j++) {
+      var i = Math.round(j * (n - 1) / (nLab - 1)), lab = fCorta(e.desde + i);
+      if (visto[lab]) continue;
+      visto[lab] = 1;
+      var anc = j === 0 ? "start" : j === nLab - 1 ? "end" : "middle";
+      h += '<text x="' + f(X(i)) + '" y="' + (H - fs * 0.6).toFixed(1) + '" text-anchor="' + anc + '" font-size="' + fs + '">' + lab + "</text>";
+    }
+    h += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + f(Y(10000)) + '" y2="' + f(Y(10000)) + '" stroke="var(--ink-mut)" stroke-dasharray="2 3"/>';
+    var linea = function (c) { var d = ""; for (var q = 0; q < c.length; q++) d += (q ? "L" : "M") + f(X(q)) + " " + f(Y(c[q])); return d; };
+    var sw = fs > 11 ? 1.6 : 1;
+    h += '<path d="' + linea(cg) + '" fill="none" stroke="var(--crec)" stroke-width="' + (1.75 * sw) + '" stroke-dasharray="' + (5 * sw) + " " + (3 * sw) + '" stroke-linejoin="round"/>';
+    h += '<path d="' + linea(cm) + '" fill="none" stroke="var(--div)" stroke-width="' + (2.25 * sw) + '" stroke-linejoin="round"/>';
+    var xe = X(n - 1), ym = Y(cm[n - 1]), yg = Y(cg[n - 1]), igual = Math.abs(cm[n - 1] - cg[n - 1]) < 1;
+    if (!igual && Math.abs(ym - yg) < fs * 1.3) { var mid = (ym + yg) / 2, s = ym < yg ? -1 : 1; ym = mid + s * fs * 0.65; yg = mid - s * fs * 0.65; }
+    h += '<circle cx="' + f(xe) + '" cy="' + f(Y(cg[n - 1])) + '" r="' + (fs * 0.32).toFixed(1) + '" fill="var(--crec)"/>';
+    h += '<circle cx="' + f(xe) + '" cy="' + f(Y(cm[n - 1])) + '" r="' + (fs * 0.36).toFixed(1) + '" fill="var(--div)"/>';
+    h += '<text class="t-ink" x="' + f(xe + fs * 0.7) + '" y="' + f(ym + fs * 0.35) + '" font-size="' + fs + '">' + money(cm[n - 1]) + "</text>";
+    if (!igual) h += '<text x="' + f(xe + fs * 0.7) + '" y="' + f(yg + fs * 0.35) + '" font-size="' + fs + '" style="fill:var(--ink-2)">' + money(cg[n - 1]) + "</text>";
+    var km = e.minM, mx = X(km), my = Y(cm[km]);
+    if (cm[km] < 10000) {
+      var tw = fs * 0.62 * money(cm[km]).length, lx = mx + fs * 0.7, la = "start";
+      if (lx + tw > W - R - 4) { lx = mx - fs * 0.7; la = "end"; }
+      var ly = my + fs * 1.4;
+      if (ly > H - B - 2) ly = my - fs * 0.8;
+      h += '<circle cx="' + f(mx) + '" cy="' + f(my) + '" r="' + (fs * 0.42).toFixed(1) + '" fill="var(--loss)" stroke="var(--panel)" stroke-width="2"/>';
+      h += '<text class="t-loss" x="' + f(lx) + '" y="' + f(ly) + '" text-anchor="' + la + '" font-size="' + fs + '">' + money(cm[km]) + "</text>";
+    }
+    h += '<g id="hv" visibility="hidden"><line id="hv-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--ink-mut)"/>';
+    h += '<circle id="hv-g" r="' + (fs * 0.36).toFixed(1) + '" fill="var(--panel)" stroke="var(--crec)" stroke-width="2"/>';
+    h += '<circle id="hv-m" r="' + (fs * 0.4).toFixed(1) + '" fill="var(--panel)" stroke="var(--div)" stroke-width="2.5"/></g>';
+    var svg = $("chart");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.innerHTML = h;
+    if (hoverI >= 0) marcar(hoverI); else $("readout").textContent = "Pasa el cursor o el dedo por la gráfica para ver cada día.";
+  }
+
+  function marcar(i) {
+    if (!esc0) return;
+    i = Math.max(0, Math.min(G.n - 1, i));
+    hoverI = i;
+    var x = G.X(i).toFixed(1);
+    $("hv-x").setAttribute("x1", x); $("hv-x").setAttribute("x2", x);
+    $("hv-m").setAttribute("cx", x); $("hv-m").setAttribute("cy", G.Y(esc0.mezcla[i]).toFixed(1));
+    $("hv-g").setAttribute("cx", x); $("hv-g").setAttribute("cy", G.Y(esc0.crec[i]).toFixed(1));
+    $("hv").setAttribute("visibility", "visible");
+    $("readout").textContent = fLarga(esc0.desde + i) + " · tu mezcla " + money(esc0.mezcla[i]) + " · solo crecimiento " + money(esc0.crec[i]);
+  }
+  function desdePuntero(ev) {
+    var r = $("chart").getBoundingClientRect();
+    var px = (ev.clientX - r.left) * G.W / r.width;
+    return Math.round((px - G.L) / (G.W - G.L - G.R) * (G.n - 1));
+  }
+  var svgC = $("chart");
+  svgC.addEventListener("pointermove", function (ev) { marcar(desdePuntero(ev)); });
+  svgC.addEventListener("pointerdown", function (ev) { marcar(desdePuntero(ev)); });
+  svgC.addEventListener("pointerleave", function (ev) { if (ev.pointerType === "mouse") { hoverI = -1; $("hv").setAttribute("visibility", "hidden"); $("readout").textContent = "Pasa el cursor o el dedo por la gráfica para ver cada día."; } });
+  svgC.addEventListener("keydown", function (ev) {
+    var i = hoverI < 0 ? 0 : hoverI;
+    if (ev.key === "ArrowRight") i += 5; else if (ev.key === "ArrowLeft") i -= 5; else if (ev.key === "Home") i = 0; else if (ev.key === "End") i = G.n - 1; else return;
+    ev.preventDefault();
+    marcar(i);
+  });
+  if (mqMovil.addEventListener) mqMovil.addEventListener("change", grafica); else mqMovil.addListener(grafica);
+
+  if (DATA.modos.length > 1) {
+    $("selector-modo").hidden = false;
+    $("modos").innerHTML = DATA.modos.map(function (m, i) {
+      return '<button type="button" data-modo="' + i + '" aria-pressed="false">' + esc(m.boton) + "<small>" + m.grupos.map(function (g) { return g.fondos.length; }).join(" + ") + " fondos</small></button>";
+    }).join("");
+    each("#modos button", function (b) { b.addEventListener("click", function () { estado.modo = +b.dataset.modo; pintarModo(); }); });
+  }
+  if (DATA.aviso) { $("aviso").hidden = false; $("aviso").textContent = DATA.aviso; }
+  if (DATA.modos.some(function (m) { return m.nota; })) $("nota").classList.add("reserva");
+
+  $("mix").addEventListener("input", function () { irA(+this.value, false); });
+  each("[data-e]", function (b) { b.addEventListener("click", function () { estado.entrada = b.dataset.e; caida(); }); });
+
+  var modal = $("modal-riesgo"), cerrarBtn = $("modal-riesgo-close"), previo = null;
+  function abrirModal(ev) {
+    previo = ev && ev.currentTarget;
+    var box = modal.querySelector(".modal-box"), top = 20;
+    modal.classList.add("open");
+    try {
+      var fe = window.frameElement;
+      if (fe) {
+        var r = fe.getBoundingClientRect(), vh = fe.ownerDocument.defaultView.innerHeight;
+        box.style.maxHeight = (vh - 40) + "px";
+        top = Math.max(20, -r.top + Math.max(20, (vh - box.offsetHeight) / 2));
+        modal.style.alignItems = "flex-start"; modal.style.paddingTop = top + "px";
+      }
+    } catch (e) {}
+    cerrarBtn.focus();
+  }
+  function cerrarModal() { if (!modal.classList.contains("open")) return; modal.classList.remove("open"); if (previo) previo.focus(); }
+  each('[data-modal="riesgo"]', function (b) { b.addEventListener("click", function (ev) { ev.stopPropagation(); abrirModal(ev); }); });
+  cerrarBtn.addEventListener("click", cerrarModal);
+  modal.addEventListener("click", function (ev) { if (ev.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") cerrarModal(); });
+
+  pintarModo();
+  dona(estado.p);
+})();
+</script>
+<script>
+/* Auto-alto del iframe. `components.html` fija el alto desde Python y no se adapta al
+   contenido, así que cada componente reservaba cientos de píxeles de vacío. El iframe es
+   same-origin (`srcdoc`), así que desde aquí se alcanza el propio <iframe> del documento
+   padre y se le corrige el alto. NO se usa `streamlit:setFrameHeight`: ese canal es de
+   componentes registrados con `declare_component`, no de `components.html`.
+   Se mide `body.scrollHeight` y NO `documentElement.scrollHeight`: el segundo nunca baja
+   del alto del viewport del iframe, así que nunca detectaría el vacío. */
+(function () {
+  "use strict";
+  var fe = null;
+  try { fe = window.frameElement; } catch (e) { fe = null; }
+  if (!fe) return;   // cross-origin o abierto suelto: se queda el alto que fijó Python
+  var aplicado = 0;
+  function ajustar() {
+    var h = Math.ceil(document.body.scrollHeight);
+    if (!h) return;
+    /* Streamlit >=1.52 envuelve el iframe en un contenedor con `flex: 0 0 <alto de Python>`
+       que no sigue al iframe: sin esto queda el hueco (o el solape) entre ese alto y el real.
+       Se re-aplica en cada llamada porque un rerun puede reescribir el estilo del contenedor. */
+    var cont = fe.parentElement;
+    if (cont && cont.style.flexBasis !== h + "px") cont.style.flexBasis = h + "px";
+    if (Math.abs(h - aplicado) <= 1) return;
+    aplicado = h;
+    fe.setAttribute("height", String(h));
+    fe.style.height = h + "px";
+  }
+  window.__vdAjustarAlto = ajustar;
+  ajustar();
+  [60, 200, 500, 1200].forEach(function (ms) { setTimeout(ajustar, ms); });
+  window.addEventListener("resize", ajustar);
+  if (window.ResizeObserver) {
+    /* Referencia fuerte a propósito: un ResizeObserver sin referencia puede recolectarse
+       y dejar de avisar en silencio. */
+    var ro = new ResizeObserver(ajustar);
+    ro.observe(document.body);
+    window.__vdAltoRO = ro;
+  }
+  /* Red de seguridad: ni el panel de navegador embebido ni Chrome headless disparan
+     ResizeObserver ni `resize`. Los temporizadores sí corren en todos esos entornos. */
+  setInterval(ajustar, 1000);
+})();
+</script>
