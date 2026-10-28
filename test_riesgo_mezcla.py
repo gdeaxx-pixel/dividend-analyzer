@@ -205,7 +205,8 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
                 "history": _tx(("2024-04-01", "Bought"))},
         "CCC": {"market_value": 6000.0, "pocket_investment": 50.0,
                 "history": _tx(("2024-03-20", "Compra"))},
-        "DDD": {"skipped": True, "reason": "menos de 14 días"},
+        # `logic.py` hoy no deja `market_value` en un descartado; el filtro no debe depender de eso.
+        "DDD": {"skipped": True, "reason": "menos de 14 días", "market_value": 5000.0},
         "EEE": {"market_value": 0.0, "pocket_investment": 500.0,
                 "history": _tx(("2024-01-02", "Buy"))},
     }
