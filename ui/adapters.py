@@ -19,6 +19,7 @@ import pandas as pd
 import backtest
 import logic
 import price_cache
+import riesgo_mezcla
 
 # Universo del Total Return Graph — 5 fondos YieldMax + 3 ETFs de crecimiento + 4 acciones
 # subyacentes. Paleta y agrupación literales del demo (`viaje-dinero-waterfall.html:2781`).
@@ -2693,6 +2694,31 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
         for f in g["fondos"]:
             f["pct"] = f["mv"] / total_mv * 100 if total_mv else 0.0
     return {"total_mv": total_mv, "grupos": grupos}
+
+
+def _mv_grupo(resultados: dict, classify_map: dict, modo: str) -> dict:
+    """{ticker: valor de mercado} de los fondos del grupo con datos analizables y valor > 0."""
+    mv = {}
+    for t, m in classify_map.items():
+        stats = resultados.get(t)
+        if m != modo or not _tiene_datos(stats):
+            continue
+        valor = _f(stats.get("market_value"))
+        if valor > 0:
+            mv[t] = valor
+    return mv
+
+
+def riesgo_mezcla_data(resultados: dict, classify_map: dict, historias: dict,
+                       receta: dict | None, sin_historia=()) -> dict | None:
+    """Datos de la sección «Riesgo de la mezcla» (vista Portafolios). Pesos = valor de mercado
+    de hoy; Dividendos = mode_a, Crecimiento = mode_b. `historias` {ticker: ['Close',
+    'Dividends']} y `receta` (secreto `receta_referencia`, o None) los trae el llamador. El
+    cálculo vive en `riesgo_mezcla`; `None` = no se dibuja nada."""
+    div_mv = _mv_grupo(resultados, classify_map, "mode_a")
+    crec_mv = _mv_grupo(resultados, classify_map, "mode_b")
+    compra = riesgo_mezcla.primera_compra({t: resultados[t] for t in (*div_mv, *crec_mv)})
+    return riesgo_mezcla.datos_seccion(div_mv, crec_mv, historias, receta, compra, sin_historia)
 
 
 # ── «Lo que toca vigilar» (vista Portafolios, componente `ui/componentes/vigilar.html`) ──

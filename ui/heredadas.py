@@ -95,6 +95,78 @@ def _tus_dos_portafolios(resultados: dict, classify_map: dict, tema: str) -> tup
     return mode_a, mode_b
 
 
+# ── Riesgo de la mezcla (dona Dividendos/Crecimiento + caída en dólares) ───────
+
+def _receta_referencia() -> dict | None:
+    """La canasta de referencia vive solo en `st.secrets["receta_referencia"]` (el repo es
+    público). Sin `secrets.toml` no se toca `st.secrets`: hacerlo pinta un recuadro rojo en
+    la página aunque se capture la excepción (ver `ui/carga.py:_clave_gemini`)."""
+    try:
+        if not st.secrets.load_if_toml_exists():
+            return None
+        r = st.secrets.get("receta_referencia")
+        if r is None:
+            return None
+        nombre, canasta, pct = r.get("nombre"), r.get("canasta"), r.get("pct_dividendos")
+        div, crec = r.get("dividendos"), r.get("crecimiento")
+        if not (isinstance(nombre, str) and isinstance(canasta, str)):
+            return None
+        if isinstance(pct, bool) or not isinstance(pct, int) or not 0 <= pct <= 100:
+            return None
+        listas = []
+        for lista in (div, crec):
+            if isinstance(lista, str):
+                return None
+            lista = list(lista or [])
+            if not lista or not all(isinstance(t, str) for t in lista):
+                return None
+            listas.append(lista)
+        return {"nombre": nombre, "canasta": canasta, "pct_dividendos": pct,
+                "dividendos": listas[0], "crecimiento": listas[1]}
+    except Exception:                                              # noqa: BLE001
+        return None
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _historias_riesgo(tickers: tuple[str, ...]) -> tuple[dict, list]:
+    """Historia ['Close', 'Dividends'] por ticker vía `price_cache.load_history` (caché →
+    en vivo → caché vencido). Vacía o con error → a la lista de sin historia."""
+    import price_cache
+
+    historias, sin_historia = {}, []
+    for t in tickers:
+        try:
+            h = price_cache.load_history(t).history
+        except Exception:                                          # noqa: BLE001
+            h = None
+        if h is None or h.empty:
+            sin_historia.append(t)
+        else:
+            historias[t] = h
+    return historias, sorted(sin_historia)
+
+
+def _riesgo_mezcla(resultados: dict, classify_map: dict, tema: str) -> None:
+    """Sección «Riesgo de la mezcla», entre Portafolios v3 y Portafolio dividendos. Selector
+    «Tus fondos» / canasta de referencia; las cifras salen de `ui.adapters.riesgo_mezcla_data`."""
+    from ui import adapters, componentes
+
+    del_usuario = {t for t, m in classify_map.items()
+                   if m in ("mode_a", "mode_b") and adapters._tiene_datos(resultados.get(t))
+                   and adapters._f(resultados[t].get("market_value")) > 0}
+    receta = _receta_referencia()
+    tickers = set(del_usuario)
+    if receta:
+        tickers |= set(receta["dividendos"]) | set(receta["crecimiento"])
+    if not tickers:
+        return
+    historias, sin = _historias_riesgo(tuple(sorted(tickers)))
+    sin_historia = [t for t in sin if t in del_usuario]
+    datos = adapters.riesgo_mezcla_data(resultados, classify_map, historias, receta, sin_historia)
+    if datos is not None:
+        componentes.render_riesgo(datos, tema)
+
+
 # ── Fila 9 — Portafolio dividendos (erosión del NAV, fondo por fondo) ──────────
 
 def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
@@ -164,6 +236,7 @@ def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
         return
     classify_map = logic.classify_tickers(list(resultados.keys()))
     mode_a, _mode_b = _tus_dos_portafolios(resultados, classify_map, tema)
+    _riesgo_mezcla(resultados, classify_map, tema)
     _portafolio_dividendos(resultados, mode_a)
 
 

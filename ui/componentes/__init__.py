@@ -103,6 +103,11 @@ ALTO_IMPUESTOS = 7100
 # no cabe es inalcanzable, no solo invisible.
 ALTO_PORTAFOLIOS = 2400
 
+# Respaldo si el script auto-dimensionante no corre; el componente corrige su propio alto
+# en cuanto carga. Riesgo de la mezcla: se fija por encima del celular, donde la dona, los
+# atajos y la gráfica de «¿Hasta dónde bajó tu dinero?» se apilan.
+ALTO_RIESGO = 2400
+
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # script corrige el alto real desde dentro del iframe.
 ALTO_VIGILAR = 640
@@ -297,6 +302,19 @@ def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> 
     `_con_tema` que `render_impuestos`, sin `VISTA_ACTIVA` (es una sola pantalla).
     """
     html = _plantilla("portafolios.html")
+    html = _con_tema(html, tema)
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    components.html(html, height=alto, scrolling=False)
+
+
+def render_riesgo(datos: dict, tema: str, alto: int = ALTO_RIESGO) -> None:
+    """Dibuja «Riesgo de la mezcla» (dona Dividendos/Crecimiento + caída en dólares). `datos`
+    viene de `ui.adapters.riesgo_mezcla_data`. Excepción a la Regla 3: el componente compone
+    la mezcla elegida a partir de los retornos diarios de cada grupo; `riesgo_mezcla.
+    resumen_escenario` es la misma cuenta en Python y `test_riesgo_mezcla.py` compara las dos.
+    Copiado byte a byte de `Obsidian/APPs/Dividend-Analyzer/demos/riesgo-componente.html`.
+    """
+    html = _plantilla("riesgo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=alto, scrolling=False)
