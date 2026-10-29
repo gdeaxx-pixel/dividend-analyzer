@@ -266,6 +266,7 @@ def test_riesgo_vista_sin_archivo(monkeypatch):
     llamadas_st = []
     st_falso = types.SimpleNamespace(
         caption=lambda texto: llamadas_st.append(("caption", texto)),
+        button=lambda etiqueta, **kw: llamadas_st.append(("button", kw["on_click"])),
         markdown=lambda texto, **kw: llamadas_st.append(("markdown", texto)))
     monkeypatch.setattr(riesgo, "st", st_falso)
     monkeypatch.setattr(vistas, "obtener_resultados", lambda: {})
@@ -279,6 +280,7 @@ def test_riesgo_vista_sin_archivo(monkeypatch):
     assert len(llamadas) == 1
     assert [m["clave"] for m in llamadas[0]["modos"]] == ["greco"]
     assert ("caption", "Sube tu archivo de transacciones para comparar con tus fondos.") in llamadas_st
+    assert ("button", riesgo.volver_a_cargar) in llamadas_st
 
     llamadas.clear()
     llamadas_st.clear()
