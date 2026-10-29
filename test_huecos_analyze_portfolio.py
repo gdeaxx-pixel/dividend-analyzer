@@ -42,6 +42,27 @@ def test_r3_beta_y_alpha_son_none_con_nueve_retornos_alineados():
     assert out[6] is None
 
 
+def test_twr_invalido_a_mitad_de_serie_cuenta_como_dia_sin_movimiento():
+    """Un día con TWR de -100 % (factor 0 -> NaN) toma el valor del día anterior: retorno 0 ese
+    día, y el siguiente se mide contra el último válido. Con todos los demás días en +1 %, eso
+    da una volatilidad de ~6 %. Sin el relleno (lo que hace pandas 3 por defecto) se pierden
+    esos dos retornos, quedan solo días de +1 % y la volatilidad cae a ~0.
+    Mutante: `twr_factor.pct_change(fill_method=None)` sin el `ffill()`."""
+    twr = [0.0]
+    for _ in range(11):
+        twr.append(((1 + twr[-1] / 100) * 1.01 - 1) * 100)
+    twr[6] = -100.0
+    idx = pd.date_range('2024-03-04', periods=len(twr), freq='B')
+    historial = pd.DataFrame({
+        'User Return %': twr,
+        'VOO Price': 100.0,
+        'VOO Div': 0.0,
+        'SPY Profit': 0.0,
+    }, index=idx)
+    volatilidad = logic._metricas_riesgo(historial)[0]
+    assert volatilidad is not None and volatilidad > 1.0
+
+
 def _filas_impuesto():
     return pd.DataFrame([{
         'Date': pd.Timestamp('2024-09-10'),
