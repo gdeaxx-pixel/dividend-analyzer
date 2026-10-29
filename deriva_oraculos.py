@@ -89,7 +89,7 @@ def normalizar(texto: str) -> str:
     texto = re.sub(r'(\S+\.py):\d+', r'\1', texto)
     # 5. cursores de PEP 657. Medido el 2026-09-24 con dos intérpretes reales: un fallo con
     #    traceback da huellas DISTINTAS en 3.9 y 3.11 solo por estas líneas, y un `assert`
-    #    plano da la misma. Importa porque el baseline se midió en 3.9 y CI corre 3.11: sin
+    #    plano da la misma. Importa porque el baseline se midió en 3.9 y CI corre ≥ 3.11: sin
     #    esto, el primer rojo con traceback se cantaría 🔴 MOVIDO sin que nada se moviera.
     #    Solo cae la línea cuyo contenido, quitado el canalón de pytest (`E`, `>`, `|`), son
     #    únicamente cursores — nunca una línea con código que además lleve `^` o `~`.
