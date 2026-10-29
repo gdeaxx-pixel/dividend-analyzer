@@ -853,7 +853,8 @@ def _metricas_riesgo(daily_history):
     # 1. Retornos diarios desde la serie TWR acumulada (evita contaminación por flujos de capital)
     # User Return % es TWR acumulado en %. Convertimos a factor y derivamos retornos diarios.
     twr_factor = (1 + daily_history['User Return %'] / 100).replace(0, np.nan)
-    daily_returns_q = twr_factor.pct_change().dropna()
+    # ffill explícito = el fill_method='pad' por defecto, obsoleto en pandas (en pandas 3 deja de rellenar)
+    daily_returns_q = twr_factor.ffill().pct_change(fill_method=None).dropna()
 
     # Beta/alpha contra el retorno TOTAL de VOO (precio + dividendos reinvertidos), NO contra
     # 'SPY Profit' (valor de la cartera VOO simulada, que salta cada vez que entra capital y

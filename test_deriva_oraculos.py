@@ -388,7 +388,7 @@ def test_la_huella_no_cambia_entre_python_39_y_311():
     sobre el mismo test: un fallo con traceback daba huellas distintas y un `assert` plano
     la misma. La única diferencia del texto son los cursores de PEP 657.
 
-    Importa porque el baseline se midió en 3.9 y CI corre 3.11 (y producción 3.11.16): sin
+    Importa porque el baseline se midió en 3.9 y CI y producción corren ≥ 3.11: sin
     esto, el primer rojo con traceback se canta 🔴 MOVIDO sin que nada se haya movido.
     """
     import deriva_oraculos
