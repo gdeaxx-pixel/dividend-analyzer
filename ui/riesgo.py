@@ -113,7 +113,22 @@ def abrir_sin_archivo() -> None:
 
 
 def volver_a_cargar() -> None:
+    """Regreso a la hoja de carga. Olvida la categoría para que, al subir el archivo, se
+    aterrice en Portafolios (`CAT_ORDER_TOTAL[0]`) y no en la última vista sin datos."""
     st.session_state["_wizard_listo"] = False
+    st.session_state.pop("vd_categoria", None)
+    st.session_state.pop("vd_vista", None)
+
+
+def sin_archivo() -> bool:
+    """En la ruta sin CSV: solo se llega así por `abrir_sin_archivo` (el demo trae el suyo)."""
+    return (st.session_state.get("_wizard_df_clean") is None
+            and not st.session_state.get("_vd_resultados"))
+
+
+def boton_subir_archivo() -> None:
+    st.button("Subir mi archivo →", key="_vd_riesgo_subir_archivo", type="tertiary",
+              on_click=volver_a_cargar)
 
 
 def render_vista(vista: str, ruta) -> None:
@@ -129,8 +144,7 @@ def render_vista(vista: str, ruta) -> None:
         return
     if _receta_referencia():
         st.caption("Sube tu archivo de transacciones para comparar con tus fondos.")
-        st.button("Subir mi archivo →", key="_vd_riesgo_subir_archivo", type="tertiary",
-                  on_click=volver_a_cargar)
+        boton_subir_archivo()
         _riesgo_mezcla({}, {}, ruta.tema)
         return
     st.markdown('<span class="vd-badge">Riesgo</span>', unsafe_allow_html=True)
