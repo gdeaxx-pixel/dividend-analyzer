@@ -1,5 +1,5 @@
 """Tests de «Riesgo de la mezcla»: `riesgo_mezcla`, `ui.adapters.riesgo_mezcla_data`, la lectura
-del secreto en `ui.heredadas` y el render de `ui/componentes/riesgo.html`.
+del secreto en `ui.riesgo` y el render de `ui/componentes/riesgo.html`.
 
 Solo datos sintéticos: tickers inventados, historias armadas a mano con `pd.bdate_range` y una
 receta sintética. Ninguna cifra esperada sale de la función auditada; la única comparación
@@ -232,28 +232,65 @@ def _st_falso(cargado, secreto, llamadas):
 
 
 def test_receta_referencia_sin_archivo_no_toca_secrets(monkeypatch):
-    from ui import heredadas
+    from ui import riesgo
 
     llamadas = []
-    monkeypatch.setattr(heredadas, "st", _st_falso(False, dict(RECETA), llamadas))
-    assert heredadas._receta_referencia() is None
+    monkeypatch.setattr(riesgo, "st", _st_falso(False, dict(RECETA), llamadas))
+    assert riesgo._receta_referencia() is None
     assert llamadas == []
 
 
 def test_receta_referencia_valida_y_rechaza_incompleta(monkeypatch):
-    from ui import heredadas
+    from ui import riesgo
 
     llamadas = []
-    monkeypatch.setattr(heredadas, "st", _st_falso(True, dict(RECETA, dividendos=("AAA", "BBB")), llamadas))
-    assert heredadas._receta_referencia() == dict(RECETA)
+    monkeypatch.setattr(riesgo, "st", _st_falso(True, dict(RECETA, dividendos=("AAA", "BBB")), llamadas))
+    assert riesgo._receta_referencia() == dict(RECETA)
     for malo in (dict(RECETA, pct_dividendos=120), dict(RECETA, crecimiento=[]),
                  dict(RECETA, nombre=None), dict(RECETA, dividendos="AAA")):
-        monkeypatch.setattr(heredadas, "st", _st_falso(True, malo, llamadas))
-        assert heredadas._receta_referencia() is None, malo
+        monkeypatch.setattr(riesgo, "st", _st_falso(True, malo, llamadas))
+        assert riesgo._receta_referencia() is None, malo
+
+
+def _espiar_render_riesgo(monkeypatch):
+    from ui import componentes
+
+    llamadas = []
+    monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: llamadas.append(datos))
+    return llamadas
+
+
+def test_riesgo_vista_sin_archivo(monkeypatch):
+    from ui import riesgo, vistas
+
+    llamadas_st = []
+    st_falso = types.SimpleNamespace(
+        caption=lambda texto: llamadas_st.append(("caption", texto)),
+        markdown=lambda texto, **kw: llamadas_st.append(("markdown", texto)))
+    monkeypatch.setattr(riesgo, "st", st_falso)
+    monkeypatch.setattr(vistas, "obtener_resultados", lambda: {})
+    monkeypatch.setattr(riesgo, "_historias_riesgo",
+                        lambda tickers: ({t: _serie(150) for t in ("AAA", "BBB", "CCC")}, []))
+    llamadas = _espiar_render_riesgo(monkeypatch)
+    ruta = types.SimpleNamespace(tema="Claro")
+
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    riesgo.render_vista("riesgo", ruta)
+    assert len(llamadas) == 1
+    assert [m["clave"] for m in llamadas[0]["modos"]] == ["greco"]
+    assert ("caption", "Sube tu archivo de transacciones para comparar con tus fondos.") in llamadas_st
+
+    llamadas.clear()
+    llamadas_st.clear()
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: None)
+    riesgo.render_vista("riesgo", ruta)
+    assert llamadas == []
+    assert [k for k, _ in llamadas_st] == ["markdown"] * 3
+    assert "Riesgo" in llamadas_st[0][1] and "Riesgo" in llamadas_st[1][1]
 
 
 def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeypatch):
-    from ui import componentes, heredadas
+    from ui import componentes, riesgo
 
     resultados = {
         "AAA": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
@@ -267,10 +304,10 @@ def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeyp
         pedidos.append(tickers)
         return {t: _serie(150) for t in ("AAA", "CCC")}, ["BBB", "HHH"]
 
-    monkeypatch.setattr(heredadas, "_receta_referencia", lambda: dict(RECETA))
-    monkeypatch.setattr(heredadas, "_historias_riesgo", _historias)
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    monkeypatch.setattr(riesgo, "_historias_riesgo", _historias)
     monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: dibujado.append((datos, tema)))
-    heredadas._riesgo_mezcla(resultados, classify, "Oscuro")
+    riesgo._riesgo_mezcla(resultados, classify, "Oscuro")
 
     # una sola carga con los fondos del usuario y los de la receta, ordenados
     assert pedidos == [("AAA", "BBB", "CCC", "HHH")]

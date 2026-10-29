@@ -47,6 +47,8 @@
   .lede { margin: 6px 0 0; color: var(--ink-2); max-width: 58ch; text-wrap: pretty; }
   .k { margin: 0; font-size: 13px; color: var(--ink-mut); }
   .aviso { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); max-width: 70ch; }
+  .modo-resumen { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-mut); min-height: calc(1.55em * 2); max-width: 70ch; }
+  .modo-resumen b { font-family: var(--font-mono); font-weight: 600; color: var(--ink); letter-spacing: .02em; line-height: 1; }
 
   .alloc-grid { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 540px); gap: clamp(28px, 7vw, 88px); align-items: center; justify-content: start; }
   .donut { position: relative; width: 100%; max-width: 280px; aspect-ratio: 1; margin-inline: auto; }
@@ -175,6 +177,9 @@
     .title { font-size: 23px; }
     .hoy dd small { font-size: 12px; }
     .readout { min-height: calc(1.55em * 2); }
+    .modo-resumen { min-height: calc(1.55em * 3); }
+    .chart-nota { min-height: calc(1.5em * 3); }
+    #c-title { min-height: calc(1.55em * 2); }
   }
   @media (prefers-reduced-motion: reduce) {
     *, ::before, ::after { transition: none !important; animation: none !important; }
@@ -190,6 +195,7 @@
         <span class="k" id="l-modo">Con qué fondos</span>
         <div class="tg" role="group" aria-labelledby="l-modo" id="modos"></div>
       </div>
+      <p class="modo-resumen" id="modo-resumen"></p>
       <p class="aviso" id="aviso" hidden></p>
     </header>
     <div class="alloc-grid">
@@ -229,7 +235,7 @@
       <div class="entry">
         <span class="k" id="l-entry">Contar desde</span>
         <div class="tg" role="group" aria-labelledby="l-entry">
-          <button type="button" data-e="compra" aria-pressed="true">Tu fecha de compra<small id="compra-f"></small></button>
+          <button type="button" data-e="compra" aria-pressed="true"><span id="compra-l">Tu fecha de compra</span><small id="compra-f"></small></button>
           <button type="button" data-e="peor" aria-pressed="false">El peor día para entrar<small id="peor-f"></small></button>
         </div>
       </div>
@@ -392,11 +398,10 @@ if (typeof module !== "undefined") module.exports = Motor;
     each(".chip", function (b) { b.addEventListener("click", function () { irA(+b.dataset.p, true); }); });
     $("legend").innerHTML = M.grupos.map(function (g) {
       var color = g.clave === "div" ? "var(--div)" : "var(--crec)";
-      var ref = g.referencia && M.clave !== "greco" ? " <em>· " + esc(g.referencia) + "</em>" : "";
-      return '<div class="lrow"><i style="background:' + color + '"></i><div><span class="g-name">' + esc(g.nombre) + '</span><span class="tks">' +
-        g.fondos.map(esc).join("&nbsp;· ") + ref + '</span></div><b id="p-' + g.clave + '"></b></div>';
+      return '<div class="lrow"><i style="background:' + color + '"></i><span class="g-name">' + esc(g.nombre) + '</span><b id="p-' + g.clave + '"></b></div>';
     }).join("");
     $("nota").textContent = M.nota || "";
+    $("compra-l").textContent = M.compra.fecha_real ? "Tu fecha de compra" : "Desde el inicio";
     $("compra-f").textContent = fLarga(Math.max(0, Math.min(MOT.n - 1, M.compra.i)));
     $("foot-datos").textContent = "Datos reales del " + isoLarga(M.inicio) + " al " + isoLarga(M.fin) + ", con los dividendos reinvertidos.";
     $("m-nota").innerHTML = "Es una aproximación: el folleto oficial de cada fondo hace este cálculo con 5 años de datos. Aquí usamos precios y dividendos reales del <b>" +
@@ -423,6 +428,10 @@ if (typeof module !== "undefined") module.exports = Motor;
     var vol = MOT.volatilidad(q), l = MOT.nivel(vol);
     $("lvl").textContent = l;
     $("lvl-t").textContent = NIVEL[l];
+    $("modo-resumen").innerHTML = M.grupos.map(function (g) {
+      var ref = g.referencia && M.clave !== "greco" ? " (" + esc(g.referencia) + ")" : "";
+      return esc(g.nombre) + ": <b>" + g.fondos.map(esc).join("&nbsp;· ") + "</b>" + ref;
+    }).join(" · ") + " · Nivel <b>" + l + " de 7</b> con esta mezcla";
     each("#scale li", function (li, i) { li.classList.toggle("is-on", i === l - 1); li.style.setProperty("--tono", tono(l)); });
     $("inc").textContent = money(MOT.dividendos(q));
     each(".chip", function (b) { b.setAttribute("aria-pressed", String(+b.dataset.p === p)); });

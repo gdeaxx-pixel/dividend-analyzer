@@ -49,7 +49,7 @@ _ORDEN = (
     # las claves de sesión compartidas, y recargarlo después dejaría a los demás apuntando
     # al módulo viejo.
     "ui.tokens", "ui.estado", "ui.nav", "ui.componentes", "ui.heredadas", "ui.impuestos",
-    "ui.adapters", "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
+    "ui.riesgo", "ui.adapters", "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
 )
 
 # módulo → fecha del archivo cuando lo cargamos. Vive aquí y no en `st.session_state`

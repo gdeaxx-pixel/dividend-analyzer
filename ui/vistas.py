@@ -9,7 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
-from ui import estado, heredadas, impuestos, nav
+from ui import estado, heredadas, impuestos, nav, riesgo
 from ui.adapters import (ROC_FRASE_CARGA, DatosIncompletos, cashflow_data,
                          comparacion_data, diagnosticar_bloqueo, hoja_data, metodo_data,
                          metodo_real_data, metodo_serie_data, roc_salud_data,
@@ -427,6 +427,9 @@ def render_vista(ruta: Ruta) -> None:
         return
     if ruta.categoria == heredadas.CAT_CLAVE:
         heredadas.render_vista(ruta.vista, ruta)
+        return
+    if ruta.categoria == riesgo.CAT_CLAVE:
+        riesgo.render_vista(ruta.vista, ruta)
         return
     if ruta.categoria == impuestos.CAT_CLAVE:
         impuestos.render_vista(ruta.vista, ruta)
