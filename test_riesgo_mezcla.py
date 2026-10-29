@@ -291,6 +291,36 @@ def test_riesgo_vista_sin_archivo(monkeypatch):
     assert "Riesgo" in llamadas_st[0][1] and "Riesgo" in llamadas_st[1][1]
 
 
+def test_riesgo_vista_con_archivo_y_receta_dibuja_tus_fondos_y_la_canasta(monkeypatch):
+    """Con archivo manda la mezcla del usuario aunque haya receta: la rama «sin archivo» no
+    puede adelantarse. Sin el secreto local ningún otro test entra aquí con receta."""
+    import logic
+    from ui import riesgo, vistas
+
+    llamadas_st = []
+    st_falso = types.SimpleNamespace(
+        caption=lambda texto: llamadas_st.append(("caption", texto)),
+        button=lambda etiqueta, **kw: llamadas_st.append(("button", kw["on_click"])),
+        markdown=lambda texto, **kw: llamadas_st.append(("markdown", texto)))
+    resultados = {
+        "DDD": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
+        "EEE": {"market_value": 1000.0, "history": _tx(("2024-02-01", "Buy"))},
+    }
+    monkeypatch.setattr(riesgo, "st", st_falso)
+    monkeypatch.setattr(vistas, "obtener_resultados", lambda: resultados)
+    monkeypatch.setattr(logic, "classify_tickers", lambda tickers: {"DDD": "mode_a", "EEE": "mode_b"})
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    monkeypatch.setattr(riesgo, "_historias_riesgo",
+                        lambda tickers: ({t: _serie(150) for t in tickers}, []))
+    llamadas = _espiar_render_riesgo(monkeypatch)
+
+    riesgo.render_vista("riesgo", types.SimpleNamespace(tema="Claro"))
+
+    assert len(llamadas) == 1
+    assert [m["clave"] for m in llamadas[0]["modos"]] == ["tus", "greco"]
+    assert llamadas_st == [], "con archivo no se invita a subirlo"
+
+
 def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeypatch):
     from ui import componentes, riesgo
 
