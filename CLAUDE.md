@@ -66,8 +66,8 @@ Casos de ejemplo sin subir CSV: `localhost:8501/?demo=ib`, `?demo=schwab`, `?dem
 
 **Los refrescos automáticos commitean a `main` sin PR ni review.** Si algo sale en cero o por centavos tras un `chore: refresh`, el primer sitio donde mirar es la última fila de los parquets o el `asof` / `weighted_pct` de `knowledge/roc_19a.yaml`. Qué hacer con cada aviso de Telegram: [`docs/runbook-refrescos.md`](docs/runbook-refrescos.md).
 
-Línea base: **1534 passed, 2 skipped, 3 deselected, 0 xfailed**, sin avisos (medido 2026-10-29 en Python 3.14.6 sobre
-`main` = `0c5b812` + el test de huecos del TWR inválido a mitad de serie, #242, con `real_examples/` y `CONY_test.csv`). Antes: 1533 sobre `b131dc2` + los 5 tests G4 de `test_estres_2022.py` (cada fondo simulado en 2022, al dólar), igual en 3.11 y en 3.14; 1528 sobre `b131dc2` (#236, +15 de la prueba de estrés 2022); 1513 sobre `d48e4ed`; 1481 sobre `81b40c9` + los 4 tests de huecos R3/C6/PD de `analyze_portfolio` (2026-10-09). Antes: 1477 sobre `81b40c9`. Antes: 1470 sobre `a71aa7f`,
+Línea base: **1536 passed, 2 skipped, 3 deselected, 0 xfailed**, sin avisos (medido 2026-10-29 en Python 3.14.6 sobre
+`main` = `489e9a6` + los 2 tests del snapshot de 2022 de `test_estres_2022.py` (nada en vivo; todo fondo que la app reconoce, congelado), con `real_examples/` y `CONY_test.csv`). Antes: 1534 sobre `0c5b812` + el test de huecos del TWR inválido a mitad de serie (#242); 1533 sobre `b131dc2` + los 5 tests G4 de `test_estres_2022.py` (cada fondo simulado en 2022, al dólar), igual en 3.11 y en 3.14; 1528 sobre `b131dc2` (#236, +15 de la prueba de estrés 2022); 1513 sobre `d48e4ed`; 1481 sobre `81b40c9` + los 4 tests de huecos R3/C6/PD de `analyze_portfolio` (2026-10-09). Antes: 1477 sobre `81b40c9`. Antes: 1470 sobre `a71aa7f`,
 tras los PRs de la auditoría app-audit 2026-10-07 (#202 +3, #203 +2, #204 +0, #205 +1, #206 +0).
 Después: #208 y #210 +0 (F4, `metricas.py` y `movimientos.py`), #211 +3 (huecos de mutante CA-1,
 TP-3 y HB-1b), #213 +0 (`filas_csv.py`), +3 (huecos FC-1, FC-2, RY-1 de `filas_csv.py`). Desde #203 la suite corre también en CI en cada PR: allí, sin datos privados, da
