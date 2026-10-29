@@ -204,7 +204,7 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
         "BBB": {"market_value": 1000.0, "pocket_investment": 9000.0,
                 "history": _tx(("2024-04-01", "Bought"))},
         "CCC": {"market_value": 6000.0, "pocket_investment": 50.0,
-                "history": _tx(("2024-03-20", "Compra"))},
+                "history": _tx(("2024-03-04", "Compra"))},
         # `logic.py` hoy no deja `market_value` en un descartado; el filtro no debe depender de eso.
         "DDD": {"skipped": True, "reason": "menos de 14 días", "market_value": 5000.0},
         "EEE": {"market_value": 0.0, "pocket_investment": 500.0,
@@ -218,8 +218,9 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
     assert tus["p_inicial"] == 40
     assert tus["grupos"][0]["fondos"] == ["AAA", "BBB"]
     assert tus["grupos"][1]["fondos"] == ["CCC"]
-    # primera compra entre los fondos que entran: AAA el 11-mar (el dividendo del 5-feb no cuenta)
-    assert tus["compra"]["fecha_real"] == "2024-03-11"
+    # primera compra entre los fondos que entran, de los dos grupos: CCC (Crecimiento) el 4-mar,
+    # antes que AAA el 11-mar; el dividendo de AAA del 5-feb y la compra de EEE no cuentan
+    assert tus["compra"]["fecha_real"] == "2024-03-04"
 
 
 def _st_falso(cargado, secreto, llamadas):
@@ -249,6 +250,35 @@ def test_receta_referencia_valida_y_rechaza_incompleta(monkeypatch):
                  dict(RECETA, nombre=None), dict(RECETA, dividendos="AAA")):
         monkeypatch.setattr(heredadas, "st", _st_falso(True, malo, llamadas))
         assert heredadas._receta_referencia() is None, malo
+
+
+def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeypatch):
+    from ui import componentes, heredadas
+
+    resultados = {
+        "AAA": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
+        "CCC": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
+        "HHH": {"market_value": 1000.0, "history": _tx(("2024-02-01", "Buy"))},
+    }
+    classify = {"AAA": "mode_a", "HHH": "mode_a", "CCC": "mode_b"}
+    pedidos, dibujado = [], []
+
+    def _historias(tickers):
+        pedidos.append(tickers)
+        return {t: _serie(150) for t in ("AAA", "CCC")}, ["BBB", "HHH"]
+
+    monkeypatch.setattr(heredadas, "_receta_referencia", lambda: dict(RECETA))
+    monkeypatch.setattr(heredadas, "_historias_riesgo", _historias)
+    monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: dibujado.append((datos, tema)))
+    heredadas._riesgo_mezcla(resultados, classify, "Oscuro")
+
+    # una sola carga con los fondos del usuario y los de la receta, ordenados
+    assert pedidos == [("AAA", "BBB", "CCC", "HHH")]
+    (datos, tema), = dibujado
+    assert tema == "Oscuro"
+    # BBB (de la receta) sin historia: no hay canasta y la nota no lo presenta como fondo tuyo
+    assert [m["clave"] for m in datos["modos"]] == ["tus"]
+    assert _modo(datos, "tus")["nota"] == "Sin historia de precios, fuera de la simulación: HHH."
 
 
 def test_render_riesgo_inyecta_datos_y_tema(monkeypatch):
