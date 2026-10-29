@@ -204,7 +204,7 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
         "BBB": {"market_value": 1000.0, "pocket_investment": 9000.0,
                 "history": _tx(("2024-04-01", "Bought"))},
         "CCC": {"market_value": 6000.0, "pocket_investment": 50.0,
-                "history": _tx(("2024-03-04", "Compra"), ("2024-03-20", "Compra"))},
+                "history": _tx(("2024-03-04", "Compra"))},
         # `logic.py` hoy no deja `market_value` en un descartado; el filtro no debe depender de eso.
         "DDD": {"skipped": True, "reason": "menos de 14 días", "market_value": 5000.0},
         "EEE": {"market_value": 0.0, "pocket_investment": 500.0,
@@ -218,8 +218,8 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
     assert tus["p_inicial"] == 40
     assert tus["grupos"][0]["fondos"] == ["AAA", "BBB"]
     assert tus["grupos"][1]["fondos"] == ["CCC"]
-    # primera compra entre los fondos que entran, de los DOS grupos: la de CCC (Crecimiento)
-    # el 4-mar gana a la de AAA el 11-mar, y el dividendo de AAA del 5-feb no cuenta
+    # primera compra entre los fondos que entran, de los dos grupos: CCC (Crecimiento) el 4-mar,
+    # antes que AAA el 11-mar; el dividendo de AAA del 5-feb y la compra de EEE no cuentan
     assert tus["compra"]["fecha_real"] == "2024-03-04"
 
 
@@ -252,34 +252,12 @@ def test_receta_referencia_valida_y_rechaza_incompleta(monkeypatch):
         assert riesgo._receta_referencia() is None, malo
 
 
-def _resultado(valor, compra="2024-03-11"):
-    return {"market_value": valor, "pocket_investment": 100.0, "history": _tx((compra, "Buy"))}
-
-
 def _espiar_render_riesgo(monkeypatch):
     from ui import componentes
 
     llamadas = []
     monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: llamadas.append(datos))
     return llamadas
-
-
-def test_sin_historia_solo_avisa_de_fondos_del_usuario(monkeypatch):
-    from ui import riesgo
-
-    resultados = {"UUU": _resultado(3000.0), "VVV": _resultado(1000.0), "WWW": _resultado(6000.0)}
-    classify = {"UUU": "mode_a", "VVV": "mode_a", "WWW": "mode_b"}
-    historias = {t: _serie(150) for t in ("UUU", "WWW", "AAA", "CCC")}
-    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
-    monkeypatch.setattr(riesgo, "_historias_riesgo", lambda tickers: (historias, ["BBB", "VVV"]))
-    llamadas = _espiar_render_riesgo(monkeypatch)
-
-    riesgo._riesgo_mezcla(resultados, classify, "Claro")
-
-    assert len(llamadas) == 1
-    nota = _modo(llamadas[0], "tus")["nota"]
-    assert nota == "Sin historia de precios, fuera de la simulación: VVV."
-    assert "BBB" not in nota
 
 
 def test_riesgo_vista_sin_archivo(monkeypatch):
@@ -309,6 +287,35 @@ def test_riesgo_vista_sin_archivo(monkeypatch):
     assert llamadas == []
     assert [k for k, _ in llamadas_st] == ["markdown"] * 3
     assert "Riesgo" in llamadas_st[0][1] and "Riesgo" in llamadas_st[1][1]
+
+
+def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeypatch):
+    from ui import componentes, riesgo
+
+    resultados = {
+        "AAA": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
+        "CCC": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
+        "HHH": {"market_value": 1000.0, "history": _tx(("2024-02-01", "Buy"))},
+    }
+    classify = {"AAA": "mode_a", "HHH": "mode_a", "CCC": "mode_b"}
+    pedidos, dibujado = [], []
+
+    def _historias(tickers):
+        pedidos.append(tickers)
+        return {t: _serie(150) for t in ("AAA", "CCC")}, ["BBB", "HHH"]
+
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    monkeypatch.setattr(riesgo, "_historias_riesgo", _historias)
+    monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: dibujado.append((datos, tema)))
+    riesgo._riesgo_mezcla(resultados, classify, "Oscuro")
+
+    # una sola carga con los fondos del usuario y los de la receta, ordenados
+    assert pedidos == [("AAA", "BBB", "CCC", "HHH")]
+    (datos, tema), = dibujado
+    assert tema == "Oscuro"
+    # BBB (de la receta) sin historia: no hay canasta y la nota no lo presenta como fondo tuyo
+    assert [m["clave"] for m in datos["modos"]] == ["tus"]
+    assert _modo(datos, "tus")["nota"] == "Sin historia de precios, fuera de la simulación: HHH."
 
 
 def test_render_riesgo_inyecta_datos_y_tema(monkeypatch):
