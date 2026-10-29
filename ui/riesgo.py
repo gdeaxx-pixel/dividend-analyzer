@@ -100,6 +100,22 @@ def _riesgo_mezcla(resultados: dict, classify_map: dict, tema: str) -> None:
         componentes.render_riesgo(datos, tema)
 
 
+def hay_receta() -> bool:
+    return _receta_referencia() is not None
+
+
+def abrir_sin_archivo() -> None:
+    """Entrada desde la hoja de carga: pasa a la ruta con la categoría Riesgo, sin archivo.
+    La ruta solo se dibuja con `_wizard_listo`, y sin CSV `_resultados()` devuelve `{}`."""
+    st.session_state["_wizard_listo"] = True
+    st.session_state["vd_categoria"] = CAT_CLAVE
+    st.session_state["vd_vista"] = VIEW_ORDER[0]
+
+
+def volver_a_cargar() -> None:
+    st.session_state["_wizard_listo"] = False
+
+
 def render_vista(vista: str, ruta) -> None:
     """Despacho de Riesgo — UNA vista. Con archivo se dibuja la mezcla del usuario (y la
     canasta de referencia si hay receta); sin archivo y con receta, solo la canasta, con una
@@ -113,6 +129,8 @@ def render_vista(vista: str, ruta) -> None:
         return
     if _receta_referencia():
         st.caption("Sube tu archivo de transacciones para comparar con tus fondos.")
+        st.button("Subir mi archivo →", key="_vd_riesgo_subir_archivo", type="tertiary",
+                  on_click=volver_a_cargar)
         _riesgo_mezcla({}, {}, ruta.tema)
         return
     st.markdown('<span class="vd-badge">Riesgo</span>', unsafe_allow_html=True)
