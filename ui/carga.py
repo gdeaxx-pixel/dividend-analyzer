@@ -18,7 +18,7 @@ import streamlit as st
 
 import logic
 import storage
-from ui import adapters, componentes, estado
+from ui import adapters, componentes, estado, riesgo
 
 
 CLAVES_CONTEXTO_CARTERA = (
@@ -1055,6 +1055,10 @@ def render_carga() -> bool:
         st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
+        if riesgo.hay_receta():
+            st.button("¿Sin archivo? Simula el riesgo de una mezcla →",
+                      key="_vd_riesgo_sin_archivo", type="tertiary",
+                      on_click=riesgo.abrir_sin_archivo)
         _render_privacidad()
         return False
 
