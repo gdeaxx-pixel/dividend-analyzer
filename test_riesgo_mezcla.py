@@ -247,7 +247,8 @@ def test_receta_referencia_valida_y_rechaza_incompleta(monkeypatch):
     monkeypatch.setattr(riesgo, "st", _st_falso(True, dict(RECETA, dividendos=("AAA", "BBB")), llamadas))
     assert riesgo._receta_referencia() == dict(RECETA)
     for malo in (dict(RECETA, pct_dividendos=120), dict(RECETA, crecimiento=[]),
-                 dict(RECETA, nombre=None), dict(RECETA, dividendos="AAA")):
+                 dict(RECETA, nombre=None), dict(RECETA, dividendos="AAA"),
+                 dict(RECETA, pct_dividendos=True)):
         monkeypatch.setattr(riesgo, "st", _st_falso(True, malo, llamadas))
         assert riesgo._receta_referencia() is None, malo
 
@@ -328,13 +329,15 @@ def test_cargador_pide_receta_y_usuario_y_solo_nombra_fondos_del_usuario(monkeyp
         "AAA": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
         "CCC": {"market_value": 2000.0, "history": _tx(("2024-02-01", "Buy"))},
         "HHH": {"market_value": 1000.0, "history": _tx(("2024-02-01", "Buy"))},
+        # ya vendido: no está en la mezcla, así que ni se pide su historia ni sale en la nota
+        "ZZZ": {"market_value": 0.0, "history": _tx(("2024-02-01", "Buy"), ("2024-05-01", "Sell"))},
     }
-    classify = {"AAA": "mode_a", "HHH": "mode_a", "CCC": "mode_b"}
+    classify = {"AAA": "mode_a", "HHH": "mode_a", "CCC": "mode_b", "ZZZ": "mode_a"}
     pedidos, dibujado = [], []
 
     def _historias(tickers):
         pedidos.append(tickers)
-        return {t: _serie(150) for t in ("AAA", "CCC")}, ["BBB", "HHH"]
+        return {t: _serie(150) for t in ("AAA", "CCC")}, [t for t in tickers if t not in ("AAA", "CCC")]
 
     monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
     monkeypatch.setattr(riesgo, "_historias_riesgo", _historias)
