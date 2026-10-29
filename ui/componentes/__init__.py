@@ -105,8 +105,9 @@ ALTO_PORTAFOLIOS = 2400
 
 # Respaldo si el script auto-dimensionante no corre; el componente corrige su propio alto
 # en cuanto carga. Riesgo de la mezcla: se fija por encima del celular, donde la dona, los
-# atajos y la gráfica de «¿Hasta dónde bajó tu dinero?» se apilan.
-ALTO_RIESGO = 2400
+# atajos, la gráfica de «¿Hasta dónde bajó tu dinero?» y el bloque «Simulación» de 2022 se
+# apilan (medido a 375 px con la simulación: 3,676 px).
+ALTO_RIESGO = 4400
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # script corrige el alto real desde dentro del iframe.

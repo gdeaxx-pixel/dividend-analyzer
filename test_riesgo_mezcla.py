@@ -32,6 +32,14 @@ def _serie(n, inicio=INICIO, base=100.0, paso=0.3):
     return _hist([base + paso * (i % 7) + 0.05 * i for i in range(n)], inicio=inicio)
 
 
+@pytest.fixture(autouse=True)
+def _sin_red_para_2022(monkeypatch):
+    """La simulación de 2022 baja en vivo los tickers que no trae congelados: aquí, nunca."""
+    from ui import riesgo
+
+    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers, inicio, fin: {})
+
+
 def _modo(datos, clave):
     return next(m for m in datos["modos"] if m["clave"] == clave)
 

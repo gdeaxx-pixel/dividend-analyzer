@@ -145,10 +145,12 @@ def _grupo_referencia(clave, nombre, lista, receta):
 
 
 def datos_seccion(div_mv: dict, crec_mv: dict, historias: dict, receta: dict | None = None,
-                  compra_real: pd.Timestamp | None = None, sin_historia=()) -> dict | None:
+                  compra_real: pd.Timestamp | None = None, sin_historia=(), estres=None) -> dict | None:
     """Todo lo que dibuja el componente. `div_mv` / `crec_mv`: {ticker: valor de mercado de
     hoy} de los fondos del usuario. `receta`: la configuración privada (nombre, canasta,
-    pct_dividendos, dividendos, crecimiento) o None. `None` si no hay nada que simular."""
+    pct_dividendos, dividendos, crecimiento) o None. `estres`: función opcional
+    `(pesos_dividendos, pesos_crecimiento) -> dict | None` con la simulación de 2022 de cada
+    modo (`estres_2022.datos_estres`); va en `modo["estres"]`. `None` si no hay nada que simular."""
     div_u, crec_u = _con_historia(div_mv, historias), _con_historia(crec_mv, historias)
     total = sum(div_u.values()) + sum(crec_u.values())
     p_usuario = round(100 * sum(div_u.values()) / total) if total > 0 else None
@@ -179,6 +181,7 @@ def datos_seccion(div_mv: dict, crec_mv: dict, historias: dict, receta: dict | N
                 if sin_historia:
                     notas.append("Sin historia de precios, fuera de la simulación: " + ", ".join(sorted(sin_historia)) + ".")
                 modo["nota"] = " ".join(notas) or None
+                modo["estres"] = estres(grupos[0]["pesos"], grupos[1]["pesos"]) if estres else None
                 modos.append(modo)
 
     if receta_util:
@@ -186,6 +189,7 @@ def datos_seccion(div_mv: dict, crec_mv: dict, historias: dict, receta: dict | N
                   _grupo_referencia("crec", "Crecimiento", receta_util["crecimiento"], receta_util)]
         modo = armar_modo("greco", receta_util["canasta"], grupos, historias, compra_real, lista, p_inicial)
         if modo["dias_comunes"] >= DIAS_MINIMOS:
+            modo["estres"] = estres(grupos[0]["pesos"], grupos[1]["pesos"]) if estres else None
             modos.append(modo)
 
     if not modos:
