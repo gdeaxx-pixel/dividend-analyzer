@@ -125,7 +125,8 @@ def notificar_progreso(con_datos: bool) -> None:
     `True`, momento en el que `app.py` deja de invocar `render_carga` — por eso el
     disparo vive aquí como función independiente y no dentro de `render_carga`."""
     hay_csv = st.session_state.get("_wizard_df_clean") is not None
-    activo = 3 if con_datos else (2 if hay_csv else 1)
+    # Sin CSV la ruta solo se abre desde «¿Sin archivo?» (`ui.riesgo`): no es el paso 3.
+    activo = 3 if con_datos and hay_csv else (2 if hay_csv else 1)
     previo = st.session_state.get("_vd_prev_pill", activo)
     if previo != activo:
         mensajes = {2: "Configura tus costos", 3: "Paso 3 de 3 · Resultados"}

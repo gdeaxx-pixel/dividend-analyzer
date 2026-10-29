@@ -402,6 +402,10 @@ def render_vista(ruta: Ruta) -> None:
         elif panel == "validacion":
             render_validacion_datos(_resultados())
         return
+    # Sin archivo (entrada «¿Sin archivo?» de la carga) la ruta no tiene otra vuelta a la
+    # hoja de carga; Riesgo dibuja el botón él mismo, debajo de su línea.
+    if ruta.categoria != riesgo.CAT_CLAVE and riesgo.sin_archivo():
+        riesgo.boton_subir_archivo()
     if ruta.categoria in nav.CATS and ruta.etf:
         if ruta.vista == nav.VISTA_CON_ETF:
             render_cash_flow(ruta)
