@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import functools
 import os
-import re
 
 import pandas as pd
 import streamlit as st
@@ -86,29 +85,19 @@ def _historias_riesgo(tickers: tuple[str, ...]) -> tuple[dict, list]:
 
 
 _DIR_ESTRES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge", "estres_2022")
-_TICKER = re.compile(r"[A-Z][A-Z.\-]{0,5}")
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
-def _historias_estres(tickers: tuple[str, ...], inicio: str, fin: str) -> dict:
-    """Historia ['Close', 'Dividends'] de 2022 por ticker: el snapshot congelado
-    (`knowledge/estres_2022/`) y, para el resto, yfinance en vivo con la misma ventana. Si falla o
-    viene vacía, el ticker no entra (la simulación lo deja fuera con nota). El rango que se baja
-    es un mes antes del inicio, para la volatilidad de 21 sesiones."""
-    import backtest
-
+def _historias_estres(tickers: tuple[str, ...]) -> dict:
+    """Historia ['Close', 'Dividends'] de 2022 por ticker, solo del snapshot congelado
+    (`knowledge/estres_2022/`, lo escribe `fetch_estres_2022.py` para todo fondo que la app
+    reconoce). Nada en vivo: no se llama a yfinance desde la UI. Sin archivo, el ticker no entra
+    y la simulación lo deja fuera con nota."""
     historias = {}
-    desde = (pd.Timestamp(inicio) - pd.Timedelta(days=44)).strftime("%Y-%m-%d")
-    hasta = (pd.Timestamp(fin) + pd.Timedelta(days=3)).strftime("%Y-%m-%d")
     for t in tickers:
         ruta = os.path.join(_DIR_ESTRES, f"{t}.parquet")
         try:
-            if os.path.exists(ruta):
-                h = pd.read_parquet(ruta)
-            elif _TICKER.fullmatch(t):
-                h = backtest.fetch_history(t, start=desde, end=hasta)
-            else:
-                h = None
+            h = pd.read_parquet(ruta) if os.path.exists(ruta) else None
         except Exception:                                          # noqa: BLE001
             h = None
         if h is not None and not h.empty and "Close" in h and not h["Close"].isna().any():
@@ -123,10 +112,10 @@ def _estres_para(tickers: set[str], receta: dict | None):
         parametros = estres_2022.cargar_parametros()
         sub = estres_2022.subyacentes_yieldmax(logic.load_instruments())
         v = parametros["ventana"]
-        # Un YieldMax con subyacente se simula con su acción; solo se baja la historia propia
-        # del resto (si no existía en 2022, no hay nada que bajar).
+        # Un YieldMax con subyacente se simula con su acción; del resto se pide su propia
+        # historia (si no existía en 2022, no hay archivo).
         pedir = sorted({sub[t] for t in tickers if t in sub} | {t for t in tickers if t not in sub})
-        historias = _historias_estres(tuple(pedir), str(v["inicio"]), str(v["fin"]))
+        historias = _historias_estres(tuple(pedir))
     except Exception:                                              # noqa: BLE001
         return None, None
     fn = functools.partial(_datos_estres, historias=historias, parametros=parametros, subyacentes=sub)

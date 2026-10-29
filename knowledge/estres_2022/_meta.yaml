@@ -1,10 +1,242 @@
-# Generado por fetch_estres_2022.py (una sola vez; la historia de 2022 no cambia).
+# Generado por fetch_estres_2022.py: la historia de 2022 no cambia, solo se suma lo que falta.
 # No entra al workflow de refresco. No editar a mano.
+# rows: 0 = ninguna sesión en la ventana; primera_sesion es la primera que tiene
+# Yahoo (null: ninguna).
+ABNY:
+  generated_at: '2026-10-29'
+  primera_sesion: null
+  rows: 0
+ACWI:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AGG:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AMD:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AMZN:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AOA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AOK:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AOM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+AOR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+APLY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 178
+  start: '2023-04-18'
+BALY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-12-06'
+  rows: 0
+BND:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+BNDX:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+BOTZ:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+CIBR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 COIN:
   end: '2023-12-29'
   generated_at: '2026-10-28'
   rows: 684
   start: '2021-04-14'
+COINY:
+  generated_at: '2026-10-29'
+  primera_sesion: null
+  rows: 0
+DGRO:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+DIS:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+DJP:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+DVY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+EEM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+EFA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+GDXY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-05-21'
+  rows: 0
+GLD:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+GOOGL:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+GSG:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+HACK:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+HDV:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IAU:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IEF:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IGV:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IJH:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IJR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+ITOT:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IVV:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IWF:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IWM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IWN:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IWO:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+IYR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+JEPI:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+JEPQ:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 417
+  start: '2022-05-04'
+JPM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+LFGY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2025-01-14'
+  rows: 0
+MGK:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+MRNY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 47
+  start: '2023-10-24'
+MSFT:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 MSTR:
   end: '2023-12-29'
   generated_at: '2026-10-28'
@@ -20,9 +252,64 @@ NVDA:
   generated_at: '2026-10-28'
   rows: 715
   start: '2021-03-01'
+PLTR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+PYPY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 67
+  start: '2023-09-26'
+QQQ:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+QQQM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+QYLD:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SCHA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 SCHB:
   end: '2023-12-29'
   generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+SCHD:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SCHG:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SCHX:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SHY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SLV:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
   rows: 715
   start: '2021-03-01'
 SMH:
@@ -30,9 +317,116 @@ SMH:
   generated_at: '2026-10-28'
   rows: 715
   start: '2021-03-01'
+SNOY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-06-11'
+  rows: 0
+SOXX:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SPY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+SVOL:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 663
+  start: '2021-05-13'
 TSLA:
   end: '2023-12-29'
   generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+TSMY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-08-21'
+  rows: 0
+ULTY:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-02-29'
+  rows: 0
+VB:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VCIT:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VCSH:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VEA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VGT:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VNQ:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VO:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VOO:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VT:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VTI:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VUG:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VWO:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VXUS:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+VYM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLB:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLC:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
   rows: 715
   start: '2021-03-01'
 XLK:
@@ -40,3 +434,40 @@ XLK:
   generated_at: '2026-10-28'
   rows: 715
   start: '2021-03-01'
+XLP:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLRE:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLU:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLV:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XLY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XOMY:
+  generated_at: '2026-10-29'
+  primera_sesion: null
+  rows: 0
+YMAG:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-01-30'
+  rows: 0
+YMAX:
+  generated_at: '2026-10-29'
+  primera_sesion: '2024-01-17'
+  rows: 0

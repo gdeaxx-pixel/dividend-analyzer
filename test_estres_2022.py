@@ -7,6 +7,8 @@ reales, fondo por fondo.
 G2 — regla 3b: `resumen_estres` (Python) contra el motor JS del componente.
 G3 (cifras de control con la canasta de referencia) vive fuera del repo: lleva la receta.
 G4 — cada fondo simulado solo en 2022, al dólar, contra una medición independiente.
+Snapshot — todo fondo que la app reconoce tiene su 2022 congelado (o declarado sin sesiones en la
+ventana), y la UI no baja nada en vivo.
 """
 import json
 import os
@@ -26,6 +28,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 CONGELADO = os.path.join(AQUI, "knowledge", "price_cache_frozen")
 PARAMETROS = os.path.join(AQUI, "knowledge", "estres_2022", "parametros.yaml")
 VALIDACION = os.path.join(AQUI, "knowledge", "estres_2022", "validacion")
+META = os.path.join(AQUI, "knowledge", "estres_2022", "_meta.yaml")
 FONDOS = ("TSLY", "NVDY", "CONY", "NFLY", "MSTY")
 CORTE = pd.Timestamp("2024-12-31")
 
@@ -272,13 +275,68 @@ def test_estres_para_une_parametros_subyacentes_y_modal(monkeypatch):
     from ui import riesgo
 
     pedidos = []
-    monkeypatch.setattr(riesgo, "_historias_estres",
-                        lambda tickers, inicio, fin: pedidos.append((tickers, inicio, fin)) or {})
+    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers: pedidos.append(tickers) or {})
     fn, modal = riesgo._estres_para({"MSTY", "CONY", "SCHB", "ZZZZ"}, None)
     # Los YieldMax piden su acción, no ellos mismos; lo demás se pide tal cual.
-    assert pedidos == [(("COIN", "MSTR", "SCHB", "ZZZZ"), "2021-04-14", "2023-12-29")]
+    assert pedidos == [("COIN", "MSTR", "SCHB", "ZZZZ")]
     assert [f["fondo"] for f in modal["filas"]] == list(FONDOS) or set(f["fondo"] for f in modal["filas"]) == set(FONDOS)
     assert fn({"MSTY": 1.0}, {"SCHB": 1.0}) is None, "sin historia de 2022 no hay simulación"
+
+
+def test_la_historia_de_2022_no_baja_nada_en_vivo(monkeypatch):
+    """CLAUDE.md: no se llama a yfinance desde la UI. Con la red cortada, lo congelado entra y lo
+    que no está queda fuera sin pedir nada. Una descarga en vivo de vuelta en `_historias_estres`
+    deja su intento anotado aquí aunque la excepción se trague dentro."""
+    import socket
+
+    import backtest
+    import yfinance as yf
+    from ui import riesgo
+
+    intentos = []
+
+    def _sin_red(*a, **k):
+        intentos.append(a[:1])
+        raise ConnectionError("red cortada en el test")
+
+    for objeto, nombre in ((backtest, "fetch_history"), (yf, "Ticker"), (yf, "download"),
+                           (socket.socket, "connect"), (socket.socket, "connect_ex")):
+        monkeypatch.setattr(objeto, nombre, _sin_red)
+    riesgo._historias_estres.clear()
+    try:
+        h = riesgo._historias_estres(("SCHB", "ZZZZ"))
+    finally:
+        riesgo._historias_estres.clear()
+    assert intentos == []
+    assert set(h) == {"SCHB"} and list(h["SCHB"].columns) == ["Close", "Dividends"]
+
+
+def test_todo_fondo_que_la_app_reconoce_tiene_su_2022_congelado(monkeypatch):
+    """Sin descarga en vivo, un fondo de las listas blancas cuyo 2022 no esté congelado quedaría
+    fuera de la simulación en silencio. Todo lo que `_estres_para` pide para ellos (la acción de un
+    YieldMax con subyacente, el propio ticker del resto) tiene su archivo, o `_meta.yaml` lo
+    declara sin sesiones en la ventana: nació después, o Yahoo no lo conoce.
+    Si falla tras sumar un fondo o un subyacente: `./.venv/bin/python fetch_estres_2022.py`."""
+    from ui import riesgo
+
+    cargar = riesgo._historias_estres
+    pedidos = []
+    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers: pedidos.append(tickers) or {})
+    riesgo._estres_para(logic.YIELDMAX_WHITELIST | logic.ETF_WHITELIST, None)
+    assert len(pedidos) == 1
+    cargar.clear()
+    historias = cargar(pedidos[0])
+    with open(META, encoding="utf-8") as fh:
+        meta = yaml.safe_load(fh)
+    sin_sesiones = {t for t, m in meta.items() if m["rows"] == 0}
+
+    faltan = sorted(set(pedidos[0]) - set(historias) - sin_sesiones)
+    assert not faltan, f"sin 2022 congelado ni declarado: {faltan}"
+    assert not set(historias) & sin_sesiones
+    assert {t: len(h) for t, h in historias.items()} == {t: meta[t]["rows"] for t in historias}
+    v = _params()["ventana"]
+    assert e22._cubre(historias["SPY"], pd.Timestamp(v["inicio"]), pd.Timestamp(v["fin"])), (
+        "el snapshot ya no cubre la ventana de parametros.yaml: volver a congelar")
 
 
 def test_render_con_estres_dibuja_el_bloque_y_sin_receta_en_el_html(monkeypatch):
