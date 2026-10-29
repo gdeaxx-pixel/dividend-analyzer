@@ -1,6 +1,6 @@
 name: Auditoría de dependencias
 
-# Escanea con osv-scanner las versiones que de verdad instala Streamlit Cloud (Python 3.11,
+# Escanea con osv-scanner las versiones que de verdad instala Streamlit Cloud (Python 3.14,
 # Linux), resolviendo requirements.txt con uv. Escanear requirements.txt a secas deja que
 # osv-scanner adivine las transitivas (sacaba Pillow 9.5.0 con prod en 12.3.0).
 # Las excepciones aceptadas viven en osv-scanner.toml y caducan.
@@ -32,13 +32,13 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Resolver el set de producción
         run: |
           pip install uv
           mkdir -p resuelto
-          uv pip compile requirements.txt --python-version 3.11 \
+          uv pip compile requirements.txt --python-version 3.14 \
             --python-platform x86_64-manylinux_2_28 --no-header --no-annotate \
             -o resuelto/requirements.txt
 
