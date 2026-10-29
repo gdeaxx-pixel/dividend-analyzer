@@ -1,0 +1,42 @@
+# Generado por fetch_estres_2022.py (una sola vez; la historia de 2022 no cambia).
+# No entra al workflow de refresco. No editar a mano.
+COIN:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 684
+  start: '2021-04-14'
+MSTR:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+NFLX:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+NVDA:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+SCHB:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+SMH:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+TSLA:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+XLK:
+  end: '2023-12-29'
+  generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'

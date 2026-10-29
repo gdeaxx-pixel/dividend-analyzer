@@ -2710,15 +2710,20 @@ def _mv_grupo(resultados: dict, classify_map: dict, modo: str) -> dict:
 
 
 def riesgo_mezcla_data(resultados: dict, classify_map: dict, historias: dict,
-                       receta: dict | None, sin_historia=()) -> dict | None:
+                       receta: dict | None, sin_historia=(), estres=None,
+                       estres_modal: dict | None = None) -> dict | None:
     """Datos de la sección «Riesgo de la mezcla» (vista Portafolios). Pesos = valor de mercado
     de hoy; Dividendos = mode_a, Crecimiento = mode_b. `historias` {ticker: ['Close',
     'Dividends']} y `receta` (secreto `receta_referencia`, o None) los trae el llamador. El
-    cálculo vive en `riesgo_mezcla`; `None` = no se dibuja nada."""
+    cálculo vive en `riesgo_mezcla`; `None` = no se dibuja nada. `estres` / `estres_modal`:
+    la simulación de 2022 de cada modo y las filas de su modal (ver `estres_2022`)."""
     div_mv = _mv_grupo(resultados, classify_map, "mode_a")
     crec_mv = _mv_grupo(resultados, classify_map, "mode_b")
     compra = riesgo_mezcla.primera_compra({t: resultados[t] for t in (*div_mv, *crec_mv)})
-    return riesgo_mezcla.datos_seccion(div_mv, crec_mv, historias, receta, compra, sin_historia)
+    datos = riesgo_mezcla.datos_seccion(div_mv, crec_mv, historias, receta, compra, sin_historia, estres)
+    if datos is not None and estres_modal and any(m.get("estres") for m in datos["modos"]):
+        datos["estres_modal"] = estres_modal
+    return datos
 
 
 # ── «Lo que toca vigilar» (vista Portafolios, componente `ui/componentes/vigilar.html`) ──

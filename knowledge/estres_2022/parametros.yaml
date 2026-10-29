@@ -1,0 +1,46 @@
+# Parámetros de la prueba de estrés «¿Y en una caída como la de 2022?» (estres_2022.py).
+# Método A: opción de compra cubierta sintética (Black-Scholes, tasa 0) sobre la acción que
+# sigue cada fondo. Medido el 28-oct-2026 con yfinance (auto_adjust=False).
+#
+# per = sesiones entre ventas de la opción (5 = semanal, 21 = mensual)
+# m   = qué tan por encima del precio sube el precio de ejercicio (0.10 = 10%)
+# k   = factor sobre la volatilidad de la acción (de ahí sale la prima)
+
+ventana:
+  inicio: "2021-04-14"      # sale COIN a bolsa: el fondo más joven del que se parte
+  fin: "2023-12-29"
+
+# La banda es el mismo modelo con k - banda y k + banda: la dispersión de k entre fondos.
+banda: 0.1
+
+# Calibrados con toda la historia real de cada fondo hasta el 30-sep-2026.
+fondos:
+  CONY: {per: 21, m: 0.20, k: 0.9}
+  MSTY: {per: 5, m: 0.10, k: 0.9}
+  TSLY: {per: 5, m: 0.075, k: 0.9}
+  NFLY: {per: 21, m: 0.075, k: 1.0}
+  NVDY: {per: 21, m: 0.15, k: 0.8}
+
+# Fondo YieldMax sin fila arriba: ajuste global.
+global: {per: 5, m: 0.075, k: 0.9}
+
+# Calibrados solo hasta el 31-dic-2024: sirven para la prueba fuera de tiempo
+# (test_estres_2022.py), que mide 2025 en adelante sin haberlo visto.
+calibrados_hasta_2024:
+  CONY: {per: 21, m: 0.20, k: 1.0}
+  MSTY: {per: 5, m: 0.15, k: 0.9}
+  TSLY: {per: 5, m: 0.075, k: 0.9}
+  NFLY: {per: 21, m: 0.075, k: 0.8}
+  NVDY: {per: 5, m: 0.05, k: 0.9}
+
+# Lo que muestra el modal «¿Cómo simulamos 2022?»: lo más que cayó cada fondo de 2-ene-2025
+# a 30-sep-2026, real contra simulado con parámetros calibrados hasta 2024 (en %).
+validacion:
+  desde: "2025-01-02"
+  hasta: "2026-09-30"
+  fondos:
+    TSLY: {real: 42.2, simulada: 44.7}
+    NVDY: {real: 33.3, simulada: 29.2}
+    CONY: {real: 63.2, simulada: 61.8}
+    NFLY: {real: 43.8, simulada: 50.9}
+    MSTY: {real: 77.0, simulada: 81.5}

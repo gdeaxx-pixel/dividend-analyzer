@@ -28,6 +28,7 @@ def app(monkeypatch):
     from ui import riesgo
 
     monkeypatch.setattr(stale_guard, "asegurar_frescura", lambda: [])
+    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers, inicio, fin: {})
     monkeypatch.setattr(riesgo, "_historias_riesgo",
                         lambda tickers: ({t: _serie(150) for t in ("AAA", "BBB", "CCC")}, []))
 

@@ -5,7 +5,9 @@
      Python manda los retornos diarios de cada grupo ya ponderados (`riesgo_mezcla.datos_seccion`);
      el motor de abajo compone la mezcla elegida y `test_riesgo_mezcla.py` lo compara con
      `riesgo_mezcla.resumen_escenario`. Sin cifras ni nombres de canasta en el HTML: todo llega
-     en DATA. El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
+     en DATA. El bloque «¿Y en una caída como la de 2022?» (simulación) llega en `modo.estres`
+     (`estres_2022.datos_estres`) y las filas de su modal en `DATA.estres_modal`; sin datos de
+     2022 el bloque no se dibuja. El bloque de auto-alto del final es el de `tools/_auto_alto.py`. -->
 <meta charset="utf-8">
 <style>
   :root {
@@ -136,11 +138,11 @@
   .keys { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
   .keys span { display: inline-flex; align-items: center; gap: 6px; }
   .keys svg { width: 22px; height: 8px; }
-  #chart { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: crosshair; }
-  #chart:focus-visible { outline-offset: 4px; }
-  #chart text { font-family: var(--font-mono); fill: var(--ink-mut); }
-  #chart .t-ink { fill: var(--ink); font-weight: 600; }
-  #chart .t-loss { fill: var(--loss); font-weight: 600; }
+  #chart, #e-chart { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: crosshair; }
+  #chart:focus-visible, #e-chart:focus-visible { outline-offset: 4px; }
+  #chart text, #e-chart text { font-family: var(--font-mono); fill: var(--ink-mut); }
+  #chart .t-ink, #e-chart .t-ink { fill: var(--ink); font-weight: 600; }
+  #chart .t-loss, #e-chart .t-loss { fill: var(--loss); font-weight: 600; }
   .readout { margin: 8px 0 0; min-height: 1.6em; font-size: 13px; color: var(--ink-2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
   .foot { margin: 0; font-size: 13px; color: var(--ink-mut); max-width: 92ch; }
@@ -168,6 +170,18 @@
   .modal-note b { color: var(--ink-2); font-weight: 600; }
   @keyframes fadeIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
 
+  .sello { justify-self: start; margin: 0 0 10px; display: inline-block; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--warn); border: 1px solid var(--warn); padding: 3px 8px; }
+  .rango { margin: -2px 0 10px; font-size: 14px; color: var(--ink-2); }
+  .rango b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .track { position: relative; }
+  .track .r { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--div) 0 2px, transparent 2px 5px); opacity: .55; transform: none; }
+  .compara { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--hair); font-size: 13px; color: var(--ink-mut); }
+  .compara b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .mf-table td.mf-num { text-align: right; white-space: nowrap; padding-left: 12px; }
+  .mf-table thead td { font-size: 11px; color: var(--ink-mut); text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--hair); }
+  #modal-estres .mf-table tbody tr:last-child td { padding-top: 5px; font-weight: 400; font-size: 12.5px; }
+  #modal-estres { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px; }
+  #modal-estres.open { display: flex; }
   @media (max-width: 860px) {
     .alloc-grid, .loss-grid { grid-template-columns: minmax(0, 1fr); }
     .donut { max-width: 240px; }
@@ -276,7 +290,51 @@
     </div>
   </section>
 
-  <p class="foot"><span id="foot-datos"></span> <button type="button" class="link" data-modal="riesgo">¿Cómo se mide el riesgo?</button></p>
+  <section class="panel" aria-labelledby="t-estres" id="estres" hidden>
+    <header>
+      <p class="sello">Simulación</p>
+      <h2 class="title" id="t-estres">¿Y en una caída como la de 2022?</h2>
+      <p class="lede" id="e-lede"></p>
+    </header>
+    <div class="loss-grid">
+      <div>
+        <p class="k">Lo más bajo que habrían llegado tus $10,000</p>
+        <div class="big"><span class="num" id="e-num"></span><span class="delta" id="e-delta"></span></div>
+        <p class="rango" id="e-rango"></p>
+        <p class="verdict" id="e-verdict"></p>
+        <div class="bars">
+          <div>
+            <div class="bar-head"><span id="e0-l">Tu mezcla</span><span class="v" id="e0-v"></span></div>
+            <div class="track"><i id="e0-f" style="background:var(--div)"></i><i class="r" id="e0-r"></i></div>
+          </div>
+          <div>
+            <div class="bar-head"><span>Solo crecimiento</span><span class="v" id="e1-v"></span></div>
+            <div class="track"><i id="e1-f" style="background:var(--crec)"></i></div>
+          </div>
+        </div>
+        <dl class="hoy">
+          <div><dt>A fin de 2023 con tu mezcla</dt><dd id="ehoy0"></dd></div>
+          <div><dt>A fin de 2023 solo crecimiento</dt><dd id="ehoy1"></dd></div>
+        </dl>
+        <p class="compara" id="e-compara"></p>
+      </div>
+      <figure class="fig">
+        <div class="chart-k">
+          <p class="k" id="e-title"></p>
+          <div class="keys" aria-hidden="true">
+            <span><svg viewBox="0 0 22 8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--div)" stroke-width="2.5"/></svg>Tu mezcla</span>
+            <span><svg viewBox="0 0 22 8"><rect x="0" y="0" width="22" height="8" fill="var(--div)" fill-opacity="0.16"/></svg>Margen</span>
+            <span><svg viewBox="0 0 22 8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--crec)" stroke-width="2" stroke-dasharray="5 3"/></svg>Solo crecimiento</span>
+          </div>
+        </div>
+        <p class="chart-nota" id="e-nota"></p>
+        <svg id="e-chart" viewBox="0 0 640 300" role="img" tabindex="0" aria-label="Simulación de 10,000 dólares en la caída de 2022"></svg>
+        <p class="readout" id="e-readout"></p>
+      </figure>
+    </div>
+  </section>
+
+  <p class="foot"><span id="foot-datos"></span> <button type="button" class="link" data-modal="riesgo">¿Cómo se mide el riesgo?</button><span id="foot-estres" hidden> · <button type="button" class="link" id="abrir-estres">¿Cómo simulamos 2022?</button></span></p>
 </div>
 
 <div id="modal-riesgo" role="dialog" aria-modal="true" aria-labelledby="m-title">
@@ -290,6 +348,23 @@
       <table class="mf-table"><tbody id="mf-rows"></tbody></table>
     </div>
     <p class="modal-note" id="m-nota"></p>
+  </div>
+</div>
+
+<div id="modal-estres" role="dialog" aria-modal="true" aria-labelledby="me-title">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="modal-estres-close" aria-label="Cerrar">×</button>
+    <p class="modal-eyebrow">Cómo se simula</p>
+    <h3 class="modal-title" id="me-title">Fondos que no existían en 2022</h3>
+    <p class="modal-lede">Estos fondos compran una acción y venden a otros <b>el derecho a comprársela más cara</b>. Por eso cobran una prima: si la acción cae, pierden casi lo mismo que ella; si se dispara, se quedan solo con una parte de la subida. Repetimos esa cuenta día a día con los precios reales de 2021 a 2023.</p>
+    <div class="modal-formula">
+      <span class="mf-eq" id="me-eq"></span>
+      <table class="mf-table">
+        <thead><tr><td class="mf-label">Lo más que cayó</td><td class="mf-num">Real</td><td class="mf-num">Simulado</td></tr></thead>
+        <tbody id="me-rows"></tbody>
+      </table>
+    </div>
+    <p class="modal-note">El margen sale de la prima: con primas un 10% más bajas o más altas, el punto más bajo se mueve en ese rango. Los fondos de crecimiento usan sus datos reales de 2022. <b>Es una simulación:</b> nadie tuvo estos fondos en 2022 y el resultado real habría sido distinto.</p>
   </div>
 </div>
 
@@ -322,9 +397,9 @@ var Motor = (function () {
     function camino(v, desde) { var c = []; for (var i = desde; i < v.length; i++) c.push(10000 * v[i] / v[desde]); return c; }
     function minimo(c) { var k = 0; for (var i = 1; i < c.length; i++) if (c[i] < c[k]) k = i; return k; }
     function recupera(c, k) { for (var i = k; i < c.length; i++) if (c[i] >= 10000) return i; return -1; }
-    function escenario(q, entrada) {
+    function escenario(q, entrada, fijo) {
       var vm = indice(q);
-      var desde = entrada === "peor" ? peorEntrada(vm) : Math.max(0, Math.min(n - 1, M.compra.i));
+      var desde = typeof fijo === "number" ? fijo : entrada === "peor" ? peorEntrada(vm) : Math.max(0, Math.min(n - 1, M.compra.i));
       var cm = camino(vm, desde), cg = camino(vCrec, desde);
       var km = minimo(cm), kg = minimo(cg);
       return { desde: desde, mezcla: cm, crec: cg, minM: km, minG: kg, recM: cm[km] < 10000 ? recupera(cm, km) : 0 };
@@ -332,7 +407,16 @@ var Motor = (function () {
     function dividendos(q) { return 10000 * (q * M.rend_div + (1 - q) * M.rend_crec); }
     return { n: n, volatilidad: volatilidad, nivel: nivel, escenario: escenario, dividendos: dividendos };
   }
-  return { crear: crear };
+  // Simulación de 2022: la entrada es el peor día de la serie central y la banda (prima más baja
+  // y más alta) se mide DESDE ESA MISMA entrada, para que las tres cifras hablen del mismo día.
+  function estresPara(S, q) {
+    var m = function (div) { return crear({ div: div, crec: S.crec, compra: { i: 0 }, rend_div: 0, rend_crec: 0 }); };
+    var e = m(S.div).escenario(q, "peor"), d = e.desde;
+    var b = m(S.div_bajo).escenario(q, "peor", d), a = m(S.div_alto).escenario(q, "peor", d);
+    return { desde: d, mezcla: e.mezcla, crec: e.crec, bajo: b.mezcla, alto: a.mezcla, minM: e.minM, minG: e.minG, recM: e.recM,
+             lo: b.mezcla[b.minM], hi: a.mezcla[a.minM] };
+  }
+  return { crear: crear, estresPara: estresPara };
 })();
 if (typeof module !== "undefined") module.exports = Motor;
 </script>
@@ -407,7 +491,8 @@ if (typeof module !== "undefined") module.exports = Motor;
     $("m-nota").innerHTML = "Es una aproximación: el folleto oficial de cada fondo hace este cálculo con 5 años de datos. Aquí usamos precios y dividendos reales del <b>" +
       isoLarga(M.inicio) + " al " + isoLarga(M.fin) + "</b>, con los dividendos reinvertidos; dentro de cada grupo los fondos pesan " +
       (M.clave === "tus" ? "lo que pesan hoy en tu portafolio" : "lo mismo") + " y la mezcla se reequilibra cada día." +
-      (M.inicio >= "2023-01-01" ? " <b>Esta ventana no incluye la caída de 2022</b>, así que el peor caso real podría ser mayor." : "");
+      (M.inicio >= "2023-01-01" ? " <b>Esta ventana no incluye la caída de 2022</b>" + (M.estres ? ": la simulamos aparte, debajo." : ", así que el peor caso real podría ser mayor.") : "");
+    prepararEstres();
     pintarMezcla();
   }
 
@@ -437,6 +522,7 @@ if (typeof module !== "undefined") module.exports = Motor;
     each(".chip", function (b) { b.setAttribute("aria-pressed", String(+b.dataset.p === p)); });
     tablaModal(vol, l);
     caida();
+    estres();
   }
 
   var anim = 0;
@@ -500,6 +586,155 @@ if (typeof module !== "undefined") module.exports = Motor;
     hoverI = -1;
     grafica();
   }
+
+  var ESTRES_NOMBRES = { TSLA: "Tesla", NVDA: "Nvidia", COIN: "Coinbase", NFLX: "Netflix", MSTR: "MicroStrategy" };
+  var EST = null, eDias = [0], eBase = 0, eEsc = null, eHover = -1, EG = {};
+  function eFecha(i) { var d = new Date(eBase + eDias[i] * 864e5); return { d: d.getUTCDate(), m: MESES[d.getUTCMonth()], y: d.getUTCFullYear(), t: d.getTime() }; }
+  function eCorta(i) { var f = eFecha(i); return f.m + "-" + String(f.y).slice(2); }
+  function eLarga(i) { var f = eFecha(i); return f.d + "-" + f.m + "-" + f.y; }
+  function eMeses(a, b) { return Math.max(1, Math.round((eFecha(b).t - eFecha(a).t) / (30.44 * 864e5))); }
+  function lista(xs) { return xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " y " + xs[xs.length - 1]; }
+
+  function prepararEstres() {
+    var S = M.estres;
+    $("estres").hidden = !S;
+    $("foot-estres").hidden = !S;
+    if (!S) { EST = null; return; }
+    EST = { S: S };
+    eBase = Date.UTC(+S.inicio.slice(0, 4), +S.inicio.slice(5, 7) - 1, +S.inicio.slice(8, 10));
+    eDias = [0].concat(S.dias);
+    var sim = S.simulados.map(function (f) { return "<b>" + esc(f) + "</b> con " + esc(ESTRES_NOMBRES[S.subyacente[f]] || S.subyacente[f]); });
+    var txt = (S.simulados.length > 2 ? "Los fondos de dividendos" : lista(S.simulados.map(function (f) { return "<b>" + esc(f) + "</b>"; }))) +
+      " no existían en 2022. Los simulamos con la acción que sigue cada uno (" + lista(sim) + ") y con su forma de trabajar: venden opciones para cobrar una prima cada semana o cada mes. " +
+      lista(S.reales.map(function (t) { return "<b>" + esc(t) + "</b>"; })) + (S.reales.length > 1 ? " sí existían: son datos reales." : " sí existía: son datos reales.");
+    if (S.fuera.length) txt += " " + lista(S.fuera.map(esc)) + (S.fuera.length > 1 ? " quedan fuera: no tienen" : " queda fuera: no tiene") + " datos de 2022 ni una sola acción detrás que podamos simular.";
+    $("e-lede").innerHTML = txt;
+  }
+
+  function estres() {
+    if (!EST) return;
+    var q = estado.p / 100, e = Motor.estresPara(EST.S, q), d = e.desde;
+    eEsc = { desde: d, mezcla: e.mezcla, crec: e.crec, bajo: e.bajo, alto: e.alto, minM: e.minM, minG: e.minG };
+    var cm = e.mezcla, km = e.minM, vmin = cm[km], fin = cm.length - 1;
+    var lo = e.lo, hi = e.hi;
+    var simula = q > 0, red = function (v) { return simula ? Math.round(v / 100) * 100 : v; };
+    $("e-num").textContent = (simula ? "unos " : "") + money(red(vmin));
+    $("e-delta").textContent = vmin < 10000 ? "−" + money(red(10000 - vmin)) : "nunca bajó";
+    $("e-delta").className = "delta " + (vmin < 10000 ? "neg" : "pos");
+    $("e-rango").innerHTML = simula ? "Entre <b>" + money(Math.min(lo, hi)) + "</b> y <b>" + money(Math.max(lo, hi)) + "</b>, según cuánto hubieran cobrado de prima." : "Sin fondos de dividendos no hay nada que simular: son datos reales de 2022.";
+    var txt = "Si hubieras entrado el peor día (" + eLarga(d) + "), habría tocado fondo el " + eLarga(d + km) + ".";
+    if (e.recM > 0) txt += " Tardó " + plural(eMeses(d, d + e.recM), "mes", "meses") + " en volver a lo invertido.";
+    else if (vmin < 10000) txt += " A fin de 2023 todavía estaba debajo de lo invertido.";
+    $("e-verdict").textContent = txt;
+    $("e0-l").textContent = "Tu mezcla · " + estado.p + "/" + (100 - estado.p);
+    $("e0-v").innerHTML = money(red(vmin)) + "<em>−" + money(red(10000 - vmin)) + "</em>";
+    $("e0-f").style.transform = "scaleX(" + Math.min(1, vmin / 10000).toFixed(4) + ")";
+    var r0 = Math.min(lo, hi) / 10000, r1 = Math.max(lo, hi) / 10000;
+    $("e0-r").style.left = (100 * r0).toFixed(2) + "%";
+    $("e0-r").style.width = (100 * (r1 - r0)).toFixed(2) + "%";
+    var g = e.crec[e.minG];
+    $("e1-v").innerHTML = money(g) + (g < 10000 ? "<em>−" + money(10000 - g) + "</em>" : "");
+    $("e1-f").style.transform = "scaleX(" + Math.min(1, g / 10000).toFixed(4) + ")";
+    hoy("ehoy0", cm[fin]);
+    hoy("ehoy1", e.crec[fin]);
+    var real = MOT.escenario(q, "peor");
+    $("e-compara").innerHTML = "Con datos reales (" + fCorta(0) + " a " + fCorta(MOT.n) + "), lo más bajo de esta mezcla fue <b>" + money(real.mezcla[real.minM]) + "</b>.";
+    $("e-title").textContent = "Así se habrían movido tus $10,000 desde el " + eLarga(d);
+    $("e-nota").textContent = "Simulación del " + eLarga(0) + " al " + isoLarga(EST.S.fin) + ". " + (EST.S.limitante ? "Empieza cuando " + EST.S.limitante + " sale a bolsa; la" : "La") + " banda es el margen de la prima.";
+    $("e-chart").setAttribute("aria-label", "Simulación de 10,000 dólares desde el " + eLarga(d) + ": tu mezcla habría llegado a unos " + money(vmin) + " y a fin de 2023 valdría " + money(cm[fin]) + "; solo crecimiento, " + money(e.crec[fin]) + ".");
+    eHover = -1;
+    eGrafica();
+  }
+
+  function eGrafica() {
+    var e = eEsc, cm = e.mezcla, cg = e.crec, cb = e.bajo, ca = e.alto, n = cm.length;
+    var fs = mqMovil.matches ? 20 : 11, W = 640, H = mqMovil.matches ? 420 : 300;
+    var L = Math.round(2.6 * fs + 12), R = Math.round(4.6 * fs + 16), T = Math.round(fs * 0.9), B = Math.round(fs * 2.4);
+    var lo = 10000, hi = 10000, k;
+    for (k = 0; k < n; k++) { lo = Math.min(lo, cm[k], cg[k], cb[k], ca[k]); hi = Math.max(hi, cm[k], cg[k], cb[k], ca[k]); }
+    var paso = (hi - lo) > 9000 ? 4000 : (hi - lo) > 4500 ? 2000 : 1000;
+    var y0 = Math.floor(lo / paso) * paso, y1 = Math.ceil(hi / paso) * paso;
+    var X = function (i) { return L + (W - L - R) * i / (n - 1); };
+    var Y = function (v) { return T + (H - T - B) * (1 - (v - y0) / (y1 - y0)); };
+    EG = { X: X, Y: Y, L: L, R: R, W: W, n: n };
+    var f = function (v) { return v.toFixed(1); };
+    var h = "";
+    if (y0 < 10000) {
+      h += '<rect x="' + L + '" y="' + f(Y(10000)) + '" width="' + (W - L - R) + '" height="' + f(Y(y0) - Y(10000)) + '" fill="var(--loss-bg)"/>';
+      if (Y(y0) - Y(10000) > fs * 1.8) h += '<text x="' + f(W - R - 6) + '" y="' + f(Y(y0) - fs * 0.5) + '" text-anchor="end" font-size="' + fs + '" style="fill:var(--loss)">Debajo de lo invertido</text>';
+    }
+    for (var y = y0; y <= y1 + 1; y += paso) {
+      h += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + f(Y(y)) + '" y2="' + f(Y(y)) + '" stroke="var(--hair-soft)"/>';
+      h += '<text x="' + (L - 8) + '" y="' + f(Y(y) + fs * 0.35) + '" text-anchor="end" font-size="' + fs + '">$' + (y / 1000) + "k</text>";
+    }
+    var anchoEtq = fs * 0.62 * 6 + fs * 1.5, nLab = Math.max(2, Math.min(7, Math.floor((W - L - R) / anchoEtq) + 1)), visto = {};
+    for (var j = 0; j < nLab; j++) {
+      var i = Math.round(j * (n - 1) / (nLab - 1)), lab = eCorta(e.desde + i);
+      if (visto[lab]) continue;
+      visto[lab] = 1;
+      var anc = j === 0 ? "start" : j === nLab - 1 ? "end" : "middle";
+      h += '<text x="' + f(X(i)) + '" y="' + (H - fs * 0.6).toFixed(1) + '" text-anchor="' + anc + '" font-size="' + fs + '">' + lab + "</text>";
+    }
+    var banda = "";
+    for (k = 0; k < n; k++) banda += (k ? "L" : "M") + f(X(k)) + " " + f(Y(Math.max(cb[k], ca[k])));
+    for (k = n - 1; k >= 0; k--) banda += "L" + f(X(k)) + " " + f(Y(Math.min(cb[k], ca[k])));
+    h += '<path d="' + banda + 'Z" fill="var(--div)" fill-opacity="0.16" stroke="none"/>';
+    h += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + f(Y(10000)) + '" y2="' + f(Y(10000)) + '" stroke="var(--ink-mut)" stroke-dasharray="2 3"/>';
+    var linea = function (c) { var d = ""; for (var q = 0; q < c.length; q++) d += (q ? "L" : "M") + f(X(q)) + " " + f(Y(c[q])); return d; };
+    var sw = fs > 11 ? 1.6 : 1;
+    h += '<path d="' + linea(cg) + '" fill="none" stroke="var(--crec)" stroke-width="' + (1.75 * sw) + '" stroke-dasharray="' + (5 * sw) + " " + (3 * sw) + '" stroke-linejoin="round"/>';
+    h += '<path d="' + linea(cm) + '" fill="none" stroke="var(--div)" stroke-width="' + (2.25 * sw) + '" stroke-linejoin="round"/>';
+    var xe = X(n - 1), ym = Y(cm[n - 1]), yg = Y(cg[n - 1]);
+    if (Math.abs(ym - yg) < fs * 1.3) { var mid = (ym + yg) / 2, s = ym < yg ? -1 : 1; ym = mid + s * fs * 0.65; yg = mid - s * fs * 0.65; }
+    h += '<circle cx="' + f(xe) + '" cy="' + f(Y(cg[n - 1])) + '" r="' + (fs * 0.32).toFixed(1) + '" fill="var(--crec)"/>';
+    h += '<circle cx="' + f(xe) + '" cy="' + f(Y(cm[n - 1])) + '" r="' + (fs * 0.36).toFixed(1) + '" fill="var(--div)"/>';
+    h += '<text class="t-ink" x="' + f(xe + fs * 0.7) + '" y="' + f(ym + fs * 0.35) + '" font-size="' + fs + '">' + money(cm[n - 1]) + "</text>";
+    h += '<text x="' + f(xe + fs * 0.7) + '" y="' + f(yg + fs * 0.35) + '" font-size="' + fs + '" style="fill:var(--ink-2)">' + money(cg[n - 1]) + "</text>";
+    var km = e.minM, mx = X(km), my = Y(cm[km]);
+    if (cm[km] < 10000) {
+      var tw = fs * 0.62 * money(cm[km]).length, lx = mx + fs * 0.7, la = "start";
+      if (lx + tw > W - R - 4) { lx = mx - fs * 0.7; la = "end"; }
+      var ly = my + fs * 1.4;
+      if (ly > H - B - 2) ly = my - fs * 0.8;
+      h += '<circle cx="' + f(mx) + '" cy="' + f(my) + '" r="' + (fs * 0.42).toFixed(1) + '" fill="var(--loss)" stroke="var(--panel)" stroke-width="2"/>';
+      h += '<text class="t-loss" x="' + f(lx) + '" y="' + f(ly) + '" text-anchor="' + la + '" font-size="' + fs + '">' + money(cm[km]) + "</text>";
+    }
+    h += '<g id="ehv" visibility="hidden"><line id="ehv-x" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--ink-mut)"/>';
+    h += '<circle id="ehv-g" r="' + (fs * 0.36).toFixed(1) + '" fill="var(--panel)" stroke="var(--crec)" stroke-width="2"/>';
+    h += '<circle id="ehv-m" r="' + (fs * 0.4).toFixed(1) + '" fill="var(--panel)" stroke="var(--div)" stroke-width="2.5"/></g>';
+    var svg = $("e-chart");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.innerHTML = h;
+    if (eHover >= 0) eMarcar(eHover); else $("e-readout").textContent = "Pasa el cursor o el dedo por la gráfica para ver cada día.";
+  }
+
+  function eMarcar(i) {
+    if (!eEsc) return;
+    i = Math.max(0, Math.min(EG.n - 1, i));
+    eHover = i;
+    var x = EG.X(i).toFixed(1), lo = Math.min(eEsc.bajo[i], eEsc.alto[i]), hi = Math.max(eEsc.bajo[i], eEsc.alto[i]);
+    $("ehv-x").setAttribute("x1", x); $("ehv-x").setAttribute("x2", x);
+    $("ehv-m").setAttribute("cx", x); $("ehv-m").setAttribute("cy", EG.Y(eEsc.mezcla[i]).toFixed(1));
+    $("ehv-g").setAttribute("cx", x); $("ehv-g").setAttribute("cy", EG.Y(eEsc.crec[i]).toFixed(1));
+    $("ehv").setAttribute("visibility", "visible");
+    $("e-readout").textContent = eLarga(eEsc.desde + i) + " · tu mezcla " + money(eEsc.mezcla[i]) + " (" + money(lo) + " a " + money(hi) + ") · solo crecimiento " + money(eEsc.crec[i]);
+  }
+  function eDesdePuntero(ev) {
+    var r = $("e-chart").getBoundingClientRect();
+    var px = (ev.clientX - r.left) * EG.W / r.width;
+    return Math.round((px - EG.L) / (EG.W - EG.L - EG.R) * (EG.n - 1));
+  }
+  var eSvg = $("e-chart");
+  eSvg.addEventListener("pointermove", function (ev) { eMarcar(eDesdePuntero(ev)); });
+  eSvg.addEventListener("pointerdown", function (ev) { eMarcar(eDesdePuntero(ev)); });
+  eSvg.addEventListener("pointerleave", function (ev) { if (ev.pointerType === "mouse") { eHover = -1; $("ehv").setAttribute("visibility", "hidden"); $("e-readout").textContent = "Pasa el cursor o el dedo por la gráfica para ver cada día."; } });
+  eSvg.addEventListener("keydown", function (ev) {
+    var i = eHover < 0 ? 0 : eHover;
+    if (ev.key === "ArrowRight") i += 5; else if (ev.key === "ArrowLeft") i -= 5; else if (ev.key === "Home") i = 0; else if (ev.key === "End") i = EG.n - 1; else return;
+    ev.preventDefault();
+    eMarcar(i);
+  });
+  if (mqMovil.addEventListener) mqMovil.addEventListener("change", function () { if (eEsc) eGrafica(); }); else mqMovil.addListener(function () { if (eEsc) eGrafica(); });
 
   var G = {};
   function grafica() {
@@ -622,6 +857,35 @@ if (typeof module !== "undefined") module.exports = Motor;
   cerrarBtn.addEventListener("click", cerrarModal);
   modal.addEventListener("click", function (ev) { if (ev.target === modal) cerrarModal(); });
   document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") cerrarModal(); });
+
+  var modalE = $("modal-estres"), cerrarE = $("modal-estres-close"), previoE = null;
+  function abrirEstres(ev) {
+    previoE = ev && ev.currentTarget;
+    var box = modalE.querySelector(".modal-box");
+    modalE.classList.add("open");
+    try {
+      var fe = window.frameElement;
+      if (fe) {
+        var r = fe.getBoundingClientRect(), vh = fe.ownerDocument.defaultView.innerHeight;
+        box.style.maxHeight = (vh - 40) + "px";
+        modalE.style.alignItems = "flex-start"; modalE.style.paddingTop = Math.max(20, -r.top + Math.max(20, (vh - box.offsetHeight) / 2)) + "px";
+      }
+    } catch (e) {}
+    cerrarE.focus();
+  }
+  function cerrarEstres() { if (!modalE.classList.contains("open")) return; modalE.classList.remove("open"); if (previoE) previoE.focus(); }
+  var EM = DATA.estres_modal;
+  if (EM) {
+    var anios = [EM.desde.slice(0, 4), EM.hasta.slice(0, 4)];
+    $("me-eq").textContent = "Antes de usarla, la probamos con lo que ya pasó: " + (anios[0] === anios[1] ? anios[0] : anios[0] + " y " + anios[1]);
+    $("me-rows").innerHTML = EM.filas.map(function (f) {
+      return '<tr><td class="mf-label">' + esc(f.fondo) + '</td><td class="mf-val mf-num">' + Math.round(f.real) + '%</td><td class="mf-val mf-num">' + Math.round(f.simulada) + "%</td></tr>";
+    }).join("");
+  }
+  $("abrir-estres").addEventListener("click", function (ev) { ev.stopPropagation(); abrirEstres(ev); });
+  cerrarE.addEventListener("click", cerrarEstres);
+  modalE.addEventListener("click", function (ev) { if (ev.target === modalE) cerrarEstres(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") cerrarEstres(); });
 
   pintarModo();
   dona(estado.p);
