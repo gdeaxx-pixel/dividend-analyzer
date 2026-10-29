@@ -73,7 +73,7 @@ Después: #208 y #210 +0 (F4, `metricas.py` y `movimientos.py`), #211 +3 (huecos
 TP-3 y HB-1b), #213 +0 (`filas_csv.py`), +3 (huecos FC-1, FC-2, RY-1 de `filas_csv.py`). Desde #203 la suite corre también en CI en cada PR: allí, sin datos privados, da
 ~1362 passed / 87 skipped — el gate es exit 0, no la cuenta.)
 
-Línea base en la **nube** (sin `real_examples/` y sin red hacia Yahoo): **1342 passed, 91 skipped, 1 deselected** (última corrida del workflow «Suite en PR», 2026-10-09, rama `test/huecos-fc1-fc2-ry1`). En CI el gate es exit 0, no la cuenta. No sustituye a la línea local. Para volver a medir la local, con `real_examples/` montado y la carpeta para ti sola: `./.venv/bin/python tools/verificacion_m4_local.py`.
+Línea base en la **nube** (sin `real_examples/` y sin red hacia Yahoo): **1398 passed, 92 skipped, 1 deselected** (corrida del workflow «Suite en PR» del #241, 2026-10-29, ya con Python 3.14; antes 1342/91/1 el 2026-10-09). La local da la misma cuenta en Python 3.14.6 que en 3.11 (1533, sobre `0c5b812`). En CI el gate es exit 0, no la cuenta. No sustituye a la línea local. Para volver a medir la local, con `real_examples/` montado y la carpeta para ti sola: `./.venv/bin/python tools/verificacion_m4_local.py`.
 
 **Una sesión por working tree** (`git worktree`): una mutación temporal en una carpeta compartida se ve desde otra sesión como un rojo «flaky», y nunca se atribuye un rojo de `test_capital_aportado_resta_lo_que_devuelve_una_venta` a «un servidor compitiendo». Un worktree no hereda lo ignorado por git: sin `real_examples/` y `CONY_test.csv` la cuenta baja (≈1291/87).
 
