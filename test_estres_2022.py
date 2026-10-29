@@ -2,9 +2,11 @@
 
 G1 — fuera de tiempo, por fondo: parámetros calibrados solo hasta 2024-12-31, medidos contra la
 historia REAL de 2025-01-02 en adelante (snapshot congelado del caché, que no se mueve). Se exige
-que la peor caída y la volatilidad simuladas queden cerca de las reales, fondo por fondo.
+que la peor caída y la volatilidad simuladas (mediana de las fases del ciclo) queden cerca de las
+reales, fondo por fondo.
 G2 — regla 3b: `resumen_estres` (Python) contra el motor JS del componente.
 G3 (cifras de control con la canasta de referencia) vive fuera del repo: lleva la receta.
+G4 — cada fondo simulado solo en 2022, al dólar, contra una medición independiente.
 """
 import json
 import os
@@ -50,29 +52,66 @@ def _metricas(r):
 
 
 def _fuera_de_tiempo(fondo, parametros=None, subyacente=None):
+    """(real, simuladas): peor caída y volatilidad reales, y las simuladas con cada fase del ciclo."""
     p = (parametros or _params())["calibrados_hasta_2024"][fondo]
     h = _hist(fondo)
     real = e22._retorno_real(h)
     real = real[real.index > CORTE]
     # El subyacente sale del mismo camino que usa la app (`instruments.yaml`), no de una copia.
     close_u = _hist(subyacente or e22.subyacentes_yieldmax(logic.load_instruments())[fondo])["Close"]
-    # Se simula desde el primer día del fondo y se mide solo lo posterior al corte, como en la
-    # medición que eligió el método: el ciclo de ventas de la opción se cuenta desde el inicio,
-    # y arrancarlo en el corte cambia la fase (NFLY: 52.2 en vez de 50.9 de caída simulada).
-    sim = e22.simular(close_u, p["per"], p["m"], p["k"], h.index[0], real.index[-1]).reindex(real.index)
-    assert not sim.isna().any()
-    (cr, vr), (cs, vs) = _metricas(real), _metricas(sim)
-    return cr, cs, vr, vs
+    # El día en que arranca el ciclo de ventas de la opción es arbitrario y mueve la cifra (NFLY:
+    # el error de su caída simulada va de +2.4 a +10.0 pp según la fase). Se simula con cada fase posible
+    # (arrancando 0..per-1 sesiones después del primer día del fondo) y se mide solo lo posterior
+    # al corte.
+    sims = []
+    for fase in range(p["per"]):
+        sim = e22.simular(close_u, p["per"], p["m"], p["k"], h.index[fase], real.index[-1]).reindex(real.index)
+        assert not sim.isna().any()
+        sims.append(_metricas(sim))
+    return _metricas(real), sims
 
 
 @pytest.mark.parametrize("fondo", sorted(FONDOS))
 def test_g1_fuera_de_tiempo(fondo, capsys):
-    cr, cs, vr, vs = _fuera_de_tiempo(fondo)
+    """Se exige la MEDIANA de las fases: una sola fase mide esa fase, no el método."""
+    (cr, vr), sims = _fuera_de_tiempo(fondo)
+    dc = np.array([c - cr for c, _ in sims])
+    dv = np.array([v - vr for _, v in sims])
     with capsys.disabled():
-        print(f"\nG1 {fondo}: peor caída real {cr:.1f} sim {cs:.1f} (Δ {cs - cr:+.1f}) · "
-              f"volatilidad real {vr:.1f} sim {vs:.1f} (Δ {vs - vr:+.1f})")
-    assert abs(cs - cr) <= TOPE_CAIDA_PP, (fondo, cr, cs)
-    assert abs(vs - vr) <= TOPE_VOL_PP, (fondo, vr, vs)
+        print(f"\nG1 {fondo} ({len(sims)} fases): Δ peor caída mediana {np.median(dc):+.1f} "
+              f"[{dc.min():+.1f} a {dc.max():+.1f}] · Δ volatilidad mediana {np.median(dv):+.1f} "
+              f"[{dv.min():+.1f} a {dv.max():+.1f}]")
+    assert abs(np.median(dc)) <= TOPE_CAIDA_PP, (fondo, cr, dc.tolist())
+    assert abs(np.median(dv)) <= TOPE_VOL_PP, (fondo, vr, dv.tolist())
+
+
+# ── G4 · cada fondo simulado solo, en 2022, al dólar ──────────────────────────
+# Cifras del `modelo.py` de la medición del 28-oct-2026: código independiente de `estres_2022`
+# (otro bucle, otra normal), un fondo a la vez y sin mezcla. Fijan el modelo en CI, donde no
+# corren las cifras de control con la canasta (viven fuera del repo). Con $10,000 desde el peor
+# día de la serie central: mínimo, rango de la prima (k ± banda) y valor al 29-dic-2023.
+G4 = {
+    "CONY": {"desde": "2021-04-16", "min": 1240, "rango": (1049, 1481), "hoy": 3779},
+    "MSTY": {"desde": "2021-11-08", "min": 1831, "rango": (1436, 2274), "hoy": 5156},
+    "NFLY": {"desde": "2021-11-17", "min": 2995, "rango": (2894, 3101), "hoy": 6331},
+    "NVDY": {"desde": "2021-11-29", "min": 3819, "rango": (3607, 4069), "hoy": 10413},
+    "TSLY": {"desde": "2021-11-04", "min": 3124, "rango": (2709, 3642), "hoy": 5499},
+}
+
+
+@pytest.mark.parametrize("fondo", sorted(G4))
+def test_g4_cada_fondo_en_2022_al_dolar(fondo):
+    sub = e22.subyacentes_yieldmax(logic.load_instruments())
+    carpeta = os.path.join(AQUI, "knowledge", "estres_2022")
+    hist = {t: pd.read_parquet(os.path.join(carpeta, f"{t}.parquet")) for t in (sub[fondo], "XLK")}
+    est = e22.datos_estres({fondo: 1.0}, {"XLK": 1.0}, hist, _params(), sub)
+    r = e22.resumen_estres(est, 100)
+    desde = pd.Timestamp(est["inicio"]) + pd.Timedelta(days=([0] + est["dias"])[r["desde"]])
+    esperado = G4[fondo]
+    assert str(desde.date()) == esperado["desde"]
+    assert abs(r["min"] - esperado["min"]) <= 1, (fondo, r["min"])
+    assert all(abs(a - b) <= 1 for a, b in zip(r["rango"], esperado["rango"])), (fondo, r["rango"])
+    assert abs(r["hoy"] - esperado["hoy"]) <= 1, (fondo, r["hoy"])
 
 
 # ── G2 · regla 3b: motor JS del componente = resumen_estres ───────────────────
