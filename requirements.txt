@@ -15,7 +15,7 @@ PyYAML>=6.0
 requests>=2.32,<3
 google-cloud-storage>=2.16.0
 pdfplumber==0.11.10
-Authlib==1.6.12
+Authlib==1.9.1
 httpx==0.28.1
 boto3==1.43.103
 certifi>=2026.10.19
