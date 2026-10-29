@@ -4469,6 +4469,37 @@ def test_cuadricula_roc_div_pagados_neto_es_realmente_neto(monkeypatch):
         "la vista podada no debe reintroducirse")
 
 
+def test_riesgo_categoria_dibuja_la_mezcla_sin_los_skipped(monkeypatch):
+    """«Riesgo» es una categoría propia (28-oct-2026): se llega por el despacho de
+    `ui.vistas.render_vista` y dibuja UN iframe de riesgo. Se mira el modo «Tus fondos» del
+    JSON y no el texto, porque con el secreto local la canasta de referencia puede nombrar
+    esos mismos tickers."""
+    results = _resultados_con_skipped(monkeypatch)
+
+    script = """
+import sys
+sys.path.insert(0, {path!r})
+from ui.chrome import Ruta
+from ui.vistas import render_vista
+
+render_vista(Ruta("riesgo", "riesgo", None, "Claro"))
+""".format(path=os.path.dirname(os.path.abspath(__file__)))
+
+    at = AppTest.from_string(script)
+    at.session_state["_vd_resultados"] = results
+    at.run()
+    assert at.exception == [], [e.value for e in at.exception]
+
+    riesgo = [f for f in at.get("iframe") if 'id="riesgo-root"' in f.proto.srcdoc]
+    assert len(riesgo) == 1, "la categoría Riesgo debe dibujar su propio iframe"
+    src = riesgo[0].proto.srcdoc
+    inicio = src.index("var DATA = ") + len("var DATA = ")
+    datos = json.loads(src[inicio:src.index(";\n", inicio)])
+    tus = next(m for m in datos["modos"] if m["clave"] == "tus")
+    fondos = [t for g in tus["grupos"] if not g["referencia"] for t in g["fondos"]]
+    assert sorted(fondos) == ["MSTY", "SCHB"], "un ticker skipped no debe entrar a la mezcla"
+
+
 def test_detalle_portafolios_no_crashea_con_skipped(monkeypatch):
     """Regresión de raíz: las 4 vistas de Detalle vía `AppTest` (patrón de
     `test_carga_1042s.py`) con un `skipped` en mode_a (TSLY) y otro en mode_b (SMH). El
@@ -4520,15 +4551,8 @@ render_portafolios(resultados)
     assert "SMH" not in vigilar[0].proto.srcdoc and "TSLY" not in vigilar[0].proto.srcdoc, (
         "un ticker skipped no debe llegar al resumen")
 
-    # «Riesgo de la mezcla» (oct-2026): se mira el modo «Tus fondos» del JSON y no el texto,
-    # porque con el secreto local la canasta de referencia puede nombrar esos mismos tickers.
-    assert len(riesgo) == 1, "«Riesgo de la mezcla» debe dibujarse en su propio iframe"
-    src = riesgo[0].proto.srcdoc
-    inicio = src.index("var DATA = ") + len("var DATA = ")
-    datos = json.loads(src[inicio:src.index(";\n", inicio)])
-    tus = next(m for m in datos["modos"] if m["clave"] == "tus")
-    fondos = [t for g in tus["grupos"] if not g["referencia"] for t in g["fondos"]]
-    assert sorted(fondos) == ["MSTY", "SCHB"], "un ticker skipped no debe entrar a la mezcla"
+    # «Riesgo de la mezcla» salió de Portafolios (28-oct-2026): vive en su propia categoría.
+    assert len(riesgo) == 0, "Portafolios ya no debe dibujar «Riesgo de la mezcla»"
 
     texto = "\n".join(m.value for m in at.markdown)
     assert "SMH" not in texto, "SMH está skipped: no debe aparecer en ninguna vista de Detalle"

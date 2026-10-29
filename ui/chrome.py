@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import streamlit as st
 import streamlit.components.v1 as components
 
-from ui import heredadas, impuestos, nav
+from ui import heredadas, impuestos, nav, riesgo
 from ui.tokens import css_variables
 
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
@@ -58,7 +58,7 @@ def _consumir_cierre_popover() -> None:
         height=0,
     )
 
-# Categorías «Portafolios» e «Impuestos» compuestas sobre la taxonomía generada:
+# Categorías «Portafolios», «Riesgo» e «Impuestos» compuestas sobre la taxonomía generada:
 # `ui/nav.py` es el espejo verificable del artifact (el demo solo tiene 4 categorías) y no
 # se edita para meterlas ahí — se componen aquí, en tiempo de import, sin tocar el
 # generador (traspaso § Fase 5, y § Fase 2 de la vista fiscal para «Impuestos»).
@@ -66,12 +66,13 @@ def _consumir_cierre_popover() -> None:
 # El ORDEN importa: `CAT_ORDER_TOTAL[0]` es la categoría de aterrizaje por defecto (commit
 # `bec1061`, decisión de Daniel) y debe seguir siendo «Portafolios». El resto sigue el orden
 # del menú que pidió Daniel (2026-09-28): Largo Plazo antes que Dividendos, «Impuestos» al
-# final. `CAT_LABELS_TOTAL` se construye EN ese orden porque el popover recorre el dict: antes
+# final; y el 2026-10-28 «Riesgo» pasa a ser su propia categoría, en segundo lugar.
+# `CAT_LABELS_TOTAL` se construye EN ese orden porque el popover recorre el dict: antes
 # se armaba desde `nav.CAT_LABELS` y Portafolios salía quinto aunque fuera el aterrizaje.
-CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE, "largo", "dividendos", "comparacion", "metodo",
-                   impuestos.CAT_CLAVE)
+CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE, riesgo.CAT_CLAVE, "largo", "dividendos", "comparacion",
+                   "metodo", impuestos.CAT_CLAVE)
 _LABELS = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL,
-           impuestos.CAT_CLAVE: impuestos.CAT_LABEL}
+           riesgo.CAT_CLAVE: riesgo.CAT_LABEL, impuestos.CAT_CLAVE: impuestos.CAT_LABEL}
 assert set(CAT_ORDER_TOTAL) == set(_LABELS), "CAT_ORDER_TOTAL y las etiquetas divergen"
 CAT_LABELS_TOTAL = {clave: _LABELS[clave] for clave in CAT_ORDER_TOTAL}
 
@@ -104,6 +105,8 @@ def _vistas(categoria: str) -> dict:
         return dict(nav.MET_VIEWS)
     if categoria == heredadas.CAT_CLAVE:
         return dict(heredadas.VIEWS)
+    if categoria == riesgo.CAT_CLAVE:
+        return dict(riesgo.VIEWS)
     if categoria == impuestos.CAT_CLAVE:
         return dict(impuestos.VIEWS)
     if categoria in ("largo", "dividendos"):
@@ -138,6 +141,8 @@ def _orden(categoria: str) -> tuple:
         return nav.MET_ORDER
     if categoria == heredadas.CAT_CLAVE:
         return heredadas.VIEW_ORDER
+    if categoria == riesgo.CAT_CLAVE:
+        return riesgo.VIEW_ORDER
     if categoria == impuestos.CAT_CLAVE:
         return impuestos.VIEW_ORDER
     if categoria in ("largo", "dividendos"):

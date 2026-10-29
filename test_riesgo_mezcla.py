@@ -1,5 +1,5 @@
 """Tests de «Riesgo de la mezcla»: `riesgo_mezcla`, `ui.adapters.riesgo_mezcla_data`, la lectura
-del secreto en `ui.heredadas` y el render de `ui/componentes/riesgo.html`.
+del secreto en `ui.riesgo` y el render de `ui/componentes/riesgo.html`.
 
 Solo datos sintéticos: tickers inventados, historias armadas a mano con `pd.bdate_range` y una
 receta sintética. Ninguna cifra esperada sale de la función auditada; la única comparación
@@ -204,7 +204,7 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
         "BBB": {"market_value": 1000.0, "pocket_investment": 9000.0,
                 "history": _tx(("2024-04-01", "Bought"))},
         "CCC": {"market_value": 6000.0, "pocket_investment": 50.0,
-                "history": _tx(("2024-03-20", "Compra"))},
+                "history": _tx(("2024-03-04", "Compra"), ("2024-03-20", "Compra"))},
         # `logic.py` hoy no deja `market_value` en un descartado; el filtro no debe depender de eso.
         "DDD": {"skipped": True, "reason": "menos de 14 días", "market_value": 5000.0},
         "EEE": {"market_value": 0.0, "pocket_investment": 500.0,
@@ -218,8 +218,9 @@ def test_adapter_usa_valor_de_mercado_y_filtra_sin_datos():
     assert tus["p_inicial"] == 40
     assert tus["grupos"][0]["fondos"] == ["AAA", "BBB"]
     assert tus["grupos"][1]["fondos"] == ["CCC"]
-    # primera compra entre los fondos que entran: AAA el 11-mar (el dividendo del 5-feb no cuenta)
-    assert tus["compra"]["fecha_real"] == "2024-03-11"
+    # primera compra entre los fondos que entran, de los DOS grupos: la de CCC (Crecimiento)
+    # el 4-mar gana a la de AAA el 11-mar, y el dividendo de AAA del 5-feb no cuenta
+    assert tus["compra"]["fecha_real"] == "2024-03-04"
 
 
 def _st_falso(cargado, secreto, llamadas):
@@ -231,24 +232,83 @@ def _st_falso(cargado, secreto, llamadas):
 
 
 def test_receta_referencia_sin_archivo_no_toca_secrets(monkeypatch):
-    from ui import heredadas
+    from ui import riesgo
 
     llamadas = []
-    monkeypatch.setattr(heredadas, "st", _st_falso(False, dict(RECETA), llamadas))
-    assert heredadas._receta_referencia() is None
+    monkeypatch.setattr(riesgo, "st", _st_falso(False, dict(RECETA), llamadas))
+    assert riesgo._receta_referencia() is None
     assert llamadas == []
 
 
 def test_receta_referencia_valida_y_rechaza_incompleta(monkeypatch):
-    from ui import heredadas
+    from ui import riesgo
 
     llamadas = []
-    monkeypatch.setattr(heredadas, "st", _st_falso(True, dict(RECETA, dividendos=("AAA", "BBB")), llamadas))
-    assert heredadas._receta_referencia() == dict(RECETA)
+    monkeypatch.setattr(riesgo, "st", _st_falso(True, dict(RECETA, dividendos=("AAA", "BBB")), llamadas))
+    assert riesgo._receta_referencia() == dict(RECETA)
     for malo in (dict(RECETA, pct_dividendos=120), dict(RECETA, crecimiento=[]),
                  dict(RECETA, nombre=None), dict(RECETA, dividendos="AAA")):
-        monkeypatch.setattr(heredadas, "st", _st_falso(True, malo, llamadas))
-        assert heredadas._receta_referencia() is None, malo
+        monkeypatch.setattr(riesgo, "st", _st_falso(True, malo, llamadas))
+        assert riesgo._receta_referencia() is None, malo
+
+
+def _resultado(valor, compra="2024-03-11"):
+    return {"market_value": valor, "pocket_investment": 100.0, "history": _tx((compra, "Buy"))}
+
+
+def _espiar_render_riesgo(monkeypatch):
+    from ui import componentes
+
+    llamadas = []
+    monkeypatch.setattr(componentes, "render_riesgo", lambda datos, tema: llamadas.append(datos))
+    return llamadas
+
+
+def test_sin_historia_solo_avisa_de_fondos_del_usuario(monkeypatch):
+    from ui import riesgo
+
+    resultados = {"UUU": _resultado(3000.0), "VVV": _resultado(1000.0), "WWW": _resultado(6000.0)}
+    classify = {"UUU": "mode_a", "VVV": "mode_a", "WWW": "mode_b"}
+    historias = {t: _serie(150) for t in ("UUU", "WWW", "AAA", "CCC")}
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    monkeypatch.setattr(riesgo, "_historias_riesgo", lambda tickers: (historias, ["BBB", "VVV"]))
+    llamadas = _espiar_render_riesgo(monkeypatch)
+
+    riesgo._riesgo_mezcla(resultados, classify, "Claro")
+
+    assert len(llamadas) == 1
+    nota = _modo(llamadas[0], "tus")["nota"]
+    assert nota == "Sin historia de precios, fuera de la simulación: VVV."
+    assert "BBB" not in nota
+
+
+def test_riesgo_vista_sin_archivo(monkeypatch):
+    from ui import riesgo, vistas
+
+    llamadas_st = []
+    st_falso = types.SimpleNamespace(
+        caption=lambda texto: llamadas_st.append(("caption", texto)),
+        markdown=lambda texto, **kw: llamadas_st.append(("markdown", texto)))
+    monkeypatch.setattr(riesgo, "st", st_falso)
+    monkeypatch.setattr(vistas, "obtener_resultados", lambda: {})
+    monkeypatch.setattr(riesgo, "_historias_riesgo",
+                        lambda tickers: ({t: _serie(150) for t in ("AAA", "BBB", "CCC")}, []))
+    llamadas = _espiar_render_riesgo(monkeypatch)
+    ruta = types.SimpleNamespace(tema="Claro")
+
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: dict(RECETA))
+    riesgo.render_vista("riesgo", ruta)
+    assert len(llamadas) == 1
+    assert [m["clave"] for m in llamadas[0]["modos"]] == ["greco"]
+    assert ("caption", "Sube tu archivo de transacciones para comparar con tus fondos.") in llamadas_st
+
+    llamadas.clear()
+    llamadas_st.clear()
+    monkeypatch.setattr(riesgo, "_receta_referencia", lambda: None)
+    riesgo.render_vista("riesgo", ruta)
+    assert llamadas == []
+    assert [k for k, _ in llamadas_st] == ["markdown"] * 3
+    assert "Riesgo" in llamadas_st[0][1] and "Riesgo" in llamadas_st[1][1]
 
 
 def test_render_riesgo_inyecta_datos_y_tema(monkeypatch):
