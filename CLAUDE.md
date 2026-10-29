@@ -132,7 +132,10 @@ no está montado, los tests hacen **skip** — y un skip no es un pass: hay que 
 ## Deploy
 
 - Rama + PR. **Nunca commit directo a `main`** — `main` auto-despliega a Streamlit Cloud.
-- Daniel mergea. Siempre. Nunca auto-merge. **Mergear no es desplegar.**
+- Mergea el agente (desde 2026-10-29), `gh pr merge --squash`, nunca `--auto`. Solo si: base `main`,
+  `gh pr checks --watch` todo en verde, rama al día con `main` (si no, `gh pr update-branch` y
+  esperar el verde otra vez) y la verificación local hecha. **Mergear no es desplegar**: después,
+  health de Streamlit Cloud (skill `actualizar-app`) y reportar a Daniel enlace + SHA de `main`.
 - **Módulo nuevo propio** → añadirlo a `stale_guard._ORDEN`, **antes** de quienes lo importan.
   Streamlit Cloud reescribe los archivos al desplegar sin reiniciar el proceso, y
   `asegurar_frescura()` recarga por fecha de modificación: lo que no esté en `_ORDEN` se recarga
