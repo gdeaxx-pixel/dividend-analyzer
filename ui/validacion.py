@@ -17,12 +17,23 @@ from __future__ import annotations
 import streamlit as st
 
 import logic
+from ui import texto
 
 _QUALITY_STYLE = {
     "unreliable": ("--warn", "No confiable"),
-    "reconciled": ("--accent", "Reconciliado desde tu captura"),
+    "reconciled": ("--accent", "Reconciliado con tus posiciones"),
     "partial": ("--ink-mut", "Parcial"),
 }
+
+# Lo que de verdad pasa cuando `logic` marca una posición 'reconciled': las acciones o el
+# costo que el cliente confirmó en el paso 2 difieren de lo que sale del CSV, y mandan los
+# suyos. Venga de una captura, del CSV de posiciones de Schwab o de la tabla a mano. El
+# `reason` de `logic.assess_ticker_quality` decía «de tu captura del broker» aunque no se
+# hubiera subido ninguna (A8, 30-oct); se reemplaza aquí para no tocar `logic.py`.
+_RAZON_RECONCILIADO = (
+    "Las acciones o el costo que confirmaste en el paso 2 no coinciden con los del CSV, y "
+    "usamos los tuyos. El valor, el ROI y el ROC de cabecera salen de tus cifras; la línea "
+    "de tiempo histórica de esta posición es parcial.")
 
 _RECON_STYLE = {
     "ok": "--cash",
@@ -90,22 +101,23 @@ def _render_calidad_datos(resultados: dict) -> None:
 
     if no_ok:
         st.markdown(
-            '<p class="vd-pie-nota">Cuando el CSV no trae el historial completo, usamos tu '
-            'captura del broker (acciones y costo) para reconciliar la posición; los tickers '
-            'no reconciliados se marcan y se excluyen del % en el tiempo.</p>',
+            '<p class="vd-pie-nota">Cuando las acciones o el costo que confirmaste en el paso 2 '
+            'no coinciden con el CSV, usamos los tuyos para reconciliar la posición; los '
+            'tickers no reconciliados se marcan y se excluyen del % en el tiempo.</p>',
             unsafe_allow_html=True)
         for ticker, q in no_ok.items():
             accent_var, etiqueta = _QUALITY_STYLE.get(q["level"], _QUALITY_STYLE["partial"])
+            razon = _RAZON_RECONCILIADO if q["level"] == "reconciled" else q["reason"]
             accion = (f'<p class="vd-pie-card-accion">→ {q["action"]}</p>' if q.get("action") else "")
             st.markdown(
                 _tarjeta(accent_var,
                         f'{ticker} · <span style="color: var({accent_var});">{etiqueta}</span>',
-                        f'<p class="vd-pie-card-cuerpo">{q["reason"]}</p>{accion}'),
+                        f'<p class="vd-pie-card-cuerpo">{razon}</p>{accion}'),
                 unsafe_allow_html=True)
     else:
-        st.markdown(
-            _tarjeta("--cash", f"Datos completos · {len(resultados)} posiciones verificadas", ""),
-            unsafe_allow_html=True)
+        verificadas = texto.plural(len(resultados), "posición verificada", "posiciones verificadas")
+        st.markdown(_tarjeta("--cash", f"Datos completos · {verificadas}", ""),
+                    unsafe_allow_html=True)
 
     ingreso = st.session_state.get("_wizard_income_summary")
     if ingreso and ingreso.get("tickers"):
@@ -118,7 +130,8 @@ def _render_calidad_datos(resultados: dict) -> None:
                         unsafe_allow_html=True)
             st.markdown(
                 '<p class="vd-pie-nota">Comparamos el dividendo bruto del CSV contra tu '
-                f'reporte de ingresos del broker (segunda fuente). {n_ok} validado(s), '
+                f'reporte de ingresos del broker (segunda fuente). '
+                f'{texto.plural(n_ok, "validado", "validados")}, '
                 f'{n_warn} con alerta. Las proyecciones "Estimated" del broker no se usan.</p>',
                 unsafe_allow_html=True)
             for ticker, r in sorted(recon.items(), key=lambda kv: (orden.get(kv[1]["badge"], 3), kv[0])):
@@ -154,7 +167,7 @@ def _tech_events(resultados: dict) -> list[dict]:
         calidad = logic.assess_ticker_quality(resultados, ticker)
         if calidad["level"] == "reconciled":
             eventos.append({"date": "", "ticker": ticker, "tipo": "Reconciliación",
-                            "desc": f"Reconciliado desde tu captura: {calidad['reason']}"})
+                            "desc": f"Reconciliado con tus posiciones: {_RAZON_RECONCILIADO}"})
 
         for accion in stats.get("corporate_actions", []):
             if accion["type"] == "Dividendo especial":
@@ -169,7 +182,8 @@ def _render_notas_tecnicas(resultados: dict) -> None:
                      key=lambda e: (e.get("date") or "9999-99", e.get("ticker", "")))
     if not eventos:
         return
-    with st.expander(f"Notas técnicas y eventos corporativos detectados · {len(eventos)} evento(s)"):
+    with st.expander("Notas técnicas y eventos corporativos detectados · "
+                     + texto.plural(len(eventos), "evento", "eventos")):
         filas = "".join(
             '<tr class="vd-pie-fila">'
             f'<td class="vd-pie-celda vd-pie-celda-fecha">{e["date"] or "—"}</td>'
@@ -264,13 +278,16 @@ def _render_excluidos(resultados: dict) -> None:
     tuyos, ruido = _separar_excluidos(resultados)
     if not tuyos and not ruido:
         return
+    tuyas = texto.plural(len(tuyos), "posición tuya excluida", "posiciones tuyas excluidas")
     if tuyos and ruido:
-        titulo = (f"{len(tuyos)} posición(es) tuya(s) excluida(s) · "
-                  f"+ {len(ruido)} ticker(s) no reconocido(s) como ETF")
+        titulo = (f"{tuyas} · + "
+                  + texto.plural(len(ruido), "ticker no reconocido como ETF",
+                                 "tickers no reconocidos como ETF"))
     elif tuyos:
-        titulo = f"{len(tuyos)} posición(es) tuya(s) excluida(s) del análisis"
+        titulo = f"{tuyas} del análisis"
     else:
-        titulo = f"{len(ruido)} ticker(s) excluidos del análisis"
+        titulo = texto.plural(len(ruido), "ticker excluido del análisis",
+                              "tickers excluidos del análisis")
 
     with st.expander(titulo):
         if tuyos:
@@ -305,12 +322,22 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     parcial = {t: q for t, q in dq.items() if q["level"] not in ("ok", "unreliable")}
     if unreliable:
         nivel = "Baja"
-        razones.append(f"{len(unreliable)} posición(es) con datos no confiables.")
+        razones.append(texto.plural(len(unreliable), "posición con datos no confiables.",
+                                    "posiciones con datos no confiables."))
     elif parcial:
         if nivel == "Alta":
             nivel = "Media"
-        razones.append(f"{len(parcial)} posición(es) reconciliadas desde tu captura, no "
-                       "directas del CSV.")
+        # `parcial` junta dos niveles con causas distintas: decir «desde tu captura» de
+        # las dos era falso para la que solo tiene historial incompleto (A8, 30-oct).
+        n_rec = sum(1 for q in parcial.values() if q["level"] == "reconciled")
+        if n_rec:
+            razones.append(texto.plural(
+                n_rec, "posición tomada de lo que confirmaste en el paso 2, no del CSV.",
+                "posiciones tomadas de lo que confirmaste en el paso 2, no del CSV."))
+        if len(parcial) - n_rec:
+            razones.append(texto.plural(
+                len(parcial) - n_rec, "posición con historial parcial en el CSV.",
+                "posiciones con historial parcial en el CSV."))
 
     ingreso = st.session_state.get("_wizard_income_summary")
     if ingreso and ingreso.get("tickers"):
@@ -319,13 +346,17 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
         if warns:
             if nivel == "Alta":
                 nivel = "Media"
-            razones.append(f"{len(warns)} posición(es) con alerta en la validación de ingresos.")
+            razones.append(texto.plural(
+                len(warns), "posición con alerta en la validación de ingresos.",
+                "posiciones con alerta en la validación de ingresos."))
 
     tuyos = excluidos_pendientes_de_sesion(resultados)
     if tuyos:
         if nivel == "Alta":
             nivel = "Media"
-        razones.append(f"{len(tuyos)} posición(es) tuya(s) excluida(s) por datos insuficientes.")
+        razones.append(texto.plural(
+            len(tuyos), "posición tuya excluida por datos insuficientes.",
+            "posiciones tuyas excluidas por datos insuficientes."))
 
     if not razones:
         razones.append("Sin discrepancias entre las fuentes disponibles.")

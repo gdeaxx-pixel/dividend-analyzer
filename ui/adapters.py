@@ -52,10 +52,13 @@ TRG_MODOS = ("bruto", "roc", "plano")
 CMP_COSECHA_DESTINO = "SCHB"
 
 
-# Etiquetas del rail — literales del demo (`viaje-dinero-waterfall.html:2131`).
+# Etiquetas del rail: los mismos nombres que las columnas de la cascada (`lab` en
+# `ui/componentes/cashflow.html`), aprobado por Daniel el 2026-10-30 (D5). Antes eran las
+# abreviaturas del demo (`viaje-dinero-waterfall.html:2131`) y en los pasos 4, 5 y 7 el
+# nombre del paso no coincidía con el de su columna.
 STEP_LABELS = (
-    "Bolsillo", "Div. bruto", "Imp. NRA", "Reinv + Efvo",
-    "Bols + DRIP", "Mercado", "Cap. actual", "Resultado",
+    "Tu bolsillo", "Dividendo bruto", "Impuesto NRA", "Efectivo apartado",
+    "Capital trabajando", "Impacto del mercado", "Efectivo cobrado", "Resultado real",
 )
 
 

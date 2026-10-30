@@ -4615,8 +4615,9 @@ _render_excluidos(obtener_resultados())
 
     assert len(at.expander) == 1
     titulo = at.expander[0].label
-    assert titulo.startswith("2 posición(es) tuya(s) excluida(s)"), titulo
-    assert "+ 1 ticker(s) no reconocido(s) como ETF" in titulo, titulo
+    # Plural y singular según el número desde el 30-oct (A7): antes «posición(es) tuya(s)».
+    assert titulo.startswith("2 posiciones tuyas excluidas"), titulo
+    assert "+ 1 ticker no reconocido como ETF" in titulo, titulo
 
     texto = "\n".join(m.value for m in at.markdown)
     assert "SMH" in texto and "TSLY" in texto and "ACME" in texto
