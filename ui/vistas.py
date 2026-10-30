@@ -82,8 +82,10 @@ def _resultados() -> dict:
                            reaccion={"tipo": "favicon"})
         # `finally`: si el cálculo lanza, ROC «calculando» se retira igual. Sin eso el iframe
         # se queda y, con él, el favicon girando en la pestaña para siempre.
+        # El spinner va sin texto: la frase de ROC (`ROC_FRASE_CARGA`) ya dice lo mismo
+        # justo encima, y se leían dos mensajes casi iguales (A4, 30-oct).
         try:
-            with st.spinner("Leyendo tu portafolio y consultando el mercado…"):
+            with st.spinner(""):
                 st.session_state["_vd_resultados"] = logic.analyze_portfolio(
                     df, position_overrides=capturas)
         finally:

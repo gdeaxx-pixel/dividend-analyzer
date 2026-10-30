@@ -48,7 +48,7 @@ _ORDEN = (
     # `ui.estado` va antes que sus consumidores (carga, vistas, heredadas): es el dueño de
     # las claves de sesión compartidas, y recargarlo después dejaría a los demás apuntando
     # al módulo viejo.
-    "ui.tokens", "ui.estado", "ui.nav", "ui.componentes", "ui.heredadas", "ui.impuestos",
+    "ui.tokens", "ui.texto", "ui.estado", "ui.nav", "ui.componentes", "ui.heredadas", "ui.impuestos",
     "ui.riesgo", "ui.adapters", "ui.chrome", "ui.carga", "ui.pie", "ui.validacion", "ui.vistas",
 )
 

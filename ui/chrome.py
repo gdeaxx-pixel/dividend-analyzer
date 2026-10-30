@@ -19,11 +19,12 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from ui import heredadas, impuestos, nav, riesgo
+from ui import estado, heredadas, impuestos, nav, riesgo
 from ui.tokens import css_variables
 
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
 _CUENTA_CIERRE_POPOVER = "vd_cierre_popover_n"
+_CUENTA_SUBIDA = "vd_subida_inicio_n"
 
 
 def _pedir_cierre_popover() -> None:
@@ -60,6 +61,27 @@ def _consumir_cierre_popover() -> None:
             var Evento = tipo.indexOf("pointer") === 0 ? PointerEvent : MouseEvent;
             document.body.dispatchEvent(new Evento(tipo, {bubbles: true, cancelable: true}));
           });
+        } catch (e) {}
+        </script>""",
+        unsafe_allow_javascript=True,
+    )
+
+
+def _subir_al_inicio_si_toca() -> None:
+    """Si «Ver resultados →» lo pidió (`ui.estado.pedir_subir_al_inicio`), lleva arriba el
+    contenedor que desplaza la app (`stMain`). Mismo mecanismo que `_consumir_cierre_popover`:
+    `st.html` con JavaScript corre en el documento de la app, y el cuerpo cambia en cada
+    subida porque un script idéntico al anterior no se vuelve a ejecutar."""
+    if not estado.consumir_subir_al_inicio():
+        return
+    n = st.session_state.get(_CUENTA_SUBIDA, 0) + 1
+    st.session_state[_CUENTA_SUBIDA] = n
+    st.html(
+        f"<script>/* subida {n} */</script>" + """<script>
+        try {
+          var principal = document.querySelector('[data-testid="stMain"]');
+          if (principal) principal.scrollTo(0, 0);
+          window.scrollTo(0, 0);
         } catch (e) {}
         </script>""",
         unsafe_allow_javascript=True,
@@ -223,6 +245,9 @@ def render_encabezado(con_datos: bool) -> str:
 
     st.session_state.setdefault("vd_tema", "Claro")
     st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
+    # Antes del cálculo de resultados, no después: así la pantalla de espera ya sale arriba.
+    if con_datos:
+        _subir_al_inicio_si_toca()
 
     col_izq, col_der = st.columns([4, 2], vertical_alignment="center")
     with col_izq:
@@ -420,11 +445,12 @@ _ESTILOS = """
 
         /* Rail de 8 pasos: barra de progreso + etiqueta, calcado del `.step` del artifact
            (`ui/componentes/cashflow.html:213-224`). Gap 10px y padding del contenedor a
-           40px son la geometría del artifact: con ellos cada paso mide 98.8px y la
-           etiqueta más larga («Reinv + Efvo», 94px a 9.5px) entra con 4.8px de holgura,
-           así que `nowrap` nunca parte ni envuelve. El estado llega por la clave del
-           contenedor de cada paso (`…_done` / `…_now` / `…_todo`), porque `st.button`
-           solo distingue dos tipos y aquí hacen falta tres. */
+           40px son la geometría del artifact: con ellos cada paso mide 98.8px. Desde el
+           30-oct (D5) cada paso lleva el mismo nombre que su columna de la cascada, a
+           11px y en hasta dos líneas: «Impacto del mercado» no cabe en una. `min-height`
+           reserva las dos líneas en todos, así ningún paso es más alto que otro. El estado
+           llega por la clave del contenedor de cada paso (`…_done` / `…_now` / `…_todo`),
+           porque `st.button` solo distingue dos tipos y aquí hacen falta tres. */
         .st-key-vd_paso_wrap [data-testid="stHorizontalBlock"] { gap: 10px; }
         .st-key-vd_paso_wrap .stButton > button {
           background: transparent !important;
@@ -432,27 +458,33 @@ _ESTILOS = """
           border-top: 4px solid var(--hair) !important;
           border-radius: 0 !important;
           box-shadow: none !important;
-          min-height: 0 !important;
+          min-height: 38px !important;
           padding: 7px 0 0 0 !important;
-          font-family: var(--font-mono) !important;
-          font-size: 9.5px !important;
-          letter-spacing: .03em !important;
-          text-transform: uppercase !important;
+          font-family: var(--font-sans) !important;
+          font-size: 11px !important;
+          letter-spacing: 0 !important;
           line-height: 1.25 !important;
           color: var(--ink-mut) !important;
-          white-space: nowrap !important;
+          white-space: normal !important;
+          text-wrap: balance;
+          align-items: flex-start !important;
           justify-content: center !important;
+        }
+        .st-key-vd_paso_wrap .stButton > button p {
+          font-size: 11px !important; line-height: 1.25 !important; white-space: normal !important;
         }
         .st-key-vd_paso_wrap [class*="_done"] .stButton > button {
           border-top-color: var(--accent) !important; color: var(--ink-2) !important;
         }
+        /* El paso activo va en tinta, no en el rojo de pérdida (D4): el rojo queda solo para
+           pérdidas, y el último paso salía rojo también con ganancia. */
         .st-key-vd_paso_wrap [class*="_now"] .stButton > button {
-          border-top-color: var(--loss) !important; color: var(--loss) !important;
+          border-top-color: var(--ink) !important; color: var(--ink) !important;
           font-weight: 700 !important;
         }
         .st-key-vd_paso_wrap .stButton > button:hover { color: var(--accent) !important; }
         .st-key-vd_paso_wrap [class*="_now"] .stButton > button:hover {
-          color: var(--loss) !important;
+          color: var(--ink) !important;
         }
         /* Leyenda del rail móvil (`render_rail` en `ui/componentes/__init__.py`).
            Oculta en desktop: ahí cada paso ya trae su propia etiqueta. */
@@ -753,6 +785,7 @@ _ESTILOS = """
           }
           .st-key-vd_paso_wrap .stButton > button {
             padding: 7px 0 6px 0 !important;
+            min-height: 0 !important;    /* sin etiqueta no hay dos líneas que reservar */
           }
           .st-key-vd_paso_wrap .stButton > button p { display: none !important; }
           .vd-rail-legend {

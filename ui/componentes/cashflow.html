@@ -1166,10 +1166,10 @@
   var OTROS_TIPOS = Object.keys(D.OTROS_DETALLE || {});
   var OTROS_LABEL = OTROS_TIPOS.length === 1 ? OTROS_TIPOS[0] : "Otros movimientos";
 
-  // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Etiquetas
-  // abreviadas para columnas de ancho igual — el nombre completo va en la caption.
-  var STEP_LABELS = ["Bolsillo","Div. bruto","Imp. NRA","Reinv + Efvo",
-                      "Bols + DRIP","Mercado","Cap. actual","Resultado"];
+  // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Mismos nombres que el
+  // rail nativo (`ui/adapters.py::STEP_LABELS`) y que el `lab` de cada columna (D5, 30-oct).
+  var STEP_LABELS = ["Tu bolsillo","Dividendo bruto","Impuesto NRA","Efectivo apartado",
+                      "Capital trabajando","Impacto del mercado","Efectivo cobrado","Resultado real"];
 
   var PLOT_H = 300, MAXV = PICO, sc = PLOT_H / MAXV;
   var pasoActual = {{PASO}}; // arranca en el estado final ya aprobado; se puede retroceder
@@ -1475,7 +1475,7 @@
   var N_PK = nb(POCKET), N_BR = nb(BRUTO), N_IM = nb(IMPUESTO), N_DR = nb(DRIP), N_CA = nb(CASH), N_MV = nb(VALOR_HOY);
   var N_OT = nb(Math.abs(OTROS));
   // Desde este paso el mosaico ya conoce el mercado: el mismo en que la cascada lo dibuja.
-  var PASO_MERCADO = STEP_LABELS.indexOf("Mercado");
+  var PASO_MERCADO = STEP_LABELS.indexOf("Impacto del mercado");
   // Pieza de «otros» para el mosaico, o nada. Se arma una vez: los pasos 3-7 la
   // muestran igual, y su monto real (amt) nunca se mezcla con el del efectivo.
   function piezaOtros() {

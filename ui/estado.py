@@ -24,6 +24,19 @@ import logic
 # Clave privada. Nadie fuera de este módulo debe escribirla ni leerla — usa las funciones.
 _CLAVE_PAIS = "_perfil_fiscal_pais"
 _CLAVE_FUENTE = "_perfil_fiscal_fuente"
+_CLAVE_SUBIR = "_vd_subir_al_inicio"
+
+
+def pedir_subir_al_inicio() -> None:
+    """La pide «Ver resultados →» (`ui.carga`): Streamlit conserva el desplazamiento de la
+    hoja de carga y los resultados abrían bajados, con el menú fuera de la vista (A5 de la
+    propuesta del 2026-10-30). La consume la cabecera de resultados (`ui.chrome`)."""
+    st.session_state[_CLAVE_SUBIR] = True
+
+
+def consumir_subir_al_inicio() -> bool:
+    """True una sola vez por cada `pedir_subir_al_inicio`."""
+    return bool(st.session_state.pop(_CLAVE_SUBIR, False))
 
 
 def perfil_fiscal() -> dict:

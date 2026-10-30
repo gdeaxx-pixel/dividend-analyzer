@@ -458,8 +458,9 @@ def render_rail(labels: list, activo: int, key: str = "vd_paso") -> int:
             estado = "now" if indice == actual else ("done" if indice < actual else "todo")
             with columna:
                 with st.container(key=f"{key}_p{indice}_{estado}"):
+                    # `wrap=True`: «Impacto del mercado» ocupa dos líneas (D5, 30-oct).
                     if st.button(etiqueta, key=f"{key}_{indice}",
-                                 use_container_width=True):
+                                 use_container_width=True, wrap=True):
                         st.session_state[key] = indice
                         st.rerun()
         # Leyenda «Paso N de 8 · Etiqueta», solo visible en móvil (ver @media en

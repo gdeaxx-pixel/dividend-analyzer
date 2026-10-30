@@ -63,7 +63,10 @@ def test_bloque3_bloqueado_sin_csv():
     at.run()
     assert at.exception == []
     texto = "\n".join(m.value for m in at.markdown)
-    assert "Formulario 1042-S" in texto
+    # Bloqueado se llama igual que abierto desde el 30-oct (A3); antes decía
+    # «Formulario 1042-S · opcional» solo en este estado.
+    assert "Información fiscal · opcional" in texto
+    assert "Formulario 1042-S · opcional" not in texto
     assert not _tiene_uploader_pdf(at)
 
 
