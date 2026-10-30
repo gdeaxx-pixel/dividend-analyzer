@@ -116,8 +116,8 @@ def test_la_barra_precio_no_promete_valor_de_hoy_menos_invertido(monkeypatch):
     from ui import componentes
 
     capturado = {}
-    monkeypatch.setattr(componentes.components, "html",
-                        lambda html, height=None, scrolling=None: capturado.update(html=html))
+    monkeypatch.setattr(componentes.st, "iframe",
+                        lambda html, height=None: capturado.update(html=html))
     componentes.render_portafolios(portafolios_data(RESULTADOS, CLASSIFY), "Claro")
     html = capturado["html"]
     assert "invertiste" not in html
@@ -239,12 +239,11 @@ def test_render_portafolios_inyecta_datos_y_tema(monkeypatch):
 
     capturado = {}
 
-    def _spy(html, height=None, scrolling=None):
+    def _spy(html, height=None):
         capturado["html"] = html
         capturado["height"] = height
-        capturado["scrolling"] = scrolling
 
-    monkeypatch.setattr(componentes.components, "html", _spy)
+    monkeypatch.setattr(componentes.st, "iframe", _spy)
     datos = portafolios_data(RESULTADOS, CLASSIFY)
     componentes.render_portafolios(datos, "Oscuro")
 
@@ -258,4 +257,4 @@ def test_render_portafolios_inyecta_datos_y_tema(monkeypatch):
     assert payload["total_mv"] == pytest.approx(3000)
     assert payload["grupos"][0]["clave"] == "crec"
     assert capturado["height"] == componentes.ALTO_PORTAFOLIOS
-    assert capturado["scrolling"] is False
+    assert capturado["html"].startswith("<style>html{overflow:hidden}</style>")

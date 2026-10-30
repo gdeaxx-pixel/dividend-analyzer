@@ -368,10 +368,10 @@ def test_render_riesgo_inyecta_datos_y_tema(monkeypatch):
 
     capturado = {}
 
-    def _spy(html, height=None, scrolling=None):
-        capturado.update(html=html, height=height, scrolling=scrolling)
+    def _spy(html, height=None):
+        capturado.update(html=html, height=height)
 
-    monkeypatch.setattr(componentes.components, "html", _spy)
+    monkeypatch.setattr(componentes.st, "iframe", _spy)
     datos = _datos_motor()
     componentes.render_riesgo(datos, "Oscuro")
 
@@ -381,4 +381,5 @@ def test_render_riesgo_inyecta_datos_y_tema(monkeypatch):
     inicio = html.index("var DATA = ") + len("var DATA = ")
     fin = html.index(";\n", inicio)
     assert json.loads(html[inicio:fin]) == json.loads(json.dumps(datos))
-    assert capturado["height"] == componentes.ALTO_RIESGO and capturado["scrolling"] is False
+    assert capturado["height"] == componentes.ALTO_RIESGO
+    assert capturado["html"].startswith("<style>html{overflow:hidden}</style>")

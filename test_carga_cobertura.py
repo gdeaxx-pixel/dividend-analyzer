@@ -437,12 +437,11 @@ def _captura_html(monkeypatch):
 
     caja = {}
 
-    def _fake_html(html, height=None, scrolling=None):
+    def _fake_html(html, height=None):
         caja["html"] = html
         caja["height"] = height
-        caja["scrolling"] = scrolling
 
-    monkeypatch.setattr(componentes.components, "html", _fake_html)
+    monkeypatch.setattr(componentes.st, "iframe", _fake_html)
     return componentes, caja
 
 
@@ -459,7 +458,7 @@ def test_render_cobertura_inyecta_datos_y_tema_oscuro(monkeypatch):
     assert 'data-theme", "dark"' in html, "el tema no llegó al iframe (lo pone _con_tema)"
     assert '"verificados": 0' in html.replace(" ", "")  or '"verificados":0' in html.replace(" ", "")
     assert caja["height"] == componentes.ALTO_COBERTURA
-    assert caja["scrolling"] is False
+    assert caja["html"].startswith("<style>html{overflow:hidden}</style>")
 
 
 def test_render_cobertura_inyecta_tema_claro(monkeypatch):

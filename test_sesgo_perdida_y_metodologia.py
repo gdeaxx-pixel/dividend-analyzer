@@ -208,15 +208,15 @@ def test_metodologia_degrada_con_gracia_sin_datos():
 def test_render_metodologia_inyecta_datos_reales(monkeypatch):
     capturado = {}
 
-    def _fake_html(html, height=None, scrolling=None):
+    def _fake_html(html, height=None):
         capturado["html"] = html
 
-    monkeypatch.setattr(componentes.components, "html", _fake_html)
+    monkeypatch.setattr(componentes.st, "iframe", _fake_html)
 
     datos = {"tot": {"inv": 48286.22, "val": 77194.64, "div": 165780.09, "ult": 703.75}}
     componentes.render_metodologia("Claro", datos=datos)
 
-    assert "html" in capturado, "render_metodologia no llamó a components.html"
+    assert "html" in capturado, "render_metodologia no montó el iframe"
     assert json.dumps(datos, ensure_ascii=False) in capturado["html"], (
         "el DATA_JSON inyectado no es el `datos` que se pasó")
     assert "{{DATA_JSON}}" not in capturado["html"], "quedó el placeholder sin reemplazar"
@@ -225,10 +225,10 @@ def test_render_metodologia_inyecta_datos_reales(monkeypatch):
 def test_render_metodologia_sin_datos_inyecta_null(monkeypatch):
     capturado = {}
 
-    def _fake_html(html, height=None, scrolling=None):
+    def _fake_html(html, height=None):
         capturado["html"] = html
 
-    monkeypatch.setattr(componentes.components, "html", _fake_html)
+    monkeypatch.setattr(componentes.st, "iframe", _fake_html)
 
     componentes.render_metodologia("Claro", datos=None)
 

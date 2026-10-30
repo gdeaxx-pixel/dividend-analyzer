@@ -6,7 +6,7 @@ Es el port de «Viaje del dinero» del artifact; sustituyó al `app.py` anterior
 La interfaz vive en `ui/`; `logic.py` es la capa de cálculo compartida.
 
 Estado y controles en widgets nativos; el HTML del artifact es render visual:
-`st.components.v1.html()` no puede devolver interacciones a `st.session_state`, así que
+`st.iframe()` no puede devolver interacciones a `st.session_state`, así que
 todo lo que cambia estado vive en Python.
 """
 
