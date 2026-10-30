@@ -35,6 +35,20 @@ Mismo patrón: el ticker conserva su cache previo. Abrir el run → `::error::Re
 Si yfinance devuelve vacío para todos, suele ser transitorio (reintenta el sábado). Si falla
 uno solo de forma repetida, revisar `fetch_price_cache.py` contra ese ticker.
 
+Los YieldMax de `DISTRIBUCIONES_OFICIALES` fallan también si no se pueden contrastar con la
+tabla oficial (desde el 2026-10-30; yfinance había copiado la distribución del 8-oct sobre la
+del 1-oct). En el log, `no se pudo contrastar con la tabla oficial de YieldMax (…)`:
+
+- `sin tabla oficial de distribuciones` → la página no cargó o cambió; mismo diagnóstico que el
+  aviso 1 (si `refresh-roc-19a.yml` también falló ese sábado, es la página).
+- `el contraste pide N cambios (máximo 3)` → no se aplicó nada. Comparar a mano las fechas que
+  lista contra `https://yieldmaxetfs.com/our-etfs/<ticker>/`: si yfinance de verdad trae tantas
+  filas mal, se sube `MAX_CORRECCIONES` en un PR; si no, el parser leyó mal la tabla.
+- `dos importes para el ex-date …` → la tabla oficial se contradice; no adivinar cuál vale.
+
+Las correcciones aplicadas quedan en `dividend_corrections` de `_meta.yaml`: si una fecha
+reaparece cada sábado, yfinance sigue con su error y el cache con el dato oficial.
+
 ## 3. «🔴 el refresco automático dejó la suite en rojo sobre main»
 
 `main` ya está desplegado con el dato fresco. Casi siempre es una **expectativa hardcodeada**
