@@ -211,7 +211,7 @@ def _resumen_con_cambiar(titulo: str, detalle: str, clave: str) -> bool:
     misma fila también en el teléfono. Devuelve True si el cliente pulsó «Cambiar»."""
     with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False,
                       key=f"vd_fila{clave}"):
-        st.markdown(bloque_resumen(titulo, detalle), unsafe_allow_html=True)
+        st.markdown(bloque_resumen(titulo, detalle), unsafe_allow_html=True, width="stretch")
         return st.button("Cambiar", key=clave, type="tertiary", width="content")
 
 
@@ -1133,6 +1133,10 @@ ESTILOS_CARGA = """
           display: flex; align-items: center; gap: 11px; background: var(--panel-tint);
           border-left: 3px solid var(--cash); padding: 10px 14px; margin: 12px 0 4px;
         }
+        /* En la fila con «Cambiar» (`_resumen_con_cambiar`) el margen propio bajaba el
+           recuadro 12px respecto al botón centrado: ahí el espacio lo pone la fila. */
+        [class*="st-key-vd_fila"] .vd-bloque-resumen { margin: 0; }
+        [class*="st-key-vd_fila"] [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
         .vd-resumen-titulo {
           font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
