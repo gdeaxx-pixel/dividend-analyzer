@@ -403,10 +403,32 @@ def render_bloque_posiciones() -> bool:
         st.warning("No encontramos ETFs analizables en este archivo.")
         return False
 
+    # ── Un camino a la vez (P4, 30-oct) ──────────────────────────────────────────
+    # Antes se veían juntos el cargador del CSV de posiciones, el de capturas y la tabla con
+    # − / +: tres caminos abiertos. Ahora el cliente elige uno. La captura va primera (diseño
+    # «captura primero» del 17-sep) y solo existe con clave de Gemini; el archivo de
+    # posiciones, solo en Schwab. Con un CSV ya leído manda el archivo (CSV > foto > vista
+    # previa): el camino queda en «archivo» y el selector no se dibuja.
+    csv_leido = st.session_state.get("_wizard_pos_csv") or {}
+    clave = _clave_gemini()
+    caminos = {}
+    if clave:
+        caminos["captura"] = "Captura · recomendada"
+    if st.session_state.get("_wizard_broker") == "schwab" or csv_leido:
+        caminos["archivo"] = "Archivo de Schwab"
+    caminos["mano"] = "A mano"
+    if csv_leido:
+        st.session_state["_vd_modo_pos"] = "archivo"
+    elif st.session_state.get("_vd_modo_pos") not in caminos:
+        st.session_state["_vd_modo_pos"] = next(iter(caminos))
+    if len(caminos) > 1 and not csv_leido:
+        st.segmented_control("¿Cómo nos das tus posiciones?", tuple(caminos),
+                             format_func=caminos.get, key="_vd_modo_pos", required=True)
+    modo = st.session_state["_vd_modo_pos"]
+
     # ── CSV de posiciones de Schwab ───────────────────────────────────────────
     # Fuente más fiable que la foto: sale del bróker y no depende de ninguna clave. Si hay
     # CSV leído, manda sobre la foto y sobre la vista previa (CSV > foto > vista previa).
-    csv_leido = st.session_state.get("_wizard_pos_csv") or {}
     if csv_leido:
         st.markdown(bloque_resumen("Archivo de posiciones leído",
                                    f"{len(csv_leido)} de {len(analizables)} instrumentos"),
@@ -423,7 +445,7 @@ def render_bloque_posiciones() -> bool:
             st.session_state["_wizard_ocr_aplicar"] = True
             st.session_state["_wizard_pos_csv_quitado"] = True
             st.rerun()
-    else:
+    elif modo == "archivo":
         archivo_pos = st.file_uploader(
             "CSV de posiciones (Charles Schwab)", type=["csv"], key="_vd_upload_pos_csv",
             help="Accounts → Positions (Posiciones) → ícono de descarga → OK.")
@@ -466,11 +488,11 @@ def render_bloque_posiciones() -> bool:
     # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
     # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
     # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde. Con un CSV
-    # de posiciones leído no se dibuja: el CSV manda.
-    clave = _clave_gemini()
+    # de posiciones leído no se dibuja: el CSV manda. Desde el 30-oct, solo en el camino
+    # «Captura», que existe únicamente con clave.
     ocr_leido = st.session_state.get("_wizard_ocr_positions") or {}
     leido = csv_leido or ocr_leido
-    if clave and analizables and not csv_leido:
+    if modo == "captura" and not csv_leido:
         fotos = st.file_uploader(
             "Fotos del portafolio", type=["png", "jpg", "jpeg"],
             accept_multiple_files=True, label_visibility="collapsed",
@@ -501,6 +523,15 @@ def render_bloque_posiciones() -> bool:
                 verbo = "no aparece" if len(ausentes) == 1 else "no aparecen"
                 st.info(f"{lista} {verbo} en tu captura: los pusimos en 0. Si aún los "
                         "tienes, corrige sus acciones y su costo.")
+
+    # Con captura o archivo, la tabla aparece cuando hay algo leído, para revisarlo; «A mano»
+    # la muestra desde el principio, con la vista previa del CSV de transacciones.
+    if modo != "mano" and not leido:
+        que = "la captura" if modo == "captura" else "el archivo"
+        st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo. "
+                   f"¿No {'la' if modo == 'captura' else 'lo'} tienes a mano? Elige «A mano».")
+        _render_excluidos_carga(excluidos)
+        return False
 
     previa = st.session_state.get("_wizard_csv_ticker_data") or {}
     posiciones = {}
@@ -570,12 +601,7 @@ def render_bloque_posiciones() -> bool:
 
     # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
     # el bloque. Mismo tratamiento que `app_old.py:6289`.
-    if excluidos:
-        with st.expander(texto.plural(len(excluidos), "instrumento fuera del análisis",
-                                      "instrumentos fuera del análisis")):
-            st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
-                       "la calculadora no sabe interpretar todavía.")
-            st.write(", ".join(excluidos))
+    _render_excluidos_carga(excluidos)
 
     # F2 §4.1 — Casilla de consentimiento de captura de casos (texto literal
     # aprobado por Daniel el 2026-09-27). Solo se dibuja con backend activo: sin
@@ -605,6 +631,17 @@ def render_bloque_posiciones() -> bool:
         st.session_state.pop("_vd_resultados", None)
         st.rerun()
     return False
+
+
+def _render_excluidos_carga(excluidos: list) -> None:
+    """Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta el
+    bloque. Mismo tratamiento que `app_old.py:6289`."""
+    if excluidos:
+        with st.expander(texto.plural(len(excluidos), "instrumento fuera del análisis",
+                                      "instrumentos fuera del análisis")):
+            st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
+                       "la calculadora no sabe interpretar todavía.")
+            st.write(", ".join(excluidos))
 
 
 def _render_residencia_detectada() -> None:
