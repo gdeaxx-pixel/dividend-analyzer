@@ -29,6 +29,7 @@ CLAVES_CONTEXTO_CARTERA = (
     "_wizard_ocr_positions",
     "_wizard_photo_sig",
     "_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error",
+    "_vd_pos_tabla",
     # F2 §4.4: la captura de casos se limpia al «editar» el CSV del paso 1 (cartera nueva,
     # consentimiento nuevo). `_captura_consent` es la instantánea del consentimiento
     # (ver `_capturar_caso`); `_consent_capture` es clave de widget y también se purga aquí.
@@ -449,8 +450,8 @@ def render_bloque_posiciones() -> bool:
         archivo_pos = st.file_uploader(
             "CSV de posiciones (Charles Schwab)", type=["csv"], key="_vd_upload_pos_csv",
             help="Accounts → Positions (Posiciones) → ícono de descarga → OK.")
-        st.caption("**CSV de posiciones (Charles Schwab).** Accounts → Positions "
-                   "(Posiciones) → ícono de descarga → OK. Si lo subes, no hace falta foto.")
+        st.caption("Accounts → Positions (Posiciones) → ícono de descarga → OK. Con este "
+                   "archivo no hace falta captura.")
         if archivo_pos is None:
             st.session_state.pop("_wizard_pos_csv_sig", None)
             st.session_state.pop("_wizard_pos_csv_error", None)
@@ -504,6 +505,9 @@ def render_bloque_posiciones() -> bool:
                   "nombre y tu número de cuenta.")
         if fotos:
             firma = _firma_fotos(fotos)
+            if firma == st.session_state.get("_wizard_photo_sig") and not ocr_leido:
+                st.warning("No pudimos leer posiciones en esa captura. Prueba con otra donde "
+                           "se vean «Acciones» y «Costo base», o elige «A mano».")
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
@@ -524,9 +528,13 @@ def render_bloque_posiciones() -> bool:
                 st.info(f"{lista} {verbo} en tu captura: los pusimos en 0. Si aún los "
                         "tienes, corrige sus acciones y su costo.")
 
-    # Con captura o archivo, la tabla aparece cuando hay algo leído, para revisarlo; «A mano»
-    # la muestra desde el principio, con la vista previa del CSV de transacciones.
-    if modo != "mano" and not leido:
+    # Con captura o archivo, la tabla aparece al leer, para revisarlo; «A mano» la muestra
+    # desde el principio, con la vista previa del CSV de transacciones. Una vez dibujada no se
+    # esconde al cambiar de camino: esconderla purgaría lo que el cliente ya tecleó. Al volver
+    # con «Cambiar», o en el demo, sale con lo confirmado.
+    tabla = (st.session_state.get("_vd_pos_tabla")
+             or st.session_state.get("_wizard_positions") or {})
+    if modo != "mano" and not leido and not tabla:
         que = "la captura" if modo == "captura" else "el archivo"
         st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo. "
                    f"¿No {'la' if modo == 'captura' else 'lo'} tienes a mano? Elige «A mano».")
@@ -559,7 +567,10 @@ def render_bloque_posiciones() -> bool:
         # posición real del bróker (con reinversiones y ventas ya aplicadas), mientras el
         # CSV solo suma compras. Ese es el motivo de subir la foto. Un ticker que la
         # captura no trae va a 0 (decidido por Daniel, 2026-10-02) con aviso arriba.
-        if leido and not ocr:
+        if not aplicar and ticker in tabla:
+            acciones_def = tabla[ticker].get("shares") or 0.0
+            costo_def = tabla[ticker].get("cost_basis") or 0.0
+        elif leido and not ocr:
             acciones_def, costo_def = 0.0, 0.0
         else:
             acciones_def = ocr.get("shares")
@@ -587,20 +598,25 @@ def render_bloque_posiciones() -> bool:
             "Costo base", min_value=0.0, **v_cb,
             step=0.01, format="%.2f", key=k_cb, label_visibility="collapsed")
         posiciones[ticker] = {"shares": acciones, "cost_basis": costo}
+    # Lo que muestra la tabla, en clave ordinaria: Streamlit purga los campos que no se
+    # dibujan (paso confirmado), y al volver con «Cambiar» deben salir como se dejaron.
+    st.session_state["_vd_pos_tabla"] = dict(posiciones)
 
-    st.markdown(
-        ('<p class="vd-nota">Los valores vienen de tu archivo de posiciones de '
-         'Schwab.</p>') if csv_leido else
-        '<p class="vd-nota">Los valores vienen del archivo como <b>vista previa</b>: '
-        'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
-        'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
+    if csv_leido:
+        nota = "Los valores vienen de tu archivo de posiciones de Schwab."
+    elif ocr_leido:
+        nota = ("Los valores vienen de tu captura. Revisa cada fondo contra tu bróker antes "
+                "de confirmar.")
+    else:
+        nota = ("Los valores vienen del archivo como <b>vista previa</b>: cuentan compras, "
+                "pero no las reinversiones ni las ventas. Ajústalos con lo que muestra tu "
+                "bróker — esa es la cifra que manda.")
+    st.markdown(f'<p class="vd-nota">{nota}</p>', unsafe_allow_html=True)
 
     # U4 §5.3.2: la residencia fiscal se muda del paso 2 al paso 3
     # (`render_bloque_1042s`). Aquí desaparecía al confirmar posiciones — la rama
     # confirmada retorna antes— y un cliente de IBKR nunca podía declararla.
 
-    # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
-    # el bloque. Mismo tratamiento que `app_old.py:6289`.
     _render_excluidos_carga(excluidos)
 
     # F2 §4.1 — Casilla de consentimiento de captura de casos (texto literal
@@ -1173,6 +1189,15 @@ ESTILOS_CARGA = """
         /* En la fila con «Cambiar» (`_resumen_con_cambiar`) el margen propio bajaba el
            recuadro 12px respecto al botón centrado: ahí el espacio lo pone la fila. */
         [class*="st-key-vd_fila"] .vd-bloque-resumen { margin: 0; }
+        /* P4: los − / + no sirven para 40.0000 acciones ni para $1,000.00 de costo; las
+           cifras van a la derecha, como en el estado de cuenta. */
+        [class*="st-key-_vd_sh_"] [data-testid="stNumberInputStepDown"],
+        [class*="st-key-_vd_sh_"] [data-testid="stNumberInputStepUp"],
+        [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepDown"],
+        [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepUp"] { display: none; }
+        [class*="st-key-_vd_sh_"] input, [class*="st-key-_vd_cb_"] input {
+          text-align: right; font-variant-numeric: tabular-nums;
+        }
         [class*="st-key-vd_fila"] [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
         .vd-resumen-titulo {
           font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;

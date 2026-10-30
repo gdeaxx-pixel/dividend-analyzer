@@ -103,6 +103,9 @@ def _seed(at, csv_name="transacciones_sinteticas.csv"):
     at.session_state["_wizard_csv_ticker_data"] = dict(_PREVIA)
     at.session_state["_wizard_broker"] = "schwab"
     at.session_state["_wizard_csv_name"] = csv_name
+    # P4 (30-oct): con captura o archivo la tabla aparece al leer; estos tests confirman la
+    # vista previa, que es el camino «A mano».
+    at.session_state["_vd_modo_pos"] = "mano"
 
 
 def _wid(lista, sufijo):

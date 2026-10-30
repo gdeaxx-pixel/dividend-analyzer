@@ -189,6 +189,7 @@ def test_s1_editar_csv_borra_el_contexto_de_captura():
     at.session_state["_wizard_csv_name"] = "cartera_A.csv"
     at.session_state["_wizard_ocr_positions"] = ocr_a
     at.session_state["_wizard_photo_sig"] = sig_a
+    at.session_state["_vd_modo_pos"] = "mano"
     at.run()
     assert at.exception == []
 
@@ -201,6 +202,9 @@ def test_s1_editar_csv_borra_el_contexto_de_captura():
     at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 5.0, "invested": 120.0}}
     at.session_state["_wizard_broker"] = "schwab"
     at.session_state["_wizard_csv_name"] = "cartera_B.csv"
+    # El camino se reinicia con la cartera nueva (su selector no se dibujó al editar): el
+    # cliente vuelve a elegir «A mano», donde la tabla sale sin lectura (P4, 30-oct).
+    at.session_state["_vd_modo_pos"] = "mano"
     at.run()
     assert at.exception == []
 
