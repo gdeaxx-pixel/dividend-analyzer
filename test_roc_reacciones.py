@@ -64,11 +64,11 @@ def test_roc_impuestos_data(datos, frase, reaccion):
 def capturado(monkeypatch):
     cap = {}
 
-    def _html(html, height=None, scrolling=None):
+    def _html(html, height=None):
         cap["html"] = html
         cap["height"] = height
 
-    monkeypatch.setattr(componentes.components, "html", _html)
+    monkeypatch.setattr(componentes.st, "iframe", _html)
     return cap
 
 

@@ -86,12 +86,11 @@ def test_veredicto_desconocido_no_rompe_la_vista():
 def capturado(monkeypatch):
     cap = {}
 
-    def _html(html, height=None, scrolling=None):
+    def _html(html, height=None):
         cap["html"] = html
         cap["height"] = height
-        cap["scrolling"] = scrolling
 
-    monkeypatch.setattr(componentes.components, "html", _html)
+    monkeypatch.setattr(componentes.st, "iframe", _html)
     return cap
 
 
@@ -108,7 +107,7 @@ def test_render_roc_rellena_los_huecos_y_pone_estado_frase_y_tema(capturado):
     assert 'var FRASE = "Ojo: NAV -38%/año.";' in html
     assert "var TAM = 72;" in html
     assert capturado["height"] == 157
-    assert capturado["scrolling"] is False
+    assert capturado["html"].startswith("<style>html{overflow:hidden}</style>")
 
 
 def test_render_roc_sin_frase_y_en_tema_claro(capturado):

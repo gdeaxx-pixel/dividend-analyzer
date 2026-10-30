@@ -1,9 +1,9 @@
 """Montaje de los componentes HTML extraídos del artifact.
 
 Cada componente es un `.html` **generado** (ver `tools/extract_*.py`) con huecos que se
-rellenan en cada rerun. El estado no vive aquí: `components.html()` devuelve `None` y no
-puede retornar interacciones a Python, así que los controles son widgets nativos y el
-componente solo dibuja lo que recibe.
+rellenan en cada rerun. El estado no vive aquí: `st.iframe()` no puede retornar
+interacciones a Python, así que los controles son widgets nativos y el componente solo
+dibuja lo que recibe.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import math
 import os
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 
@@ -24,7 +23,7 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 # `window.frameElement` no sería alcanzable y este valor sería el definitivo.
 # Medido en el navegador sobre los 8 pasos × 3 fixtures: 1053px (desktop) a 1485px
 # (320px de ancho). Se fija por encima del peor caso — NO bajarlo a la medida de
-# desktop: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
+# desktop: sin scroll (`_SIN_SCROLL`), lo que no cabe es inalcanzable, no solo invisible.
 ALTO_CASHFLOW = 1520
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
@@ -39,7 +38,7 @@ ALTO_HOJA = 700
 # La medición vieja (901px) era solo a ancho de escritorio; a 320-375px los chips
 # envuelven en más filas y el panel crece. Re-medido en la auditoría del 2026-08-10 a
 # 375px: `body.scrollHeight` = 1025px. Se fija por encima de ESE caso, no del de
-# escritorio: con `scrolling=False` lo que no cabe es inalcanzable, no solo invisible.
+# escritorio: sin scroll, lo que no cabe es inalcanzable, no solo invisible.
 ALTO_COMPARACION = 1200
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
@@ -92,14 +91,14 @@ ALTO_METODO_REAL = 2600
 # contenido de 337px (el del iframe a 375px de viewport) y a 1280px:
 # full 6925/6942 (fase 1/2) · sin_pais 5653 · parcial 5383 · sin_retencion 6555 ·
 # divergente 5883 — y en desktop 4100 · 3652 · 3510 · 3998 · 3765. Se fija por encima
-# del peor caso (337px, fase 2, todo abierto): con `scrolling=False` lo que no cabe es
+# del peor caso (337px, fase 2, todo abierto): sin scroll, lo que no cabe es
 # inalcanzable — nunca bajarla a la medida de escritorio.
 ALTO_IMPUESTOS = 7100
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`); el
 # componente corrige su propio alto en cuanto carga. Portafolios v3: dona + leyenda +
 # dos tarjetas en cascada. Se fija por encima del peor caso —celular con 9 fondos
-# (`?demo=ib`), donde la leyenda apila todas las filas—: con `scrolling=False` lo que
+# (`?demo=ib`), donde la leyenda apila todas las filas—: sin scroll, lo que
 # no cabe es inalcanzable, no solo invisible.
 ALTO_PORTAFOLIOS = 2400
 
@@ -117,7 +116,7 @@ ALTO_VIGILAR = 640
 # componente corrige su propio alto en cuanto carga. U4 (dona de cobertura, 5 segmentos):
 # la dona (280px + padding) MÁS el pop-out abierto en su caso más alto —celular a 390px,
 # donde el pop-out (max-width 100%-24) cae DEBAJO de la dona y los textos «qué falta» y
-# «cómo resolverlo» envuelven en más líneas—: con `scrolling=False` lo que no cabe es
+# «cómo resolverlo» envuelven en más líneas—: sin scroll, lo que no cabe es
 # inalcanzable. Medido en el navegador con el pop-out abierto a 390px y a 1280px, en
 # claro y en oscuro.
 #
@@ -126,7 +125,7 @@ ALTO_VIGILAR = 640
 # **284 px a 375px**, pero con el pop-out ABIERTO el peor caso medido es **505 px**. 700 es
 # cota superior, no hueco muerto: `window.frameElement` corrige el alto en cuanto carga, así
 # que sobrar aquí no cuesta nada y quedarse corto vuelve inalcanzable el pop-out
-# (`scrolling=False`). Valor aprobado por Daniel el 23-sep.
+# (`_SIN_SCROLL`). Valor aprobado por Daniel el 23-sep.
 ALTO_COBERTURA = 700
 
 
@@ -179,6 +178,16 @@ def _con_anchor(html: str, anchor: str | None) -> str:
     return html[:i] + script + html[i:]
 
 
+# `st.iframe` monta el iframe siempre con scroll: no tiene el `scrolling=False` de
+# `components.html`. Apagarlo en la raíz del documento deja todo como antes: lo que no
+# cabe se recorta y no salen barras (en Windows ocupan ancho y empujan el contenido).
+_SIN_SCROLL = "<style>html{overflow:hidden}</style>"
+
+
+def _montar(html: str, alto: int) -> None:
+    st.iframe(_SIN_SCROLL + html, height=alto)
+
+
 def render_cashflow(datos: dict, paso: int, tema: str, alto: int = ALTO_CASHFLOW) -> None:
     """Dibuja el recorrido del dinero en el paso indicado.
 
@@ -190,7 +199,7 @@ def render_cashflow(datos: dict, paso: int, tema: str, alto: int = ALTO_CASHFLOW
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     html = html.replace("{{PASO}}", str(int(paso)))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_hoja(datos: dict, tema: str, alto: int = ALTO_HOJA) -> None:
@@ -200,7 +209,7 @@ def render_hoja(datos: dict, tema: str, alto: int = ALTO_HOJA) -> None:
     html = _plantilla("hoja.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_comparacion(datos: dict, tema: str, alto: int = ALTO_COMPARACION) -> None:
@@ -214,7 +223,7 @@ def render_comparacion(datos: dict, tema: str, alto: int = ALTO_COMPARACION) -> 
     html = _plantilla("comparacion.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION_REAL) -> None:
@@ -235,7 +244,7 @@ def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION
     html = _plantilla("comparacion_real.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_metodo(vista_activa: str, tema: str, datos: dict, serie: dict | None = None,
@@ -261,7 +270,7 @@ def render_metodo(vista_activa: str, tema: str, datos: dict, serie: dict | None 
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
     html = html.replace("{{SERIE_JSON}}",
                         json.dumps(serie, ensure_ascii=False) if serie else "null")
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> None:
@@ -276,7 +285,7 @@ def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> 
     html = _plantilla("metodo_real.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None:
@@ -291,7 +300,7 @@ def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None
     html = _plantilla("impuestos_v2.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> None:
@@ -305,7 +314,7 @@ def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> 
     html = _plantilla("portafolios.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_riesgo(datos: dict, tema: str, alto: int = ALTO_RIESGO) -> None:
@@ -318,7 +327,7 @@ def render_riesgo(datos: dict, tema: str, alto: int = ALTO_RIESGO) -> None:
     html = _plantilla("riesgo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_vigilar(datos: dict, tema: str, alto: int = ALTO_VIGILAR) -> None:
@@ -330,7 +339,7 @@ def render_vigilar(datos: dict, tema: str, alto: int = ALTO_VIGILAR) -> None:
     html = _plantilla("vigilar.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_cobertura(datos: dict, tema: str, alto: int = ALTO_COBERTURA) -> None:
@@ -345,13 +354,13 @@ def render_cobertura(datos: dict, tema: str, alto: int = ALTO_COBERTURA) -> None
     html = _plantilla("cobertura.html")
     html = _con_tema(html, tema)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def alto_roc(tam: int, con_frase: bool) -> int:
     """Alto INICIAL del iframe de ROC; el auto-alto lo corrige al cargar. Con frase se
-    reserva sitio para que el globo baje debajo del búho en celular (flex-wrap): con
-    `scrolling=False` lo que no cabe es inalcanzable."""
+    reserva sitio para que el globo baje debajo del búho en celular (flex-wrap): sin
+    scroll, lo que no cabe es inalcanzable."""
     base = math.ceil(tam * 17 / 16) + 8
     return base + 72 if con_frase else base
 
@@ -377,7 +386,7 @@ def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
     html = html.replace("{{BUHO_JSON}}", json.dumps(bool(buho)))
     html = html.replace("{{SPRITE_JS}}", _plantilla("roc_sprite.js"))
     alto = alto_roc(tam, bool(frase)) if buho else alto_roc(0, bool(frase))
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 # Un solo búho por pantalla (Daniel, 2026-09-28): el del encabezado, junto a la marca, toma
@@ -425,7 +434,7 @@ def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | No
     html = _con_tema(html, tema)
     html = _con_anchor(html, anchor)
     html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False) if datos else "null")
-    components.html(html, height=alto, scrolling=False)
+    _montar(html, alto)
 
 
 def render_rail(labels: list, activo: int, key: str = "vd_paso") -> int:

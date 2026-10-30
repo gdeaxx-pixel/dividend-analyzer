@@ -193,12 +193,11 @@ def test_render_vigilar_inyecta_datos_y_tema(monkeypatch):
 
     capturado = {}
 
-    def _spy(html, height=None, scrolling=None):
+    def _spy(html, height=None):
         capturado["html"] = html
         capturado["height"] = height
-        capturado["scrolling"] = scrolling
 
-    monkeypatch.setattr(componentes.components, "html", _spy)
+    monkeypatch.setattr(componentes.st, "iframe", _spy)
     componentes.render_vigilar(vigilar_data(RES, SALUD), "Oscuro")
 
     html = capturado["html"]
@@ -209,7 +208,7 @@ def test_render_vigilar_inyecta_datos_y_tema(monkeypatch):
     payload = json.loads(html[inicio:fin])
     assert payload["fondos"][0]["ticker"] == "DEST"
     assert capturado["height"] == componentes.ALTO_VIGILAR
-    assert capturado["scrolling"] is False
+    assert capturado["html"].startswith("<style>html{overflow:hidden}</style>")
 
 
 # ── V9 · tokens del componente en los cuatro bloques ───────────────────────────────────

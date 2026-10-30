@@ -18,44 +18,51 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from ui import heredadas, impuestos, nav, riesgo
 from ui.tokens import css_variables
 
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
+_CUENTA_CIERRE_POPOVER = "vd_cierre_popover_n"
 
 
 def _pedir_cierre_popover() -> None:
     """Marca que, en el próximo render, hay que forzar el cierre de cualquier popover
-    abierto. Streamlit no expone ninguna forma de cerrarlo desde Python en NINGUNA versión
-    publicada (verificado contra el código fuente de 1.42.0 y 1.50.0, la última real en
-    PyPI — su propio docstring dice que solo un clic FUERA del popover lo cierra). Por eso
-    tras elegir una opción se queda flotando en pantalla, sin reposicionarse con el scroll
-    (reportado por Daniel 2026-08-11). El cierre real ocurre en `_consumir_cierre_popover`,
-    simulando ese clic afuera."""
+    abierto. Sin esto, tras elegir una opción se queda flotando en pantalla, sin
+    reposicionarse con el scroll (reportado por Daniel 2026-08-11). Hasta 1.50 Streamlit no
+    tenía forma de cerrarlo desde Python; 1.66 sí (`key` + `on_change="rerun"` y
+    `st.session_state[key] = False`), pero reejecuta la app cada vez que se abre o se cierra
+    el menú. Por eso el cierre real sigue en `_consumir_cierre_popover`, simulando un clic
+    afuera."""
     st.session_state[_FLAG_CIERRE_POPOVER] = True
 
 
 def _consumir_cierre_popover() -> None:
-    """Si el run anterior pidió cierre, inyecta un componente invisible que simula el clic
-    fuera del popover. `components.html` siempre corre en un iframe sandboxed, así que hay
-    que cruzar a `window.parent.document` para alcanzar el DOM real de la app — mismo motivo
-    que documenta `Dividend — iframes de components.html se auto-dimensionan` en la memoria
-    del agente. Se llama al inicio de `render_ruta`, y el flag se consume de inmediato para
-    no interferir con popovers que el usuario siga usando en otro rerun cualquiera."""
+    """Si el run anterior pidió cierre, inyecta un script invisible que simula el clic
+    fuera del popover. `st.html` con `unsafe_allow_javascript` lo corre en el documento de
+    la app, sin iframe, así que alcanza el DOM real directamente (antes iba en un
+    `components.html` de alto 0 que tenía que cruzar a `window.parent.document`). Se llama
+    al inicio de `render_ruta`, y el flag se consume de inmediato para no interferir con
+    popovers que el usuario siga usando en otro rerun cualquiera."""
     if not st.session_state.pop(_FLAG_CIERRE_POPOVER, False):
         return
-    components.html(
-        """<script>
+    # Dos condiciones, medidas el 30-oct en el navegador (sin ellas cerraba 11 de 48):
+    # - Un cuerpo distinto en cada cierre: un rerun cortado por `st.rerun()` no retira el
+    #   script anterior y, si el nuevo llega idéntico, no se vuelve a ejecutar.
+    # - `pointerdown` antes del clic: el popover de Streamlit 1.66 decide «clic de fuera»
+    #   con el último `pointerdown`, que era el del usuario DENTRO del menú.
+    n = st.session_state.get(_CUENTA_CIERRE_POPOVER, 0) + 1
+    st.session_state[_CUENTA_CIERRE_POPOVER] = n
+    st.html(
+        f"<script>/* cierre {n} */</script>" + """<script>
         try {
-          var doc = window.parent.document;
-          ["mousedown", "mouseup", "click"].forEach(function (tipo) {
-            doc.body.dispatchEvent(new MouseEvent(tipo, {bubbles: true, cancelable: true}));
+          ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach(function (tipo) {
+            var Evento = tipo.indexOf("pointer") === 0 ? PointerEvent : MouseEvent;
+            document.body.dispatchEvent(new Evento(tipo, {bubbles: true, cancelable: true}));
           });
         } catch (e) {}
         </script>""",
-        height=0,
+        unsafe_allow_javascript=True,
     )
 
 # Categorías «Portafolios», «Riesgo» e «Impuestos» compuestas sobre la taxonomía generada:

@@ -350,7 +350,7 @@ def test_render_con_estres_dibuja_el_bloque_y_sin_receta_en_el_html(monkeypatch)
     from ui import componentes
 
     capturado = {}
-    monkeypatch.setattr(componentes.components, "html", lambda html, height=None, scrolling=None: capturado.update(html=html))
+    monkeypatch.setattr(componentes.st, "iframe", lambda html, height=None: capturado.update(html=html))
     est = _estres_sintetico()
     n = 120
     modo = {"clave": "tus", "boton": "Tus fondos", "grupos": [], "nota": None, "inicio": "2024-01-01", "fin": "2024-06-01",

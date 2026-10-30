@@ -228,12 +228,11 @@ _node = pytest.mark.skipif(
 def _captura(monkeypatch):
     caja = {}
 
-    def _fake_html(html, height=None, scrolling=None):
+    def _fake_html(html, height=None):
         caja["html"] = html
         caja["height"] = height
-        caja["scrolling"] = scrolling
 
-    monkeypatch.setattr(componentes.components, "html", _fake_html)
+    monkeypatch.setattr(componentes.st, "iframe", _fake_html)
     return caja
 
 
@@ -259,12 +258,12 @@ def test_alto_unico_medido(monkeypatch):
     componentes.render_impuestos(_DATOS, "Claro")
     assert isinstance(componentes.ALTO_IMPUESTOS, int)
     assert caja["height"] == componentes.ALTO_IMPUESTOS
-    assert caja["scrolling"] is False
+    assert caja["html"].startswith("<style>html{overflow:hidden}</style>")
 
 
 def test_impuestos_render_vista_normaliza_la_clave(monkeypatch):
     """`impuestos.render_vista` acepta basura (p. ej. un `vd_vista="corte"` guardado
-    antes de U2) y渲染 la vista única sin KeyError."""
+    antes de U2) y dibuja la vista única sin KeyError."""
     import ui.adapters as adapters
     from ui import estado
 
