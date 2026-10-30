@@ -96,6 +96,16 @@ def test_corrige_el_1_oct_y_deja_el_redondeo_de_yfinance():
         assert serie[pd.Timestamp(fecha)] == YF_MSTY[fecha], f"{fecha}: es redondeo, no error"
 
 
+def test_en_un_pago_pequeño_el_redondeo_pasa_del_1_por_ciento_y_sigue_siendo_redondeo():
+    """Casos reales de NFLY y YMAX: media milésima es más del 1% de un pago de 5 centavos."""
+    yf = {"2026-03-25": 0.034, "2026-07-30": 0.045, "2026-10-01": 0.05}
+    oficial = {"2026-03-25": 0.0336, "2026-07-30": 0.0445, "2026-10-01": 0.0495}
+    serie, correcciones, _ = fpc.reconciliar_dividendos(
+        _serie(yf, inicio="2026-03-02", fin="2026-10-09"), _oficial(oficial))
+    assert correcciones == []
+    assert serie[pd.Timestamp("2026-10-01")] == 0.05
+
+
 def test_mas_de_media_milesima_ya_no_es_redondeo():
     serie, correcciones, _ = fpc.reconciliar_dividendos(
         _serie({"2026-10-01": 0.0506}), _oficial({"2026-10-01": 0.0500}))
