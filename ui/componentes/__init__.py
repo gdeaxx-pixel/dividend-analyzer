@@ -21,10 +21,12 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 # `tools/extract_cashflow.py`), así que este número ya no manda — pero tiene que ser
 # seguro por sí solo: si Streamlit Cloud sirviera el componente cross-origin,
 # `window.frameElement` no sería alcanzable y este valor sería el definitivo.
-# Medido en el navegador sobre los 8 pasos × 3 fixtures: 1053px (desktop) a 1485px
-# (320px de ancho). Se fija por encima del peor caso — NO bajarlo a la medida de
+# Re-medido el 2026-10-30, con la tarjeta de resultado apilada en teléfono: 1133px a
+# 1280 de ancho y 1684px a 320 (`?demo=schwab2`, MSTY). El 1520 de antes ya se había
+# quedado corto (1536 a 320) sin que nada avisara; ahora lo vigila
+# `test_cashflow_desborde.py`. Se fija por encima del peor caso — NO bajarlo a la medida de
 # desktop: sin scroll (`_SIN_SCROLL`), lo que no cabe es inalcanzable, no solo invisible.
-ALTO_CASHFLOW = 1520
+ALTO_CASHFLOW = 1750
 
 # Respaldo si el script auto-dimensionante no corre (ver `tools/_auto_alto.py`).
 # Medido en el navegador sobre el componente real (fixture `schwab_synth_1`, MSTY):
