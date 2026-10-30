@@ -301,18 +301,18 @@ def render_encabezado(con_datos: bool) -> str:
     _subir_al_inicio_si_toca()
     _tema_del_sistema_una_vez()
 
+    # `horizontal_alignment="right"`: en la carga la cabecera solo lleva el tema, y debe
+    # quedar a la derecha (un contenedor vacío como relleno no se dibuja y no empuja nada).
     with st.container(horizontal=True, vertical_alignment="center", gap="small",
-                      key="vd_cabecera"):
+                      horizontal_alignment="right", key="vd_cabecera"):
         if con_datos:
             with st.container(horizontal=True, vertical_alignment="center", gap="medium",
-                              key="vd_marca"):
+                              wrap=False, key="vd_marca"):
                 st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>',
                             unsafe_allow_html=True, width="content")
                 st.session_state[HUECO_ROC_VISTA] = st.empty()
             st.session_state[HUECO_ESTADO] = st.empty()
             st.session_state[HUECO_AYUDA] = st.empty()
-        else:
-            st.container(key="vd_cab_espacio")
         oscuro = st.session_state["vd_tema"] == "Oscuro"
         st.button("", key="vd_tema_btn", type="tertiary", on_click=_alternar_tema,
                   icon=":material/light_mode:" if oscuro else ":material/dark_mode:",
@@ -327,7 +327,7 @@ def _render_estado(alerta: bool, confiabilidad: str | None) -> None:
     Impuestos pedía declarar el país en un paso al que no se llegaba."""
     hueco = st.session_state.pop(HUECO_ESTADO, None) or st.empty()
     with hueco.container(horizontal=True, vertical_alignment="center", gap="small",
-                         key="vd_estado"):
+                         width="content", key="vd_estado"):
         if alerta:
             texto = f"Confiabilidad {confiabilidad.lower()}" if confiabilidad else "Revisa tus datos"
             if st.button(texto, key="vd_chip_confiabilidad", type="tertiary"):
@@ -346,7 +346,7 @@ def _render_ayuda(alerta: bool, categoria: str, vista: str) -> None:
     """«¿Cómo funciona?» y «Validación datos» bajo un menú con nombre (P1): antes era un
     chevron sin texto."""
     hueco = st.session_state.pop(HUECO_AYUDA, None) or st.empty()
-    with hueco.container(key="vd_ayuda"):
+    with hueco.container(width="content", key="vd_ayuda"):
         with st.popover("Ayuda", icon=":material/help:"):
             if st.button("¿Cómo funciona?", key="vd_menu_metodologia",
                          use_container_width=True):
@@ -573,8 +573,6 @@ _ESTILOS = """
            solo mostraba la activa) y una fila con las vistas o los fondos de la sección y la
            etiqueta de origen de las cifras (P7). */
         .st-key-vd_cabecera { row-gap: 8px; }
-        .st-key-vd_marca, .st-key-vd_cab_espacio { flex: 1 1 auto; }
-        .st-key-vd_estado { flex: 0 0 auto; }
         .st-key-vd_chip_confiabilidad button, .st-key-vd_cambiar_datos button,
         .st-key-vd_ayuda [data-testid="stPopoverButton"], .st-key-vd_tema_btn button {
           min-height: 0 !important; padding: 6px 10px !important; border-radius: 0 !important;
@@ -605,12 +603,23 @@ _ESTILOS = """
            pestañas — sin cajas, la activa subrayada en el azul de la marca. Una sola línea:
            si no caben, se desliza de lado (en el teléfono, siempre). */
         .st-key-vd_secciones { margin-top: 4px; }
+        /* El grupo mide lo que sus botones; a todo el ancho, la línea de abajo cruza la fila. */
+        .st-key-vd_secciones [data-testid="stElementContainer"],
+        .st-key-vd_secciones [data-testid="stButtonGroup"] { width: 100% !important; }
         .st-key-vd_secciones [data-testid="stButtonGroup"] {
           flex-wrap: nowrap !important; overflow-x: auto; gap: 0 !important;
           border-bottom: 1px solid var(--hair); scrollbar-width: none;
         }
         .st-key-vd_secciones [data-testid="stButtonGroup"]::-webkit-scrollbar { display: none; }
-        .st-key-vd_secciones [data-testid="stButtonGroup"] button {
+        /* Los botones viven en un `div` interno del grupo con `flex-wrap: wrap` de fábrica:
+           sin esto, en el teléfono las pestañas se partían en dos líneas en vez de deslizarse. */
+        .st-key-vd_secciones [data-testid="stButtonGroup"] > div:has(> button) {
+          flex-wrap: nowrap !important; width: max-content; min-width: 100%;
+        }
+        /* `button[aria-checked]` y no solo `button`: la regla general de los grupos de
+           botones (más abajo) pinta de --panel la opción no elegida con la misma
+           especificidad, y al ir después ganaba — las pestañas salían en un recuadro blanco. */
+        .st-key-vd_secciones [data-testid="stButtonGroup"] button[aria-checked] {
           flex: 0 0 auto; white-space: nowrap; margin: 0 0 -1px 0 !important;
           font-family: var(--font-sans) !important; font-size: 13.5px !important;
           font-weight: 600 !important; letter-spacing: 0 !important; text-transform: none !important;
@@ -619,7 +628,7 @@ _ESTILOS = """
           color: var(--ink-mut) !important; padding: 10px 12px 9px !important;
           box-shadow: none !important;
         }
-        .st-key-vd_secciones [data-testid="stButtonGroup"] button:hover {
+        .st-key-vd_secciones [data-testid="stButtonGroup"] button[aria-checked]:hover {
           color: var(--ink) !important; background: transparent !important;
         }
         .st-key-vd_secciones [data-testid="stButtonGroup"] button[aria-checked="true"] {
@@ -628,6 +637,7 @@ _ESTILOS = """
 
         /* Fila de vistas y fondos, con la etiqueta de origen al final (P7). */
         .st-key-vd_subfila { row-gap: 6px; margin-top: 2px; }
+        .st-key-vd_subfila > div:has(.vd-origen) { margin-left: auto; }
         .st-key-vd_etfs [data-testid="stButtonGroup"] { flex-wrap: wrap; row-gap: 4px; }
         .vd-origen {
           display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
@@ -771,8 +781,9 @@ _ESTILOS = """
           .st-key-vd_cabecera { flex-wrap: wrap !important; }
           .st-key-vd_cabecera > div:has(.st-key-vd_estado) { order: 5; flex-basis: 100%; }
           .st-key-vd_ayuda [data-testid="stPopoverButton"] p { display: none; }
-          .st-key-vd_etfs [data-testid="stButtonGroup"] {
-            flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
+          .st-key-vd_etfs [data-testid="stButtonGroup"] { overflow-x: auto; scrollbar-width: none; }
+          .st-key-vd_etfs [data-testid="stButtonGroup"] > div:has(> button) {
+            flex-wrap: nowrap !important; width: max-content;
           }
           /* Rail móvil: mockup aprobado por Daniel (diseñado 2026-08-09, sesión de
              correcciones de forma). Por debajo de 640px Streamlit apila `st.columns(8)`
