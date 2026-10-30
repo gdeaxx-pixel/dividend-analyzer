@@ -33,11 +33,12 @@ def _serie(n, inicio=INICIO, base=100.0, paso=0.3):
 
 
 @pytest.fixture(autouse=True)
-def _sin_red_para_2022(monkeypatch):
-    """La simulación de 2022 baja en vivo los tickers que no trae congelados: aquí, nunca."""
+def _sin_historias_2022(monkeypatch):
+    """Estas pruebas no miran el bloque de 2022 (lo cubre `test_estres_2022.py`): sin historias
+    de 2022 no hay simulación."""
     from ui import riesgo
 
-    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers, inicio, fin: {})
+    monkeypatch.setattr(riesgo, "_historias_estres", lambda tickers: {})
 
 
 def _modo(datos, clave):
