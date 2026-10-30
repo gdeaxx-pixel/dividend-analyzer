@@ -759,16 +759,23 @@ _ESTILOS = """
            comparte con producción, así que no se toca: se sobreescribe aquí. Sin esto los
            selectores salen rosados sobre el azul frío del artifact. */
         [data-baseweb="select"] > div,
-        [data-baseweb="input"] > div {
+        [data-baseweb="input"] > div,
+        [data-testid="stNumberInputContainer"] {
           background: var(--panel) !important;
           border: 1px solid var(--hair) !important;
           color: var(--ink) !important;
         }
+        /* El campo numérico de Streamlit 1.66 ya no lleva `data-baseweb`: salía claro y
+           redondeado también en el tema oscuro. El foco se marca aquí porque el borde de
+           arriba pisa el de Streamlit. */
+        [data-testid="stNumberInputField"] { color: var(--ink) !important; }
+        [data-testid="stNumberInputContainer"]:focus-within { border-color: var(--accent) !important; }
         [data-baseweb="popover"] li { background: var(--panel) !important; color: var(--ink) !important; }
         [data-baseweb="popover"] li:hover { background: var(--panel-tint) !important; }
 
         /* Sin border-radius en ningún componente: regla de marca IYG. */
         [data-baseweb="select"] > div, [data-baseweb="input"] > div,
+        [data-testid="stNumberInputContainer"],
         [data-baseweb="popover"] div, .stButton > button { border-radius: 0 !important; }
 
         @media (max-width: 640px) {

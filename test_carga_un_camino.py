@@ -199,6 +199,11 @@ def test_una_cartera_nueva_no_hereda_la_tabla(sin_clave):
 _TESTIDS = ("stNumberInputStepDown", "stNumberInputStepUp")
 
 
+def _reglas(css):
+    """(selectores, cuerpo) de cada regla; las de dentro de un @media salen igual."""
+    return [(sel.strip(), cuerpo) for sel, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
+
+
 def test_los_campos_no_tienen_menos_mas_y_alinean_a_la_derecha():
     css = carga.ESTILOS_CARGA
     selectores = [f'[class*="st-key-{k}"] [data-testid="{t}"]'
@@ -213,6 +218,34 @@ def test_los_campos_no_tienen_menos_mas_y_alinean_a_la_derecha():
     assert alinea, "las cifras de la tabla del paso 2 no van a la derecha"
 
 
+def test_la_tabla_del_paso_2_no_se_apila_en_el_telefono():
+    """Streamlit apila las columnas bajo 640 px: «Acciones» y «Costo base» quedaban arriba,
+    lejos de sus campos (medido a 375 y 320 px el 30-oct)."""
+    reglas = _reglas(carga.ESTILOS_CARGA)
+    filas = [c for s, c in reglas
+             if ':has([class*="st-key-_vd_sh_"])' in s and "stColumn" not in s]
+    assert any(re.search(r"flex-wrap:\s*nowrap", c) for c in filas), (
+        "las filas de la tabla del paso 2 vuelven a apilarse en el teléfono")
+    columnas = [c for s, c in reglas
+                if ':has([class*="st-key-_vd_sh_"]) > [data-testid="stColumn"]' in s]
+    assert any(re.search(r"min-width:\s*0", c) for c in columnas), (
+        "las columnas conservan el ancho mínimo que las apila")
+
+
+def test_el_campo_numerico_sigue_el_tema_y_no_tiene_esquinas():
+    """En Streamlit 1.66 el campo numérico ya no lleva `data-baseweb`: salía claro y
+    redondeado (8 px) también en el tema oscuro. Regla de marca: sin border-radius."""
+    from ui.chrome import _ESTILOS
+    reglas = _reglas(_ESTILOS)
+    propias = [c for s, c in reglas
+               if '[data-testid="stNumberInputContainer"]' in [x.strip() for x in s.split(",")]]
+    assert any("background: var(--panel)" in c for c in propias), "el campo no usa la superficie del tema"
+    assert any(re.search(r"border-radius:\s*0", c) for c in propias), "el campo vuelve a tener esquinas"
+    assert any(":focus-within" in s and "var(--accent)" in c
+               for s, c in reglas if "stNumberInputContainer" in s), (
+        "el borde del tema pisa el foco de Streamlit y nada lo marca")
+
+
 def test_los_testids_de_los_menos_mas_existen_en_este_streamlit():
     """Si una versión nueva de Streamlit los renombra, la regla deja de aplicar sin ruido y
     los − / + vuelven."""
@@ -221,7 +254,7 @@ def test_los_testids_de_los_menos_mas_existen_en_este_streamlit():
                                 "NumberInput*.js"))
     assert js, "no encuentro el componente NumberInput en el Streamlit instalado"
     fuente = "".join(open(r, encoding="utf-8").read() for r in js)
-    for t in _TESTIDS:
+    for t in _TESTIDS + ("stNumberInputContainer", "stNumberInputField"):
         assert t in fuente, f"{t} ya no existe en el NumberInput de este Streamlit"
 
 

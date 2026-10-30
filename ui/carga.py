@@ -537,7 +537,7 @@ def render_bloque_posiciones() -> bool:
     if modo != "mano" and not leido and not tabla:
         que = "la captura" if modo == "captura" else "el archivo"
         st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo. "
-                   f"¿No {'la' if modo == 'captura' else 'lo'} tienes a mano? Elige «A mano».")
+                   f"¿No {'la' if modo == 'captura' else 'lo'} tienes? Elige «A mano».")
         _render_excluidos_carga(excluidos)
         return False
 
@@ -1178,7 +1178,7 @@ ESTILOS_CARGA = """
         .vd-col-header {
           font-family: var(--font-mono); font-size: 10px; font-weight: 700;
           letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mut);
-          margin: 0 0 4px;
+          margin: 0 0 4px; text-align: right;
         }
         .vd-bloque-locked { opacity: .5; border: 1px dashed var(--hair); padding: 10px 14px; margin: 6px 0; }
         .vd-bloque-locked .vd-bloque-head { margin: 0; }
@@ -1196,7 +1196,24 @@ ESTILOS_CARGA = """
         [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepDown"],
         [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepUp"] { display: none; }
         [class*="st-key-_vd_sh_"] input, [class*="st-key-_vd_cb_"] input {
-          text-align: right; font-variant-numeric: tabular-nums;
+          text-align: right; font-variant-numeric: tabular-nums; padding-left: 6px;
+        }
+        /* En teléfono Streamlit apila las columnas: «Acciones» y «Costo base» quedaban arriba,
+           lejos de sus campos. La tabla del paso 2 se queda en tres columnas a cualquier ancho. */
+        [data-testid="stHorizontalBlock"]:has(.vd-col-header),
+        [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) {
+          flex-wrap: nowrap; gap: 10px;
+        }
+        [data-testid="stHorizontalBlock"]:has(.vd-col-header) > [data-testid="stColumn"],
+        [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) > [data-testid="stColumn"] {
+          min-width: 0;
+        }
+        /* A 320 px, 1,234.5678 acciones no cabían: el ticker cede ancho a las cifras. */
+        @media (max-width: 640px) {
+          [data-testid="stHorizontalBlock"]:has(.vd-col-header) > [data-testid="stColumn"]:first-child,
+          [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) > [data-testid="stColumn"]:first-child {
+            flex: 0 0 64px;
+          }
         }
         [class*="st-key-vd_fila"] [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
         .vd-resumen-titulo {
