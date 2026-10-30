@@ -157,6 +157,96 @@ AMDY:
   sustainability: "Income atado a la volatilidad de AMD; alto cuando AMD se mueve fuerte."
   note: "Semiconductor volátil convertido en income; en ciclos alcistas de chips, AMD directo captura más subida."
 
+ABNY:
+  type: yieldmax
+  underlying: ABNB
+  name: Airbnb
+  risk: HIGH
+  delisted: "2026-06-18"
+  reason: "Plataforma de viajes de un solo negocio, sensible al ciclo de consumo"
+  income_mechanism: "Generaba income vendiendo call spreads sobre ABNB; el income eran las primas de opciones (Airbnb no paga dividendos)."
+  nav_erosion: "Capaba la subida de ABNB y se llevaba casi toda su caída. Aplicó un reverse split 1:5 (dic-2025), señal de erosión del precio."
+  note: "FONDO CERRADO: YieldMax lo liquidó el 18-jun-2026 (último día de trading 15-jun-2026), junto con DISO. Quien aún lo tenía recibió efectivo; para impuestos, la liquidación cuenta como una venta (ganancia o pérdida de capital)."
+
+APLY:
+  type: yieldmax
+  underlying: AAPL
+  name: Apple
+  risk: MEDIUM
+  reason: "Mega-cap de iPhone y servicios; de las acciones menos volátiles que sigue un YieldMax"
+  income_mechanism: "Genera income vendiendo call spreads sobre AAPL y paga income semanal; tu income son las primas de opciones, no el dividendo de Apple."
+  nav_erosion: "Capa la subida de AAPL y se lleva casi toda su caída. Como AAPL se mueve poco para ser tecnológica, la erosión suele ser más contenida que en los YieldMax de acciones volátiles."
+  sustainability: "Menos volatilidad = primas más baratas: distribución más estable pero más baja que en los YieldMax de nombres especulativos."
+  note: "Apple paga un dividendo propio pequeño; APLY no te lo traslada, te da primas de opciones. En rallies fuertes de AAPL, holdear AAPL directo captura más subida."
+
+GDXY:
+  type: yieldmax
+  underlying: GDX
+  name: Mineras de oro (VanEck GDX)
+  driver: el precio del oro
+  risk: HIGH
+  reason: "Sigue a un ETF de mineras de oro, que amplifica los movimientos del oro y es muy volátil"
+  income_mechanism: "Genera income vendiendo call spreads sobre GDX (el ETF de mineras de oro de VanEck) y paga income semanal; el income son las primas de opciones, no las distribuciones de GDX."
+  nav_erosion: "Capa la subida de GDX y se lleva casi toda su caída. Las mineras se mueven bastante más que el propio oro, así que los rallies del oro llegan recortados y las caídas llegan completas."
+  sustainability: "Distribución variable: sube cuando las mineras están volátiles y baja cuando el oro se calma."
+  note: "Aunque GDX reúne decenas de mineras, todas dependen del precio del oro: no es una posición diversificada ni una cobertura como tener oro físico (GLD)."
+
+MRNY:
+  type: yieldmax
+  underlying: MRNA
+  name: Moderna
+  risk: HIGH
+  reason: "Biotecnológica de vacunas cuyas ventas cayeron tras la pandemia; de las acciones más volátiles que sigue un YieldMax"
+  income_mechanism: "Genera income vendiendo call spreads sobre MRNA y paga income semanal; el income son las primas de opciones (Moderna no paga dividendos)."
+  nav_erosion: "Erosión severa: el fondo se lleva casi toda la caída de MRNA y le capan los rebotes. Aplicó un reverse split 1:10 (dic-2025), señal de erosión fuerte del precio."
+  sustainability: "Las primas son altas porque MRNA es extremadamente volátil, pero el pago cambia mucho de semana a semana y no compensa una caída sostenida de la acción."
+  note: "Caso de 'yield alto ≠ ganancia': el pago puede verse enorme mientras el precio del fondo se hunde. Evalúalo por retorno total (precio + dividendos), nunca solo por el yield."
+
+PYPY:
+  type: yieldmax
+  underlying: PYPL
+  name: PayPal
+  risk: HIGH
+  reason: "Fintech de pagos de gran tamaño, pero con volatilidad alta para su tamaño"
+  income_mechanism: "Genera income vendiendo call spreads sobre PYPL y paga income semanal; el income son las primas de opciones, no dividendos de PayPal."
+  nav_erosion: "Capa la subida de PYPL y se lleva casi toda su caída; parte de la distribución (a veces casi toda) es retorno de capital. Aplicó un reverse split 1:5 (dic-2025), señal de erosión del precio."
+  sustainability: "Distribución atada a la volatilidad de PYPL: cuando la acción se calma, las primas y el pago bajan."
+  note: "Cambia la posible recuperación de PayPal por income semanal. Si PYPL sube fuerte, holdear PYPL directo captura esa subida; PYPY la capa."
+
+SNOY:
+  type: yieldmax
+  underlying: SNOW
+  name: Snowflake
+  risk: HIGH
+  reason: "Software de datos en la nube, de alto crecimiento y muy volátil"
+  income_mechanism: "Genera income vendiendo call spreads sobre SNOW y paga income semanal; el income son las primas de opciones (Snowflake no paga dividendos)."
+  nav_erosion: "SNOW se mueve mucho: el fondo capa sus rallies y se lleva sus caídas, y parte de la distribución (a veces casi toda) es retorno de capital."
+  sustainability: "Income alto mientras SNOW esté volátil; baja cuando la acción se calma."
+  note: "Single-name de software convertido en income semanal. En rallies fuertes de SNOW, holdear SNOW directo habría rendido más."
+
+TSMY:
+  type: yieldmax
+  underlying: TSM
+  name: TSMC (Taiwan Semiconductor)
+  risk: HIGH
+  reason: "Fabricante de chips líder (ADR de Taiwán), atado al ciclo de IA y con riesgo geopolítico"
+  income_mechanism: "Genera income vendiendo call spreads sobre TSM (el ADR de TSMC) y paga income semanal; el income son las primas de opciones, no el dividendo de TSMC."
+  nav_erosion: "Capa la subida de TSM y se lleva casi toda su caída; en el ciclo alcista de chips e IA, TSM directo captura mucha más apreciación."
+  sustainability: "Distribución atada a la volatilidad de TSM: sube con las noticias de chips o de tensión en Taiwán y baja cuando se calma."
+  note: "TSMC paga dividendo propio; TSMY no te lo traslada, te da primas de opciones. Compara su retorno total contra holdear TSM."
+
+XOMO:
+  type: yieldmax
+  underlying: XOM
+  name: ExxonMobil
+  driver: el precio del petróleo
+  risk: MEDIUM
+  reason: "Petrolera integrada de gran tamaño, poco volátil; se mueve con el petróleo más que con el mercado"
+  income_mechanism: "Genera income vendiendo call spreads sobre XOM y paga income semanal; el income son las primas de opciones, no el dividendo de ExxonMobil."
+  nav_erosion: "XOM se mueve poco, así que las primas son modestas; aun así el fondo capa sus subidas, se lleva sus caídas, y parte de la distribución (a veces casi toda) es retorno de capital."
+  sustainability: "Distribución más baja y estable que en los YieldMax de acciones volátiles; sube cuando el petróleo se mueve fuerte."
+  note: "ExxonMobil paga un dividendo propio relevante; XOMO no te lo traslada: lo cambia por primas de opciones. Compara su retorno total contra holdear XOM."
+
 # ── YieldMax baskets — diversifican el single-name, COMPONEN la erosión ─────
 YMAX:
   type: yieldmax
@@ -179,6 +269,28 @@ YMAG:
   nav_erosion: "Erosión compuesta de los componentes; más estable que YMAX por la calidad mega-cap del basket."
   sustainability: "Distribución diversificada entre 7 mega-caps; más predecible que single-names especulativos."
   note: "Versión 'mega-cap' del basket YieldMax: beta alto a las 7 grandes, con income mensual a costa de capar su subida."
+
+ULTY:
+  type: yieldmax
+  underlying: Multi
+  name: YieldMax Ultra
+  risk: HIGH
+  reason: "Cartera activa de 15-30 acciones, sobre todo de alta volatilidad, con call spreads; erosión de NAV marcada"
+  income_mechanism: "Gestión activa: tiene entre 15 y 30 acciones (sobre todo volátiles, más algunas grandes y estables), elegidas por su volatilidad implícita, y genera income vendiendo call spreads sobre ellas; paga income semanal."
+  nav_erosion: "Diversifica el riesgo de un solo nombre, pero capa la subida de cada acción y se lleva sus caídas; muchas distribuciones recientes han sido casi todo retorno de capital. Aplicó un reverse split 1:10 (dic-2025), señal de erosión fuerte del precio."
+  sustainability: "El pago depende de la volatilidad de la cartera y de lo que elija el gestor; como es activo, la composición cambia con el tiempo."
+  note: "No sigue a una acción concreta y su cartera cambia; en la práctica suele moverse en la misma dirección que el Nasdaq, con el techo de las opciones. Evalúalo por retorno total (precio + dividendos), no por el yield."
+
+LFGY:
+  type: yieldmax
+  underlying: Multi
+  name: YieldMax Crypto & Tech
+  risk: HIGH
+  reason: "Cartera activa de empresas ligadas al cripto; se mueve con el ciclo cripto"
+  income_mechanism: "Gestión activa: tiene entre 15 y 30 empresas de infraestructura cripto y tecnología (no tiene bitcoin directamente) y genera income vendiendo call spreads sobre ellas; paga income semanal."
+  nav_erosion: "Capa la subida de sus acciones y se lleva sus caídas; muchas distribuciones recientes han sido casi todo retorno de capital (ROC)."
+  sustainability: "Distribución variable, atada a la volatilidad del sector cripto: cuando el cripto se calma, el income baja."
+  note: "Son varias empresas, pero todas dependen del mismo factor (el cripto): en la práctica suele moverse en la misma dirección que MSTY y CONY. Tenerlo junto a ellos no diversifica ese riesgo."
 
 # ── Leveraged — NO es income ETF, es tracker apalancado ─────────────────────
 NVDL:

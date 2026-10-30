@@ -1296,6 +1296,17 @@ def test_get_yieldmax_risk_profile_shape_stable():
     assert unknown['risk'] == 'UNKNOWN'
 
 
+def test_todo_yieldmax_de_la_lista_blanca_tiene_ficha():
+    """Un YieldMax de la lista blanca sin ficha se analiza con riesgo «desconocido», sin «Qué
+    significa para ti» y fuera de la prueba de 2022: la guardia del snapshot no lo ve, porque lo
+    pide como a sí mismo y queda declarado sin sesiones. Así estuvieron 12 hasta el 29-oct-2026.
+    Ficha nueva: /aprende-portafolio."""
+    logic.load_instruments.clear()
+    inst = logic.load_instruments()
+    sin_ficha = sorted(t for t in logic.YIELDMAX_WHITELIST if inst.get(t, {}).get('type') != 'yieldmax')
+    assert not sin_ficha, f"YieldMax de la lista blanca sin ficha en knowledge/instruments.yaml: {sin_ficha}"
+
+
 def test_build_interpretation_compensated_vs_deficit():
     """YieldMax: el bloque sintetiza COMPENSADO cuando el income supera la caída, y déficit si no."""
     comp = logic.build_interpretation(

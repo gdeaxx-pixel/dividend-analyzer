@@ -2,6 +2,16 @@
 # No entra al workflow de refresco. No editar a mano.
 # rows: 0 = ninguna sesión en la ventana; primera_sesion es la primera que tiene
 # Yahoo (null: ninguna).
+AAPL:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+ABNB:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 ABNY:
   generated_at: '2026-10-29'
   primera_sesion: null
@@ -110,6 +120,11 @@ EEM:
   rows: 715
   start: '2021-03-01'
 EFA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+GDX:
   end: '2023-12-29'
   generated_at: '2026-10-29'
   rows: 715
@@ -227,6 +242,11 @@ MGK:
   generated_at: '2026-10-29'
   rows: 715
   start: '2021-03-01'
+MRNA:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 MRNY:
   end: '2023-12-29'
   generated_at: '2026-10-29'
@@ -253,6 +273,11 @@ NVDA:
   rows: 715
   start: '2021-03-01'
 PLTR:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+PYPL:
   end: '2023-12-29'
   generated_at: '2026-10-29'
   rows: 715
@@ -317,6 +342,11 @@ SMH:
   generated_at: '2026-10-28'
   rows: 715
   start: '2021-03-01'
+SNOW:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
 SNOY:
   generated_at: '2026-10-29'
   primera_sesion: '2024-06-11'
@@ -339,6 +369,11 @@ SVOL:
 TSLA:
   end: '2023-12-29'
   generated_at: '2026-10-28'
+  rows: 715
+  start: '2021-03-01'
+TSM:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
   rows: 715
   start: '2021-03-01'
 TSMY:
@@ -455,6 +490,11 @@ XLV:
   rows: 715
   start: '2021-03-01'
 XLY:
+  end: '2023-12-29'
+  generated_at: '2026-10-29'
+  rows: 715
+  start: '2021-03-01'
+XOM:
   end: '2023-12-29'
   generated_at: '2026-10-29'
   rows: 715
