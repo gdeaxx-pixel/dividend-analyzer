@@ -1899,9 +1899,9 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         try:
             _info_u = load_instruments().get(str(ticker).upper(), {})
             _is_ym = ticker_mode == 'mode_a' or (_info_u.get('type') or '').lower() == 'yieldmax'
-            _u = _info_u.get('underlying')
-            if _is_ym and _u and str(_u).upper() not in ('N/A', 'NA', ''):
-                _underlying_tk = str(_u).upper()
+            _u = _subyacente_ticker(_info_u.get('underlying'))
+            if _is_ym and _u:
+                _underlying_tk = _u
                 _udf, _uerr = fetch_market_data(_underlying_tk, first_date)
                 if _udf is not None and not _udf.empty and 'Close' in _udf.columns:
                     _underlying_cagr_recent = _annualized_cagr(_udf['Close'], days=365)
@@ -3395,11 +3395,21 @@ def get_yieldmax_risk_profile(ticker: str) -> dict:
     }
 
 
+def _subyacente_ticker(underlying):
+    """El ticker del subyacente de una ficha, o None si la ficha nombra una cartera o un
+    índice ('Multi' en YMAX, ULTY y LFGY; 'Mag-7' en YMAG). Pedir esas etiquetas a Yahoo
+    costaba de 2 a 6 s por fondo para volver vacío (medido 2026-10-29). Misma regla que
+    `estres_2022.subyacentes_yieldmax`: se mira el valor crudo, sin pasarlo a mayúsculas,
+    porque la minúscula es lo que delata la etiqueta."""
+    u = str(underlying or '')
+    return u if re.fullmatch(r'[A-Z]{1,5}', u) and u != 'NA' else None
+
+
 def build_underlying_exposure(results: dict, ticker: str) -> dict:
     """Explica la exposición ASIMÉTRICA de un YieldMax a su subyacente: captura casi toda la
     caída pero le capan la subida. Combina el conocimiento curado (instruments.yaml) con el
     contraste de retornos reales (subyacente vs fondo, últimos 12m). Devuelve {'lines': [...]}.
-    Vacío si el ticker no es YieldMax o no tiene subyacente conocido.
+    Vacío si el ticker no es YieldMax o su subyacente no es un ticker (YMAX, YMAG…).
     """
     s = results.get(ticker, {}) or {}
     if not isinstance(s, dict) or 'error' in s:
@@ -3407,10 +3417,9 @@ def build_underlying_exposure(results: dict, ticker: str) -> dict:
     info = load_instruments().get(str(ticker).upper(), {})
     if (info.get('type') or '').lower() != 'yieldmax':
         return {'lines': []}
-    under = s.get('underlying_ticker') or info.get('underlying')
-    if not under or str(under).upper() in ('N/A', 'NA', ''):
+    under = _subyacente_ticker(s.get('underlying_ticker') or info.get('underlying'))
+    if not under:
         return {'lines': []}
-    under = str(under).upper()
     name = info.get('name', under)
     driver = info.get('driver')
 
