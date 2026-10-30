@@ -101,7 +101,11 @@ def test_ver_resultados_pide_subir_al_inicio():
     boton.click().run()
     assert at.exception == []
     assert at.session_state["_wizard_listo"] is True
-    assert at.session_state["_vd_subir_al_inicio"] is True
+    try:
+        pedido = at.session_state["_vd_subir_al_inicio"]
+    except KeyError:
+        pedido = None
+    assert pedido is True, "«Ver resultados →» no pidió abrir los resultados arriba"
 
 
 _CABECERA = """
