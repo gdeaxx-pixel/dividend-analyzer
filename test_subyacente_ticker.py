@@ -1,8 +1,13 @@
 """Módulo 1 de `analyze_portfolio`: solo se piden datos del subyacente cuando es un ticker.
 
 YMAX, ULTY y LFGY siguen una cartera ('Multi') e YMAG a las siete grandes ('Mag-7'). Antes se
-pedían a Yahoo como si fueran tickers y volvían vacíos tras 2 a 6 s por fondo. Mutante de los
-tres tests: volver a la exclusión vieja, `str(u).upper() not in ('N/A', 'NA', '')`.
+pedían a Yahoo como si fueran tickers y volvían vacíos tras 2 a 6 s por fondo (medido
+2026-10-29). Mutantes medidos con `/auditoria-m4` el mismo día, sobre la suite completa:
+- el Módulo 1 con la exclusión vieja (`str(u).upper() not in ('N/A', 'NA', '')`) pone
+  rojo al primero;
+- la frase de exposición con esa misma exclusión, al segundo;
+- la regla con tickers de 1 a 4 letras (GOOY pierde GOOGL), al tercero;
+- la regla que pasa el valor a mayúsculas antes de mirarlo ('Multi' -> 'MULTI'), a los tres.
 """
 import pandas as pd
 
@@ -25,9 +30,13 @@ def test_m1_no_pide_a_yahoo_un_subyacente_que_no_es_ticker(monkeypatch):
 
     pedidos = []
     idx = pd.bdate_range('2024-12-20', '2026-10-23')
+    conocidos = {*_FICHAS, 'TSLA'}
 
     def _mercado(ticker, start_date):
+        """Como Yahoo: serie para los tickers que existen, vacío con motivo para el resto."""
         pedidos.append(ticker)
+        if ticker not in conocidos:
+            return pd.DataFrame(), f'{ticker}: sin datos'
         return pd.DataFrame({'Close': 20.0, 'Dividends': 0.0, 'Stock Splits': 0.0},
                             index=idx), None
 
@@ -52,6 +61,8 @@ def test_la_exposicion_al_subyacente_calla_si_no_es_un_ticker():
 
 
 def test_m1_y_riesgo_coinciden_en_que_fondos_tienen_un_ticker_de_subyacente():
+    """Las dos reglas son independientes (una vive en `logic`, la otra en `estres_2022`)
+    y tienen que dar el mismo conjunto sobre las fichas reales."""
     fichas = logic.load_instruments()
     m1 = {t: logic._subyacente_ticker(p.get('underlying')) for t, p in fichas.items()
           if p.get('type') == 'yieldmax'}
