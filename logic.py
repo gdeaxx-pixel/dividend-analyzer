@@ -424,13 +424,13 @@ def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
         return df
     df = df.copy()
     desc = df['Description'].astype(str)
-    vacio = df['Ticker'].astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
+    vacio = df['Ticker'].fillna('').astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
     del_tda = desc.str.extract(_TDA_TICKER_RE, expand=False)
     llenar = vacio & del_tda.notna()
     df.loc[llenar, 'Ticker'] = del_tda[llenar]
 
     accion = df['Action'].astype(str).str.strip().str.lower()
-    con_ticker = ~df['Ticker'].astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
+    con_ticker = ~df['Ticker'].fillna('').astype(str).str.strip().str.lower().isin(('', 'nan', 'none'))
     es_w8 = ((accion == 'journaled shares') & con_ticker
              & desc.str.upper().str.contains('W-8 WITHHOLDING', regex=False))
     df.loc[es_w8, 'Action'] = 'NRA Tax Adj'
@@ -2437,7 +2437,7 @@ def summarize_income(df) -> dict:
     if df is None or len(df) == 0:
         return empty
 
-    accounts = sorted({a for a in df['Account'].astype(str) if a and a.lower() != 'nan'})
+    accounts = sorted({a for a in df['Account'].dropna().astype(str) if a and a.lower() != 'nan'})
     rec = df[df['IncomeType'].str.lower() == 'received'].copy()
     est = df[df['IncomeType'].str.lower() == 'estimated'].copy()
 
