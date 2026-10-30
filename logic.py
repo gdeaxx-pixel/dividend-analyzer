@@ -2717,10 +2717,11 @@ def load_and_detect_csv(uploaded_file) -> tuple:
 
 # v2.2 — Solo ETFs YieldMax confirmados por YieldMax LLC
 # NVDL removido: es GraniteShares 2x Long NVDA, NO es YieldMax
+# 2026-10-29: XOMY era XOMO; COINY no existe (el de Coinbase es CONY) y BALY es la acción de Bally's Corp.
 YIELDMAX_WHITELIST = {
     'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOY', 'CONY', 'JPMO', 'DISO',
     'YMAX', 'YMAG', 'MSTY', 'AMDY', 'ULTY', 'APLY', 'NFLY',
-    'PYPY', 'GDXY', 'SNOY', 'XOMY', 'MRNY', 'BALY', 'COINY',
+    'PYPY', 'GDXY', 'SNOY', 'XOMO', 'MRNY',
     'TSMY', 'PLTY', 'ABNY', 'LFGY',
 }
 
