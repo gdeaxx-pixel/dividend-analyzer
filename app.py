@@ -32,7 +32,7 @@ from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el
 from ui.chrome import etfs_habilitados, inyectar_estilos, render_encabezado, render_ruta
 from ui.componentes import cerrar_roc_encabezado
 from ui.pie import render_pie
-from ui.validacion import hay_alertas
+from ui.validacion import nivel_confiabilidad
 from ui.vistas import obtener_resultados, render_vista
 
 st.set_page_config(
@@ -90,7 +90,9 @@ render_encabezado(con_datos)
 
 if con_datos:
     resultados = obtener_resultados()
-    ruta = render_ruta(hay_alertas(resultados), etfs_habilitados(resultados))
+    nivel = nivel_confiabilidad(resultados)
+    ruta = render_ruta(nivel not in (None, "Alta"), etfs_habilitados(resultados),
+                       confiabilidad=nivel)
     render_vista(ruta)
     cerrar_roc_encabezado(ruta.tema)
     render_pie(resultados)

@@ -25,6 +25,11 @@ from ui.tokens import css_variables
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
 _CUENTA_CIERRE_POPOVER = "vd_cierre_popover_n"
 _CUENTA_SUBIDA = "vd_subida_inicio_n"
+_CLAVE_TEMA_AUTO = "vd_tema_auto"
+# Huecos de la cabecera que llena `render_ruta`: la cabecera se dibuja antes de calcular los
+# resultados (para que ROC «calcule» arriba) y la confiabilidad sale de esos resultados.
+HUECO_ESTADO = "_vd_hueco_estado"
+HUECO_AYUDA = "_vd_hueco_ayuda"
 
 
 def _pedir_cierre_popover() -> None:
@@ -163,20 +168,38 @@ def _ancla_metodologia(categoria: str, vista: str) -> str | None:
     return None
 
 
+# Vistas que muestran el caso de estudio de la clase, no el archivo del cliente (P7,
+# 30-oct): `render_comparacion_simulacion` y `render_metodo_tradicional` no leen el CSV.
+_VISTAS_DE_EJEMPLO = {("comparacion", "simulacion"), ("metodo", "matriz")}
+
+
 def _orden(categoria: str) -> tuple:
     if categoria == "comparacion":
-        return nav.CMP_ORDER
-    if categoria == "metodo":
-        return nav.MET_ORDER
-    if categoria == heredadas.CAT_CLAVE:
+        orden = nav.CMP_ORDER
+    elif categoria == "metodo":
+        orden = nav.MET_ORDER
+    elif categoria == heredadas.CAT_CLAVE:
         return heredadas.VIEW_ORDER
-    if categoria == riesgo.CAT_CLAVE:
+    elif categoria == riesgo.CAT_CLAVE:
         return riesgo.VIEW_ORDER
-    if categoria == impuestos.CAT_CLAVE:
+    elif categoria == impuestos.CAT_CLAVE:
         return impuestos.VIEW_ORDER
-    if categoria in ("largo", "dividendos"):
+    elif categoria in ("largo", "dividendos"):
         return ("viaje",)
-    return tuple(nav.SECTION_ORDER)
+    else:
+        return tuple(nav.SECTION_ORDER)
+    # Con archivo, la vista con tus datos va primero y es la que se abre (P7). Sin archivo
+    # (Riesgo sin CSV) Real y Matriz 2 no tienen qué dibujar: se queda el orden del demo.
+    if riesgo.sin_archivo():
+        return tuple(orden)
+    return tuple(sorted(orden, key=lambda v: (categoria, v) in _VISTAS_DE_EJEMPLO))
+
+
+def _origen(categoria: str, vista: str) -> tuple[str, str]:
+    """(clase, texto) de la etiqueta que dice de dónde salen las cifras de la vista (P7)."""
+    if (categoria, vista) in _VISTAS_DE_EJEMPLO or riesgo.sin_archivo():
+        return "ejemplo", "Caso de ejemplo"
+    return "tus", "Con tus datos"
 
 
 def inyectar_estilos(tema: str) -> None:
@@ -193,21 +216,37 @@ def inyectar_estilos(tema: str) -> None:
         unsafe_allow_html=True)
 
 
-def _sync_tema() -> None:
-    """`on_change` del control de tema: corre ANTES de que el script vuelva a dibujar el
-    widget, así que aquí sí se puede tocar `st.session_state["vd_tema_w"]` (a diferencia de
-    hacerlo en el cuerpo del script, donde Streamlit lo rechaza por ya estar instanciado —
-    ese fue el bug que tumbaba la app al deseleccionar el pill activo).
+def _alternar_tema() -> None:
+    """`on_click` del botón de tema de la cabecera (P8, 30-oct): antes era un control de dos
+    opciones que en el teléfono ocupaba una fila entera."""
+    st.session_state["vd_tema"] = "Oscuro" if st.session_state.get("vd_tema") == "Claro" else "Claro"
 
-    `st.segmented_control` en modo `single` deja deseleccionar la opción activa con un
-    segundo clic, y entonces `vd_tema_w` llega en `None`. Ese caso reafirma el valor
-    anterior tanto en el espejo (`vd_tema`, lo que lee el resto de la app) como en el
-    propio widget (para que el pill se vea seleccionado en el siguiente render)."""
-    seleccion = st.session_state.get("vd_tema_w")
-    if seleccion is None:
-        st.session_state["vd_tema_w"] = st.session_state["vd_tema"]
-    else:
-        st.session_state["vd_tema"] = seleccion
+
+def _tema_del_sistema_una_vez() -> None:
+    """Primera corrida de la visita: si el dispositivo está en modo oscuro, pulsa el botón de
+    tema (P8). `.streamlit/config.toml` fija el tema de Streamlit en claro, así que el
+    servidor no puede leer esa preferencia: la lee el navegador. Una sola vez por sesión,
+    para no pelear con el cliente si después lo cambia a mano."""
+    if st.session_state.get(_CLAVE_TEMA_AUTO):
+        return
+    st.session_state[_CLAVE_TEMA_AUTO] = True
+    if st.session_state.get("vd_tema") != "Claro":
+        return
+    st.html(
+        """<script>
+        try {
+          if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            var intentos = 0;
+            (function pulsar() {
+              var boton = document.querySelector(".st-key-vd_tema_btn button");
+              if (boton) { boton.click(); return; }
+              if (++intentos < 40) setTimeout(pulsar, 50);
+            })();
+          }
+        } catch (e) {}
+        </script>""",
+        unsafe_allow_javascript=True,
+    )
 
 
 def _con_datos(stats) -> bool:
@@ -224,83 +263,118 @@ def etfs_habilitados(resultados: dict) -> dict:
 
 
 def _sync_etf(categoria: str) -> None:
-    """`on_change` de los botones de ETF. Mismo caso que `_sync_tema`: un segundo clic
-    sobre el activo lo deselecciona y llega `None`; ahí se conserva el ETF anterior."""
+    """`on_change` de los botones de ETF: un segundo clic sobre el activo lo deselecciona y
+    llega `None`; ahí se conserva el ETF anterior."""
     seleccion = st.session_state.get(f"vd_etf_w_{categoria}")
     if seleccion is not None:
         st.session_state[f"vd_etf_{categoria}"] = seleccion
         st.session_state["vd_panel"] = None
 
 
+def _sync_categoria() -> None:
+    """`on_change` de la fila de secciones (P1). `required=True` impide deseleccionar."""
+    st.session_state["vd_categoria"] = st.session_state["vd_cat_w"]
+    st.session_state["vd_panel"] = None
+
+
+def _sync_vista(categoria: str) -> None:
+    """`on_change` de la fila de vistas de Comparación y Método tradicional (P1)."""
+    st.session_state["vd_vista"] = st.session_state[f"vd_vista_w_{categoria}"]
+    st.session_state["vd_panel"] = None
+
+
 def render_encabezado(con_datos: bool) -> str:
-    """Fila superior: marca con ROC a su derecha, tema a la derecha de la fila.
+    """Fila superior en una sola línea (P8, 30-oct): marca con ROC a la izquierda; a la
+    derecha, la confiabilidad, «Cambiar datos», «Ayuda» y el botón de tema.
 
     Con datos, ROC es el ÚNICO búho de la pantalla: aquí solo se reserva su hueco
     (`HUECO_ROC_VISTA`) y lo llena la vista con su estado (`roc_de_vista`) o, si ninguna lo
-    hizo, `cerrar_roc_encabezado`. En `con_datos=False` la marca no se dibuja aquí: el
-    wordmark de `ui/carga.py` (`<h2>`) ya cumple ese papel, y es él quien reserva a su
-    derecha el hueco del ROC del bloque 1. Devuelve el tema activo — nunca `None`.
+    hizo, `cerrar_roc_encabezado`. Igual con `HUECO_ESTADO` y `HUECO_AYUDA`: los llena
+    `render_ruta`, que es quien recibe la confiabilidad ya calculada. En `con_datos=False`
+    la marca no se dibuja aquí: el wordmark de `ui/carga.py` (`<h2>`) ya cumple ese papel.
+    Devuelve el tema activo — nunca `None`.
     """
     from ui.componentes import HUECO_ROC_VISTA  # dentro: `ui.chrome` ↔ `ui.componentes` es un ciclo
 
     st.session_state.setdefault("vd_tema", "Claro")
-    st.session_state.setdefault("vd_tema_w", st.session_state["vd_tema"])
     # Antes del cálculo de resultados, no después: así la pantalla de espera ya sale arriba.
-    if con_datos:
-        _subir_al_inicio_si_toca()
+    _subir_al_inicio_si_toca()
+    _tema_del_sistema_una_vez()
 
-    col_izq, col_der = st.columns([4, 2], vertical_alignment="center")
-    with col_izq:
+    with st.container(horizontal=True, vertical_alignment="center", gap="small",
+                      key="vd_cabecera"):
         if con_datos:
             with st.container(horizontal=True, vertical_alignment="center", gap="medium",
                               key="vd_marca"):
                 st.markdown('<p class="vd-brand">Invierte &amp; Gana</p>',
                             unsafe_allow_html=True, width="content")
                 st.session_state[HUECO_ROC_VISTA] = st.empty()
-    with col_der:
-        st.segmented_control(
-            "Tema", ("Claro", "Oscuro"), key="vd_tema_w", on_change=_sync_tema,
-            label_visibility="collapsed",
-        )
+            st.session_state[HUECO_ESTADO] = st.empty()
+            st.session_state[HUECO_AYUDA] = st.empty()
+        else:
+            st.container(key="vd_cab_espacio")
+        oscuro = st.session_state["vd_tema"] == "Oscuro"
+        st.button("", key="vd_tema_btn", type="tertiary", on_click=_alternar_tema,
+                  icon=":material/light_mode:" if oscuro else ":material/dark_mode:",
+                  help="Cambiar a tema claro" if oscuro else "Cambiar a tema oscuro")
 
     return st.session_state["vd_tema"]
 
 
-def _popover_segmento(columna, etiqueta_actual: str, opciones: dict, clave_actual: str,
-                       prefijo: str, on_select) -> None:
-    """Un segmento de la ruta: botón que muestra la selección activa y abre un popover
-    con las alternativas. Es lo más cercano al `crumb-btn` del demo que devuelve estado
-    a Python — a diferencia del HTML, que no puede.
+def _render_estado(alerta: bool, confiabilidad: str | None) -> None:
+    """Confiabilidad visible (P1) y «Cambiar datos» (P2). Antes la confiabilidad era un punto
+    de 4px sobre un botón sin nombre, y desde resultados no había forma de volver a la carga:
+    Impuestos pedía declarar el país en un paso al que no se llegaba."""
+    hueco = st.session_state.pop(HUECO_ESTADO, None) or st.empty()
+    with hueco.container(horizontal=True, vertical_alignment="center", gap="small",
+                         key="vd_estado"):
+        if alerta:
+            texto = f"Confiabilidad {confiabilidad.lower()}" if confiabilidad else "Revisa tus datos"
+            if st.button(texto, key="vd_chip_confiabilidad", type="tertiary"):
+                st.session_state["vd_panel"] = "validacion"
+                st.rerun()
+        if not riesgo.sin_archivo():
+            if st.button("Cambiar datos", key="vd_cambiar_datos", type="tertiary"):
+                # La carga conserva lo ya subido (archivo, posiciones, país): solo se reabre.
+                st.session_state["_wizard_listo"] = False
+                st.session_state["vd_panel"] = None
+                estado.pedir_subir_al_inicio()
+                st.rerun()
 
-    Sin flecha en el label: Streamlit ya dibuja su propio chevron en `st.popover`, y el
-    `▾` del demo (que es texto, no un ícono nativo) duplicaba el símbolo."""
-    with columna:
-        with st.popover(etiqueta_actual, use_container_width=True):
-            for clave, texto in opciones.items():
-                marca = " ●" if clave == clave_actual else ""
-                if st.button(f"{texto}{marca}", key=f"{prefijo}_{clave}",
-                             use_container_width=True):
-                    on_select(clave)
-                    st.session_state["vd_panel"] = None
-                    _pedir_cierre_popover()
-                    st.rerun()
+
+def _render_ayuda(alerta: bool, categoria: str, vista: str) -> None:
+    """«¿Cómo funciona?» y «Validación datos» bajo un menú con nombre (P1): antes era un
+    chevron sin texto."""
+    hueco = st.session_state.pop(HUECO_AYUDA, None) or st.empty()
+    with hueco.container(key="vd_ayuda"):
+        with st.popover("Ayuda", icon=":material/help:"):
+            if st.button("¿Cómo funciona?", key="vd_menu_metodologia",
+                         use_container_width=True):
+                st.session_state["vd_panel"] = "metodologia"
+                st.session_state["vd_metodologia_anchor"] = _ancla_metodologia(categoria, vista)
+                _pedir_cierre_popover()
+                st.rerun()
+            marca = " ●" if alerta else ""
+            if st.button(f"Validación datos{marca}", key="vd_menu_validacion",
+                         use_container_width=True):
+                st.session_state["vd_panel"] = "validacion"
+                _pedir_cierre_popover()
+                st.rerun()
 
 
-def render_ruta(alerta: bool = False, habilitados: dict | None = None) -> Ruta:
-    """Ruta horizontal funcional Categoría › Vista › ETF: popover para Categoría y Vista,
-    botones directos para el ETF.
+def render_ruta(alerta: bool = False, habilitados: dict | None = None,
+                confiabilidad: str | None = None) -> Ruta:
+    """Navegación visible (P1, 30-oct): una fila con las secciones siempre a la vista y,
+    debajo, las vistas de la sección (Comparación, Método tradicional) o sus fondos
+    (Dividendos, Largo plazo), con la etiqueta de dónde salen las cifras (P7). Antes las
+    secciones y las vistas vivían en dos popovers y un cliente nuevo solo veía la activa.
 
     `habilitados` (de `etfs_habilitados`) limita los botones de ETF a los que trae el
     archivo, y una categoría con ETFs que no tiene ninguno se oculta del menú. `None`
     ofrece la lista fija completa.
 
-    Sustituye a `render_crumb` (decorativo) y a la barra lateral: es el único navegador.
-    El segmento ETF solo aparece si la vista activa es Cash flow y la categoría tiene ETFs
-    (Dividendos · Largo Plazo); Comparación y Método tradicional no lo llevan.
-
-    `alerta` es un dato ya resuelto por quien llama (`app.py`, vía `ui.validacion`): este
-    módulo es solo presentación (docstring de arriba) y no calcula la confiabilidad —
-    solo dibuja el menú de 3 puntos con lo que se le entrega.
+    `alerta` y `confiabilidad` son datos ya resueltos por quien llama (`app.py`, vía
+    `ui.validacion`): este módulo es solo presentación y no calcula la confiabilidad.
     """
     _consumir_cierre_popover()
 
@@ -336,56 +410,38 @@ def render_ruta(alerta: bool = False, habilitados: dict | None = None) -> Ruta:
         etf = st.session_state[clave_etf]
 
     # Categoría con una sola vista (Portafolios, decisión de Daniel 2026-08-26): no se
-    # dibuja el segmento de vista — presentar directo, sin sub-menú de un solo elemento.
+    # dibuja la fila de vistas — presentar directo, sin sub-menú de un solo elemento.
     unica_vista = len(vistas) <= 1
 
-    kinds = ["cat"]
-    if not unica_vista:
-        kinds += ["sep", "vista"]
-    if con_etf:
-        kinds += ["sep", "etf"]
-    kinds += ["ayuda"]
-    columnas = st.columns(len(kinds))
+    _render_estado(alerta, confiabilidad)
+    _render_ayuda(alerta, categoria, vista)
 
-    for columna, kind in zip(columnas, kinds):
-        if kind == "sep":
-            with columna:
-                st.markdown('<span class="vd-sep">|</span>', unsafe_allow_html=True)
-        elif kind == "cat":
-            def _elegir_categoria(clave):
-                st.session_state.vd_categoria = clave
-            _popover_segmento(columna, CAT_LABELS_TOTAL[categoria], categorias,
-                              categoria, "vd_pop_cat", _elegir_categoria)
-        elif kind == "vista":
-            def _elegir_vista(clave):
-                st.session_state.vd_vista = clave
-            _popover_segmento(columna, vistas[vista], vistas, vista,
-                              f"vd_pop_vis_{categoria}", _elegir_vista)
-        elif kind == "etf":
-            with columna, st.container(key="vd_etfs"):
+    with st.container(key="vd_secciones"):
+        st.session_state["vd_cat_w"] = categoria
+        st.segmented_control(
+            "Sección", tuple(categorias), format_func=categorias.get, key="vd_cat_w",
+            on_change=_sync_categoria, label_visibility="collapsed", required=True,
+        )
+
+    with st.container(horizontal=True, vertical_alignment="center", gap="small",
+                      key="vd_subfila"):
+        if not unica_vista:
+            st.session_state[f"vd_vista_w_{categoria}"] = vista
+            st.segmented_control(
+                "Vista", orden, format_func=vistas.get, key=f"vd_vista_w_{categoria}",
+                on_change=_sync_vista, args=(categoria,), label_visibility="collapsed",
+                required=True,
+            )
+        if con_etf:
+            with st.container(key="vd_etfs"):
                 st.session_state[f"vd_etf_w_{categoria}"] = etf
                 st.segmented_control(
                     "ETF", habilitados[categoria], key=f"vd_etf_w_{categoria}",
                     on_change=_sync_etf, args=(categoria,), label_visibility="collapsed",
                 )
-        elif kind == "ayuda":
-            with columna:
-                clave_wrap = "vd_ayuda_alerta" if alerta else "vd_ayuda_sin_alerta"
-                with st.container(key=clave_wrap):
-                    with st.popover(""):
-                        if st.button("¿Cómo funciona?", key="vd_menu_metodologia",
-                                     use_container_width=True):
-                            st.session_state["vd_panel"] = "metodologia"
-                            st.session_state["vd_metodologia_anchor"] = (
-                                _ancla_metodologia(categoria, vista))
-                            _pedir_cierre_popover()
-                            st.rerun()
-                        marca = " ●" if alerta else ""
-                        if st.button(f"Validación datos{marca}", key="vd_menu_validacion",
-                                     use_container_width=True):
-                            st.session_state["vd_panel"] = "validacion"
-                            _pedir_cierre_popover()
-                            st.rerun()
+        clase, texto = _origen(categoria, vista)
+        st.markdown(f'<span class="vd-origen vd-origen-{clase}">{texto}</span>',
+                    unsafe_allow_html=True, width="content")
 
     return Ruta(categoria=categoria, vista=vista, etf=etf,
                 tema=st.session_state.get("vd_tema", "Claro"))
@@ -511,68 +567,78 @@ _ESTILOS = """
            derecha del texto aunque esté oculto: separaba el búho más que en resultados. */
         .st-key-vd_marca_carga [data-testid="stHeaderActionElements"] { display: none; }
 
-        .vd-sep { color: var(--ink-mut); opacity: .6; font-size: 13px; margin: 0 6px; }
+        /* ---- Cabecera y navegación (P1 y P8, 30-oct). Cabecera en una sola fila: marca y
+           ROC a la izquierda; confiabilidad, «Cambiar datos», «Ayuda» y el tema a la
+           derecha. Debajo, las secciones como pestañas siempre visibles (antes un popover que
+           solo mostraba la activa) y una fila con las vistas o los fondos de la sección y la
+           etiqueta de origen de las cifras (P7). */
+        .st-key-vd_cabecera { row-gap: 8px; }
+        .st-key-vd_marca, .st-key-vd_cab_espacio { flex: 1 1 auto; }
+        .st-key-vd_estado { flex: 0 0 auto; }
+        .st-key-vd_chip_confiabilidad button, .st-key-vd_cambiar_datos button,
+        .st-key-vd_ayuda [data-testid="stPopoverButton"], .st-key-vd_tema_btn button {
+          min-height: 0 !important; padding: 6px 10px !important; border-radius: 0 !important;
+          font-family: var(--font-sans) !important; font-size: 12.5px !important;
+          font-weight: 600 !important; letter-spacing: 0 !important; text-transform: none !important;
+          line-height: 1.2 !important;
+        }
+        .st-key-vd_chip_confiabilidad button {
+          color: var(--warn) !important; border: none !important;
+          background: color-mix(in srgb, var(--warn) 13%, transparent) !important;
+        }
+        .st-key-vd_chip_confiabilidad button::before {
+          content: ""; width: 7px; height: 7px; background: var(--warn); margin-right: 7px;
+          flex: none;
+        }
+        .st-key-vd_cambiar_datos button, .st-key-vd_ayuda [data-testid="stPopoverButton"],
+        .st-key-vd_tema_btn button {
+          color: var(--ink) !important; background: var(--panel) !important;
+          border: 1px solid var(--hair) !important; box-shadow: none !important;
+        }
+        .st-key-vd_cambiar_datos button:hover, .st-key-vd_ayuda [data-testid="stPopoverButton"]:hover,
+        .st-key-vd_tema_btn button:hover {
+          border-color: var(--accent) !important; color: var(--accent) !important;
+        }
+        .st-key-vd_tema_btn button { padding: 6px 8px !important; color: var(--ink-2) !important; }
 
-        /* ---- Ruta funcional: un st.popover por segmento. La fila de columnas es la
-           misma superficie que la página — fondo --ground exacto, borde dashed — y las
-           columnas abrazan su contenido en vez de repartirse el ancho, como el .crumb
-           del demo. `flex-wrap: wrap` partía la fila en dos (MSTY caía a una segunda
-           línea) en cuanto los tres popovers no cabían de corrido (~500-650px); con
-           `nowrap` + `overflow-x: auto` la fila se mantiene en una sola línea y, si no
-           entra, se desliza horizontalmente en vez de apilarse. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
-          border: 1px dashed var(--hair); background: var(--ground);
-          padding: 13px 16px; flex-wrap: nowrap; overflow-x: auto; align-items: center;
+        /* Pestañas de sección: el `stButtonGroup` de Streamlit vestido como fila de
+           pestañas — sin cajas, la activa subrayada en el azul de la marca. Una sola línea:
+           si no caben, se desliza de lado (en el teléfono, siempre). */
+        .st-key-vd_secciones { margin-top: 4px; }
+        .st-key-vd_secciones [data-testid="stButtonGroup"] {
+          flex-wrap: nowrap !important; overflow-x: auto; gap: 0 !important;
+          border-bottom: 1px solid var(--hair); scrollbar-width: none;
         }
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) > div {
-          flex: 0 0 auto; width: auto; min-width: 0; margin-left: 0;
+        .st-key-vd_secciones [data-testid="stButtonGroup"]::-webkit-scrollbar { display: none; }
+        .st-key-vd_secciones [data-testid="stButtonGroup"] button {
+          flex: 0 0 auto; white-space: nowrap; margin: 0 0 -1px 0 !important;
+          font-family: var(--font-sans) !important; font-size: 13.5px !important;
+          font-weight: 600 !important; letter-spacing: 0 !important; text-transform: none !important;
+          background: transparent !important; border: none !important;
+          border-bottom: 2px solid transparent !important; border-radius: 0 !important;
+          color: var(--ink-mut) !important; padding: 10px 12px 9px !important;
+          box-shadow: none !important;
         }
-        /* La columna del menú de 3 puntos colapsa a 15px en las rutas sin ETF (3
-           columnas: Método tradicional · Comparación · Detalle) — el `width: auto` de
-           la regla de arriba dimensiona por contenido, pero los contenedores internos
-           de Streamlit traen `flex: 1 1 0%` (base cero), así que el contenido aporta 0 y
-           la columna se colapsa; `max-content` no sirve por la misma circularidad. Antes
-           este botón era texto («¿CÓMO FUNCIONA? →», 153.4px) y necesitaba 170px de
-           min-width; ahora es un `st.popover("")` sin label — solo el chevron nativo de
-           Streamlit — así que se deja un mínimo cómodo de click sin heredar ese número,
-           que ya no aplica a este contenido.
+        .st-key-vd_secciones [data-testid="stButtonGroup"] button:hover {
+          color: var(--ink) !important; background: transparent !important;
+        }
+        .st-key-vd_secciones [data-testid="stButtonGroup"] button[aria-checked="true"] {
+          color: var(--ink) !important; border-bottom-color: var(--accent) !important;
+        }
 
-           Anclaje por clave, no por posición: antes esta regla era `> div:last-child`.
-           Medido en el DOM (2026-08-18, Comparación›Simulación de 3 columnas y
-           Dividendos›Cash flow›MSTY de 5): la columna de ayuda SÍ es hoy el último hijo
-           en las cuatro formas de la ruta, así que `:last-child` "funcionaba" — pero por
-           coincidencia posicional, no por identidad. Cualquier columna nueva que se
-           agregue al final (o un reordenamiento futuro) se robaría el `margin-left: auto`
-           en silencio, sin que nada lo señale hasta que alguien lo note en pantalla. Se
-           ancla por la clave estable del contenedor (`st.container(key=…)`,
-           líneas 268-269) con el mismo patrón `:has()` que ya usa este archivo. El
-           `margin-left: 0` explícito de la regla de arriba evita que alguna columna
-           intermedia también reciba espacio libre por herencia. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-          > div:has(:is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta)) {
-          margin-left: auto; min-width: 48px; text-align: right;
-        }
-        /* El separador "|" vive en una columna Streamlit completa (mínimo ~130px por el
-           min-width interno de los popovers vecinos) y centrado ahí se ve como un hueco
-           enorme entre segmentos — notorio desde que «Método tradicional» quedó con solo
-           dos vistas (2026-08-24). Su celda abrazará el carácter: min-content. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-          > div:has(.vd-sep) {
-          flex: 0 0 auto; width: min-content;
-          display: flex; align-items: center; justify-content: center;
-        }
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) button {
-          white-space: nowrap;
-        }
-        /* Botones de ETF: su columna toma el ancho que sobra y, si no caben, los botones
-           se parten en otra línea dentro de ella (decisión de Daniel 2026-09-29) en vez de
-           empujar la fila a deslizarse. La categoría no se mueve. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-          > div:has(.st-key-vd_etfs) {
-          flex: 1 1 auto; min-width: 0;
-        }
+        /* Fila de vistas y fondos, con la etiqueta de origen al final (P7). */
+        .st-key-vd_subfila { row-gap: 6px; margin-top: 2px; }
         .st-key-vd_etfs [data-testid="stButtonGroup"] { flex-wrap: wrap; row-gap: 4px; }
-
+        .vd-origen {
+          display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+          font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+          letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+        }
+        .vd-origen::before { content: ""; width: 7px; height: 7px; background: currentColor; }
+        .vd-origen-ejemplo { color: var(--ink-mut); }
+        .vd-origen-ejemplo::before {
+          background: none; border: 1.5px solid currentColor; box-sizing: border-box;
+        }
         [data-testid="stPopoverButton"] {
           font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em;
           text-transform: uppercase; background: none; border: 1px solid transparent;
@@ -626,49 +692,10 @@ _ESTILOS = """
           border-radius: 0 !important;
         }
 
-        /* Menú de ayuda: mockup opción A (aprobado por Daniel 2026-08-18). Antes era un
-           enlace fantasma como `.crumb-help` del demo — sin caja, `color: var(--ink-mut)`
-           (bajo contraste) — y con `margin-left: auto` empujando la columna al borde
-           derecho, el chevron quedaba solo en medio del vacío: así es como Daniel lo
-           reportó como "desaparecido" (medido en el DOM: `color: rgb(106,123,138)`, sin
-           borde, sin fondo — invisible contra el `--ground`). Ahora es un chevron DENTRO
-           de una caja de borde fino, mismo trato que los otros segmentos de la ruta
-           (borde + `var(--accent)` en hover), para que se lea como parte del mismo menú
-           en vez de perderse en el hueco a la derecha. Antes vestía el botón de texto
-           «¿Cómo funciona? →»; ahora el botón no lleva label (`st.popover("")`, Daniel
-           pidió solo el chevron nativo, sin el «⋮» que se probó primero) — el chevron
-           escala en `em`, por eso el tamaño de fuente mayor al resto de la fila.
-           Selector por clave (Paso 1), no por posición. */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-          :is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta) [data-testid="stPopoverButton"] {
-          background: none !important; border: 1px solid var(--hair) !important;
-          box-shadow: none !important; color: var(--ink) !important;
-          padding: 4px 8px !important; font-size: 16px; line-height: 1;
-          border-radius: 0 !important;
-        }
-        [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-          :is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta) [data-testid="stPopoverButton"]:hover {
-          border-color: var(--accent) !important; color: var(--accent) !important;
-        }
-        /* Punto de aviso del menú (`ui.validacion.hay_alertas`, vía `render_ruta`): solo
-           se pinta cuando SÍ hay algo que revisar en Validación datos — decisión de
-           Daniel (mockup aprobado 2026-08-10): nada ocupa espacio en la página, pero el
-           punto no pasa inadvertido. Contenedor con clave (`st.container(key=...)`,
-           mismo patrón que el rail) porque el botón del popover no acepta HTML propio. */
-        .st-key-vd_ayuda_alerta [data-testid="stPopoverButton"] {
-          position: relative;
-        }
-        .st-key-vd_ayuda_alerta [data-testid="stPopoverButton"]::after {
-          content: ""; position: absolute; top: 4px; right: 2px;
-          width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
-        }
-
+        /* La etiqueta «Ayuda» se oculta en el teléfono (queda el icono): ver @media. */
         /* Control de tema: `stButtonGroup` trae radio redondeado (8px en los extremos) y
            tipografía `system-ui` de fábrica — igual que el popover, es CSS propio de
            Streamlit y solo se ve midiendo el DOM, no con `grep` sobre este archivo. */
-        /* El contenedor del control abraza su contenido: sin esto queda pegado al borde
-           izquierdo de su columna y no al borde derecho de la página. */
-        .st-key-vd_tema_w { align-self: flex-end; }
         /* Alto reservado para el globo de ROC en la carga («Suéltalo.», «N tickers
            leídos»): sin él, al aparecer el globo el título baja ~10px. */
         [data-testid="stButtonGroup"] button {
@@ -739,26 +766,13 @@ _ESTILOS = """
           [data-testid="stHorizontalBlock"]:has([data-testid="stButtonGroup"]) {
             flex-wrap: wrap;
           }
-          [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"]) {
-            padding: 10px 12px;
-          }
-          /* Con botones de ETF la ruta contiene un `stButtonGroup`, así que la regla de
-             arriba la parte a propósito: los botones bajan debajo de la categoría
-             (Daniel 2026-09-29). El «|» quedaría colgando al final de la primera línea. */
-          [data-testid="stHorizontalBlock"]:has(.st-key-vd_etfs) > div:has(.vd-sep) {
-            display: none;
-          }
-          /* La fila de la ruta usa `nowrap` + `overflow-x: auto` (línea 385) para no
-             reintroducir el bug de #47 (partirse en dos líneas). Pero con
-             `margin-left: auto` en la columna de ayuda, una ruta larga que desborda en
-             pantalla angosta (`Dividendos | Cash flow | MSTY`, 5 columnas) empuja el
-             chevron fuera del área visible: solo aparece deslizando la fila, y el menú
-             de ayuda debe estar siempre alcanzable sin scroll. Se anula el
-             `margin-left: auto` aquí para que la columna de ayuda quede pegada a los
-             segmentos en vez de proyectarse al ancho completo del contenedor. */
-          [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
-            > div:has(:is(.st-key-vd_ayuda_alerta, .st-key-vd_ayuda_sin_alerta)) {
-            margin-left: 0 !important;
+          /* Cabecera (P8): en el teléfono, marca, «Ayuda» y tema en la primera línea; la
+             confiabilidad y «Cambiar datos» bajan a una segunda línea entera. */
+          .st-key-vd_cabecera { flex-wrap: wrap !important; }
+          .st-key-vd_cabecera > div:has(.st-key-vd_estado) { order: 5; flex-basis: 100%; }
+          .st-key-vd_ayuda [data-testid="stPopoverButton"] p { display: none; }
+          .st-key-vd_etfs [data-testid="stButtonGroup"] {
+            flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none;
           }
           /* Rail móvil: mockup aprobado por Daniel (diseñado 2026-08-09, sesión de
              correcciones de forma). Por debajo de 640px Streamlit apila `st.columns(8)`

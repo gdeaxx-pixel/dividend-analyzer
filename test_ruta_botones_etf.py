@@ -64,10 +64,11 @@ def test_deseleccionar_el_activo_conserva_el_etf():
 
 
 def test_categoria_sin_etfs_se_oculta_del_menu():
+    # Desde el 30-oct (P1) las secciones son una fila visible, no un popover.
     at = _app(_hab={"dividendos": ("TSLY",), "largo": ()}, vd_categoria="dividendos")
-    claves = {b.key for b in at.button}
-    assert "vd_pop_cat_dividendos" in claves
-    assert "vd_pop_cat_largo" not in claves
+    secciones = list(at.button_group(key="vd_cat_w").options)   # etiquetas visibles
+    assert "Dividendos" in secciones
+    assert "Largo Plazo" not in secciones
 
 
 def test_categoria_activa_sin_etfs_vuelve_a_portafolios():
