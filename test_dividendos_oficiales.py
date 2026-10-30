@@ -79,8 +79,12 @@ def test_dos_importes_para_la_misma_fecha_no_se_resuelven_en_silencio():
         "<td>$0.6940</td><td>12/03/2025</td><td>12/04/2025</td><td>12/04/2025</td>"
         "<td>12/05/2025</td><td>92.88%</td>")
     assert ambigua != HTML_MSTY
-    with pytest.raises(ValueError, match="2025-12-04"):
+    try:
         fpc.parse_distribuciones_oficiales(ambigua)
+        error = ""
+    except ValueError as e:
+        error = str(e)
+    assert "2025-12-04" in error, "dos importes para la misma fecha deben rechazarse"
 
 
 # ── Contraste ───────────────────────────────────────────────────────────────────────────
@@ -173,14 +177,21 @@ def test_un_ex_date_sin_fila_de_precio_se_avisa_y_no_se_coloca():
     assert pd.Timestamp("2026-10-03") not in serie.index
 
 
+def _cambios_o_rechazo(yf, oficial):
+    """Cuántos cambios aplica el contraste, o «rechazado» si salta el freno: así el límite
+    del freno cae por aserción y no por la excepción misma."""
+    try:
+        return len(fpc.reconciliar_dividendos(yf, oficial)[1])
+    except fpc.ContrasteSospechoso:
+        return "rechazado"
+
+
 def test_tres_cambios_se_aplican_y_cuatro_se_rechazan_enteros():
     fechas = ["2026-09-24", "2026-10-01", "2026-10-08", "2026-10-15"]
     yf = _serie({f: 0.2 for f in fechas})
     tres = _oficial({f: (0.3 if i < 3 else 0.2) for i, f in enumerate(fechas)})
-    _, correcciones, _ = fpc.reconciliar_dividendos(yf, tres)
-    assert len(correcciones) == 3
-    with pytest.raises(fpc.ContrasteSospechoso):
-        fpc.reconciliar_dividendos(yf, _oficial({f: 0.3 for f in fechas}))
+    assert _cambios_o_rechazo(yf, tres) == 3
+    assert _cambios_o_rechazo(yf, _oficial({f: 0.3 for f in fechas})) == "rechazado"
     assert (yf[yf > 0] == 0.2).all(), "la serie de entrada no se toca"
 
 
