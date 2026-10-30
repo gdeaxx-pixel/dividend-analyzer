@@ -263,6 +263,9 @@
   .v-pct.loss { color: var(--loss); }
   .v-pct-lab { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; color: var(--ink-mut); }
   .v-pct-sep { color: var(--ink-mut); }
+  /* La cifra no se parte: a 320 px la línea cortaba entre «−» y «$10434.51», y la cifra
+     suelta del renglón siguiente se leía positiva. */
+  .v-big, .v-pct .num { white-space: nowrap; }
 
   .io { align-self: center; display: flex; flex-direction: column; gap: 18px; }
   .io-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 14px; }
@@ -274,6 +277,19 @@
   .io-out .io-fill { background: var(--loss); }
   .io-ghost { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start; transition: padding-left .3s cubic-bezier(.2,.8,.25,1); }
   .io-ghost span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); font-weight: 600; white-space: nowrap; transition: color .2s ease, margin-left .2s ease; }
+  /* A dos columnas, la pista de los importes medía 9 px con el iframe a 343 (375 de
+     viewport) y 2 px a 288 (320): «$946.82» se salía de la tarjeta y el iframe lo cortaba.
+     Un importe de 10 caracteres pide ~165 px de pista para quedar dentro o después del
+     relleno sin montarse en su borde (el corte de 0.55 de `placeGhostAt`). Bajo 700 px la
+     tarjeta apila sus dos bloques; en teléfono el rótulo sube encima de la barra, que así
+     se lleva el ancho entero (215 px a 288). */
+  @media (max-width: 700px) {
+    .verdict { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  }
+  @media (max-width: 440px) {
+    .io-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .io-lab { text-align: left; }
+  }
 
   /* ---- waterfall ---- */
   .fall-scroll { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
@@ -1054,8 +1070,11 @@
 </style>
 <style>
   /* El componente vive dentro de un iframe con su propio fondo: sin esto se ve un
-     rectángulo blanco recortado sobre la superficie de la página. */
-  body { margin: 0; background: var(--ground); }
+     rectángulo blanco recortado sobre la superficie de la página.
+     `flow-root`: con el rail oculto y el `.wrap` sin padding arriba, el `margin-top` de
+     14px del cockpit atravesaba el body, y el auto-alto (`body.scrollHeight`) no lo
+     contaba: el iframe quedaba 14 px corto a cualquier ancho. */
+  body { margin: 0; background: var(--ground); display: flow-root; }
   .rail { display: none; }  /* el rail es nativo en el port, no del componente */
 
   /* El chasis de 940px se aplica DOS veces en el port: `.block-container` (ui/chrome.py)
