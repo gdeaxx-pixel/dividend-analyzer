@@ -34,7 +34,7 @@ SCHB_COMISION = cashflow_data(dict(STATS_SCHB, misc_cash_total=-30.0,
                                    misc_cash_breakdown={"ADR Mgmt Fee": -30.0}), "SCHB")
 CASOS = {"SCHB": SCHB, "SCHB_COMISION": SCHB_COMISION, "SCHB_SUBE": SCHB_SUBE, "MSTY": MSTY, "SCHB_BAJA": SCHB_BAJA,
          "REDONDEO": REDONDEO}
-PASO_MERCADO = SCHB["STEP_LABELS"].index("Mercado")
+PASO_MERCADO = SCHB["STEP_LABELS"].index("Impacto del mercado")
 
 _LEER = """() => {
   const n = {};

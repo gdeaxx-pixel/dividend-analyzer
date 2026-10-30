@@ -156,7 +156,8 @@ def test_bloque1_sin_archivo_roc_escucha_el_arrastre(monkeypatch):
 
 @pytest.mark.parametrize("caso, error", [
     ("vacio", "No pudimos leer el formato del archivo."),
-    ("dos_columnas", "Falta(n) la(s) columna(s): Date, Ticker, Amount"),
+    # Era «Falta(n) la(s) columna(s): …» hasta el 30-oct (A7, plurales).
+    ("dos_columnas", "Faltan las columnas: Date, Ticker, Amount"),
 ])
 def test_bloque1_csv_rechazado_roc_confundido_y_callado(monkeypatch, caso, error):
     at = _bloque1(monkeypatch, caso)
@@ -255,7 +256,9 @@ def test_carga_sin_frase_de_bloques_y_uploader_sin_help_invisible():
     at.run()
     textos = "\n".join(m.value for m in at.markdown)
     assert "Tres bloques" not in textos
-    assert "¿Dónde lo exporto? Interactive Brokers: Informes → Extractos" in textos
+    # Desde el 30-oct (A11) cada bróker va en su propia línea, tras un <br>.
+    assert "¿Dónde lo exporto?" in textos
+    assert "Interactive Brokers: Informes → Extractos" in textos
     assert "Tu archivo se procesa en memoria y no se escribe a disco." in textos
 
 

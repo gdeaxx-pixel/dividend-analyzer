@@ -101,26 +101,28 @@ def render_pie(resultados: dict) -> None:
 
 ESTILOS_PIE = """
         .vd-pie-regla { border: none; border-top: 1px dashed var(--hair); margin: 16px 0 10px; }
+        /* Aviso legal a tamaño de lectura (A10, 30-oct): estaba a 8–9.5px. El texto va a
+           12px como mínimo y la etiqueta «Versión beta» a 11px, el piso de las etiquetas. */
         .vd-pie-legal {
           background: var(--panel-tint); font-family: var(--font-mono);
-          padding: 8px 12px; margin-top: 0;
+          padding: 12px 14px; margin-top: 0;
         }
         .vd-pie-legal-badge {
-          display: inline-block; font-size: 8px !important;
+          display: inline-block; font-size: 11px !important;
           font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-          color: var(--ink-mut); border: 1px solid var(--hair); padding: 1px 4px;
-          margin-bottom: 4px;
+          color: var(--ink-mut); border: 1px solid var(--hair); padding: 2px 6px;
+          margin-bottom: 6px;
         }
         .vd-pie-legal-titulo {
-          font-size: 9.5px !important; font-weight: 700; letter-spacing: .01em;
-          color: var(--ink-2); margin: 0 0 2px !important; line-height: 1.3 !important;
+          font-size: 13px !important; font-weight: 700; letter-spacing: .01em;
+          color: var(--ink-2); margin: 0 0 4px !important; line-height: 1.35 !important;
         }
         .vd-pie-legal-cuerpo1 {
-          font-size: 8.5px !important; color: var(--ink-mut); line-height: 1.35 !important;
-          margin: 0 0 1px !important;
+          font-size: 12px !important; color: var(--ink-mut); line-height: 1.45 !important;
+          margin: 0 0 2px !important;
         }
         .vd-pie-legal-cuerpo2 {
-          font-size: 8.5px !important; color: var(--ink-mut); line-height: 1.35 !important;
+          font-size: 12px !important; color: var(--ink-mut); line-height: 1.45 !important;
           margin: 0 !important; opacity: .8;
         }
 """

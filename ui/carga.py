@@ -18,7 +18,7 @@ import streamlit as st
 
 import logic
 import storage
-from ui import adapters, componentes, estado, riesgo
+from ui import adapters, componentes, estado, riesgo, texto
 
 
 CLAVES_CONTEXTO_CARTERA = (
@@ -179,11 +179,17 @@ BROKER_LABEL = {
     "generic": "Formato genérico",
 }
 
+# Una línea por bróker (A11 de la propuesta del 2026-10-30): seguidas en una sola línea,
+# las dos rutas se leían como una.
 _AYUDA_BROKER = (
-    "Interactive Brokers: Informes → Extractos → Transaction History · "
-    "Charles Schwab: Accounts → Transaction History (Historial de transacciones) → "
-    "Date range «All» → Search → ícono de descarga (Export) → CSV"
+    ("Interactive Brokers", "Informes → Extractos → Transaction History"),
+    ("Charles Schwab", "Accounts → Transaction History (Historial de transacciones) → "
+                       "Date range «All» → Search → ícono de descarga (Export) → CSV"),
 )
+
+# Un solo título para el paso 3, abierto o bloqueado (A3). El 23-sep se renombró solo el
+# abierto y el bloqueado siguió diciendo «Formulario 1042-S · opcional».
+TITULO_BLOQUE_FISCAL = "Información fiscal · opcional"
 
 
 TAM_ROC_CARGA = componentes.TAM_ROC_ENCABEZADO
@@ -197,6 +203,16 @@ def _roc_bloque1(hueco, estado_roc: str, frase: str | None = None,
     with hueco.container():
         componentes.render_roc(estado_roc, st.session_state.get("vd_tema", "Claro"), frase,
                                tam=TAM_ROC_CARGA, reaccion=reaccion)
+
+
+def _resumen_con_cambiar(titulo: str, detalle: str, clave: str) -> bool:
+    """Paso completado en una sola fila: el resumen y, a su derecha, «Cambiar» (A6). Antes
+    el botón iba en una fila propia debajo y quedaba suelto. `wrap=False` lo mantiene en la
+    misma fila también en el teléfono. Devuelve True si el cliente pulsó «Cambiar»."""
+    with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False,
+                      key=f"vd_fila{clave}"):
+        st.markdown(bloque_resumen(titulo, detalle), unsafe_allow_html=True, width="stretch")
+        return st.button("Cambiar", key=clave, type="tertiary", width="content")
 
 
 def render_bloque_transacciones() -> bool:
@@ -213,9 +229,20 @@ def render_bloque_transacciones() -> bool:
         asiente = st.session_state.pop("_roc_asiente", False)
         _roc_bloque1(hueco_roc, "vigilante", adapters.roc_csv_frase(broker, len(tickers)),
                      {"tipo": "asiente"} if asiente else None)
-        st.markdown(bloque_resumen("CSV cargado",
-                                   f"{nombre} · {broker} · {len(tickers)} tickers"),
-                    unsafe_allow_html=True)
+        if _resumen_con_cambiar("CSV cargado",
+                                f"{nombre} · {broker} · "
+                                f"{texto.plural(len(tickers), 'ticker', 'tickers')}",
+                                "_vd_edit_csv"):
+            # `_vd_resultados` va en la lista: es el caché de `analyze_portfolio`, y sin
+            # borrarlo `ui/vistas.py::_resultados` lo devuelve tal cual —solo recalcula
+            # cuando es `None`—, así que el CSV nuevo se mostraría con las cifras del
+            # anterior. Con la captura dentro del cálculo, además arrastraría posiciones
+            # de un portafolio a otro.
+            for clave in CLAVES_CONTEXTO_CARTERA:
+                st.session_state.pop(clave, None)
+            st.session_state["_wizard_pos_confirmed"] = False
+            st.session_state["_wizard_listo"] = False
+            st.rerun()
         _descarte = st.session_state.get("_wizard_csv_descarte")
         if _descarte and _descarte.get("total"):
             # E3 (spec S5 §3): toda fila "MM/DD/YYYY as of MM/DD/YYYY" que el parser de
@@ -225,22 +252,12 @@ def render_bloque_transacciones() -> bool:
             _detalle = ", ".join(f"{v}× {k}" for k, v in
                                  sorted(_descarte["por_accion"].items(),
                                         key=lambda kv: -kv[1]))
-            st.caption(f"⚠️ {_descarte['total']} fila(s) con fecha «... as of ...» que no "
-                      f"se pudieron ubicar en el tiempo, excluidas: {_detalle}.")
-        _, col = st.columns([5, 1])
-        with col:
-            if st.button("editar", key="_vd_edit_csv", type="tertiary",
-                         use_container_width=True):
-                # `_vd_resultados` va en la lista: es el caché de `analyze_portfolio`, y sin
-                # borrarlo `ui/vistas.py::_resultados` lo devuelve tal cual —solo recalcula
-                # cuando es `None`—, así que el CSV nuevo se mostraría con las cifras del
-                # anterior. Con la captura dentro del cálculo, además arrastraría posiciones
-                # de un portafolio a otro.
-                for clave in CLAVES_CONTEXTO_CARTERA:
-                    st.session_state.pop(clave, None)
-                st.session_state["_wizard_pos_confirmed"] = False
-                st.session_state["_wizard_listo"] = False
-                st.rerun()
+            filas = texto.plural(
+                _descarte["total"],
+                "fila con fecha «... as of ...» que no se pudo ubicar en el tiempo, excluida",
+                "filas con fecha «... as of ...» que no se pudieron ubicar en el tiempo, "
+                "excluidas")
+            st.caption(f"⚠️ {filas}: {_detalle}.")
         return True
 
     st.markdown(bloque_header(1, "Transacciones", "activo"),
@@ -249,7 +266,8 @@ def render_bloque_transacciones() -> bool:
                                label_visibility="collapsed", key="_vd_upload_txn")
     # Con la etiqueta colapsada Streamlit no dibuja el `help`: la ruta de exportación va
     # a la vista, debajo de la zona de arrastre.
-    st.markdown(f'<p class="vd-ayuda-broker">¿Dónde lo exporto? {_AYUDA_BROKER}</p>',
+    rutas = "<br>".join(f"{broker}: {ruta}" for broker, ruta in _AYUDA_BROKER)
+    st.markdown(f'<p class="vd-ayuda-broker"><b>¿Dónde lo exporto?</b><br>{rutas}</p>',
                 unsafe_allow_html=True)
     if archivo is None:
         _roc_bloque1(hueco_roc, "vigilante", None,
@@ -268,7 +286,8 @@ def render_bloque_transacciones() -> bool:
         faltan = [c for c in ("Date", "Ticker", "Amount") if c not in limpio.columns]
         if faltan:
             _roc_bloque1(hueco_roc, "confundido")
-            st.error(f"Falta(n) la(s) columna(s): {', '.join(faltan)}")
+            st.error(("Falta la columna: " if len(faltan) == 1 else "Faltan las columnas: ")
+                     + ", ".join(faltan))
             st.caption(f"Columnas encontradas: {list(limpio.columns)}")
             return False
 
@@ -355,23 +374,19 @@ def render_bloque_posiciones() -> bool:
     """Bloque 2. Confirma acciones y costo real por ETF."""
     if st.session_state.get("_wizard_pos_confirmed"):
         posiciones = st.session_state.get("_wizard_positions") or {}
-        st.markdown(bloque_resumen("Posiciones confirmadas",
-                                   f"{len(posiciones)} instrumentos"),
-                    unsafe_allow_html=True)
-        # U4 §5.3.1 (§3A.1): completados resumidos con Editar. Mismo patrón que el
-        # «editar» del paso 1, pero borrando SOLO la confirmación — NO todo
+        # U4 §5.3.1 (§3A.1): completados resumidos con «Cambiar». Mismo patrón que el
+        # del paso 1, pero borrando SOLO la confirmación — NO todo
         # CLAVES_CONTEXTO_CARTERA: eso tiraría también el CSV del paso 1.
-        _, col = st.columns([5, 1])
-        with col:
-            if st.button("editar", key="_vd_edit_pos", type="tertiary",
-                         use_container_width=True):
-                st.session_state["_wizard_pos_confirmed"] = False
-                st.session_state["_wizard_listo"] = False
-                # `_vd_resultados` va: `analyze_portfolio` corrió con la captura
-                # confirmada; si el cliente edita los importes, el caché ya no
-                # corresponde a lo que ve (mismo motivo que en el editar del paso 1).
-                st.session_state.pop("_vd_resultados", None)
-                st.rerun()
+        if _resumen_con_cambiar("Posiciones confirmadas",
+                                texto.plural(len(posiciones), "instrumento", "instrumentos"),
+                                "_vd_edit_pos"):
+            st.session_state["_wizard_pos_confirmed"] = False
+            st.session_state["_wizard_listo"] = False
+            # `_vd_resultados` va: `analyze_portfolio` corrió con la captura
+            # confirmada; si el cliente edita los importes, el caché ya no
+            # corresponde a lo que ve (mismo motivo que en el «Cambiar» del paso 1).
+            st.session_state.pop("_vd_resultados", None)
+            st.rerun()
         return True
 
     st.markdown(bloque_header(2, "Posiciones del portafolio", "activo",
@@ -556,7 +571,8 @@ def render_bloque_posiciones() -> bool:
     # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
     # el bloque. Mismo tratamiento que `app_old.py:6289`.
     if excluidos:
-        with st.expander(f"{len(excluidos)} instrumentos fuera del análisis"):
+        with st.expander(texto.plural(len(excluidos), "instrumento fuera del análisis",
+                                      "instrumentos fuera del análisis")):
             st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
                        "la calculadora no sabe interpretar todavía.")
             st.write(", ".join(excluidos))
@@ -612,7 +628,8 @@ def _render_residencia_detectada() -> None:
 
     if detectado is None:
         st.info(f"Tu 1042-S declara el país **{codigo}** (casilla 13b), que no está en "
-                "nuestra tabla de tasas. Elige tu residencia a mano en el Paso 2.")
+                "nuestra tabla de tasas. Elige tu residencia a mano en «Tu residencia "
+                "fiscal», arriba en este mismo paso.")
         return
 
     tasa = logic.NRA_COUNTRY_RATES[detectado][0]
@@ -655,7 +672,7 @@ def _render_aviso_1042s_tda(lectura: dict) -> None:
         f"Tu cuenta estuvo en TD Ameritrade {hasta}, así que {anio} tiene **dos** 1042-S: "
         f"{nombres['schwab']} (lo que cobraste ya en Schwab) y {nombres['tda']} (lo de TD "
         "Ameritrade). En Schwab: Accounts → Statements & Tax Forms → Document Types «Tax "
-        "Forms» → Date range «Previous year» → Search. Pulsa «editar» y súbelos juntos para comparar el año completo. "
+        "Forms» → Date range «Previous year» → Search. Pulsa «Cambiar» y súbelos juntos para comparar el año completo. "
         f"Te falta: {' y '.join(nombres[k] for k in falta['falta'])}.")
 
 
@@ -671,19 +688,22 @@ def _render_aviso_1042s_viejo(lectura: dict) -> None:
 
 
 def _render_1042s_resumen() -> None:
-    """1042-S ya leído: tarjeta resumen + editar. Extraído de `render_bloque_1042s` para
+    """1042-S ya leído: tarjeta resumen + «Cambiar». Extraído de `render_bloque_1042s` para
     poder mostrarse junto al resumen de ingresos (fila 5: las dos fuentes conviven)."""
     lectura = st.session_state.get("_wizard_1042s") or {}
     forms = lectura.get("forms") or []
     n = len(forms)
     credito = sum(f.get("withholding_credit") or 0.0 for f in forms
                   if logic.income_code_str(f.get("income_code")) == "37")
-    detalle = f"{n} formularios"
+    detalle = texto.plural(n, "formulario", "formularios")
     if (lectura.get("documentos") or 1) > 1:
         detalle += f" · {lectura['documentos']} documentos"
     if credito:
         detalle += f" · crédito ROC ${credito:,.2f}"
-    st.markdown(bloque_resumen("1042-S leído", detalle), unsafe_allow_html=True)
+    if _resumen_con_cambiar("1042-S leído", detalle, "_vd_edit_1042s"):
+        for k in _CLAVES_1042S:
+            st.session_state.pop(k, None)
+        st.rerun()
     if lectura.get("anios_descartados"):
         descartados = ", ".join(str(a) for a in lectura["anios_descartados"])
         st.info(f"Subiste 1042-S de años distintos; usamos el de {lectura.get('tax_year')} "
@@ -695,13 +715,6 @@ def _render_1042s_resumen() -> None:
     _render_aviso_1042s_tda(lectura)
     _render_aviso_1042s_viejo(lectura)
     _render_residencia_detectada()
-    _, col = st.columns([5, 1])
-    with col:
-        if st.button("editar", key="_vd_edit_1042s", type="tertiary",
-                     use_container_width=True):
-            for k in _CLAVES_1042S:
-                st.session_state.pop(k, None)
-            st.rerun()
 
 
 def _render_1042s_uploader() -> None:
@@ -760,22 +773,20 @@ def _render_1042s_uploader() -> None:
 
 
 def _render_income_resumen() -> None:
-    """Income CSV ya leído: tarjeta resumen + editar. Literal de `app_old.py:1599-1612`."""
+    """Income CSV ya leído: tarjeta resumen + «Cambiar». Literal de `app_old.py:1599-1612`."""
     inc_sum = st.session_state.get("_wizard_income_summary") or {}
     nrec = sum(1 for d in (inc_sum.get("tickers") or {}).values() if d.get("received_total"))
-    st.markdown(bloque_resumen("Ingresos validados", f"{nrec} tickers con dividendos recibidos"),
-                unsafe_allow_html=True)
+    if _resumen_con_cambiar("Ingresos validados",
+                            texto.plural(nrec, "ticker con dividendos recibidos",
+                                         "tickers con dividendos recibidos"),
+                            "_vd_edit_inc"):
+        st.session_state.pop("_wizard_income_summary", None)
+        st.session_state.pop("_wizard_income_df", None)
+        st.session_state.pop("_wizard_income_multi", None)
+        st.rerun()
     if st.session_state.get("_wizard_income_multi"):
         st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
                    "Para una validación exacta, exporta el income de una sola cuenta.")
-    _, col = st.columns([5, 1])
-    with col:
-        if st.button("editar", key="_vd_edit_inc", type="tertiary",
-                     use_container_width=True):
-            st.session_state.pop("_wizard_income_summary", None)
-            st.session_state.pop("_wizard_income_df", None)
-            st.session_state.pop("_wizard_income_multi", None)
-            st.rerun()
 
 
 def _render_income_uploader() -> None:
@@ -850,11 +861,12 @@ def render_bloque_1042s() -> None:
     clave del widget.
     U4 §5.3.3 (§3A.5): los dos documentos quedan bajo un único desplegable «Añadir
     documentos»; los uploaders y su lógica no cambian, solo se envuelven."""
-    st.markdown(bloque_header(3, "Información fiscal · opcional", "activo",
+    st.markdown(bloque_header(3, TITULO_BLOQUE_FISCAL, "activo",
                               "Tu residencia y, si los tienes, tus documentos fiscales."),
                 unsafe_allow_html=True)
     # Título del bloque — antes decía «Formulario 1042-S · opcional»; el paso ahora
-    # empieza por la residencia. Aprobado por Daniel el 23-sep.
+    # empieza por la residencia. Aprobado por Daniel el 23-sep. El bloqueado usa la misma
+    # constante desde el 30-oct (A3).
 
     _render_residencia_fiscal()
 
@@ -1053,7 +1065,7 @@ def render_carga() -> bool:
         st.markdown(bloque_bloqueado(2, "Posiciones del portafolio",
                                      "Se desbloquea al cargar el archivo."),
                     unsafe_allow_html=True)
-        st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
+        st.markdown(bloque_bloqueado(3, TITULO_BLOQUE_FISCAL,
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
         if riesgo.hay_receta():
@@ -1065,7 +1077,7 @@ def render_carga() -> bool:
 
     hay_posiciones = render_bloque_posiciones()
     if not hay_posiciones:
-        st.markdown(bloque_bloqueado(3, "Formulario 1042-S · opcional",
+        st.markdown(bloque_bloqueado(3, TITULO_BLOQUE_FISCAL,
                                      "Se desbloquea al confirmar tus posiciones."),
                     unsafe_allow_html=True)
         _render_privacidad()
@@ -1078,6 +1090,7 @@ def render_carga() -> bool:
         # vez por sesión, justo antes de pasar a resultados — no en cada render.
         _capturar_caso()
         st.session_state["_wizard_listo"] = True
+        estado.pedir_subir_al_inicio()
         st.rerun()
     _render_privacidad()
 
@@ -1120,6 +1133,10 @@ ESTILOS_CARGA = """
           display: flex; align-items: center; gap: 11px; background: var(--panel-tint);
           border-left: 3px solid var(--cash); padding: 10px 14px; margin: 12px 0 4px;
         }
+        /* En la fila con «Cambiar» (`_resumen_con_cambiar`) el margen propio bajaba el
+           recuadro 12px respecto al botón centrado: ahí el espacio lo pone la fila. */
+        [class*="st-key-vd_fila"] .vd-bloque-resumen { margin: 0; }
+        [class*="st-key-vd_fila"] [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
         .vd-resumen-titulo {
           font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);

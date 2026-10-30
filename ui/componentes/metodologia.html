@@ -1042,10 +1042,11 @@
 
     <div class="meth-grid">
       <section class="meth-item" id="mt-hoja">
-        <h3 class="meth-h">1 · Hoja Excel: el «total invertido» y el DRIP contado dos veces</h3>
+        <h3 class="meth-h">1 · La hoja clásica: el «total invertido» y el DRIP contado dos veces</h3>
         <p class="meth-p"><b>Qué mide:</b> la distancia entre lo que dice la hoja de cálculo de toda la vida y lo que de verdad pasó con tu dinero. La hoja clásica tiene una fórmula central, <i>Total inv. = Inversión + Dividendos</i>, y de ahí saca su idea de si «vas bien».</p>
         <p class="meth-p"><b>Dónde falla:</b> suma manzanas con peras — trata el <b>retorno recibido</b> como si fuera <b>capital que aportaste</b>. No lo es: lo que aportaste no cambia porque el fondo te pague. Y cuando de esas mismas columnas sale un retorno (<i>Valor mer. + Dividendos − Inversión</i>), vuelve a sumar los dividendos que ya se <b>reinvirtieron</b> — dinero que compró más acciones y que por tanto <b>ya está dentro del valor de mercado</b>. El mismo dólar contado dos veces, y la pérdida se ve menor de lo que fue.</p>
         <p class="meth-p"><b>Cómo lo calcula la app:</b> <i>Retorno total real = Valor de mercado + dividendos en <b>efectivo</b> − tu inversión</i>. Solo el efectivo se suma aparte, porque es lo único que salió del mercado y está en tu cuenta. La diferencia entre las dos cifras es, exactamente, lo reinvertido.</p>
+        <p class="meth-p"><b>En la app:</b> «Método tradicional › La matriz».</p>
         <p class="meth-src">Fuente: definición estándar de retorno total (valor final + flujos cobrados − aportado), sin doble conteo del reinvertido.</p>
       </section>
 
@@ -1081,9 +1082,10 @@
       </section>
 
       <section class="meth-item" id="mt-nav">
-        <h3 class="meth-h">6 · Salud NAV — ¿destrucción o solo caída de mercado?</h3>
+        <h3 class="meth-h">6 · Salud del NAV — ¿destrucción o solo caída de mercado?</h3>
         <p class="meth-p"><b>Qué mide:</b> distingue la erosión <i>real</i> del capital del fondo de una simple baja de precio recuperable.</p>
         <p class="meth-p"><b>Cómo lo calcula:</b> mira la <b>tendencia del NAV / precio</b> en el tiempo, no el % de ROC. Un ROC alto puede ser eficiencia fiscal (no destructivo) o capital que se está consumiendo (destructivo); solo la trayectoria del NAV lo revela. Este es el diferenciador frente a herramientas que solo reportan yield.</p>
+        <p class="meth-p"><b>En la app:</b> Portafolios › «Lo que toca vigilar», en la etiqueta de cada fondo: «Encogiéndose», «Señales mezcladas» o «NAV sano».</p>
         <p class="meth-src">Fuente: distinción estándar en fondos de reparto entre ROC no-destructivo y destructivo (basada en §19(a) + tendencia del NAV).</p>
       </section>
 
@@ -1183,7 +1185,7 @@
         <li>Yahoo Finance. Series históricas de precio de cierre ajustado y distribuciones por acción de CONY, NVDY, MSTY, TSLY y NFLY, desde la fecha de cada posición hasta el 1 may 2026. Base del cálculo del «techo sin reinvertir» de la sección «Método tradicional».</li>
         <li><i>CLASE DIV</i> — grabación de clase, 30 jul 2026 (94 min). Tramos citados: <b>min 6:20–30:11</b> (la hoja de Excel: columnas, reglas de color, los cuatro pasos y el cálculo de rendimiento) y <b>min 56:00–71:00</b> (recorrido por las fichas de YieldMax: distribuciones, tasa de distribución y retorno total). <span class="flag">Video no listado — material de miembros, no redistribuir.</span> <a href="https://www.youtube.com/watch?v=XYgrnIXd1m4" target="_blank" rel="noopener">Ver la clase ↗</a></li>
       </ol>
-      <p class="meth-note"><span class="flag">Nota sobre las cifras:</span> esta página mezcla <b>dos juegos de datos, y ninguno es inventado</b>. El recorrido de un ETF («Cash flow», «Salud NAV», «Hoja Excel») usa el caso real de Schwab, calibrado a mediciones de la app. La sección <b>«Método tradicional»</b> usa cifras <b>tal cual</b>: la matriz sale de la hoja de la clase, los precios de Yahoo Finance y los datos de fondo de las fichas de YieldMax — ninguna está estimada ni redondeada. El cálculo exacto para <i>tu</i> portafolio —reinversión por evento, retención por país y lectura del 19(a)— corre en la app conectada a tu CSV.</p>
+      <p class="meth-note"><span class="flag">Nota sobre las cifras:</span> esta página mezcla <b>dos juegos de datos, y ninguno es inventado</b>. Las secciones del recorrido de un ETF (Cash flow, salud del NAV y la hoja clásica) usan el caso real de Schwab, calibrado a mediciones de la app. La sección <b>«Método tradicional»</b> usa cifras <b>tal cual</b>: la matriz sale de la hoja de la clase, los precios de Yahoo Finance y los datos de fondo de las fichas de YieldMax — ninguna está estimada ni redondeada. El cálculo exacto para <i>tu</i> portafolio —reinversión por evento, retención por país y lectura del 19(a)— corre en la app conectada a tu CSV.</p>
     </div>
   </div>
 </main>
@@ -1192,12 +1194,12 @@
   "use strict";
 (function buildMethIndex() {
     var items = [
-      { id: "mt-hoja", lab: "1 · Hoja Excel" },
+      { id: "mt-hoja", lab: "1 · La hoja clásica" },
       { id: "mt-viaje", lab: "2 · Cash flow" },
       { id: "mt-tr", lab: "3 · Total return (DRIP)" },
       { id: "mt-nra", lab: "4 · Impuesto NRA" },
       { id: "mt-roc", lab: "5 · ROC" },
-      { id: "mt-nav", lab: "6 · Salud NAV" },
+      { id: "mt-nav", lab: "6 · Salud del NAV" },
       { id: "mt-yield", lab: "7 · Rendimiento vs tasa vs yield" },
       { id: "mt-ratios", lab: "8 · Ratios que sí sirven" },
       { id: "mt-anualizar", lab: "9 · Anualizar bien" },
