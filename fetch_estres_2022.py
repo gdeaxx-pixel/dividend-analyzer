@@ -19,7 +19,9 @@ Escribe, por ticker:
   - `knowledge/estres_2022/_meta.yaml` — {generated_at, start, end, rows} por ticker. Uno sin
     ninguna sesión en el rango queda con `rows: 0` y su `primera_sesion`, medida con toda su
     historia: nació después de la ventana y no hay nada que congelar. `primera_sesion: null`
-    es que Yahoo no tiene ninguna (ticker que no conoce), con `CONTROL` respondiendo a la vez.
+    es que Yahoo no tiene ninguna (ticker que no conoce), con `CONTROL` respondiendo a la vez:
+    eso no es un fondo sin 2022 sino un ticker que no existe, y `test_estres_2022.py` falla
+    hasta corregir la lista blanca o la ficha.
 
 Uso local:  ./.venv/bin/python fetch_estres_2022.py [TICKER ...]
 Sin argumentos baja solo lo que falta del universo; con tickers, esos (y los reescribe).
@@ -92,7 +94,7 @@ def main(argv):
             meta[tk] = {"generated_at": hoy, "rows": 0,
                         "primera_sesion": None if primera is None else primera.date().isoformat()}
             print(f"{tk}: sin sesiones en la ventana (primera sesión: "
-                  f"{meta[tk]['primera_sesion'] or 'ninguna, Yahoo no conoce el ticker'})")
+                  f"{meta[tk]['primera_sesion'] or 'ninguna: Yahoo no conoce el ticker, revisar la lista blanca'})")
             continue
         cols = hist[["Close", "Dividends"]].copy()
         if cols["Close"].isna().any():

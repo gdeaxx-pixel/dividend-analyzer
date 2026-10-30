@@ -7,8 +7,8 @@ reales, fondo por fondo.
 G2 — regla 3b: `resumen_estres` (Python) contra el motor JS del componente.
 G3 (cifras de control con la canasta de referencia) vive fuera del repo: lleva la receta.
 G4 — cada fondo simulado solo en 2022, al dólar, contra una medición independiente.
-Snapshot — todo fondo que la app reconoce tiene su 2022 congelado (o declarado sin sesiones en la
-ventana), y la UI no baja nada en vivo.
+Snapshot — todo fondo que la app reconoce tiene su 2022 congelado (o declarado nacido después de la
+ventana; «Yahoo no lo conoce» no vale), y la UI no baja nada en vivo.
 """
 import json
 import os
@@ -315,7 +315,9 @@ def test_todo_fondo_que_la_app_reconoce_tiene_su_2022_congelado(monkeypatch):
     """Sin descarga en vivo, un fondo de las listas blancas cuyo 2022 no esté congelado quedaría
     fuera de la simulación en silencio. Todo lo que `_estres_para` pide para ellos (la acción de un
     YieldMax con subyacente, el propio ticker del resto) tiene su archivo, o `_meta.yaml` lo
-    declara sin sesiones en la ventana: nació después, o Yahoo no lo conoce.
+    declara sin sesiones en la ventana porque nació después (`primera_sesion`). «Yahoo no lo
+    conoce» (`primera_sesion: null`) no es un fondo sin 2022, es un ticker que no existe: XOMY
+    entró así a la lista, con esta guardia en verde, hasta que #244 lo corrigió a XOMO.
     Si falla tras sumar un fondo o un subyacente: `./.venv/bin/python fetch_estres_2022.py`."""
     from ui import riesgo
 
@@ -329,6 +331,11 @@ def test_todo_fondo_que_la_app_reconoce_tiene_su_2022_congelado(monkeypatch):
     with open(META, encoding="utf-8") as fh:
         meta = yaml.safe_load(fh)
     sin_sesiones = {t for t, m in meta.items() if m["rows"] == 0}
+    desconocidos = sorted(t for t in set(pedidos[0]) & sin_sesiones
+                          if not meta[t].get("primera_sesion"))
+    assert not desconocidos, (
+        f"Yahoo no conoce {desconocidos}: revisar la lista blanca o el `underlying` de su ficha "
+        "(un error de dedo, o un fondo cerrado que Yahoo ya borró)")
 
     faltan = sorted(set(pedidos[0]) - set(historias) - sin_sesiones)
     assert not faltan, f"sin 2022 congelado ni declarado: {faltan}"
