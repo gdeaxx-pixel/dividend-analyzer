@@ -176,7 +176,6 @@ def test_cambiar_sin_tabla_previa_sale_con_lo_confirmado(con_clave):
 
 
 def test_una_cartera_nueva_no_hereda_la_tabla(sin_clave):
-    assert "_vd_pos_tabla" in carga.CLAVES_CONTEXTO_CARTERA
     at = _at()
     at.session_state["_vd_modo_pos"] = "mano"
     at.run()
@@ -192,6 +191,7 @@ def test_una_cartera_nueva_no_hereda_la_tabla(sin_clave):
     at.run()
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 40.0
+    assert "_vd_pos_tabla" in carga.CLAVES_CONTEXTO_CARTERA
 
 
 # ── P4 · campos sin − / + y cifras a la derecha ──────────────────────────────────────────
