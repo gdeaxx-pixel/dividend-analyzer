@@ -52,11 +52,13 @@ def _num(s):
 
 def test_reglas_gravedad_y_orden():
     d = vigilar_data(RES, SALUD)
-    assert d["eyebrow"] == "Portafolio Dividendos · 4 fondos"
+    assert d["eyebrow"] == "Portafolio Dividendos · 4 fondos · el que más te cuesta, arriba"
     assert d["sanos"] == "SANO: sin alertas."
-    assert [f["ticker"] for f in d["fondos"]] == ["DEST", "MIXT", "MIXN"]
+    # P6 (30-oct): el que más dinero pierde va arriba (−$250, −$30, +$50), no el orden de
+    # `salud_por_ticker`.
+    assert [f["ticker"] for f in d["fondos"]] == ["DEST", "MIXN", "MIXT"]
 
-    dest, mixt, mixn = d["fondos"]
+    dest, mixn, mixt = d["fondos"]
     assert [(f["clave"], f["gravedad"], f["cifra"]) for f in dest["flags"]] == [
         ("precio", "alto", "−60% al año"),
         ("cubre", "alto", "faltan $250.00"),
@@ -114,7 +116,8 @@ def test_ritmo_es_el_de_los_ultimos_3_meses():
     assert cubre_dest["tip"]["nota"] == (
         "Al ritmo de los últimos 3 meses ($15.00/mes) faltan unos 17 meses para empatar, "
         "si el precio no baja más.")
-    cubre_mixn = next(f for f in d["fondos"][2]["flags"] if f["clave"] == "cubre")
+    mixn = next(fo for fo in d["fondos"] if fo["ticker"] == "MIXN")
+    cubre_mixn = next(f for f in mixn["flags"] if f["clave"] == "cubre")
     assert cubre_mixn["tip"]["nota"] == (
         "Sin pagos recientes suficientes para estimar cuánto falta.")
 
@@ -330,8 +333,8 @@ window.__vigAbrir(0, 1);
 out.abrir01 = { title: _t("vm-title"), rows: _rows(), go: _t("vm-go") };
 window.__vigAbrir(0, 0);
 out.abrir00 = { title: _t("vm-title"), rows: _rows(), go: _t("vm-go") };
-window.__vigAbrir(2, 1);
-out.abrir21 = { title: _t("vm-title") };
+window.__vigAbrir(1, 1);
+out.abrir11 = { title: _t("vm-title") };
 out.sanos = { text: _t("vig-sanos"), hidden: store["vig-sanos"] ? store["vig-sanos"].hidden : null };
 out.chips = _all.filter(function (n) { return n._classes.indexOf("chip") >= 0; }).map(function (n) { return n.className; });
 out.hint = store["vig-hint"].hidden;
@@ -370,7 +373,8 @@ def test_el_modal_abre_la_explicacion_del_punto_tocado():
     # 3 filas, no 6: `llenar` vacía la tabla entre aperturas.
     assert out["abrir00"]["rows"] == 3
 
-    assert out["abrir21"]["title"] == "El precio da señales mezcladas"
+    # MIXN va segundo desde P6 (pierde $30); su segundo punto es el precio, gravedad media.
+    assert out["abrir11"]["title"] == "El precio da señales mezcladas"
 
     assert out["sanos"]["hidden"] is False
     assert out["sanos"]["text"] == "SANO: sin alertas."
@@ -378,4 +382,4 @@ def test_el_modal_abre_la_explicacion_del_punto_tocado():
     # El color del chip ES el estado (rojo encogiéndose, ámbar mezclado): sin esto, un chip
     # que siempre sale rojo pasaba la suite (mutante A4 de la auditoría de Opus).
     assert out["chips"] == ["chip chip-loss", "chip chip-warn", "chip chip-warn"]
-    assert out["hint"] is False, "hay puntos clicables: la pista «Toca un punto…» debe verse"
+    assert out["hint"] is False, "hay puntos clicables: la pista «Toca una etiqueta…» debe verse"
