@@ -95,7 +95,7 @@ def test_la_subida_entra_al_mosaico_en_el_paso_mercado(pasos):
     assert mercado["n"].get("q-gain", 0) >= 15
     # La subida no se pinta con el verde del efectivo: SCHB no cobró efectivo.
     assert "q-cash" not in mercado["n"]
-    assert "Subida del mercado · +$%.2f" % SCHB_SUBE["MERCADO"] in mercado["leyenda"]
+    assert f"Subida del mercado · +${SCHB_SUBE['MERCADO']:,.2f}" in mercado["leyenda"]
     assert "hoy valen $120" in mercado["surv"]
     # La franja de la frase sigue el signo: sin el borde rojo de pérdida cuando el fondo sube.
     assert mercado["survGana"] and not antes["survGana"]
@@ -103,7 +103,7 @@ def test_la_subida_entra_al_mosaico_en_el_paso_mercado(pasos):
 
 def test_una_subida_de_centavos_sigue_en_la_leyenda_con_su_monto(pasos):
     leyenda = pasos["SCHB", PASO_MERCADO]["leyenda"]
-    assert "Subida del mercado · +$%.2f" % SCHB["MERCADO"] in leyenda
+    assert f"Subida del mercado · +${SCHB['MERCADO']:,.2f}" in leyenda
     assert not any("$0.00" in fila and "Subida" in fila for fila in leyenda)
 
 
@@ -119,15 +119,16 @@ def test_la_caida_tacha_cuadritos_desde_el_paso_mercado(pasos):
 def test_la_escala_se_calcula_con_el_pico_del_fondo(pasos):
     for nombre, d in CASOS.items():
         nota = pasos[nombre, 0]["nota"]
-        assert "$%.2f" % (d["PICO"] / 100) in nota and "$%.2f" % d["PICO"] in nota, (nombre, nota)
+        # D1 (30-oct): las cifras en dólares llevan separador de miles.
+        assert f"${d['PICO'] / 100:,.2f}" in nota and f"${d['PICO']:,.2f}" in nota, (nombre, nota)
 
 
 @pytest.mark.parametrize("caso", list(CASOS))
 def test_la_cascada_acumula_bolsillo_mas_bruto_no_el_techo(pasos, caso):
     d = CASOS[caso]
     acum = pasos[caso, 2]["acum"]
-    assert acum[1] == "$%.2f" % (d["POCKET"] + d["BRUTO"])
-    assert acum[2] == "$%.2f" % (d["POCKET"] + d["BRUTO"] - d["IMPUESTO"])
+    assert acum[1] == f"${d['POCKET'] + d['BRUTO']:,.2f}"
+    assert acum[2] == f"${d['POCKET'] + d['BRUTO'] - d['IMPUESTO']:,.2f}"
 
 
 def test_una_baja_de_centavos_no_se_rotula_como_subida(pasos):

@@ -25,8 +25,10 @@ from ui.chrome import _ESTILOS
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
-# 740: teléfono apaisado, iframe de 681 — el último ancho que apila la tarjeta.
-ANCHOS = (320, 360, 375, 390, 412, 430, 460, 740, 768, 1280)
+# 740: teléfono apaisado, iframe de 681. 768: tableta en vertical, iframe de 707 — desde D1
+# (30-oct) también apila, porque «$120,978.00» lleva coma. 900: iframe de 828, el primer
+# ancho medido que va a dos columnas.
+ANCHOS = (320, 360, 375, 390, 412, 430, 460, 740, 768, 900, 1280)
 # Techo $220,000 (bolsillo + bruto). Bolsillo $120,978 = 0.5499 del techo y capital
 # trabajando $121,022 = 0.5501: importes de 10 caracteres a cada lado del corte de 0.55 de
 # `placeGhostAt`, el peor caso de la pista — después de un relleno que ya ocupa el 55%, o

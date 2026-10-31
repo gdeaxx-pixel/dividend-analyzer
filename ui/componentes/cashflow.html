@@ -279,11 +279,13 @@
   .io-ghost span { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); font-weight: 600; white-space: nowrap; transition: color .2s ease, margin-left .2s ease; }
   /* A dos columnas, la pista de los importes medía 9 px con el iframe a 343 (375 de
      viewport) y 2 px a 288 (320): «$946.82» se salía de la tarjeta y el iframe lo cortaba.
-     Un importe de 10 caracteres pide ~165 px de pista para quedar dentro o después del
-     relleno sin montarse en su borde (el corte de 0.55 de `placeGhostAt`). Bajo 700 px la
-     tarjeta apila sus dos bloques; en teléfono el rótulo sube encima de la barra, que así
-     se lleva el ancho entero (215 px a 288). */
-  @media (max-width: 700px) {
+     El importe más largo hasta $999,999.99 ocupa 11 caracteres con el separador de miles de
+     D1 (30-oct), unos 72 px, y pide ~180 px de pista para quedar dentro o después del relleno
+     sin montarse en su borde (el corte de 0.55 de `placeGhostAt`). La pista mide 164 px con
+     el iframe a 707 (768 de viewport), 175 a 736 y 211 a 828: bajo 760 px la tarjeta apila
+     sus dos bloques. En teléfono el rótulo sube encima de la barra, que así se lleva el
+     ancho entero (215 px a 288). */
+  @media (max-width: 760px) {
     .verdict { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   }
   @media (max-width: 440px) {
@@ -1205,10 +1207,12 @@
       verdictCard = document.getElementById("verdictCard");
 
   /* D1 (30-oct): toda cifra en dólares lleva separador de miles y dos decimales, como en
-     Portafolios y Vigilar. Solo cambia el formato: `miles(x)` es el mismo número que
-     `x.toFixed(2)`, con comas. */
+     Portafolios y Vigilar. Solo cambia el formato: es `x.toFixed(2)` con comas. No se usa
+     `toLocaleString`: redondea los medios centavos distinto (2.675 da «2.68» y toFixed,
+     «2.67»), y la cifra cambiaría un centavo. */
   function miles(x) {
-    return Number(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    var p = Number(x).toFixed(2).split(".");
+    return p[0].replace(/\B(?=(\d{3})+$)/g, ",") + "." + p[1];
   }
 
   // El label del monto nunca debe quedar a caballo entre el relleno y el track vacío:
