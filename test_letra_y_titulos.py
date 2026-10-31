@@ -85,3 +85,53 @@ def test_los_titulos_de_la_app_van_en_letra_normal_y_la_marca_no():
     assert "var(--font-sans)" in reafirma, "Streamlit vuelve a pintar el título en letra de máquina"
     marca = _regla(_ESTILOS, "h2.vd-title.vd-wordmark, .block-container h2.vd-title.vd-wordmark")
     assert "var(--font-mono)" in marca, "la marca dejó de ir en letra de máquina"
+
+
+# ── La matriz: los rótulos de columna a 11 px no se recortan ─────────────────────────────
+# A 11 px «Inversión Hoy» y «Último div.» ya no cabían en una línea y `.he-h` (overflow
+# hidden) los cortaba (medido en vivo el 30-oct). Ahora parten en dos líneas.
+
+_RECORTES = """() => {
+  const fuera = [];
+  const labs = document.querySelectorAll('.he-h .he-lab');
+  for (const lab of labs) {
+    const b = lab.closest('.he-h').getBoundingClientRect(), rg = document.createRange();
+    rg.selectNodeContents(lab);
+    for (const r of rg.getClientRects())
+      if (r.width > 0.5 && (r.left < b.left - 0.5 || r.right > b.right + 0.5)) {
+        fuera.push(lab.textContent.trim()); break; }
+  }
+  return {fuera, n: labs.length};
+}"""
+
+
+@pytest.fixture(scope="module")
+def recortes_matriz():
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from ui import componentes
+    from ui.adapters import metodo_data
+    capturado = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(componentes.st, "iframe", lambda doc, height=None: capturado.append(doc))
+        componentes.render_metodo("matriz", "Claro", metodo_data())
+    out = {}
+    try:
+        with sync_api.sync_playwright() as pw:
+            nav = pw.chromium.launch()
+            for ancho in (860, 343):          # iframe en el escritorio y a 375 de viewport
+                pagina = nav.new_page(viewport={"width": ancho, "height": 900})
+                pagina.set_content(capturado[0])
+                pagina.wait_for_timeout(300)
+                out[ancho] = pagina.evaluate(_RECORTES)
+                pagina.close()
+            nav.close()
+    except Exception as error:  # sin Chromium instalado (CI)
+        pytest.skip(f"Chromium no disponible: {error}")
+    return out
+
+
+@pytest.mark.parametrize("ancho", [860, 343])
+def test_los_rotulos_de_la_matriz_caben_en_su_celda(recortes_matriz, ancho):
+    medida = recortes_matriz[ancho]
+    assert medida["n"] > 0, "no encontré los rótulos de la matriz"
+    assert medida["fuera"] == [], f"a {ancho} px la celda recorta: {medida['fuera']}"
