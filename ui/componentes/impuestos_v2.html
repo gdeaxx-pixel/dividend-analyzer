@@ -441,7 +441,10 @@
 
   function money(x) {
     var n = (x == null || isNaN(x)) ? 0 : Number(x);
-    return (n < 0 ? "−$" : "$") + Math.abs(n).toFixed(2);
+    // D1 (30-oct): separador de miles, como en el resto de la app. Es `toFixed(2)` con comas:
+    // `toLocaleString` redondea distinto los medios centavos y movería un centavo.
+    var p = Math.abs(n).toFixed(2).split(".");
+    return (n < 0 ? "−$" : "$") + p[0].replace(/\B(?=(\d{3})+$)/g, ",") + "." + p[1];
   }
   function pct(p) {
     if (p == null || isNaN(p)) return "";

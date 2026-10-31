@@ -1135,9 +1135,10 @@
     // eso la brecha contra el retorno real es exactamente el reinvertido.
     var APARENTE = VALOR_HOY + NETO - POCKET;
 
-    function money(x) { return "$" + Math.abs(x).toFixed(2); }
-    function neg(x) { return "−$" + Math.abs(x).toFixed(2); }
-    function signed(x) { return (x >= 0 ? "+" : "−") + "$" + Math.abs(x).toFixed(2); }
+    function miles(x) { var p = Math.abs(x).toFixed(2).split("."); return p[0].replace(/\B(?=(\d{3})+$)/g, ",") + "." + p[1]; }
+    function money(x) { return "$" + miles(x); }
+    function neg(x) { return "−$" + miles(x); }
+    function signed(x) { return (x >= 0 ? "+" : "−") + "$" + miles(x); }
     function pctOf(x) { var p = x / POCKET * 100; return (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%"; }
     function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
     function setHtml(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
