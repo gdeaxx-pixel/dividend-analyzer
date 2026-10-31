@@ -35,7 +35,9 @@ def _app(**estado) -> AppTest:
 def test_etfs_habilitados_solo_los_del_archivo_con_datos():
     resultados = {"TSLY": {"net_profit": 1}, "CONY": {"skipped": True}, "NVDY": {},
                   "SCHB": {"net_profit": 2}, "JEPI": {"net_profit": 3}}
-    assert etfs_habilitados(resultados) == {"dividendos": ("TSLY",), "largo": ("SCHB",)}
+    # Desde P3 (30-oct) entran también los fondos fuera de la lista fija, detrás de ella:
+    # JEPI es de largo plazo para `classify_tickers`.
+    assert etfs_habilitados(resultados) == {"dividendos": ("TSLY",), "largo": ("SCHB", "JEPI")}
 
 
 def test_botones_solo_habilitados_y_etf_invalido_cae_al_primero():

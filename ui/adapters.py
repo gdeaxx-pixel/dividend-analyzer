@@ -139,6 +139,31 @@ def _tiene_datos(stats) -> bool:
     return isinstance(stats, dict) and "error" not in stats and not stats.get("skipped")
 
 
+# Tipo de `logic.classify_tickers` de los fondos de cada categoría con Cash flow (P3).
+_MODO_DE_CATEGORIA = {"dividendos": "mode_a", "largo": "mode_b"}
+
+
+def fondos_por_categoria(resultados: dict) -> dict:
+    """Por categoría con Cash flow, los fondos que el archivo trae con datos: primero los de
+    la lista del artifact (`ui.nav.CATS`), en su orden, y después los demás del mismo tipo
+    según `logic.classify_tickers`, por orden alfabético.
+
+    Hasta el 30-oct (P3) solo se ofrecía la lista fija, porque se creía que Cash flow solo
+    sabía dibujar esos fondos (decisión del 2026-09-29). `cashflow_data` solo lee los
+    `stats` del fondo: PLTY y NFLY se dibujan igual que MSTY. «Con datos» es el mismo
+    criterio de `ui.vistas._stats_o_aviso`."""
+    from ui import nav
+
+    con_datos = {t for t, s in (resultados or {}).items() if s and not s.get("skipped")}
+    modos = logic.classify_tickers(sorted(con_datos))
+    out = {}
+    for cat, fijos in nav.CATS.items():
+        otros = sorted(t for t in con_datos
+                       if modos.get(t) == _MODO_DE_CATEGORIA.get(cat) and t not in fijos)
+        out[cat] = tuple(t for t in fijos if t in con_datos) + tuple(otros)
+    return out
+
+
 def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
     """Las 12 constantes del Cash flow, más lo que el componente necesita para rotular.
 
@@ -2799,8 +2824,9 @@ def _vig_ritmo(stats: dict) -> float | None:
 
 def _vig_ruta_etiqueta(clave: str, ticker: str, etfs: tuple) -> tuple[str | None, str | None]:
     """Etiqueta de la ruta y ETF de contexto. Cash flow necesita el ETF, y solo existe para
-    los tickers del menú de Dividendos (`ui.nav.CATS`): para cualquier otro no hay vista a
-    la que mandar, y la ruta queda en `None` en vez de abrir el Cash flow de otro fondo."""
+    los fondos del menú de Dividendos (`fondos_por_categoria`): para cualquier otro no hay
+    vista a la que mandar, y la ruta queda en `None` en vez de abrir el Cash flow de otro
+    fondo."""
     r = VIG_RUTAS[clave]
     if r["con_etf"]:
         if ticker in etfs:
@@ -2926,9 +2952,7 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
     Orden (P6, 2026-10-30): el fondo que más dinero pierde va arriba; antes iban en el orden
     de `salud_por_ticker` (alfabético) y el que más costaba podía quedar tercero. Cada punto
     lleva `corto`, la etiqueta de la fila compacta; el popup sigue saliendo de `tip`."""
-    from ui import nav
-
-    etfs = tuple(nav.CATS.get("dividendos", ()))
+    etfs = fondos_por_categoria(resultados).get("dividendos", ())
     pares, sanos = [], []
     for ticker, salud in salud_por_ticker.items():
         stats = resultados.get(ticker)
