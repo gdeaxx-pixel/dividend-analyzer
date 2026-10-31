@@ -1,54 +1,90 @@
 # Generado por fetch_roc_19a.py: tasa de distribución TITULAR que anuncia YieldMax por fondo.
 # Refresco semanal vía .github/workflows/refresh-roc-19a.yml. No editar a mano.
 AMDY:
-  rate_pct: 40.91
-  as_of: '2026-10-21'
+  rate_pct: 41.54
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/amdy/
 AMZY:
-  rate_pct: 25.96
-  as_of: '2026-10-21'
+  rate_pct: 25.48
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/amzy/
 CONY:
   rate_pct: 55.26
-  as_of: '2026-10-21'
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/cony/
 GOOY:
-  rate_pct: 25.16
-  as_of: '2026-10-21'
+  rate_pct: 26.01
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/gooy/
 JPMO:
-  rate_pct: 18.14
-  as_of: '2026-10-21'
+  rate_pct: 19.6
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/jpmo/
 MSFO:
-  rate_pct: 33.81
-  as_of: '2026-10-21'
+  rate_pct: 23.65
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/msfo/
 MSTY:
-  rate_pct: 60.41
-  as_of: '2026-10-21'
+  rate_pct: 60.23
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/msty/
 NFLY:
-  rate_pct: 30.57
-  as_of: '2026-10-21'
+  rate_pct: 40.75
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/nfly/
 NVDY:
-  rate_pct: 25.04
-  as_of: '2026-10-21'
+  rate_pct: 30.23
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/nvdy/
 PLTY:
-  rate_pct: 37.24
-  as_of: '2026-10-21'
+  rate_pct: 40.81
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/plty/
 TSLY:
-  rate_pct: 45.63
-  as_of: '2026-10-21'
+  rate_pct: 50.07
+  as_of: '2026-10-28'
   source_url: https://yieldmaxetfs.com/our-etfs/tsly/
 YMAG:
-  rate_pct: 35.55
-  as_of: '2026-10-20'
+  rate_pct: 31.45
+  as_of: '2026-10-27'
   source_url: https://yieldmaxetfs.com/our-etfs/ymag/
 YMAX:
-  rate_pct: 40.33
-  as_of: '2026-10-20'
+  rate_pct: 40.37
+  as_of: '2026-10-27'
   source_url: https://yieldmaxetfs.com/our-etfs/ymax/
+APLY:
+  rate_pct: 25.03
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/aply/
+GDXY:
+  rate_pct: 38.02
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/gdxy/
+LFGY:
+  rate_pct: 40.92
+  as_of: '2026-10-27'
+  source_url: https://yieldmaxetfs.com/our-etfs/lfgy/
+MRNY:
+  rate_pct: 70.99
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/mrny/
+PYPY:
+  rate_pct: 33.48
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/pypy/
+SNOY:
+  rate_pct: 45.55
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/snoy/
+TSMY:
+  rate_pct: 28.63
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/tsmy/
+ULTY:
+  rate_pct: 60.53
+  as_of: '2026-10-27'
+  source_url: https://yieldmaxetfs.com/our-etfs/ulty/
+XOMO:
+  rate_pct: 40.3
+  as_of: '2026-10-28'
+  source_url: https://yieldmaxetfs.com/our-etfs/xomo/
