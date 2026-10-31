@@ -103,6 +103,10 @@ _MEDIR = """() => ({
   alto: Math.ceil(document.getElementById('vig-root').getBoundingClientRect().height),
   fondos: document.querySelectorAll('.fund').length,
   desborde: document.documentElement.scrollWidth > innerWidth,
+  tonos: ['.flag.alto', '.flag.medio'].map(sel => {
+    const c = getComputedStyle(document.querySelector(sel));
+    return [c.backgroundColor, c.borderLeftColor];
+  }),
 })"""
 
 
@@ -139,3 +143,10 @@ def test_seis_fondos_caben_en_menos_de_la_mitad_del_alto_de_antes(altos, ancho, 
     assert m["fondos"] == 6, "el componente no dibujó los 6 fondos"
     assert m["alto"] <= techo, f"a {ancho} px «Vigilar» mide {m['alto']} px (techo {techo})"
     assert not m["desborde"], f"a {ancho} px algo se sale de lado"
+
+
+def test_alto_y_medio_se_distinguen_a_la_vista(altos):
+    """Sin la palabra «Alto» / «Medio» en la fila, la gravedad la dicen el fondo y el borde."""
+    alto, medio = altos[1280]["tonos"]
+    assert alto[0] != medio[0], "las etiquetas de gravedad alta y media tienen el mismo fondo"
+    assert alto[1] != medio[1], "las etiquetas de gravedad alta y media tienen el mismo borde"
