@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from ui import estado, heredadas, impuestos, nav, riesgo
+from ui import adapters, estado, heredadas, impuestos, nav, riesgo
 from ui.tokens import css_variables
 
 _FLAG_CIERRE_POPOVER = "vd_forzar_cierre_popover"
@@ -249,17 +249,11 @@ def _tema_del_sistema_una_vez() -> None:
     )
 
 
-def _con_datos(stats) -> bool:
-    return bool(stats) and not stats.get("skipped")
-
-
 def etfs_habilitados(resultados: dict) -> dict:
-    """Por categoría con ETFs, los tickers de `nav.CATS` que el archivo trae con datos —
-    el mismo criterio con el que `ui.vistas._stats_o_aviso` dibuja «X no está en tu
-    archivo». La ruta solo ofrece estos (decisión de Daniel 2026-09-29): Cash flow solo
-    sabe dibujar los tickers de la lista fija, así que no se añade ninguno de fuera."""
-    return {cat: tuple(t for t in etfs if _con_datos(resultados.get(t)))
-            for cat, etfs in nav.CATS.items()}
+    """Por categoría con ETFs, los fondos que el archivo trae con datos; la ruta solo ofrece
+    estos. Desde el 30-oct (P3) son todos los del archivo, no solo la lista fija de
+    `nav.CATS`: ver `ui.adapters.fondos_por_categoria`."""
+    return adapters.fondos_por_categoria(resultados)
 
 
 def _sync_etf(categoria: str) -> None:
