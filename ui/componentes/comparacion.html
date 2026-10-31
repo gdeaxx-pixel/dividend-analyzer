@@ -612,9 +612,11 @@
   .he-h {
     font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--ink-mut); border-bottom: 2px solid var(--anchor);
-    padding-bottom: 12px; line-height: 1.35; white-space: nowrap; align-self: stretch;
-    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 42px;
+    padding-bottom: 12px; line-height: 1.35; white-space: normal; align-self: stretch;
+    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 52px;
   }
+  /* D2 (30-oct): a 11 px «Inversión Hoy» y «Último div.» ya no cabían en una línea y la
+     celda los recortaba. El rótulo parte en dos y el alto reservado sube a dos líneas. */
   .he-h.he-l { justify-content: flex-start; }
   .he-lab {
     cursor: help; border-bottom: 1px dotted var(--hair); padding-bottom: 1px;
