@@ -728,7 +728,7 @@ _ESTILOS = """
         [data-testid="stTooltipIcon"] svg { stroke: var(--ink-mut) !important; }
 
         .vd-badge {
-          display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
+          display: inline-block; font-family: var(--font-mono); font-size: 11px;
           font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
           color: var(--accent); border: 1px solid var(--accent);
           padding: 4px 10px; margin-bottom: 18px;
