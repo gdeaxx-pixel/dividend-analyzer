@@ -1204,6 +1204,13 @@
       ioOutGhost = document.getElementById("ioOutGhost"), ioOutGhostWrap = document.getElementById("ioOutGhostWrap"),
       verdictCard = document.getElementById("verdictCard");
 
+  /* D1 (30-oct): toda cifra en dólares lleva separador de miles y dos decimales, como en
+     Portafolios y Vigilar. Solo cambia el formato: `miles(x)` es el mismo número que
+     `x.toFixed(2)`, con comas. */
+  function miles(x) {
+    return Number(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   // El label del monto nunca debe quedar a caballo entre el relleno y el track vacío:
   // si hay espacio, vive DENTRO del relleno (texto claro); si no, justo DESPUÉS de su borde (texto mudo).
   function placeGhostAt(ratio, wrap, ghost) {
@@ -1218,7 +1225,7 @@
   (function initPusiste() {
     var ratio = POCKET / MAXV;
     ioInFill.style.width = (ratio * 100).toFixed(2) + "%";
-    ioInGhost.textContent = "$" + POCKET.toFixed(2);
+    ioInGhost.textContent = "$" + miles(POCKET);
     placeGhostAt(ratio, ioInGhostWrap, ioInGhost);
   })();
 
@@ -1233,29 +1240,29 @@
 
     vKick.textContent = isFinal ? "Tu resultado real" : VERDICT_KICKERS[step];
     vBig.textContent = isFinal
-      ? ((deltaUsd >= 0 ? "+" : "−") + "$" + Math.abs(deltaUsd).toFixed(2))
-      : ("$" + val.toFixed(2));
+      ? ((deltaUsd >= 0 ? "+" : "−") + "$" + miles(Math.abs(deltaUsd)))
+      : ("$" + miles(val));
     vBig.className = "v-big num" + (state === "base" ? "" : " " + state);
     vPct.innerHTML = '<span class="v-pct-lab">Rendimiento</span> <span class="num">' +
                       (pct >= 0 ? "+" : "−") + Math.abs(pct).toFixed(1) + "%</span>" +
                       ' <span class="v-pct-sep">·</span> <span class="num">' +
-                      (deltaUsd >= 0 ? "+" : "−") + "$" + Math.abs(deltaUsd).toFixed(2) + "</span>";
+                      (deltaUsd >= 0 ? "+" : "−") + "$" + miles(Math.abs(deltaUsd)) + "</span>";
     vPct.className = "v-pct" + (state === "base" ? "" : " " + state);
     ioOutLab.textContent = isFinal ? "Tienes hoy" : "Ahora";
     ioOutFill.style.width = (fillRatio * 100).toFixed(2) + "%";
     ioOutFill.style.background = colorVar;
-    ioOutGhost.textContent = "$" + val.toFixed(2);
+    ioOutGhost.textContent = "$" + miles(val);
     placeGhost(fillRatio);
     verdictCard.style.borderLeftColor = colorVar;
   }
 
   // ---------- columns (un solo carril de 8, 1:1 con los pasos) ----------
-  var resultadoAmt = (RESULTADO >= 0 ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2);
+  var resultadoAmt = (RESULTADO >= 0 ? "+$" : "−$") + miles(Math.abs(RESULTADO));
   var resultadoCap = RESULTADO >= 0 ? "up" : "dn";
   // MERCADO = VALOR_HOY − TOTAL_TRABAJANDO: puede ser positivo (el precio subió desde
   // que entró el capital). Antes esta columna asumía pérdida siempre — signo, color
   // y el texto ("La caída del precio...") cableados sin mirar el dato.
-  var mercadoAmt = (MERCADO >= 0 ? "+$" : "−$") + Math.abs(MERCADO).toFixed(2);
+  var mercadoAmt = (MERCADO >= 0 ? "+$" : "−$") + miles(Math.abs(MERCADO));
   var mercadoCap = MERCADO >= 0 ? "up" : "dn";
   var mercadoSegCls = MERCADO >= 0 ? "s-gain" : "s-loss";
   var mercadoVerbo = MERCADO >= 0 ? "La subida" : "La caída";
@@ -1269,42 +1276,42 @@
   }
   var COLS = [
     { segs:[{cls:"s-anchor", lo:0, hi:POCKET}],
-      amt:"$" + POCKET.toFixed(2), cap:"base", lab:"Tu bolsillo", run:POCKET,
-      th:"Tu bolsillo", tv:"+$" + POCKET.toFixed(2),
+      amt:"$" + miles(POCKET), cap:"base", lab:"Tu bolsillo", run:POCKET,
+      th:"Tu bolsillo", tv:"+$" + miles(POCKET),
       td:"Lo que pusiste de tu propio dinero. Es tu costo — la vara con la que se mide todo el recorrido." },
     { segs:[{cls:"s-transito", lo:POCKET, hi:CON_BRUTO}],
-      amt:"+$" + BRUTO.toFixed(2), cap:"up", lab:"Dividendo bruto", run:CON_BRUTO,
-      th:"Dividendo bruto", tv:"+$" + BRUTO.toFixed(2),
-      td:"Lo que el fondo repartió antes de impuestos. Tu bolsillo más el bruto: $" + CON_BRUTO.toFixed(2) + "." },
+      amt:"+$" + miles(BRUTO), cap:"up", lab:"Dividendo bruto", run:CON_BRUTO,
+      th:"Dividendo bruto", tv:"+$" + miles(BRUTO),
+      td:"Lo que el fondo repartió antes de impuestos. Tu bolsillo más el bruto: $" + miles(CON_BRUTO) + "." },
     { segs:[{cls:"s-loss", lo:CON_BRUTO - IMPUESTO, hi:CON_BRUTO}],
-      amt:"−$" + IMPUESTO.toFixed(2), cap:"dn", lab:"Impuesto NRA", run:CON_BRUTO - IMPUESTO,
-      th:"Impuesto NRA", tv:"−$" + IMPUESTO.toFixed(2),
+      amt:"−$" + miles(IMPUESTO), cap:"dn", lab:"Impuesto NRA", run:CON_BRUTO - IMPUESTO,
+      th:"Impuesto NRA", tv:"−$" + miles(IMPUESTO),
       td:"Retención automática de EE.UU. sobre dividendos a extranjeros. Sale del sistema — no vuelve." },
     { segs:[{cls:"s-cash", lo:TOTAL_TRABAJANDO, hi:TOTAL_TRABAJANDO + CASH}],
-      amt:"−$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo apartado", run:TOTAL_TRABAJANDO,
-      th:"Efectivo apartado", tv:"−$" + CASH.toFixed(2),
+      amt:"−$" + miles(CASH), cap:"cashc", lab:"Efectivo apartado", run:TOTAL_TRABAJANDO,
+      th:"Efectivo apartado", tv:"−$" + miles(CASH),
       td:"La parte del dividendo neto que NO reinviertes. No se pierde — se aparta, a salvo, del mercado." },
     { segs:[{cls:"s-anchor", lo:0, hi:POCKET}, {cls:"s-drip", lo:POCKET, hi:TOTAL_TRABAJANDO}],
-      amt:"$" + TOTAL_TRABAJANDO.toFixed(2), cap:"base", lab:"Capital trabajando", sub:"= Bolsillo + DRIP", run:null,
-      th:"Capital trabajando", tv:"$" + TOTAL_TRABAJANDO.toFixed(2),
-      td:"Tu bolsillo ($" + POCKET.toFixed(2) + ") + lo reinvertido ($" + DRIP.toFixed(2) + "). Esto es lo que queda expuesto al mercado." },
+      amt:"$" + miles(TOTAL_TRABAJANDO), cap:"base", lab:"Capital trabajando", sub:"= Bolsillo + DRIP", run:null,
+      th:"Capital trabajando", tv:"$" + miles(TOTAL_TRABAJANDO),
+      td:"Tu bolsillo ($" + miles(POCKET) + ") + lo reinvertido ($" + miles(DRIP) + "). Esto es lo que queda expuesto al mercado." },
     { segs:[{cls:mercadoSegCls, lo:VALOR_HOY, hi:TOTAL_TRABAJANDO}],
       amt:mercadoAmt, cap:mercadoCap, lab:"Impacto del mercado", run:VALOR_HOY,
       th:"Impacto del mercado", tv:mercadoAmt,
-      td:mercadoVerbo + " del precio del fondo. Tu capital de trabajo pasa de $" + TOTAL_TRABAJANDO.toFixed(2) + " a $" + VALOR_HOY.toFixed(2) + "." },
+      td:mercadoVerbo + " del precio del fondo. Tu capital de trabajo pasa de $" + miles(TOTAL_TRABAJANDO) + " a $" + miles(VALOR_HOY) + "." },
     { segs:segsEfectivo(),
-      amt:"+$" + CASH.toFixed(2), cap:"cashc", lab:"Efectivo cobrado",
-      sub:HAY_OTROS ? ((OTROS >= 0 ? "+ $" : "− $") + Math.abs(OTROS).toFixed(2) + " " + OTROS_LABEL) : null,
+      amt:"+$" + miles(CASH), cap:"cashc", lab:"Efectivo cobrado",
+      sub:HAY_OTROS ? ((OTROS >= 0 ? "+ $" : "− $") + miles(Math.abs(OTROS)) + " " + OTROS_LABEL) : null,
       run:CAPITAL_ACTUAL,
-      th:"Efectivo cobrado", tv:"+$" + CASH.toFixed(2),
+      th:"Efectivo cobrado", tv:"+$" + miles(CASH),
       td:"El mismo efectivo que apartaste en el paso 4 vuelve a sumar." +
-        (HAY_OTROS ? " Aparte, " + (OTROS >= 0 ? "entraron" : "salieron") + " $" + Math.abs(OTROS).toFixed(2) +
+        (HAY_OTROS ? " Aparte, " + (OTROS >= 0 ? "entraron" : "salieron") + " $" + miles(Math.abs(OTROS)) +
           " por «" + OTROS_LABEL + "»: efectivo que no viene del dividendo — por eso va en su propia franja, rayada." : "") +
-        " Total: $" + CAPITAL_ACTUAL.toFixed(2) + "." },
+        " Total: $" + miles(CAPITAL_ACTUAL) + "." },
     { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}].concat(segsEfectivo()),
       amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:"vs. tu bolsillo", run:null,
       th:"Resultado real", tv:resultadoAmt,
-      td:"Lo que tienes hoy ($" + CAPITAL_ACTUAL.toFixed(2) + ") frente a lo que pusiste ($" + POCKET.toFixed(2) + "). La diferencia es lo que el mercado " +
+      td:"Lo que tienes hoy ($" + miles(CAPITAL_ACTUAL) + ") frente a lo que pusiste ($" + miles(POCKET) + "). La diferencia es lo que el mercado " +
         (RESULTADO >= 0 ? "sumó" : "se llevó") + "." }
   ];
   function colsForStep(step) { return COLS.slice(0, step + 1); }
@@ -1391,7 +1398,7 @@
 
       var cap = document.createElement("div");
       cap.className = "col-cap";
-      var runHtml = c.run != null ? '<div class="cap-run num">$' + c.run.toFixed(2) + "</div>" : "";
+      var runHtml = c.run != null ? '<div class="cap-run num">$' + miles(c.run) + "</div>" : "";
       var subHtml = c.sub ? '<div class="cap-sub">' + c.sub + "</div>" : "";
       cap.innerHTML = '<div class="cap-amt ' + c.cap + ' num">' + c.amt + '</div>' +
                       '<div class="cap-lab">' + c.lab + "</div>" + subHtml + runHtml;
@@ -1407,7 +1414,7 @@
         var gapLo = Math.min(POCKET, CAPITAL_ACTUAL), gapHi = Math.max(POCKET, CAPITAL_ACTUAL);
         gap.style.bottom = yPx(gapLo) + "px";
         gap.style.height = (yPx(gapHi) - yPx(gapLo)) + "px";
-        gap.innerHTML = "<span>" + (gapGain ? "+$" : "−$") + Math.abs(RESULTADO).toFixed(2) + "</span>";
+        gap.innerHTML = "<span>" + (gapGain ? "+$" : "−$") + miles(Math.abs(RESULTADO)) + "</span>";
         col.appendChild(gap);
       }
 
@@ -1418,7 +1425,7 @@
       var cl = document.createElement("div");
       cl.className = "costline";
       cl.style.bottom = yPx(POCKET) + "px";
-      cl.innerHTML = '<span class="cl-lab">Lo que pusiste<br>$' + POCKET.toFixed(2) + "</span>";
+      cl.innerHTML = '<span class="cl-lab">Lo que pusiste<br>$' + miles(POCKET) + "</span>";
       plot.appendChild(cl);
     }
 
@@ -1587,7 +1594,7 @@
           : 'Los ' + g.alive + ' siguen vivos.';
       }
       var sw = hasSplit ? (SWATCH_SPLIT[key] || SWATCH["q-anchor"]) : SWATCH[g.cls];
-      var amt = (g.cls === "q-gain" ? "+$" : "$") + g.amt.toFixed(2);
+      var amt = (g.cls === "q-gain" ? "+$" : "$") + miles(g.amt);
       return '<div class="leg-row"><span class="leg-sw">' + sw + '</span>' +
              '<span class="leg-txt"><strong>' + key + ' · <span class="leg-amt">' + amt + '</span></strong>' +
              '<small>' + note + '</small></span></div>';
@@ -1620,7 +1627,7 @@
           (function (seg) {
             function m(e) {
               var pt = e.touches ? e.touches[0] : e;
-              showTip('<div class="t-h">' + seg.cat + '</div><div style="opacity:.85">' + seg.note + '</div><div class="t-v" style="margin-top:3px">≈ $' + MOSAIC_UNIT.toFixed(2) + '</div>', pt.clientX, pt.clientY);
+              showTip('<div class="t-h">' + seg.cat + '</div><div style="opacity:.85">' + seg.note + '</div><div class="t-v" style="margin-top:3px">≈ $' + miles(MOSAIC_UNIT) + '</div>', pt.clientX, pt.clientY);
             }
             sq.addEventListener("mouseenter", m);
             sq.addEventListener("mousemove", m);
@@ -1634,8 +1641,8 @@
 
     document.getElementById("legend").innerHTML = legendHtml(segs);
     document.getElementById("waffleNote").innerHTML =
-      'Cada cuadrito ≈ <span class="num">$' + MOSAIC_UNIT.toFixed(2) + '</span> de tu pico (<span class="num">$' +
-      PICO.toFixed(2) + '</span>, la mayor suma de categorías del recorrido).';
+      'Cada cuadrito ≈ <span class="num">$' + miles(MOSAIC_UNIT) + '</span> de tu pico (<span class="num">$' +
+      miles(PICO) + '</span>, la mayor suma de categorías del recorrido).';
 
     // Los cuadritos de «otros» NO se suman a los del efectivo del dividendo: se
     // nombran aparte. Sumarlos sería repetir en la frase la mezcla de bases que el
