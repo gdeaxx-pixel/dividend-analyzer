@@ -3111,8 +3111,10 @@ def cobertura_data(resultados: dict) -> dict:
 
     if not resultados:
         # Decisión de Daniel (18-sep, spec U4 §4.3): sin resultados, TODO pendiente.
+        # `evaluado: False` (P5, 30-oct): todavía no se revisó nada, y la dona lo dice así
+        # en vez de mostrar «0/5», que se leía como si todo hubiera fallado.
         return {"segmentos": [_segmento(c, n, False) for c, n in COBERTURA_SEGMENTOS],
-                "verificados": 0}
+                "verificados": 0, "evaluado": False}
 
     # Señales de calidad — mismo motor que `ui/validacion.py:268-271`.
     classify_map = logic.classify_tickers(list(resultados.keys()))
@@ -3177,7 +3179,8 @@ def cobertura_data(resultados: dict) -> dict:
     segmentos = [_segmento(c, n, estados[c], variantes.get(c), datos_variante.get(c))
                  for c, n in COBERTURA_SEGMENTOS]
     return {"segmentos": segmentos,
-            "verificados": sum(1 for s in segmentos if s["estado"] == "ok")}
+            "verificados": sum(1 for s in segmentos if s["estado"] == "ok"),
+            "evaluado": True}
 
 
 ROC_ESTADOS = ("vigilante", "calculando", "tranquilo", "alerta", "confundido", "impuestos")

@@ -278,9 +278,11 @@ def test_sin_resultados_todo_pendiente(sesion):
 
 def test_contrato_del_adapter_sin_cifras(sesion):
     """§5.1.2 — el adapter devuelve, por segmento, SOLO clave/nombre/estado/falta/como,
-    más `verificados` (0-5). Nada de porcentajes ni cifras del portafolio."""
+    más `verificados` (0-5) y `evaluado` (P5, 30-oct: si ya hubo resultados que revisar).
+    Nada de porcentajes ni cifras del portafolio."""
     d = cobertura_data(_cartera_limpia())
-    assert set(d.keys()) == {"segmentos", "verificados"}
+    assert set(d.keys()) == {"segmentos", "verificados", "evaluado"}
+    assert d["evaluado"] is True
     for s in d["segmentos"]:
         assert set(s.keys()) == {"clave", "nombre", "estado", "falta", "como"}
         assert s["estado"] in ("ok", "pendiente")

@@ -29,6 +29,7 @@ CLAVES_CONTEXTO_CARTERA = (
     "_wizard_ocr_positions",
     "_wizard_photo_sig",
     "_wizard_pos_csv", "_wizard_pos_csv_sig", "_wizard_pos_csv_error",
+    "_vd_pos_tabla",
     # F2 §4.4: la captura de casos se limpia al «editar» el CSV del paso 1 (cartera nueva,
     # consentimiento nuevo). `_captura_consent` es la instantánea del consentimiento
     # (ver `_capturar_caso`); `_consent_capture` es clave de widget y también se purga aquí.
@@ -403,10 +404,32 @@ def render_bloque_posiciones() -> bool:
         st.warning("No encontramos ETFs analizables en este archivo.")
         return False
 
+    # ── Un camino a la vez (P4, 30-oct) ──────────────────────────────────────────
+    # Antes se veían juntos el cargador del CSV de posiciones, el de capturas y la tabla con
+    # − / +: tres caminos abiertos. Ahora el cliente elige uno. La captura va primera (diseño
+    # «captura primero» del 17-sep) y solo existe con clave de Gemini; el archivo de
+    # posiciones, solo en Schwab. Con un CSV ya leído manda el archivo (CSV > foto > vista
+    # previa): el camino queda en «archivo» y el selector no se dibuja.
+    csv_leido = st.session_state.get("_wizard_pos_csv") or {}
+    clave = _clave_gemini()
+    caminos = {}
+    if clave:
+        caminos["captura"] = "Captura · recomendada"
+    if st.session_state.get("_wizard_broker") == "schwab" or csv_leido:
+        caminos["archivo"] = "Archivo de Schwab"
+    caminos["mano"] = "A mano"
+    if csv_leido:
+        st.session_state["_vd_modo_pos"] = "archivo"
+    elif st.session_state.get("_vd_modo_pos") not in caminos:
+        st.session_state["_vd_modo_pos"] = next(iter(caminos))
+    if len(caminos) > 1 and not csv_leido:
+        st.segmented_control("¿Cómo nos das tus posiciones?", tuple(caminos),
+                             format_func=caminos.get, key="_vd_modo_pos", required=True)
+    modo = st.session_state["_vd_modo_pos"]
+
     # ── CSV de posiciones de Schwab ───────────────────────────────────────────
     # Fuente más fiable que la foto: sale del bróker y no depende de ninguna clave. Si hay
     # CSV leído, manda sobre la foto y sobre la vista previa (CSV > foto > vista previa).
-    csv_leido = st.session_state.get("_wizard_pos_csv") or {}
     if csv_leido:
         st.markdown(bloque_resumen("Archivo de posiciones leído",
                                    f"{len(csv_leido)} de {len(analizables)} instrumentos"),
@@ -423,12 +446,12 @@ def render_bloque_posiciones() -> bool:
             st.session_state["_wizard_ocr_aplicar"] = True
             st.session_state["_wizard_pos_csv_quitado"] = True
             st.rerun()
-    else:
+    elif modo == "archivo":
         archivo_pos = st.file_uploader(
             "CSV de posiciones (Charles Schwab)", type=["csv"], key="_vd_upload_pos_csv",
             help="Accounts → Positions (Posiciones) → ícono de descarga → OK.")
-        st.caption("**CSV de posiciones (Charles Schwab).** Accounts → Positions "
-                   "(Posiciones) → ícono de descarga → OK. Si lo subes, no hace falta foto.")
+        st.caption("Accounts → Positions (Posiciones) → ícono de descarga → OK. Con este "
+                   "archivo no hace falta captura.")
         if archivo_pos is None:
             st.session_state.pop("_wizard_pos_csv_sig", None)
             st.session_state.pop("_wizard_pos_csv_error", None)
@@ -466,11 +489,11 @@ def render_bloque_posiciones() -> bool:
     # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
     # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
     # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde. Con un CSV
-    # de posiciones leído no se dibuja: el CSV manda.
-    clave = _clave_gemini()
+    # de posiciones leído no se dibuja: el CSV manda. Desde el 30-oct, solo en el camino
+    # «Captura», que existe únicamente con clave.
     ocr_leido = st.session_state.get("_wizard_ocr_positions") or {}
     leido = csv_leido or ocr_leido
-    if clave and analizables and not csv_leido:
+    if modo == "captura" and not csv_leido:
         fotos = st.file_uploader(
             "Fotos del portafolio", type=["png", "jpg", "jpeg"],
             accept_multiple_files=True, label_visibility="collapsed",
@@ -482,6 +505,9 @@ def render_bloque_posiciones() -> bool:
                   "nombre y tu número de cuenta.")
         if fotos:
             firma = _firma_fotos(fotos)
+            if firma == st.session_state.get("_wizard_photo_sig") and not ocr_leido:
+                st.warning("No pudimos leer posiciones en esa captura. Prueba con otra donde "
+                           "se vean «Acciones» y «Costo base», o elige «A mano».")
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
@@ -501,6 +527,19 @@ def render_bloque_posiciones() -> bool:
                 verbo = "no aparece" if len(ausentes) == 1 else "no aparecen"
                 st.info(f"{lista} {verbo} en tu captura: los pusimos en 0. Si aún los "
                         "tienes, corrige sus acciones y su costo.")
+
+    # Con captura o archivo, la tabla aparece al leer, para revisarlo; «A mano» la muestra
+    # desde el principio, con la vista previa del CSV de transacciones. Una vez dibujada no se
+    # esconde al cambiar de camino: esconderla purgaría lo que el cliente ya tecleó. Al volver
+    # con «Cambiar», o en el demo, sale con lo confirmado.
+    tabla = (st.session_state.get("_vd_pos_tabla")
+             or st.session_state.get("_wizard_positions") or {})
+    if modo != "mano" and not leido and not tabla:
+        que = "la captura" if modo == "captura" else "el archivo"
+        st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo. "
+                   f"¿No {'la' if modo == 'captura' else 'lo'} tienes? Elige «A mano».")
+        _render_excluidos_carga(excluidos)
+        return False
 
     previa = st.session_state.get("_wizard_csv_ticker_data") or {}
     posiciones = {}
@@ -528,7 +567,10 @@ def render_bloque_posiciones() -> bool:
         # posición real del bróker (con reinversiones y ventas ya aplicadas), mientras el
         # CSV solo suma compras. Ese es el motivo de subir la foto. Un ticker que la
         # captura no trae va a 0 (decidido por Daniel, 2026-10-02) con aviso arriba.
-        if leido and not ocr:
+        if not aplicar and ticker in tabla:
+            acciones_def = tabla[ticker].get("shares") or 0.0
+            costo_def = tabla[ticker].get("cost_basis") or 0.0
+        elif leido and not ocr:
             acciones_def, costo_def = 0.0, 0.0
         else:
             acciones_def = ocr.get("shares")
@@ -556,26 +598,26 @@ def render_bloque_posiciones() -> bool:
             "Costo base", min_value=0.0, **v_cb,
             step=0.01, format="%.2f", key=k_cb, label_visibility="collapsed")
         posiciones[ticker] = {"shares": acciones, "cost_basis": costo}
+    # Lo que muestra la tabla, en clave ordinaria: Streamlit purga los campos que no se
+    # dibujan (paso confirmado), y al volver con «Cambiar» deben salir como se dejaron.
+    st.session_state["_vd_pos_tabla"] = dict(posiciones)
 
-    st.markdown(
-        ('<p class="vd-nota">Los valores vienen de tu archivo de posiciones de '
-         'Schwab.</p>') if csv_leido else
-        '<p class="vd-nota">Los valores vienen del archivo como <b>vista previa</b>: '
-        'cuentan compras, pero no las reinversiones ni las ventas. Ajústalos con lo que '
-        'muestra tu bróker — esa es la cifra que manda.</p>', unsafe_allow_html=True)
+    if csv_leido:
+        nota = "Los valores vienen de tu archivo de posiciones de Schwab."
+    elif ocr_leido:
+        nota = ("Los valores vienen de tu captura. Revisa cada fondo contra tu bróker antes "
+                "de confirmar.")
+    else:
+        nota = ("Los valores vienen del archivo como <b>vista previa</b>: cuentan compras, "
+                "pero no las reinversiones ni las ventas. Ajústalos con lo que muestra tu "
+                "bróker — esa es la cifra que manda.")
+    st.markdown(f'<p class="vd-nota">{nota}</p>', unsafe_allow_html=True)
 
     # U4 §5.3.2: la residencia fiscal se muda del paso 2 al paso 3
     # (`render_bloque_1042s`). Aquí desaparecía al confirmar posiciones — la rama
     # confirmada retorna antes— y un cliente de IBKR nunca podía declararla.
 
-    # Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta
-    # el bloque. Mismo tratamiento que `app_old.py:6289`.
-    if excluidos:
-        with st.expander(texto.plural(len(excluidos), "instrumento fuera del análisis",
-                                      "instrumentos fuera del análisis")):
-            st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
-                       "la calculadora no sabe interpretar todavía.")
-            st.write(", ".join(excluidos))
+    _render_excluidos_carga(excluidos)
 
     # F2 §4.1 — Casilla de consentimiento de captura de casos (texto literal
     # aprobado por Daniel el 2026-09-27). Solo se dibuja con backend activo: sin
@@ -605,6 +647,17 @@ def render_bloque_posiciones() -> bool:
         st.session_state.pop("_vd_resultados", None)
         st.rerun()
     return False
+
+
+def _render_excluidos_carga(excluidos: list) -> None:
+    """Plegado a propósito: en una cartera real esta lista pasa de 300 tickers y aplasta el
+    bloque. Mismo tratamiento que `app_old.py:6289`."""
+    if excluidos:
+        with st.expander(texto.plural(len(excluidos), "instrumento fuera del análisis",
+                                      "instrumentos fuera del análisis")):
+            st.caption("Acciones individuales, ETFs apalancados o inversos, y todo lo que "
+                       "la calculadora no sabe interpretar todavía.")
+            st.write(", ".join(excluidos))
 
 
 def _render_residencia_detectada() -> None:
@@ -1125,7 +1178,7 @@ ESTILOS_CARGA = """
         .vd-col-header {
           font-family: var(--font-mono); font-size: 10px; font-weight: 700;
           letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mut);
-          margin: 0 0 4px;
+          margin: 0 0 4px; text-align: right;
         }
         .vd-bloque-locked { opacity: .5; border: 1px dashed var(--hair); padding: 10px 14px; margin: 6px 0; }
         .vd-bloque-locked .vd-bloque-head { margin: 0; }
@@ -1136,6 +1189,32 @@ ESTILOS_CARGA = """
         /* En la fila con «Cambiar» (`_resumen_con_cambiar`) el margen propio bajaba el
            recuadro 12px respecto al botón centrado: ahí el espacio lo pone la fila. */
         [class*="st-key-vd_fila"] .vd-bloque-resumen { margin: 0; }
+        /* P4: los − / + no sirven para 40.0000 acciones ni para $1,000.00 de costo; las
+           cifras van a la derecha, como en el estado de cuenta. */
+        [class*="st-key-_vd_sh_"] [data-testid="stNumberInputStepDown"],
+        [class*="st-key-_vd_sh_"] [data-testid="stNumberInputStepUp"],
+        [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepDown"],
+        [class*="st-key-_vd_cb_"] [data-testid="stNumberInputStepUp"] { display: none; }
+        [class*="st-key-_vd_sh_"] input, [class*="st-key-_vd_cb_"] input {
+          text-align: right; font-variant-numeric: tabular-nums; padding-left: 6px;
+        }
+        /* En teléfono Streamlit apila las columnas: «Acciones» y «Costo base» quedaban arriba,
+           lejos de sus campos. La tabla del paso 2 se queda en tres columnas a cualquier ancho. */
+        [data-testid="stHorizontalBlock"]:has(.vd-col-header),
+        [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) {
+          flex-wrap: nowrap; gap: 10px;
+        }
+        [data-testid="stHorizontalBlock"]:has(.vd-col-header) > [data-testid="stColumn"],
+        [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) > [data-testid="stColumn"] {
+          min-width: 0;
+        }
+        /* A 320 px, 1,234.5678 acciones no cabían: el ticker cede ancho a las cifras. */
+        @media (max-width: 640px) {
+          [data-testid="stHorizontalBlock"]:has(.vd-col-header) > [data-testid="stColumn"]:first-child,
+          [data-testid="stHorizontalBlock"]:has([class*="st-key-_vd_sh_"]) > [data-testid="stColumn"]:first-child {
+            flex: 0 0 64px;
+          }
+        }
         [class*="st-key-vd_fila"] [data-testid="stMarkdownContainer"] { margin-bottom: 0; }
         .vd-resumen-titulo {
           font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;

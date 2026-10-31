@@ -130,10 +130,15 @@ def _subir_foto(at, contenido=b"foto-1"):
 
 
 def test_foto_reemplaza_la_vista_previa_en_los_campos(lectura):
+    """Desde P4 (30-oct) la tabla aparece al leer la captura; los campos ya existen cuando el
+    cliente pasó antes por «A mano», y es ahí donde el empuje tiene que pisar la vista previa."""
     at = _at()
+    at.session_state["_vd_modo_pos"] = "mano"
     at.run()
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 40.0           # vista previa: los widgets ya existen
+    at.button_group(key="_vd_modo_pos").set_value("captura").run()
+    assert _campo(at, "_vd_sh_MSTY") == 40.0           # cambiar de camino no esconde la tabla
 
     _subir_foto(at)
     assert not at.exception

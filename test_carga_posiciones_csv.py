@@ -193,6 +193,15 @@ def _subir_pos(at, crudo=_POS_UI):
     at.run()
 
 
+def _desde_a_mano(at, camino):
+    """P4 (30-oct): con captura o archivo la tabla aparece al leer. Para probar lo que pasa
+    con los campos ya dibujados, el cliente pasa antes por «A mano» y luego cambia de camino:
+    la tabla no se esconde."""
+    at.session_state["_vd_modo_pos"] = "mano"
+    at.run()
+    at.button_group(key="_vd_modo_pos").set_value(camino).run()
+
+
 def _confirmar(at):
     [b for b in at.button if b.proto.id.endswith("_vd_confirm_pos")][0].click()
     at.run()
@@ -220,7 +229,7 @@ def test_el_uploader_del_csv_existe_sin_clave_de_gemini(monkeypatch):
     at = _at()
     at.run()
     assert not at.exception
-    assert "Si lo subes, no hace falta foto" in _textos(at)
+    assert "Con este archivo no hace falta captura" in _textos(at)
     _subir_pos(at)
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 12.5
@@ -228,7 +237,7 @@ def test_el_uploader_del_csv_existe_sin_clave_de_gemini(monkeypatch):
 
 def test_csv_llena_los_campos_y_el_ausente_va_a_cero(sin_clave):
     at = _at()
-    at.run()
+    _desde_a_mano(at, "archivo")
     assert _campo(at, "_vd_sh_MSTY") == 40.0           # vista previa antes de subir
     _subir_pos(at)
     assert not at.exception
@@ -260,9 +269,12 @@ def test_csv_gana_a_la_foto(con_foto):
     texto = _textos(at)
     assert '<span class="vd-ocr">captura</span>' in texto
     assert "archivo</span>" not in texto
-    assert "vista previa" in texto
+    assert "Los valores vienen de tu captura" in texto
+    assert "vista previa" not in texto
     assert "Los valores vienen de tu archivo de posiciones" not in texto
     at.session_state["_wizard_pos_csv_sig"] = None
+    at.button_group(key="_vd_modo_pos").set_value("archivo").run()
+    assert _campo(at, "_vd_sh_MSTY") == 1.0              # la tabla sigue con la foto
     _subir_pos(at)
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 12.5             # con CSV manda el CSV
@@ -360,7 +372,7 @@ def test_quitar_archivo_devuelve_la_vista_previa(sin_clave):
 
 def test_archivo_no_reconocido(sin_clave):
     at = _at()
-    at.run()
+    _desde_a_mano(at, "archivo")
     _subir_pos(at, _CSV.encode())
     assert not at.exception
     assert "No reconocimos este archivo como el CSV de posiciones de Schwab" in _textos(at)
@@ -371,7 +383,7 @@ def test_csv_sin_ningun_analizable(sin_clave):
     solo_acciones = (_TITULO + _CABECERA + _fila("AAPL", "3", "$600.00", "$500.00",
                                                  tipo="Equity") + _COLA).encode()
     at = _at()
-    at.run()
+    _desde_a_mano(at, "archivo")
     _subir_pos(at, solo_acciones)
     assert not at.exception
     assert "no trae ninguno de los instrumentos" in _textos(at)
@@ -385,12 +397,16 @@ def test_foto_ilegible_no_pisa_lo_tecleado(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "clave-de-prueba")
     monkeypatch.setattr(logic, "extract_positions_from_images", lambda *a, **k: {})
     at = _at()
+    at.session_state["_vd_modo_pos"] = "mano"
     at.run()
     [w for w in at.number_input if w.proto.id.endswith("_vd_sh_MSTY")][0].set_value(7.0).run()
+    at.button_group(key="_vd_modo_pos").set_value("captura").run()
     at.session_state["_test_foto_bytes"] = b"foto"
     at.run()
     assert not at.exception
     assert not _proto(at, "_vd_sh_MSTY").set_value
+    assert _campo(at, "_vd_sh_MSTY") == 7.0
+    assert "No pudimos leer posiciones en esa captura" in _textos(at)
 
 
 def test_archivo_con_varias_cuentas(sin_clave):

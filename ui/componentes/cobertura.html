@@ -81,6 +81,15 @@
   /* §3B.2 — centro: solo N/5, sin texto adicional. */
   .dona-num { font-family: var(--font-mono); font-weight: 700; font-size: 30px; fill: var(--ink); }
 
+  /* P5 (30-oct): antes de confirmar posiciones no se revisó nada todavía. Un anillo fino y
+     quieto con «5 controles» en el centro, en vez de «0/5», que se leía como si todo hubiera
+     fallado. Los segmentos se pueden tocar igual: cada uno dice qué revisa. */
+  .sin-revisar .seg[data-tone="warn"] { stroke: var(--hair); stroke-width: 6; animation: none; }
+  .sin-revisar .seg.lit { stroke: var(--ink-mut); stroke-width: 9; }
+  .dona-sub { font-family: var(--font-sans); font-size: 12px; fill: var(--ink-mut); }
+  .sin-revisar .dona-cap { font-family: var(--font-sans); font-size: 12.5px; font-weight: 500;
+    letter-spacing: 0; text-transform: none; color: var(--ink-2); }
+
   /* §3B.4 — pop-out: nota flotante ligera, esquinas suaves, sin borde, sombra discreta.
      Solo qué falta y cómo resolverlo (los botones de acción del prototipo NO se portan,
      pérdida deliberada — spec U4 §5.2). Vive DENTRO del iframe: absolute sobre .detail,
@@ -130,9 +139,12 @@
     root.hidden = true;
     return;
   }
-  document.getElementById("dona-cap").textContent =
-    DATA.segmentos.some(function (s) { return s.estado !== "ok"; })
-      ? "Verificación · toca un segmento" : "Verificación completa";
+  var sinRevisar = DATA.evaluado === false;
+  if (sinRevisar) { root.classList.add("sin-revisar"); }
+  document.getElementById("dona-cap").textContent = sinRevisar
+    ? "Se revisan al confirmar tus posiciones"
+    : (DATA.segmentos.some(function (s) { return s.estado !== "ok"; })
+        ? "Verificación · toca un segmento" : "Verificación completa");
 
   var NS = "http://www.w3.org/2000/svg";
   var svg = document.getElementById("dona");
@@ -266,8 +278,9 @@
        cambiara su forma de contar, el centro seguiría su cifra, no la suya propia. */
     var count = DATA.verificados;
     /* aria-label propio, sin la frase de estado del prototipo (§3B.7). */
-    svg.setAttribute("aria-label",
-      "Verificación de los datos: " + count + " de " + segs.length + " controles completos.");
+    svg.setAttribute("aria-label", sinRevisar
+      ? "Verificación de los datos: " + segs.length + " controles, todavía sin revisar."
+      : "Verificación de los datos: " + count + " de " + segs.length + " controles completos.");
     for (var j = 0; j < segs.length; j++) {
       (function (i) {
         var seg = segs[i];
@@ -300,10 +313,19 @@
     var num = document.createElementNS(NS, "text");
     num.setAttribute("class", "dona-num");
     num.setAttribute("x", "75");
-    num.setAttribute("y", "83");
+    num.setAttribute("y", sinRevisar ? "77" : "83");
     num.setAttribute("text-anchor", "middle");
-    num.textContent = count + "/" + segs.length;
+    num.textContent = sinRevisar ? String(segs.length) : count + "/" + segs.length;
     svg.appendChild(num);
+    if (sinRevisar) {
+      var sub = document.createElementNS(NS, "text");
+      sub.setAttribute("class", "dona-sub");
+      sub.setAttribute("x", "75");
+      sub.setAttribute("y", "96");
+      sub.setAttribute("text-anchor", "middle");
+      sub.textContent = "controles";
+      svg.appendChild(sub);
+    }
   }
 
   document.addEventListener("click", function (e) {
