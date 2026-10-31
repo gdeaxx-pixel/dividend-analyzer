@@ -75,3 +75,13 @@ def test_el_titulo_de_cada_paso_de_la_carga_va_en_frase_normal():
     regla = _regla(carga.ESTILOS_CARGA, ".vd-bloque-titulo")
     assert "var(--font-sans)" in regla, "el título del paso sigue en letra de máquina"
     assert "uppercase" not in regla, "el título del paso sigue en mayúsculas"
+
+
+def test_los_titulos_de_la_app_van_en_letra_normal_y_la_marca_no():
+    """«La escalera de tus impuestos», «Portafolios», «Riesgo»… son `h2.vd-title`."""
+    from ui.chrome import _ESTILOS
+    assert "var(--font-sans)" in _regla(_ESTILOS, ".vd-title")
+    reafirma = _regla(_ESTILOS, "h1.vd-title, h2.vd-title, .block-container h2.vd-title")
+    assert "var(--font-sans)" in reafirma, "Streamlit vuelve a pintar el título en letra de máquina"
+    marca = _regla(_ESTILOS, "h2.vd-title.vd-wordmark, .block-container h2.vd-title.vd-wordmark")
+    assert "var(--font-mono)" in marca, "la marca dejó de ir en letra de máquina"
