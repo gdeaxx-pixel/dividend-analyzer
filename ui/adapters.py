@@ -2823,10 +2823,10 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
     nav_cagr = salud.get("nav_cagr")
     alerta_precio = verdict in ("destructive", "mixed")
 
-    def _flag(clave, gravedad, titulo, cifra, cifra_tono, lede, eq, filas, nota, ruta):
+    def _flag(clave, gravedad, titulo, cifra, cifra_tono, lede, eq, filas, nota, ruta, corto):
         etiqueta, _ = _vig_ruta_etiqueta(ruta, ticker, etfs)
         return {"clave": clave, "gravedad": gravedad, "titulo": titulo, "cifra": cifra,
-                "cifra_tono": cifra_tono, "ruta": ruta if etiqueta else None,
+                "cifra_tono": cifra_tono, "corto": corto, "ruta": ruta if etiqueta else None,
                 "tip": {"eyebrow": f"Qué pasa · {ticker}", "titulo": titulo, "lede": lede,
                         "eq": eq, "filas": filas, "nota": nota, "ruta": etiqueta}}
 
@@ -2854,7 +2854,9 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
             (f"El precio de {ticker} baja, pero no está claro que el pago salga de tu "
              "capital. Conviene vigilar la tendencia."),
             "Ritmo anual del precio", filas,
-            "Si el precio sigue cayendo, el pago futuro también baja.", "real"))
+            "Si el precio sigue cayendo, el pago futuro también baja.", "real",
+            f"Precio {_vig_pct(nav_cagr)} al año" if nav_cagr is not None
+            else ("Precio a la baja" if destructivo else "Precio con señales mezcladas")))
 
     if tr < 0 and capital < 0:
         ritmo = _vig_ritmo(stats)
@@ -2872,7 +2874,7 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
             [["Caída del precio", _vig_dinero(capital), "loss"],
              ["Dividendos cobrados", _vig_dinero(div, signo=True), "cash"],
              ["Retorno total", _vig_dinero(tr), "loss"]],
-            nota, "viaje"))
+            nota, "viaje", f"Faltan {_vig_dinero(-tr)}"))
 
     roc = stats.get("roc_accumulated")
     if alerta_precio and roc is not None and roc > 0:
@@ -2884,7 +2886,8 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
              "precio cae."),
             "Parte de lo cobrado que es devolución de capital",
             [["ROC en tu período", f"~{_vig_dinero(roc, dec=0)}", ""]],
-            "El ROC baja tu base de costo y cambia cuánto impuesto te retienen.", "impuestos"))
+            "El ROC baja tu base de costo y cambia cuánto impuesto te retienen.", "impuestos",
+            f"ROC ~{_vig_dinero(roc, dec=0)}"))
 
     ry = stats.get("realized_yield")
     if ry is not None and ry > 0 and tr < 0:
@@ -2902,7 +2905,7 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
              "un yield alto convive con una pérdida."),
             "Lo que paga no es lo que ganas", filas,
             ("El yield anunciado se calcula sobre el valor de hoy: si el precio cae, sube "
-             "aunque el pago no crezca."), "metodo"))
+             "aunque el pago no crezca."), "metodo", f"Yield {ry:.1f}% cobrado"))
 
     return sorted(flags, key=lambda f: 0 if f["gravedad"] == "alto" else 1)
 
@@ -2918,11 +2921,15 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
 
     Cifras: `retorno` = `net_profit`; `dividendos` = `dividends_net_total` (neto, al cobro)
     con el mismo respaldo que `ui.heredadas._agregados`; caída del precio = retorno −
-    dividendos."""
+    dividendos.
+
+    Orden (P6, 2026-10-30): el fondo que más dinero pierde va arriba; antes iban en el orden
+    de `salud_por_ticker` (alfabético) y el que más costaba podía quedar tercero. Cada punto
+    lleva `corto`, la etiqueta de la fila compacta; el popup sigue saliendo de `tip`."""
     from ui import nav
 
     etfs = tuple(nav.CATS.get("dividendos", ()))
-    fondos, sanos = [], []
+    pares, sanos = [], []
     for ticker, salud in salud_por_ticker.items():
         stats = resultados.get(ticker)
         if not _tiene_datos(stats):
@@ -2937,13 +2944,14 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
             sanos.append(ticker)
             continue
         texto, tono = _VIG_CHIP.get((salud or {}).get("verdict"), ("Sin veredicto", "mut"))
-        fondos.append({
+        pares.append((round(tr, 2), {
             "ticker": ticker, "chip_texto": texto, "chip_tono": tono,
             "retorno": _vig_dinero(tr),
             "retorno_pct": _vig_pct(tr / inv * 100, dec=2) if inv > 0 else None,
             "tono": "neg" if round(tr, 2) < 0 else "pos",
             "flags": flags,
-        })
+        }))
+    fondos = [fo for _, fo in sorted(pares, key=lambda par: (par[0], par[1]["ticker"]))]
 
     if not fondos and not sanos:
         return None
@@ -2959,8 +2967,9 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
                       "cat": r["cat"], "vista": r["vista"], "etf": etf})
 
     n = len(fondos) + len(sanos)
+    orden = " · el que más te cuesta, arriba" if len(fondos) > 1 else ""
     return {
-        "eyebrow": f"Portafolio Dividendos · {n} fondo{'' if n == 1 else 's'}",
+        "eyebrow": f"Portafolio Dividendos · {n} fondo{'' if n == 1 else 's'}{orden}",
         "fondos": fondos,
         "sanos": f"{', '.join(sanos)}: sin alertas." if sanos else None,
         "rutas": rutas,
