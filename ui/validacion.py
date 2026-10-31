@@ -450,7 +450,7 @@ ESTILOS_VALIDACION = """
         .vd-pie-tabla { width: 100%; border-collapse: collapse; margin-top: 2px; }
         .vd-pie-th {
           padding: 7px 14px; text-align: left; font-family: var(--font-mono);
-          font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+          font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
           color: var(--ink-mut); border-bottom: 2px solid var(--ink);
         }
         .vd-pie-fila { border-bottom: 1px solid var(--hair-soft); }

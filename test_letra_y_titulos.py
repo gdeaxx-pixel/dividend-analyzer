@@ -1,0 +1,137 @@
+"""D2 y D3 de la propuesta de interfaz (2026-10-30): letra de 11 px como mínimo y títulos en
+letra normal y en frase normal.
+
+D2 — En 8 componentes cerca de un tercio de los tamaños de letra declarados bajaban de 11 px
+(en Cash flow, 34 de 99), y el aviso de validación iba a 9 px. Ahora ninguno baja de 11.
+
+D3 — «La escalera de tus impuestos» y los títulos de Comparación, Método, Metodología y la
+Hoja iban en letra de máquina; los pasos de la carga, en mayúsculas espaciadas. Ahora los
+títulos van en letra normal y en frase normal; la letra de máquina y las mayúsculas quedan para
+cifras y etiquetas pequeñas. Los títulos de los popups no cambian: son el patrón aprobado.
+
+`ui/componentes/impuestos.html` (v1) no se toca: ya no se dibuja y es la referencia congelada del
+guard de frases. `metodo_real.html` se genera del demo del artifact: su hoja de estilos cambió en
+el demo y se regeneró (lo vigila `test_contrato_componentes.py`).
+"""
+import os
+import re
+
+import pytest
+
+_RAIZ = os.path.dirname(os.path.abspath(__file__))
+_COMP = os.path.join(_RAIZ, "ui", "componentes")
+_MINIMO = 11
+
+
+def _leer(ruta):
+    with open(ruta, encoding="utf-8") as f:
+        return f.read()
+
+
+def _pequenos(texto):
+    """Cada tamaño de letra por debajo del mínimo: `font-size: Xpx` y `font-size="X"`."""
+    css = [float(x) for x in re.findall(r"font-size:\s*(\d+(?:\.\d+)?)px", texto)]
+    svg = [float(x) for x in re.findall(r'font-size="(\d+(?:\.\d+)?)"', texto)]
+    return sorted(x for x in css + svg if x < _MINIMO)
+
+
+_COMPONENTES = sorted(f for f in os.listdir(_COMP)
+                      if f.endswith(".html") and f != "impuestos.html")
+_ESTILOS_APP = sorted(f for f in os.listdir(os.path.join(_RAIZ, "ui")) if f.endswith(".py"))
+
+
+@pytest.mark.parametrize("archivo", _COMPONENTES)
+def test_ningun_componente_baja_de_11_px(archivo):
+    assert _pequenos(_leer(os.path.join(_COMP, archivo))) == [], (
+        f"{archivo} declara letra por debajo de {_MINIMO} px")
+
+
+@pytest.mark.parametrize("archivo", _ESTILOS_APP)
+def test_los_estilos_de_la_app_no_bajan_de_11_px(archivo):
+    assert _pequenos(_leer(os.path.join(_RAIZ, "ui", archivo))) == [], (
+        f"ui/{archivo} declara letra por debajo de {_MINIMO} px")
+
+
+def _regla(texto, selector):
+    m = re.search(r"(?m)^\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", texto)
+    assert m, f"no encuentro la regla {selector}"
+    return m.group(1)
+
+
+_TITULOS = [(c, sel) for c in ("cashflow.html", "comparacion.html", "comparacion_real.html",
+                                "hoja.html", "metodo.html", "metodo_real.html", "metodologia.html")
+            for sel in (".soon-title", ".cmp-title")] + [("impuestos_v2.html", ".imp-title")]
+
+
+@pytest.mark.parametrize("archivo, selector", _TITULOS)
+def test_los_titulos_de_seccion_van_en_letra_normal(archivo, selector):
+    regla = _regla(_leer(os.path.join(_COMP, archivo)), selector)
+    assert "var(--font-sans)" in regla and "font-mono" not in regla, (
+        f"{archivo} {selector} sigue en letra de máquina")
+
+
+def test_el_titulo_de_cada_paso_de_la_carga_va_en_frase_normal():
+    from ui import carga
+    regla = _regla(carga.ESTILOS_CARGA, ".vd-bloque-titulo")
+    assert "var(--font-sans)" in regla, "el título del paso sigue en letra de máquina"
+    assert "uppercase" not in regla, "el título del paso sigue en mayúsculas"
+
+
+def test_los_titulos_de_la_app_van_en_letra_normal_y_la_marca_no():
+    """«La escalera de tus impuestos», «Portafolios», «Riesgo»… son `h2.vd-title`."""
+    from ui.chrome import _ESTILOS
+    assert "var(--font-sans)" in _regla(_ESTILOS, ".vd-title")
+    reafirma = _regla(_ESTILOS, "h1.vd-title, h2.vd-title, .block-container h2.vd-title")
+    assert "var(--font-sans)" in reafirma, "Streamlit vuelve a pintar el título en letra de máquina"
+    marca = _regla(_ESTILOS, "h2.vd-title.vd-wordmark, .block-container h2.vd-title.vd-wordmark")
+    assert "var(--font-mono)" in marca, "la marca dejó de ir en letra de máquina"
+
+
+# ── La matriz: los rótulos de columna a 11 px no se recortan ─────────────────────────────
+# A 11 px «Inversión Hoy» y «Último div.» ya no cabían en una línea y `.he-h` (overflow
+# hidden) los cortaba (medido en vivo el 30-oct). Ahora parten en dos líneas.
+
+_RECORTES = """() => {
+  const fuera = [];
+  const labs = document.querySelectorAll('.he-h .he-lab');
+  for (const lab of labs) {
+    const b = lab.closest('.he-h').getBoundingClientRect(), rg = document.createRange();
+    rg.selectNodeContents(lab);
+    for (const r of rg.getClientRects())
+      if (r.width > 0.5 && (r.left < b.left - 0.5 || r.right > b.right + 0.5)) {
+        fuera.push(lab.textContent.trim()); break; }
+  }
+  return {fuera, n: labs.length};
+}"""
+
+
+@pytest.fixture(scope="module")
+def recortes_matriz():
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from ui import componentes
+    from ui.adapters import metodo_data
+    capturado = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(componentes.st, "iframe", lambda doc, height=None: capturado.append(doc))
+        componentes.render_metodo("matriz", "Claro", metodo_data())
+    out = {}
+    try:
+        with sync_api.sync_playwright() as pw:
+            nav = pw.chromium.launch()
+            for ancho in (860, 343):          # iframe en el escritorio y a 375 de viewport
+                pagina = nav.new_page(viewport={"width": ancho, "height": 900})
+                pagina.set_content(capturado[0])
+                pagina.wait_for_timeout(300)
+                out[ancho] = pagina.evaluate(_RECORTES)
+                pagina.close()
+            nav.close()
+    except Exception as error:  # sin Chromium instalado (CI)
+        pytest.skip(f"Chromium no disponible: {error}")
+    return out
+
+
+@pytest.mark.parametrize("ancho", [860, 343])
+def test_los_rotulos_de_la_matriz_caben_en_su_celda(recortes_matriz, ancho):
+    medida = recortes_matriz[ancho]
+    assert medida["n"] > 0, "no encontré los rótulos de la matriz"
+    assert medida["fuera"] == [], f"a {ancho} px la celda recorta: {medida['fuera']}"

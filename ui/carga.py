@@ -1170,13 +1170,15 @@ ESTILOS_CARGA = """
         .vd-bloque-activo { background: var(--accent); color: var(--panel); }
         .vd-bloque-hecho { background: var(--cash); color: var(--panel); }
         .vd-bloque-bloqueado { background: var(--hair); color: var(--ink-mut); }
+        /* D3 (30-oct): el título del paso en letra normal y en frase normal; la letra de
+           máquina y las mayúsculas quedan para cifras y etiquetas pequeñas. */
         .vd-bloque-titulo {
-          font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-          letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
+          font-family: var(--font-sans); font-size: 15px; font-weight: 700;
+          letter-spacing: -.005em; color: var(--ink);
         }
-        .vd-bloque-sub { font-size: 11.5px; color: var(--ink-mut); margin-top: 1px; }
+        .vd-bloque-sub { font-size: 13px; color: var(--ink-mut); margin-top: 1px; }
         .vd-col-header {
-          font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+          font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mut);
           margin: 0 0 4px; text-align: right;
         }
@@ -1226,7 +1228,7 @@ ESTILOS_CARGA = """
           color: var(--ink); margin: .35rem 0 0;
         }
         .vd-ocr {
-          font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+          font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .08em; text-transform: uppercase; color: var(--cash);
           border: 1px solid var(--cash); padding: 1px 5px; margin-left: 6px;
           vertical-align: middle;

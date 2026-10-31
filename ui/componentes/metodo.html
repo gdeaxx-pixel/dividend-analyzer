@@ -110,7 +110,7 @@
   }
   .crumb-btn:hover { border-color: var(--hair); }
   .crumb-btn[aria-expanded="true"] { background: var(--panel-tint); border-color: var(--hair); }
-  .crumb-caret { font-size: 10px; color: var(--ink-mut); }
+  .crumb-caret { font-size: 11px; color: var(--ink-mut); }
   .crumb-sep { font-family: var(--font-mono); font-size: 16px; color: var(--ink-mut); }
   .crumb-sep[hidden] { display: none; }
   .crumb-menu {
@@ -127,7 +127,7 @@
   }
   .crumb-item:hover { background: var(--panel-tint); color: var(--ink); }
   .crumb-item.active { color: var(--ink); font-weight: 700; }
-  .crumb-item.active::after { content: "●"; margin-left: auto; font-size: 8px; color: var(--accent); }
+  .crumb-item.active::after { content: "●"; margin-left: auto; font-size: 11px; color: var(--accent); }
   .crumb-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
   /* enlace a la explicación de la sección activa: vive al final de la ruta, que ya
@@ -195,18 +195,18 @@
   /* ---- placeholder "en diseño" (secciones 2 y 3) ---- */
   .soon { padding: 8px 2px 0; }
   .soon-badge {
-    display: inline-block; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    display: inline-block; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
     letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
     border: 1px solid var(--accent); padding: 4px 10px; margin-bottom: 18px;
   }
-  .soon-title { font-family: var(--font-mono); font-size: clamp(20px, 3vw, 27px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; max-width: 22ch; }
+  .soon-title { font-family: var(--font-sans); font-size: clamp(20px, 3vw, 27px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 12px; text-wrap: balance; max-width: 22ch; }
   .soon-lede { font-size: 15px; line-height: 1.55; color: var(--ink-2); max-width: 56ch; margin: 0 0 30px; }
   .soon-lede b { color: var(--ink); font-weight: 600; }
   /* mini-rail fantasma: insinúa la estructura paso a paso que tendrá */
   .ghost-rail { display: flex; gap: 10px; margin-bottom: 26px; opacity: .5; }
   .ghost-step { flex: 1; max-width: 90px; }
   .ghost-bar { height: 4px; background: var(--hair); margin-bottom: 7px; }
-  .ghost-lab { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); }
+  .ghost-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-mut); }
   .ghost-body { display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 40px); align-items: end; }
   .ghost-plot { display: flex; align-items: flex-end; gap: 14px; height: 180px; }
   .ghost-plot > div { flex: 1; background: var(--panel-tint); border: 1px dashed var(--hair); }
@@ -222,7 +222,7 @@
   .step-bar { height: 4px; width: 100%; background: var(--hair); transition: background .15s ease; }
   .step.done .step-bar { background: var(--accent); }
   .step.now .step-bar { background: var(--loss); }
-  .step-lab { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-mut); line-height: 1.25; white-space: nowrap; }
+  .step-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-mut); line-height: 1.25; white-space: nowrap; }
   .step.now .step-lab { color: var(--loss); font-weight: 700; }
   .step.done .step-lab { color: var(--ink-2); }
   .step.clickable:hover .step-lab { color: var(--accent); }
@@ -290,7 +290,7 @@
   .slot-tick { position: absolute; bottom: 0; left: 50%; width: 1px; height: 8px; background: var(--hair); }
   .slot-ghost {
     position: absolute; top: 100%; left: -2px; right: -2px; padding-top: 12px; text-align: center;
-    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
     color: var(--ink-mut); opacity: .42; line-height: 1.2;
   }
   .seg.s-anchor  { background: var(--anchor); }
@@ -305,7 +305,7 @@
      encima de la línea, donde la primera columna ya no dibuja nada. */
   .costline .cl-lab {
     position: absolute; bottom: 3px; left: 0; max-width: 92px; background: var(--ground); padding: 0 6px 0 0;
-    font-family: var(--font-mono); font-size: 10px; line-height: 1.2; color: var(--loss); font-weight: 600;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.2; color: var(--loss); font-weight: 600;
   }
   .gap-band {
     position: absolute; left: 0; right: 0; background: var(--loss-bg);
@@ -326,8 +326,8 @@
   .cap-lab { font-family: var(--font-sans); font-size: 11px; color: var(--ink-mut); line-height: 1.25; margin-top: 3px; min-height: 2.5em; }
   /* mismo margin-top que .cap-run: son la misma línea de la fila (subtítulo o
      acumulado, nunca ambos) y deben caer en la misma horizontal. */
-  .cap-sub { font-family: var(--font-sans); font-size: 10px; color: var(--accent); font-style: italic; margin-top: 4px; }
-  .cap-run { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2); margin-top: 4px; }
+  .cap-sub { font-family: var(--font-sans); font-size: 11px; color: var(--accent); font-style: italic; margin-top: 4px; }
+  .cap-run { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); margin-top: 4px; }
   .cap-run::before { content: "→ "; color: var(--ink-mut); }
 
   /* ---- waffle ---- */
@@ -398,13 +398,13 @@
 
   /* ============ COMPARACIÓN · Total Return Graph ============ */
   .cmp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
-  .cmp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .cmp-title { font-family: var(--font-sans); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
   .cmp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
   .cmp-lede b { color: var(--ink); font-weight: 600; }
 
   .cmp-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
-  .cmp-lab { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
+  .cmp-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
   .cmp-sep { width: 1px; align-self: stretch; min-height: 22px; background: var(--hair); margin: 0 6px; flex: none; }
   .cmp-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -507,7 +507,7 @@
   .meth-tbl-wrap { overflow-x: auto; margin: 10px 0 4px; }
   .meth-tbl { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 12px; }
   .meth-tbl th, .meth-tbl td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: top; }
-  .meth-tbl th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; white-space: nowrap; }
+  .meth-tbl th { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; white-space: nowrap; }
   .meth-tbl td { color: var(--ink-2); line-height: 1.5; }
   .meth-tbl td b { color: var(--ink); }
   .meth-tbl td.num { font-family: var(--font-mono); white-space: nowrap; color: var(--ink); }
@@ -580,7 +580,7 @@
      Ocupa todo el ancho porque la fórmula cruza columnas no contiguas
      (Valor mer. + Efectivo − Inversión); en una celda de 90px no cabría. */
   .he-eq {
-    grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10px; line-height: 2.1;
+    grid-column: 1 / -1; font-family: var(--font-mono); font-size: 11px; line-height: 2.1;
     color: var(--ink-mut); padding: 13px 7px 15px 22px; position: relative;
     border-bottom: 1px solid var(--hair-soft); white-space: nowrap; overflow-x: auto;
   }
@@ -641,11 +641,13 @@
      alto reservado —para que al abrir columnas los rótulos de 2 líneas no muevan
      la tabla— queda como aire ARRIBA, no como un hueco entre rótulo y regla. */
   .he-h {
-    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--ink-mut); border-bottom: 2px solid var(--anchor);
-    padding-bottom: 12px; line-height: 1.35; white-space: nowrap; align-self: stretch;
-    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 42px;
+    padding-bottom: 12px; line-height: 1.35; white-space: normal; align-self: stretch;
+    display: flex; align-items: flex-end; justify-content: flex-end; min-height: 52px;
   }
+  /* D2 (30-oct): a 11 px «Inversión Hoy» y «Último div.» ya no cabían en una línea y la
+     celda los recortaba. El rótulo parte en dos y el alto reservado sube a dos líneas. */
   .he-h.he-l { justify-content: flex-start; }
   .he-lab {
     cursor: help; border-bottom: 1px dotted var(--hair); padding-bottom: 1px;
@@ -675,14 +677,14 @@
   }
   .he-bridge-lab {
     position: relative; z-index: 1; background: var(--ground); padding: 0 8px;
-    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase; color: var(--mark);
     white-space: nowrap; transition: opacity .15s ease;
   }
   .he-bridge-lab::after { content: " ⓘ"; }
   .he-bridge-hit:hover .he-bridge-lab { opacity: .7; }
   .he-bridge-hit:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
-  @media (max-width: 700px) { .he-bridge-lab { font-size: 8px; padding: 0 5px; } }
+  @media (max-width: 700px) { .he-bridge-lab { font-size: 11px; padding: 0 5px; } }
 
   /* Cada lectura son dos bandas: sus cifras y su ecuación. La línea va al final de
      la ecuación, no entre ambas, porque pertenecen a la misma lectura. */
@@ -726,7 +728,7 @@
   .he-grid.honest .he-opt .he-lab { opacity: 1; }
   .he-ph { color: var(--hair); font-weight: 400; }
 
-  .he-sub { display: block; font-size: 9px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-mut); margin-top: 1px; white-space: normal; }
+  .he-sub { display: block; font-size: 11px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink-mut); margin-top: 1px; white-space: normal; }
   .he-sub.cash { color: var(--cash); }
 
   /* cierre de la sección: ambos textos en la misma celda, el inactivo reserva su
@@ -800,7 +802,7 @@
        «INVERSIÓN» quepan ENTERAS en su columna. Con el espaciado normal se
        partían a mitad de palabra, que es lo que se veía apeñuscado. */
     .he-grid[class*="tm-grid"] .he-h {
-      font-size: 8px; letter-spacing: 0.02em; line-height: 1.25; white-space: normal;
+      font-size: 11px; letter-spacing: 0.02em; line-height: 1.25; white-space: normal;
       overflow-wrap: anywhere; padding: 0 3px 7px; min-height: 27px;
     }
     .he-grid[class*="tm-grid"] .he-c { font-size: 11px; padding: 7px 3px 4px; }
@@ -818,7 +820,7 @@
      «Con DRIP» tiene 7 columnas: con el escalón anterior, un iPhone Pro Max
      (430px) caía en la regla de 700px y se comía la columna Total. */
   @media (max-width: 460px) {
-    .he-grid[class*="tm-grid"] .he-c { font-size: 10.5px; }
+    .he-grid[class*="tm-grid"] .he-c { font-size: 11px; }
     .tm-grid6 { min-width: 326px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
     .tm-grid7 { min-width: 380px; grid-template-columns: 44px minmax(72px,1.25fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(52px,1fr) minmax(54px,1fr); }
   }
@@ -869,7 +871,7 @@
   }
   .modal-close:hover { color: var(--ink); }
   .modal-eyebrow {
-    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700;
     letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
   }
   .modal-title {
@@ -906,61 +908,61 @@
   /* indicador de clic en el encabezado */
   .he-lab[data-tip="tm-metodo"] { cursor: pointer; }
   .he-lab[data-tip="tm-metodo"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--accent); vertical-align: super;
   }
   .he-lab[data-tip="tm-p-max"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-max"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--accent); vertical-align: super;
   }
   .he-lab[data-tip="tm-p-real"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-real"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--accent); vertical-align: super;
   }
   .mf-val.accent { color: var(--accent); }
   /* indicadores ⓘ para Valor DRIP y Valor cash */
   .he-lab[data-tip="tm-p-drip"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-drip"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--drip); vertical-align: super;
   }
   .he-lab[data-tip="tm-p-cash"] { cursor: pointer; }
   .he-lab[data-tip="tm-p-cash"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--cash); vertical-align: super;
   }
   .he-lab[data-tip="tm-s-tot"] { cursor: pointer; }
   .he-lab[data-tip="tm-s-tot"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--cash); vertical-align: super;
   }
   .he-lab[data-tip="tm-s-tuinv"] { cursor: pointer; }
   .he-lab[data-tip="tm-s-tuinv"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--ink-mut); vertical-align: super;
   }
   .he-lab[data-tip="tm-s-max"] { cursor: pointer; }
   .he-lab[data-tip="tm-s-max"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--accent); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--accent); vertical-align: super;
   }
   .he-lab[data-tip="tm-s-div"] { cursor: pointer; }
   .he-lab[data-tip="tm-s-div"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--cash); vertical-align: super;
   }
   .he-lab[data-tip="tm-c-inv"] { cursor: pointer; }
   .he-lab[data-tip="tm-c-inv"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--ink-mut); vertical-align: super;
   }
   .he-lab[data-tip="tm-c-invhoy"] { cursor: pointer; }
   .he-lab[data-tip="tm-c-invhoy"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--ink-mut); vertical-align: super;
   }
   .he-lab[data-tip="tm-c-driphoy"] { cursor: pointer; }
   .he-lab[data-tip="tm-c-driphoy"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--drip); vertical-align: super;
   }
   .he-lab[data-tip="tm-c-drip"] { cursor: pointer; }
   .he-lab[data-tip="tm-c-drip"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--cash); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--cash); vertical-align: super;
   }
   .he-lab[data-tip="tm-c-ahora"] { cursor: pointer; }
   .he-lab[data-tip="tm-c-ahora"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--drip); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--drip); vertical-align: super;
   }
   /* ⓘ de las columnas de la MATRIZ 1 (Acción e Inicio quedan sin modal a propósito:
      son identificadores, no cifras que se puedan malinterpretar) */
@@ -976,7 +978,7 @@
   .he-lab[data-tip="tm-totalinv"]::after,
   .he-lab[data-tip="tm-valor"]::after,
   .he-lab[data-tip="tm-ultimodiv"]::after {
-    content: " ⓘ"; font-size: 10px; color: var(--ink-mut); vertical-align: super;
+    content: " ⓘ"; font-size: 11px; color: var(--ink-mut); vertical-align: super;
   }
   .he-lab[data-tip="tm-dividendos"]::after,
   .he-lab[data-tip="tm-valor"]::after { color: var(--cash); }
@@ -2487,12 +2489,12 @@
             '" stroke="' + (cero ? MUT : HAIR) + '" stroke-width="' + (cero ? 1.2 : 1) + '"' +
             (cero ? '' : ' stroke-dasharray="3 3"') + ' opacity="' + (cero ? 0.7 : 0.9) + '"/>');
           out.push('<text x="' + (ML - 8) + '" y="' + (parseFloat(yy) + 3.5) +
-            '" text-anchor="end" font-size="10.5" fill="' + MUT + '">' + fmtEje(g) + '</text>');
+            '" text-anchor="end" font-size="11" fill="' + MUT + '">' + fmtEje(g) + '</text>');
         }
         for (var ty = 1; ty <= LAST; ty++) {
           if (mFecha(ty).getMonth() !== 0) continue;
           out.push('<text x="' + x(ty).toFixed(1) + '" y="' + (H - 7) +
-            '" text-anchor="middle" font-size="10.5" fill="' + MUT + '">' +
+            '" text-anchor="middle" font-size="11" fill="' + MUT + '">' +
             mFecha(ty).getFullYear() + '</text>');
         }
 
@@ -2548,7 +2550,7 @@
         }
         etiquetas.forEach(function (L) {
           out.push('<text x="' + (W - MR + 9) + '" y="' + (L.y + 3.5).toFixed(1) +
-            '" font-size="10.5" fill="' + L.color + '">' + L.texto + '</text>');
+            '" font-size="11" fill="' + L.color + '">' + L.texto + '</text>');
         });
 
         out.push('<line id="tmSerieXh" x1="0" y1="' + MT + '" x2="0" y2="' + (H - MB) +

@@ -728,13 +728,13 @@ _ESTILOS = """
         [data-testid="stTooltipIcon"] svg { stroke: var(--ink-mut) !important; }
 
         .vd-badge {
-          display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
+          display: inline-block; font-family: var(--font-mono); font-size: 11px;
           font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
           color: var(--accent); border: 1px solid var(--accent);
           padding: 4px 10px; margin-bottom: 18px;
         }
         .vd-title {
-          font-family: var(--font-mono); font-size: clamp(20px, 3vw, 27px);
+          font-family: var(--font-sans); font-size: clamp(20px, 3vw, 27px);
           font-weight: 700; letter-spacing: -.01em; line-height: 1.15;
           margin: 0 0 12px; color: var(--ink); max-width: 22ch;
         }
@@ -744,8 +744,12 @@ _ESTILOS = """
         }
 
         /* Streamlit pinta h1-h6 con su propia fuente y gana por especificidad; hay que
-           reafirmar la mono del artifact sobre el elemento, no solo sobre la clase. */
+           reafirmar la fuente sobre el elemento, no solo sobre la clase. D3 (30-oct): los
+           títulos van en letra normal; la marca sigue en letra de máquina. */
         h1.vd-title, h2.vd-title, .block-container h2.vd-title {
+          font-family: var(--font-sans) !important;
+        }
+        h2.vd-title.vd-wordmark, .block-container h2.vd-title.vd-wordmark {
           font-family: var(--font-mono) !important;
         }
 

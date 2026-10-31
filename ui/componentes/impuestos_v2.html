@@ -74,7 +74,7 @@
   .wrap { max-width: 1032px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 36px) 40px; }
 
   .imp-head { padding-bottom: 12px; border-bottom: 1px solid var(--hair); margin-bottom: 18px; }
-  .imp-title { font-family: var(--font-mono); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  .imp-title { font-family: var(--font-sans); font-size: clamp(18px, 2.8vw, 24px); font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
   .imp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
   .imp-lede b { color: var(--ink); font-weight: 600; }
 
@@ -113,14 +113,14 @@
   .imp-center .sub { color: var(--ink-2); font-size: 11px; white-space: nowrap; }
 
   .imp-legend { min-width: 0; }
-  .imp-legend-head { display: grid; grid-template-columns: 1fr 88px 63px; gap: 12px; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); padding: 0 12px 10px; }
+  .imp-legend-head { display: grid; grid-template-columns: 1fr 88px 63px; gap: 12px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); padding: 0 12px 10px; }
   .imp-legend-head span:not(:first-child) { text-align: right; }
   .imp-row { appearance: none; border: 0; background: none; font: inherit; color: inherit; display: grid; grid-template-columns: 10px minmax(0, 1fr) 88px 63px; gap: 12px; width: 100%; text-align: left; align-items: center; min-height: 44px; padding: 7px 12px; cursor: pointer; }
   .imp-row.group { min-height: 40px; }
   .imp-row + .group { margin-top: 12px; }
   .imp-swatch { width: 10px; height: 10px; flex: none; }
   .imp-row .rname { font-size: 13px; font-weight: 600; min-width: 0; }
-  .imp-row.group .rname { font-family: var(--font-mono); font-weight: 600; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .imp-row.group .rname { font-family: var(--font-mono); font-weight: 600; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
   .imp-row .ramount, .imp-row .rpercent { font-family: var(--font-mono); font-size: 12px; text-align: right; white-space: nowrap; }
   .imp-row .ramount { color: var(--ink-2); }
   .imp-row.group .rpercent { font-weight: 700; }
@@ -129,14 +129,14 @@
   .imp-row:hover, .imp-row.active { background: var(--panel-tint); }
   .imp-row.active { box-shadow: inset 2px 0 var(--accent); }
   .imp-row.dim { color: var(--ink-mut); }
-  .imp-row .ramount.pending { font-family: var(--font-sans); font-size: 10.5px; color: var(--ink-mut); }
+  .imp-row .ramount.pending { font-family: var(--font-sans); font-size: 11px; color: var(--ink-mut); }
   .imp-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .imp-totalrow { margin-top: 14px; border-top: 1px solid var(--hair); padding: 12px; display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
   .imp-legend-tools { display: flex; min-height: 34px; padding: 0 12px; }
   .imp-reset { appearance: none; border: 0; background: none; font: inherit; cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; padding: 6px 0; visibility: hidden; }
   .imp-reset.visible { visibility: visible; }
   .imp-key[hidden] { display: flex; visibility: hidden; }
-  .imp-key { display: flex; gap: 16px; justify-content: center; font-size: 10.5px; color: var(--ink-mut); margin-top: 4px; min-height: 18px; }
+  .imp-key { display: flex; gap: 16px; justify-content: center; font-size: 11px; color: var(--ink-mut); margin-top: 4px; min-height: 18px; }
   .imp-key span { display: flex; gap: 6px; align-items: center; }
   .imp-key i { width: 11px; height: 11px; background: var(--accent); display: inline-block; }
   .imp-key .recovered { background: repeating-linear-gradient(135deg, #fff 0 3px, #b2c4d4 3px 4px); border: 1px solid #b2c4d4; }
@@ -147,7 +147,7 @@
 
   /* ── Desplegables (las 5 vistas antiguas + El corte) ── */
   .imp-lower { margin-top: 24px; display: flex; flex-direction: column; gap: 22px; }
-  .imp-group-title { font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-mut); margin: 0 0 10px 2px; }
+  .imp-group-title { font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; color: var(--ink-mut); margin: 0 0 10px 2px; }
   .imp-rows { display: flex; flex-direction: column; gap: 8px; }
   .imp-rows > details { background: var(--panel); border: 1px solid var(--hair); padding: 0 clamp(16px, 3vw, 26px); }
   .imp-rows summary { list-style: none; cursor: pointer; min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--ink); }
@@ -158,7 +158,7 @@
   .imp-sum-title { flex: 1; font-size: 13px; font-weight: 600; }
   .imp-sum-title small { display: block; color: var(--ink-mut); font-size: 11px; font-weight: 400; }
   .imp-sum-value { text-align: right; font-family: var(--font-mono); font-weight: 500; font-size: 13px; }
-  .imp-sum-value small { display: block; font-family: var(--font-sans); font-size: 10px; color: var(--ink-mut); margin-top: 4px; }
+  .imp-sum-value small { display: block; font-family: var(--font-sans); font-size: 11px; color: var(--ink-mut); margin-top: 4px; }
   .imp-det-body { padding: 0 0 24px; color: var(--ink-2); font-size: 12.5px; }
   .imp-det-body .imp-lede { margin: 0 0 14px; }
   .imp-det-h { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink); margin: 0 0 12px; letter-spacing: -0.01em; }
@@ -173,7 +173,7 @@
   .imp-step.pendiente { border-left-color: var(--hair); opacity: .7; }
   .imp-step-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; }
   .imp-step-q { font-size: 13.5px; color: var(--ink); font-weight: 600; }
-  .imp-step-n { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); }
+  .imp-step-n { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); }
   .imp-step-val { text-align: right; }
   .imp-step-money { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--ink); }
   .imp-step-pct { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink-mut); margin-left: 8px; }
@@ -195,17 +195,17 @@
   .imp-bucket.gris { border-top-color: var(--ink-mut); }
   .imp-bucket.ambar { border-top-color: var(--warn); }
   .imp-bucket.coral { border-top-color: var(--coral); }
-  .imp-bucket-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 6px; }
+  .imp-bucket-lab { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mut); margin: 0 0 6px; }
   .imp-bucket-money { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); }
   .imp-bucket-pct { font-family: var(--font-mono); font-size: 11px; color: var(--ink-mut); }
   .imp-bucket.gris .imp-bucket-lab { color: var(--ink-2); }
   .imp-bucket.ambar .imp-bucket-lab { color: var(--warn); }
   .imp-bucket.coral .imp-bucket-lab { color: var(--coral); }
-  .imp-bucket-note { font-size: 10.5px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.45; }
+  .imp-bucket-note { font-size: 11px; color: var(--ink-mut); margin: 6px 0 0; line-height: 1.45; }
   /* Base fiscal tras el ROC: MISMA cifra en otro momento — panel aparte, nunca una
      cuarta caja hermana (la resta invitaría a violar la Regla 2). */
   .imp-fiscal { margin-top: 12px; padding: 12px 14px; background: var(--panel-tint); border-left: 3px solid var(--ink-mut); }
-  .imp-fiscal-lab { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 6px; }
+  .imp-fiscal-lab { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 6px; }
   .imp-fiscal-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 10px 0 0; font-size: 11.5px; color: var(--ink-mut); }
   .imp-fiscal-par b { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--ink); }
   .imp-fiscal-flecha { font-family: var(--font-mono); color: var(--ink-mut); }
@@ -232,7 +232,7 @@
   .imp-bar-seg { height: 100%; min-width: 0; }
   .imp-bar-seg.rest { background: transparent; border-left: 1px dashed var(--hair); }
   .imp-bar-rule { position: absolute; top: -5px; bottom: -5px; width: 0; border-left: 2px dashed var(--ink); z-index: 2; }
-  .imp-bar-rule-lab { position: absolute; top: 100%; margin-top: 6px; max-width: 60%; font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); line-height: 1.3; background: var(--ground); padding-right: 4px; }
+  .imp-bar-rule-lab { position: absolute; top: 100%; margin-top: 6px; max-width: 60%; font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); line-height: 1.3; background: var(--ground); padding-right: 4px; }
   .imp-bar-labs { display: flex; margin-top: 8px; min-height: 3em; }
   .imp-bar-lab { min-width: 0; padding-right: 10px; font-size: 12px; color: var(--ink-mut); line-height: 1.35; }
   .imp-bar-lab .n { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--ink); }
@@ -242,7 +242,7 @@
   .imp-scroll { overflow-x: auto; padding-bottom: 2px; }
   .imp-tbl { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
   .imp-tbl th, .imp-tbl td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--hair-soft); white-space: nowrap; }
-  .imp-tbl th { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; border-bottom: 2px solid var(--ink); }
+  .imp-tbl th { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; border-bottom: 2px solid var(--ink); }
   .imp-tbl th:first-child, .imp-tbl td:first-child { text-align: left; }
   .imp-tbl td { font-family: var(--font-mono); color: var(--ink); }
   .imp-tbl td.tk { font-family: var(--font-sans); font-weight: 800; }
@@ -250,7 +250,7 @@
   .imp-tbl tr.total td { border-bottom: none; border-top: 2px solid var(--ink); font-weight: 700; }
   .imp-tbl .c-ambar { color: var(--warn); }
   .imp-tbl .c-coral { color: var(--coral); }
-  .imp-tbl-base { font-family: var(--font-sans); font-size: 10px; font-weight: 400; color: var(--ink-mut); text-transform: none; letter-spacing: 0; }
+  .imp-tbl-base { font-family: var(--font-sans); font-size: 11px; font-weight: 400; color: var(--ink-mut); text-transform: none; letter-spacing: 0; }
 
   /* Ruta A / Ruta B */
   .imp-rutas { margin-top: 8px; display: flex; flex-direction: column; gap: 14px; }
@@ -259,7 +259,7 @@
   .imp-ruta-p { font-size: 12.5px; color: var(--ink-2); line-height: 1.6; margin: 0 0 8px; }
   .imp-ruta-p:last-child { margin-bottom: 0; }
   .imp-ruta-p b { color: var(--ink); font-weight: 600; }
-  .imp-ruta-est { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn); }
+  .imp-ruta-est { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn); }
   .imp-ruta ol { margin: 6px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--ink-2); line-height: 1.65; }
   .imp-ruta ol li { margin: 0 0 5px; }
   .imp-ruta ol li b { color: var(--ink); }
@@ -270,25 +270,25 @@
      del cliente se apaga en vez de ocultarse. */
   .imp-vent { margin: 10px 0 12px; display: flex; flex-direction: column; gap: 10px; }
   .imp-vent-fila.apagada { opacity: .45; }
-  .imp-vent-lab { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 5px; }
+  .imp-vent-lab { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 5px; }
   .imp-vent-tuyo { color: var(--cash); letter-spacing: 0.04em; }
   .imp-vent-meses { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; }
   .imp-vent-mes {
-    font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-align: center;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; text-align: center;
     padding: 5px 0; color: var(--ink-mut); background: var(--panel-tint);
     border-top: 2px solid transparent; min-width: 0; overflow: hidden;
   }
   .imp-vent-mes.dentro { color: var(--warn); background: var(--panel); border-top-color: var(--warn); }
   @media (max-width: 560px) {
     .imp-vent-meses { gap: 1px; }
-    .imp-vent-mes { font-size: 8px; padding: 4px 0; letter-spacing: -0.02em; }
+    .imp-vent-mes { font-size: 11px; padding: 4px 0; letter-spacing: -0.02em; }
   }
 
   .imp-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 11px; color: var(--ink-mut); line-height: 1.6; }
 
   /* ── Modales ⓘ — la letra chica a un clic. Patrón de `cashflow.html`/`metodo.html`. */
   .imp-info { cursor: pointer; }
-  .imp-info::after { content: " ⓘ"; font-size: 10px; vertical-align: super; color: var(--accent); font-family: var(--font-sans); }
+  .imp-info::after { content: " ⓘ"; font-size: 11px; vertical-align: super; color: var(--accent); font-family: var(--font-sans); }
   .imp-info.c-warn::after  { color: var(--warn); }
   .imp-info.c-coral::after { color: var(--coral); }
   .imp-info.c-mut::after   { color: var(--ink-mut); }
@@ -297,7 +297,7 @@
   .imp-modal-box { background: var(--panel); border: 1px solid var(--hair); max-width: 500px; width: 100%; padding: clamp(20px, 4vw, 30px); position: relative; max-height: 88vh; overflow-y: auto; }
   .imp-modal-close { position: absolute; top: 10px; right: 12px; font-family: var(--font-mono); font-size: 20px; font-weight: 700; background: none; border: none; color: var(--ink-mut); cursor: pointer; line-height: 1; padding: 4px 8px; }
   .imp-modal-close:hover { color: var(--ink); }
-  .imp-modal-eyebrow { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .imp-modal-eyebrow { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
   .imp-modal-title { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 12px; letter-spacing: -0.01em; }
   .imp-modal-p { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin: 0 0 12px; }
   .imp-modal-p:last-child { margin-bottom: 0; }
@@ -318,7 +318,7 @@
     .imp-row { grid-template-columns: 9px minmax(0, 1fr) 69px 51px; gap: 8px; padding: 7px 8px; }
     .imp-legend-head { grid-template-columns: 1fr 69px 51px; gap: 8px; padding: 0 8px 10px; }
     .imp-row .ramount, .imp-row .rpercent { font-size: 11px; }
-    .imp-row.group .rname { font-size: 9px; }
+    .imp-row.group .rname { font-size: 11px; }
     .imp-row .rname { font-size: 12px; }
     .imp-row.fund .rname { padding-left: 4px; }
   }
@@ -328,7 +328,7 @@
     .imp-reading { flex-direction: column; gap: 6px; margin-top: 10px; }
     .imp-step-btn { padding: 10px 7px; }
     .imp-step-btn b { font-size: 11px; }
-    .imp-step-btn small { font-size: 10px; }
+    .imp-step-btn small { font-size: 11px; }
     .imp-notas .imp-nota { line-height: 1.7; }
     .imp-center .value.pending { font-size: 17px; }
     .imp-status { align-items: flex-start; gap: 10px; flex-direction: column; }
@@ -336,18 +336,18 @@
   @media (max-width: 400px) {
     .imp-row { grid-template-columns: 8px minmax(0, 1fr) 66px 48px; gap: 6px; padding: 9px 6px; }
     .imp-legend-head { grid-template-columns: 1fr 66px 48px; gap: 6px; padding: 0 6px 10px; }
-    .imp-row.group .rname { font-size: 9px; letter-spacing: 0.02em; }
+    .imp-row.group .rname { font-size: 11px; letter-spacing: 0.02em; }
     .imp-row .ramount, .imp-row .rpercent { font-size: 11px; }
     .imp-chart { max-width: 255px; }
     .imp-center .value { font-size: 26px; }
     .imp-center .name { font-size: 12px; }
-    .imp-center .sub { font-size: 10px; }
+    .imp-center .sub { font-size: 11px; }
     .imp-sum-title { font-size: 12px; }
-    .imp-sum-title small { font-size: 10px; }
+    .imp-sum-title small { font-size: 11px; }
     .imp-sum-value { font-size: 11px; }
     .imp-rows summary { gap: 8px; }
     .imp-vent-meses { gap: 2px; }
-    .imp-vent-mes { font-size: 7px; }
+    .imp-vent-mes { font-size: 11px; }
     .imp-status { padding: 12px; }
     .imp-status-title { font-size: 11px; }
   }
