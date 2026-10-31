@@ -363,13 +363,19 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     return nivel, razones
 
 
-def hay_alertas(resultados: dict) -> bool:
-    """Si el menú de 3 puntos (`ui/chrome.py`) debe marcar el punto de aviso — cierto en
-    cuanto la confiabilidad baja de Alta."""
+def nivel_confiabilidad(resultados: dict) -> str | None:
+    """«Alta», «Media» o «Baja» para la etiqueta visible de la cabecera (P1, 30-oct); `None`
+    sin resultados. Es la misma lectura que encabeza Validación datos."""
     if not resultados:
-        return False
+        return None
     nivel, _razones = _puntuacion_acertividad(resultados)
-    return nivel != "Alta"
+    return nivel
+
+
+def hay_alertas(resultados: dict) -> bool:
+    """Si la cabecera (`ui/chrome.py`) debe mostrar la confiabilidad — cierto en cuanto
+    baja de Alta."""
+    return nivel_confiabilidad(resultados) not in (None, "Alta")
 
 
 def render_validacion_datos(resultados: dict) -> None:

@@ -5,8 +5,10 @@ Streamlit le hace caso. Es el test que hay que mirar al subir Streamlit: el cier
 cómo el popover detecta un clic de fuera, que no es API pública. Con Streamlit 1.66.1 el
 script viejo cerraba 11 de 48 elecciones; nadie lo vio porque ningún test abría el menú.
 
-Arranca `render_ruta` sola (sin vistas ni datos) en un puerto libre y elige cuatro
-categorías seguidas, sin ningún otro rerun entre una y otra: es el caso que fallaba.
+Arranca `render_ruta` sola (sin vistas ni datos) en un puerto libre y elige cuatro veces
+seguidas en el menú, sin ningún otro rerun entre una y otra: es el caso que fallaba. Desde
+el 30-oct (P1) las secciones son una fila visible y el único popover que queda es «Ayuda»,
+así que las cuatro elecciones alternan sus dos opciones.
 """
 import os
 import socket
@@ -26,7 +28,8 @@ sys.path.insert(0, {raiz!r})
 from ui.chrome import render_ruta
 render_ruta(False, None)
 """
-_ELECCIONES = ("riesgo", "largo", "impuestos", "detalle")
+_ELECCIONES = ("vd_menu_metodologia", "vd_menu_validacion",
+               "vd_menu_metodologia", "vd_menu_validacion")
 
 
 def _arrancar(script):
@@ -65,19 +68,19 @@ def cierres(tmp_path_factory):
             menu = pagina.locator('[data-testid="stPopoverButton"]').first
             menu.wait_for(timeout=60000)
             resultado = {}
-            for clave in _ELECCIONES:
+            for n, clave in enumerate(_ELECCIONES):
                 if pagina.locator('[data-testid="stPopoverBody"]').count():
                     pagina.keyboard.press("Escape")
                 menu.click()
-                opcion = pagina.locator(f".st-key-vd_pop_cat_{clave} button")
+                opcion = pagina.locator(f".st-key-{clave} button")
                 opcion.wait_for(state="visible", timeout=10000)
                 opcion.click()
                 try:
                     pagina.locator('[data-testid="stPopoverBody"]').wait_for(
                         state="detached", timeout=5000)
-                    resultado[clave] = True
+                    resultado[f"{n}:{clave}"] = True
                 except sync_api.TimeoutError:
-                    resultado[clave] = False
+                    resultado[f"{n}:{clave}"] = False
             nav.close()
             return resultado
     finally:
@@ -86,4 +89,4 @@ def cierres(tmp_path_factory):
 
 
 def test_el_menu_se_cierra_en_cada_eleccion_seguida(cierres):
-    assert cierres == {clave: True for clave in _ELECCIONES}
+    assert cierres == {f"{n}:{clave}": True for n, clave in enumerate(_ELECCIONES)}

@@ -709,7 +709,7 @@ def test_mutante_reordenar_el_veredicto_mata_el_script():
 @pytest.mark.parametrize("rama,marca", [
     ("gap", 'data-bar="3"'),                       # ok → barra 3 presente
     ("parcial", "no es una cifra fiable"),          # parcial → aviso de desglose
-    ("sin_pais", "Declara tu país en el paso 3"),   # sin_pais → CTA (era «Paso 2» hasta el 30-oct)
+    ("sin_pais", "declara tu país en el paso 3"),   # sin_pais → CTA (era «Paso 2» hasta el 30-oct)
 ])
 def test_los_tres_estados_de_retenido_dibujan_lo_suyo(rama, marca):
     html = _corte(_D_para(rama))
@@ -730,13 +730,15 @@ def test_banner_de_residencia_solo_sin_pais():
 def test_sin_pais_la_instruccion_va_una_vez_y_al_paso_3():
     """Propuesta de interfaz 2026-10-30. A1: el lede repetía, palabra por palabra, la
     instrucción y la vía del 1042-S del banner que tiene justo debajo. A2: los textos
-    mandaban al «Paso 2», pero la residencia está en el paso 3 de la carga desde el 23-sep."""
+    mandaban al «Paso 2», pero la residencia está en el paso 3 de la carga desde el 23-sep.
+    P2: el banner dice cómo volver a ese paso, con «Cambiar datos» de la cabecera."""
     out = _ejecutar(d=_D_para("sin_pais"))
     lede = out["fase0"]["impLede"]["html"]
     banner = out["fase0"]["impStatus"]["html"]
     assert "Sin país no publicamos" in lede, "el lede perdió la consecuencia de no declarar"
-    assert "Declara" not in lede and "1042-S" not in lede, "el lede repite el banner (A1)"
-    assert "Declara tu país en el <b>paso 3</b>" in banner
+    assert "declara tu" not in lede.lower() and "1042-S" not in lede, "el lede repite el banner (A1)"
+    assert "declara tu país en el <b>paso 3</b>" in banner
+    assert "Cambiar datos" in banner, "el banner no dice cómo volver al paso 3 (P2)"
     todo = _texto(out, "fase0") + " " + _texto(out, "fase1")
     assert "Paso 2" not in todo, "un texto sigue mandando al paso 2 (A2)"
 

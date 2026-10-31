@@ -594,7 +594,9 @@
   set("impTitle", "La escalera de tus impuestos");
   set("impLede",
     DATA.declarado
-      ? "Vives en <b>" + esc(DATA.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>. "
+      // «EE.UU.» ya trae su punto: sin esta guarda salía «EE.UU..» (visto el 30-oct).
+      ? "Vives en <b>" + esc(DATA.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>"
+        + (/\.$/.test(tasaTxt) ? " " : ". ")
         + "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron."
       // Sin país, la instrucción y la vía del 1042-S viven solo en el banner de abajo: antes
       // el lede las repetía palabra por palabra justo encima (A1, 30-oct).
@@ -603,13 +605,14 @@
 
   // ---- Banner de estado de residencia (nuevo en U2, patrón de la referencia) ------------
   // La residencia está en el paso 3 de la carga desde el 23-sep (U4); el texto decía
-  // «Paso 2» (A2, 30-oct).
+  // «Paso 2» (A2, 30-oct). «Cambiar datos» (cabecera, P2) es el camino de vuelta a ese paso.
   if (!DATA.declarado) {
     set("impStatus",
       '<div class="imp-status" role="status"><div>'
       + '<p class="imp-status-title">Falta tu residencia fiscal</p>'
       + '<p>Podemos mostrar lo retenido, pero no cerrar el diagnóstico. '
-      + 'Declara tu país en el <b>paso 3</b> de la carga («Información fiscal»).' + viaPais() + '</p>'
+      + 'Pulsa <b>Cambiar datos</b>, arriba, y declara tu país en el <b>paso 3</b> («Información fiscal»).'
+      + viaPais() + '</p>'
       + '</div></div>');
   } else {
     set("impStatus", "");
@@ -1102,7 +1105,7 @@
         + '<b>' + esc(sin) + '</b> el CSV de tu bróker mezcla los reversos del split inverso de dic-2025 con las filas de impuesto, '
         + 'y la retención «al cobro» de esos fondos no es una cifra fiable. Mostramos lo retenido neto por fondo en la tabla, sin el desglose.</div>';
     } else {
-      bar2 += '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Declara tu país en el paso 3 de la carga («Información fiscal»).</b></div>'
+      bar2 += '<div class="imp-cta">Sin residencia declarada no publicamos esta cifra. Con tasa 0% la app diría «te vuelven todos tus impuestos» — la lectura más optimista posible, y falsa para cualquier residente LATAM sin tratado. <b>Pulsa «Cambiar datos», arriba, y declara tu país en el paso 3 («Información fiscal»).</b></div>'
         + '<div class="imp-cta">Declara tu país para separar lo retenido en lo que es permanente, lo que vuelve solo por ROC y el gap de tratado. Son tres cifras con tres remedios distintos — sumarlas en una sola es el error que este diseño evita.' + viaPais() + '</div>';
     }
   }
