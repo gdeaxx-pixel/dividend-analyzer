@@ -453,8 +453,11 @@
   .meth-index button:hover { border-color: var(--accent); color: var(--ink); }
   .meth-index button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .meth-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px 32px; margin-top: 22px; }
-  @media (max-width: 680px) { .meth-grid { grid-template-columns: 1fr; } }
+  /* `minmax(0, 1fr)` y no `1fr`: un `1fr` no baja del ancho mínimo de su contenido, y la tabla
+     de ratios (min-width 480 px, con su propio scroll en `.meth-tbl-wrap`) estiraba la columna
+     a 498 px. A 375 de viewport Metodología se salía 171 px por la derecha (medido 30-oct). */
+  .meth-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 32px; margin-top: 22px; }
+  @media (max-width: 680px) { .meth-grid { grid-template-columns: minmax(0, 1fr); } }
   .meth-item { border-left: 2px solid var(--hair); padding-left: 16px; transition: border-color .4s ease, background-color .4s ease; }
   /* al llegar desde una sección, su entrada se señala un momento y vuelve a la calma —
      borde + tinte de fondo, para que se note sin depender solo de un cambio de color de 2px */
