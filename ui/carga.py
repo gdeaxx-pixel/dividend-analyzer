@@ -486,8 +486,11 @@ def render_bloque_posiciones() -> bool:
 
     # ── Lectura de fotos con Gemini ───────────────────────────────────────────
     # Rellena la tabla desde capturas del bróker, igual que `app_old.py:1455`. Reusa
-    # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
-    # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
+    # `logic.extract_positions_from_images` tal cual: no lanza nunca. Devuelve {} cuando la
+    # llamada fue bien y no aparece ninguno de los tickers, y {'error': 'lector'} ante un fallo
+    # técnico (sin SDK, sin red, sin cuota), que aquí se separa para avisar de otra forma: hasta
+    # el 13-nov-2026 los dos casos eran el mismo {} y el aviso culpaba siempre a la captura.
+    # Solo aparece si hay clave — sin ella
     # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde. Con un CSV
     # de posiciones leído no se dibuja: el CSV manda. Desde el 30-oct, solo en el camino
     # «Captura», que existe únicamente con clave.
