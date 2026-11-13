@@ -364,6 +364,25 @@ def _render_residencia_fiscal() -> None:
                 unsafe_allow_html=True)
 
 
+def _parece_historial(crudo: bytes) -> bool:
+    """¿Es el CSV de transacciones (el del paso 1) subido por error en el paso 2?
+
+    Se mira solo la cabecera, que en Schwab es `Date, Action, Symbol, Description, Quantity,
+    Price, Fees & Comm, Amount`; `Action` y `Quantity` juntas no aparecen en el de posiciones,
+    cuya cabecera empieza por `Symbol, Description, Qty…`. Nunca lanza: ante cualquier cosa
+    rara devuelve False y el aviso vuelve a ser el genérico.
+    """
+    try:
+        texto = crudo.decode("utf-8-sig", errors="replace")
+    except Exception:                                              # noqa: BLE001
+        return False
+    for linea in texto.splitlines()[:10]:
+        campos = {c.strip().strip('"').lower() for c in linea.split(",")}
+        if {"action", "quantity"} <= campos and "qty" not in campos:
+            return True
+    return False
+
+
 def _firma_fotos(fotos) -> tuple:
     """Firma por CONTENIDO, no por (nombre, tamaño): dos capturas distintas guardadas con el
     mismo nombre y el mismo tamaño dejaban la firma igual, el OCR no se volvía a correr y la
@@ -475,10 +494,20 @@ def render_bloque_posiciones() -> bool:
                     st.session_state.pop("_wizard_pos_csv", None)
                     st.session_state["_wizard_pos_csv_error"] = (
                         "varias_cuentas" if lectura and "error" in lectura
-                        else "sin_analizables" if lectura else "no_reconocido")
+                        else "sin_analizables" if lectura
+                        else "es_historial" if _parece_historial(crudo)
+                        else "no_reconocido")
                 st.rerun()
         error_csv = st.session_state.get("_wizard_pos_csv_error")
-        if error_csv == "varias_cuentas":
+        if error_csv == "es_historial":
+            # El error más común y el único que la app podía nombrar y no nombraba: subir en
+            # el paso 2 el archivo del paso 1. Pasó de verdad el 13-nov y el aviso genérico
+            # mandó a buscar el fallo donde no estaba. Decirlo con la ruta exacta.
+            st.error("Este es tu historial de transacciones, el que ya subiste en el paso 1. "
+                     "Aquí va otro archivo distinto: el de posiciones. En Schwab, "
+                     "**Accounts → Positions → ícono de descarga**. Con ese no hace falta "
+                     "captura.")
+        elif error_csv == "varias_cuentas":
             st.error("El archivo trae más de una cuenta; exporta las posiciones de una sola.")
         elif error_csv == "sin_analizables":
             st.error("El archivo no trae ninguno de los instrumentos que la calculadora "
