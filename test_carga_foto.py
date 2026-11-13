@@ -84,6 +84,9 @@ def _at():
     at.session_state["_wizard_csv_ticker_data"] = dict(_PREVIA)
     at.session_state["_wizard_broker"] = "schwab"
     at.session_state["_wizard_csv_name"] = "sintetico.csv"
+    # 13-nov: el camino que se abre solo depende del bróker; este archivo
+    # prueba la lectura por foto, así que la pide explícitamente.
+    at.session_state["_vd_modo_pos"] = "captura"
     return at
 
 
@@ -137,7 +140,7 @@ def test_foto_reemplaza_la_vista_previa_en_los_campos(lectura):
     at.run()
     assert not at.exception
     assert _campo(at, "_vd_sh_MSTY") == 40.0           # vista previa: los widgets ya existen
-    at.button_group(key="_vd_modo_pos").set_value("captura").run()
+    [b for b in at.button if b.key == "_vd_modo_a_captura"][0].click().run()
     assert _campo(at, "_vd_sh_MSTY") == 40.0           # cambiar de camino no esconde la tabla
 
     _subir_foto(at)

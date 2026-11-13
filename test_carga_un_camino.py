@@ -57,40 +57,70 @@ def _selector(at):
     return [w for w in at.get("button_group") if w.proto.id.endswith("_vd_modo_pos")]
 
 
+def _otros(at):
+    """Los caminos que la línea «¿Prefieres otra forma?» ofrece, por su etiqueta."""
+    return [b.label for b in at.button if (b.key or "").startswith("_vd_modo_a_")]
+
+
+def _ir_a(at, camino):
+    """Cambia de camino como lo hace el cliente: pulsando el botón de la línea."""
+    botones = [b for b in at.button if b.key == f"_vd_modo_a_{camino}"]
+    assert botones, f"la línea no ofrece «{camino}»; ofrece {_otros(at)}"
+    return botones[0].click().run()
+
+
 def _cargadores_pedidos(at):
     return {k for k in at.session_state["_test_llamados"] if k in _CARGADORES}
 
 
 # ── P4 · qué caminos se ofrecen ──────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("clave, broker, esperado", [
-    ("clave-de-prueba", "schwab", ["Captura · recomendada", "Archivo de Schwab", "A mano"]),
-    ("clave-de-prueba", "ibkr", ["Captura · recomendada", "A mano"]),
-    (None, "schwab", ["Archivo de Schwab", "A mano"]),
+@pytest.mark.parametrize("clave, broker, abre, ofrece", [
+    # Schwab con clave: se abre el ARCHIVO, no la captura. El archivo sale del bróker y no
+    # depende de la clave de Gemini; el 13-nov, con el lector caído, abrir por captura dejaba
+    # al cliente sin salida y el aviso lo mandaba a recortar capturas suyas que estaban bien.
+    ("clave-de-prueba", "schwab", "archivo", ["Subir una captura", "Escribirlas a mano"]),
+    # Interactive Brokers no exporta posiciones: ahí la captura ES el camino bueno.
+    ("clave-de-prueba", "ibkr", "captura", ["Escribirlas a mano"]),
+    (None, "schwab", "archivo", ["Escribirlas a mano"]),
 ])
-def test_los_caminos_dependen_del_broker_y_de_la_clave(monkeypatch, clave, broker, esperado):
-    """La captura va primera («captura primero», 17-sep) y solo existe con clave: sin ella,
-    un cargador que no lee nada solo confunde. El archivo de posiciones es de Schwab."""
+def test_el_camino_que_se_abre_depende_del_broker_y_de_la_clave(
+        monkeypatch, clave, broker, abre, ofrece):
+    """Un solo camino a la vista (13-nov): el más fiable que tenga ESE cliente, y los otros
+    en una línea. Antes se dibujaban los tres y había que elegir antes de entender qué se pedía."""
     monkeypatch.setattr(carga, "_clave_gemini", lambda: clave)
     at = _at()
     at.session_state["_wizard_broker"] = broker
     at.run()
     assert not at.exception
-    selector = _selector(at)
-    assert selector, "no se dibujó la pregunta «¿Cómo nos das tus posiciones?»"
-    assert selector[0].options == esperado
-    assert selector[0].formatted_values == [esperado[0]], "el camino inicial no es el primero"
+    assert not _selector(at), "volvió el selector de tres botones"
+    assert at.session_state["_vd_modo_pos"] == abre
+    assert _otros(at) == ofrece
+    assert all(abre not in o.lower() for o in _otros(at)), "la línea ofrece el camino ya abierto"
 
 
-def test_con_un_solo_camino_no_hay_pregunta(sin_clave):
-    """IBKR sin clave: solo queda «A mano», así que no se pregunta y la tabla sale ya."""
+def test_con_un_solo_camino_no_se_ofrece_otra_forma(sin_clave):
+    """IBKR sin clave: solo queda «a mano», así que no hay nada que ofrecer y la tabla sale ya."""
     at = _at()
     at.session_state["_wizard_broker"] = "ibkr"
     at.run()
     assert not at.exception
-    assert not _selector(at)
+    assert not _selector(at) and not _otros(at)
     assert _hay_tabla(at)
     assert _cargadores_pedidos(at) == set()
+
+
+def test_desde_a_mano_todavia_se_puede_cambiar_de_camino(con_clave):
+    """En «a mano» la tabla existe desde el primer render. Si la línea mirase a la tabla para
+    decidir si se dibuja, el cliente quedaría atrapado ahí para siempre. Medido el 13-nov."""
+    at = _at()
+    at.session_state["_vd_modo_pos"] = "mano"
+    at.run()
+    assert _hay_tabla(at)
+    assert "Subir una captura" in _otros(at), "desde «a mano» no se puede volver a la captura"
+    _ir_a(at, "captura")
+    assert not at.exception and at.session_state["_vd_modo_pos"] == "captura"
+    assert _cargadores_pedidos(at) == {"_vd_fotos"}, "cambiar de camino no abrió su cargador"
 
 
 @pytest.mark.parametrize("camino, cargador", [
@@ -107,6 +137,7 @@ def test_solo_se_pide_el_cargador_del_camino_elegido(con_clave, camino, cargador
 
 def test_con_captura_la_tabla_aparece_al_leer(con_clave):
     at = _at()
+    at.session_state["_vd_modo_pos"] = "captura"   # 13-nov: en Schwab se abre el archivo
     at.run()
     assert at.session_state["_vd_modo_pos"] == "captura"
     assert not _hay_tabla(at) and not _hay_confirmar(at)
@@ -142,7 +173,7 @@ def test_cambiar_de_camino_no_esconde_la_tabla_ni_borra_lo_tecleado(con_clave):
     at.run()
     [w for w in at.number_input if w.proto.id.endswith("_vd_sh_MSTY")][0].set_value(7.0).run()
     for camino in ("captura", "archivo", "mano"):
-        at.button_group(key="_vd_modo_pos").set_value(camino).run()
+        _ir_a(at, camino)
         assert not at.exception
         assert _campo(at, "_vd_sh_MSTY") == 7.0, camino
 
@@ -170,7 +201,7 @@ def test_cambiar_sin_tabla_previa_sale_con_lo_confirmado(con_clave):
     at.run()
     [b for b in at.button if b.proto.id.endswith("_vd_edit_pos")][0].click().run()
     assert not at.exception
-    assert at.session_state["_vd_modo_pos"] == "captura"
+    assert at.session_state["_vd_modo_pos"] == "archivo"   # el que se abre solo en Schwab
     assert _campo(at, "_vd_sh_MSTY") == 9.0
     assert _campo(at, "_vd_cb_MSTY") == 90.0
 
