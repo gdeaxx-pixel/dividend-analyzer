@@ -91,3 +91,46 @@ def test_los_cinco_controles_siguen_estando_a_un_clic(donas):
     md = _markdown(at)
     faltan = [n for n in nombres if n not in md]
     assert not faltan, f"el desplegable no lista estos controles: {faltan}"
+
+
+@pytest.mark.parametrize("faltan, esperado", [
+    (["Información fiscal"], "falta información fiscal."),
+    (["Movimientos", "Información fiscal"], "faltan movimientos e información fiscal."),
+    (["Movimientos", "Valoración"], "faltan movimientos y valoración."),
+])
+def test_la_frase_concuerda_y_usa_la_e_ante_i(monkeypatch, faltan, esperado):
+    """Medido en vivo el 13-nov: salía «Para afinarlas falta movimientos, historial de
+    posiciones y información fiscal» — singular con tres cosas, y «y» ante i-."""
+    from ui import adapters, carga
+
+    nombres = ["Movimientos", "Posiciones", "Información fiscal", "Valoración", "Excluidos"]
+    monkeypatch.setattr(adapters, "cobertura_data", lambda *a, **k: {
+        "segmentos": [{"clave": n.lower(), "nombre": n,
+                       "estado": "pendiente" if n in faltan else "ok",
+                       "falta": "x", "como": "y"} for n in nombres],
+        "verificados": len(nombres) - len(faltan)})
+    dichos = []
+    monkeypatch.setattr(carga.st, "caption", lambda texto, **k: dichos.append(texto))
+    monkeypatch.setattr(carga.st, "expander", lambda *a, **k: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(carga.st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(carga, "_resultados_para_cobertura", lambda: {"x": 1})
+    carga._render_cobertura_frase()
+    assert dichos and dichos[0].endswith(esperado), dichos
+
+
+def test_el_titular_lleva_su_regla_de_tamano():
+    """Streamlit pinta los encabezados a 36px y gana por especificidad: sin una regla sobre el
+    ELEMENTO, el titular salía en cuatro líneas a 390px (medido el 13-nov con viewport real;
+    con la regla, 20px y 80px de alto). Este guard solo vigila que la regla siga ahí — el
+    tamaño real se mide en el navegador, no aquí."""
+    from ui import carga
+
+    at = AppTest.from_string(_CARGA, default_timeout=25)
+    at.run()
+    titular = [m.value for m in at.markdown if "Sube tu historial" in m.value]
+    assert titular, "no se dibujó el titular"
+    assert 'class="vd-title vd-carga-h"' in titular[0], "el titular perdió sus clases"
+    assert "h2.vd-title.vd-carga-h" in carga.ESTILOS_CARGA, (
+        "falta la regla que vence al tamaño por defecto de Streamlit")
+    assert "!important" in carga.ESTILOS_CARGA.split("h2.vd-title.vd-carga-h")[1][:200], (
+        "la regla del titular ya no reafirma el tamaño y Streamlit vuelve a ganar")

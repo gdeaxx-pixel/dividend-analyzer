@@ -1060,8 +1060,14 @@ def _render_cobertura_frase() -> None:
     faltan = [s for s in datos["segmentos"] if s["estado"] != "ok"]
     if faltan:
         nombres = [s["nombre"].lower() for s in faltan]
-        lista = nombres[0] if len(nombres) == 1 else ", ".join(nombres[:-1]) + " y " + nombres[-1]
-        st.caption(f"Con esto ya salen tus cifras. Para afinarlas falta {lista}.")
+        if len(nombres) == 1:
+            lista, verbo = nombres[0], "falta"
+        else:
+            # «y» pasa a «e» ante i- / hi-: «... e información fiscal», no «y información».
+            une = "e" if nombres[-1][:1] == "i" or nombres[-1][:2] == "hi" else "y"
+            lista = f"{', '.join(nombres[:-1])} {une} {nombres[-1]}"
+            verbo = "faltan"
+        st.caption(f"Con esto ya salen tus cifras. Para afinarlas {verbo} {lista}.")
     else:
         st.caption("Tus cinco controles están revisados.")
     with st.expander("Ver qué revisamos"):
@@ -1179,8 +1185,11 @@ def render_carga() -> bool:
     # después (13-nov): el cliente que está subiendo archivos necesita saber cuánto trabajo
     # le queda, no el detalle de la pantalla siguiente. El medidor ya no abre la hoja: baja
     # al pie, en `_render_cobertura_frase`, junto a «Ver resultados».
-    st.markdown('<h1 class="vd-h1-carga">Sube tu historial y mira cuánto has ganado '
-                'de verdad</h1>', unsafe_allow_html=True)
+    # `vd-title` es la clase de títulos de la app (`ui/chrome.py`), que ya resuelve la pelea de
+    # especificidad con los h1-h6 de Streamlit. Una clase propia para esto salía a 44 px en el
+    # teléfono —el tema la pisaba— y partía el titular en cinco líneas. Medido el 13-nov.
+    st.markdown('<h2 class="vd-title vd-carga-h">Sube tu historial y mira cuánto has '
+                'ganado de verdad</h2>', unsafe_allow_html=True)
     st.caption("Tres pasos. El primero es el único obligatorio.")
 
     hay_csv = render_bloque_transacciones()
@@ -1223,17 +1232,19 @@ def render_carga() -> bool:
 
 
 ESTILOS_CARGA = """
-        /* Titular de la carga (13-nov). Vuelve un título propio: el wordmark solo decía la
-           marca, no qué se obtiene aquí. Compacto a propósito — `feedback_titulos-compactos`:
-           una cifra grande por página, y ésta no es la página de las cifras. */
-        .vd-h1-carga {
-          font-size: clamp(21px, 2.9vw, 27px);
-          line-height: 1.18;
-          letter-spacing: -.015em;
-          font-weight: 700;
+        /* El titular de la carga. Medido el 13-nov con viewport real: Streamlit pinta los
+           encabezados a 36px y gana por especificidad incluso a `.vd-title`, así que el titular
+           salía en CUATRO líneas a 390px y se comía media pantalla — justo lo que este cambio
+           venía a quitar. Se reafirma sobre el elemento, como ya hace `ui/chrome.py` con la
+           fuente, y solo para ESTE título: tocar `.vd-title` a secas movería otras pantallas.
+           El tope en `min(…, 100%)` porque en `ch` escala con la letra y vuelve a partirlo. */
+        .block-container h2.vd-title.vd-carga-h {
+          font-size: clamp(20px, 3.2vw, 26px) !important;
+          line-height: 1.2;
+          max-width: min(30ch, 100%);
           margin: 4px 0 0;
-          max-width: 24ch;
         }
+
         /* Fila 34 — animación de revelación progresiva, copiada literal de
            `.da-reveal`/`@keyframes da-rev` en `app_old.py:1314-1319` (mismo timing y easing,
            solo el prefijo cambia de `da-` a `vd-`). */
