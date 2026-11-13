@@ -486,8 +486,11 @@ def render_bloque_posiciones() -> bool:
 
     # ── Lectura de fotos con Gemini ───────────────────────────────────────────
     # Rellena la tabla desde capturas del bróker, igual que `app_old.py:1455`. Reusa
-    # `logic.extract_positions_from_images` tal cual: no lanza nunca, devuelve {} ante
-    # cualquier fallo (sin SDK, sin red, sin cuota). Solo aparece si hay clave — sin ella
+    # `logic.extract_positions_from_images` tal cual: no lanza nunca. Devuelve {} cuando la
+    # llamada fue bien y no aparece ninguno de los tickers, y {'error': 'lector'} ante un fallo
+    # técnico (sin SDK, sin red, sin cuota), que aquí se separa para avisar de otra forma: hasta
+    # el 13-nov-2026 los dos casos eran el mismo {} y el aviso culpaba siempre a la captura.
+    # Solo aparece si hay clave — sin ella
     # el bloque seguiría funcionando a mano, y un uploader muerto solo confunde. Con un CSV
     # de posiciones leído no se dibuja: el CSV manda. Desde el 30-oct, solo en el camino
     # «Captura», que existe únicamente con clave.
@@ -506,13 +509,25 @@ def render_bloque_posiciones() -> bool:
         if fotos:
             firma = _firma_fotos(fotos)
             if firma == st.session_state.get("_wizard_photo_sig") and not ocr_leido:
-                st.warning("No pudimos leer posiciones en esa captura. Prueba con otra donde "
-                           "se vean «Acciones» y «Costo base», o elige «A mano».")
+                # Dos fracasos distintos, dos avisos. Mandar a recortar la captura cuando el
+                # servicio está caído hace perder el tiempo al cliente con algo que no es suyo:
+                # pasó del 1-nov al 13-nov-2026 con el lector caído por una regresión del SDK.
+                if st.session_state.get("_wizard_ocr_fallo"):
+                    st.error("El lector de capturas no está respondiendo. No es tu captura: "
+                             "el fallo es nuestro. Usa «Archivo de Schwab» (Accounts → "
+                             "Positions → ícono de descarga), que no necesita captura, o "
+                             "«A mano».")
+                else:
+                    st.warning("No pudimos leer posiciones en esa captura. Prueba con otra donde "
+                               "se vean «Acciones» y «Costo base», o elige «A mano».")
             if firma != st.session_state.get("_wizard_photo_sig"):
                 with st.spinner("Leyendo tus capturas…"):
                     payload = [(f.getvalue(), f.type or "image/jpeg") for f in fotos]
                     ocr_leido = logic.extract_positions_from_images(
                         payload, analizables, clave) or {}
+                # La marca de fallo sale del dict antes de guardarlo: aguas abajo esto se
+                # recorre como {TICKER: {...}} y 'error' no es un ticker.
+                st.session_state["_wizard_ocr_fallo"] = ocr_leido.pop("error", None)
                 st.session_state["_wizard_ocr_positions"] = ocr_leido
                 st.session_state["_wizard_photo_sig"] = firma
                 st.session_state["_wizard_ocr_aplicar"] = True

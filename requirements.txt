@@ -10,7 +10,11 @@ cryptography==50.0.2
 altair==6.3.0
 fpdf2>=2.7.9
 numpy-financial>=1.0.0
-google-genai>=1.0.0
+# Pin EXACTO a propósito: con `>=1.0.0`, Streamlit Cloud reinstaló en un deploy una 2.2x que
+# serializa inlineData.mime_type en snake_case (hasta la 2.20.0 manda mimeType) y Gemini responde
+# 400 a los nombres que no reconoce. El lector de capturas quedó caído sin que nadie tocara el
+# código. Lo caza test_vision_wire_format.py; medir antes de subir de versión. (13-nov-2026)
+google-genai==2.20.0
 PyYAML>=6.0
 requests>=2.32,<3
 google-cloud-storage>=2.16.0

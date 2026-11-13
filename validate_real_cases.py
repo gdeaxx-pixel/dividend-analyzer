@@ -232,9 +232,15 @@ def validate_vision(case, api_key):
         return out
 
     read = logic.extract_positions_from_images(images, list(m["tickers"].keys()), api_key)
-    if not read:
+    # Desde el 13-nov-2026 la funcion marca el fallo tecnico aparte: sin esto, un lector caido
+    # saldria como un FAIL por ticker ("Gemini no leyo cost_basis") en vez de como un skip, y
+    # pareceria que el modelo lee mal cuando ni siquiera llego a responder.
+    fallo = read.pop("error", None) if isinstance(read, dict) else None
+    if fallo or not read:
         out["status"] = "skip"
-        out["error"] = "Gemini devolvio {} (sin SDK/key/red/cuota)"
+        out["error"] = ("el lector no respondio: fallo tecnico, no de lectura "
+                        "(sin SDK/key/red/cuota; mira el log)" if fallo else
+                        "Gemini respondio pero no encontro ninguno de los tickers")
         return out
 
     for ticker, exp in targets.items():
