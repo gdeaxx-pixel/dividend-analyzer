@@ -614,43 +614,63 @@ def _ss(at, k):
         return None
 
 
+@pytest.fixture(autouse=True)
+def _espia_cobertura(monkeypatch):
+    """Guarda lo que la hoja de carga pidió a `adapters.cobertura_data` en cada render.
+
+    Hasta el 13-nov estos datos se leían del `srcdoc` del iframe de la dona. La dona ya no
+    se dibuja en la carga (bajó al pie convertida en frase), así que el espía toma su sitio:
+    sigue midiendo lo que la pantalla USÓ de verdad, no un recálculo del test — eso sería
+    comparar la fórmula consigo misma.
+    """
+    from ui import adapters
+
+    real = adapters.cobertura_data
+    vistos = []
+
+    def espia(resultados):
+        d = real(resultados)
+        vistos.append(d)
+        return d
+
+    monkeypatch.setattr(adapters, "cobertura_data", espia)
+    _espia_cobertura.vistos = vistos
+    return vistos
+
+
 def _datos_dona(at):
-    """El DATA JSON que la dona recibió, leído del srcdoc del iframe (Regla 3: lo que
-    se dibuja es exactamente lo que Python le pasó)."""
-    import json
+    """Lo que la hoja pasó al medidor en el último render."""
+    vistos = getattr(_espia_cobertura, "vistos", [])
+    assert vistos, "la hoja no pidió los datos de cobertura en ningún render"
+    return vistos[-1]
 
-    # Desde R2 la carga también dibuja a ROC (bloque 1): se separa por contenido. El
-    # invariante sigue siendo UNA dona.
-    iframes = [f for f in at.get("iframe") if "function rocGrid" not in f.proto.srcdoc]
-    assert len(iframes) == 1, f"esperaba 1 iframe (la dona), vi {len(iframes)}"
-    m = re.search(r"var DATA = (\{.*?\});", iframes[0].proto.srcdoc, re.S)
-    assert m, "la dona no trae su DATA JSON"
-    return json.loads(m.group(1))
+def test_la_dona_ya_no_va_arriba_del_flujo_de_carga():
+    """Lo contrario de lo que fijaba este test hasta el 13-nov («§5.1.4 — la dona va debajo
+    del wordmark y ARRIBA de los tres bloques»). Se invirtió a propósito: medido en el piloto,
+    en teléfono salía antes del título y «4 de 5 verificados · Falta: información fiscal» se
+    leía como una nota de examen y como un error del cliente, cuando ese paso es opcional.
 
-
-def test_dona_va_arriba_del_flujo_de_carga():
-    """§5.1.4 — la dona va debajo del wordmark y ARRIBA de los tres bloques (el cambio
-    de la integrada v2 respecto de la cobertura al final)."""
+    El medidor no desaparece: baja al pie convertido en frase, con los cinco controles a un
+    clic. Eso lo cubre `test_carga_medidor_al_pie.py`; aquí solo se vigila que no vuelva
+    arriba, que es la regresión fácil al tocar `render_carga`.
+    """
     at = _at()
     at.run()
     assert at.exception == []
 
     orden = list(at.main.children.values())
     tipos = [type(el).__name__ for el in orden]
-    # 0 wordmark · 1 iframe (dona) · 2+ bloques · al final el pie de privacidad
-    # (la frase «Tres bloques…» se retiró el 27-sep; el expander vive en el pie).
-    assert "UnknownElement" in tipos, "el iframe de la dona no se dibujó"
-    idx_dona = tipos.index("UnknownElement")
-    assert idx_dona == 1, f"la dona no va justo tras el wordmark: {tipos}"
-    # El wordmark va en una fila horizontal con el hueco de ROC a su derecha.
     fila = list(orden[0].children.values())
     assert isinstance(fila[0].value, str) and "vd-wordmark" in fila[0].value
-    # Todo lo que viene después (bloques) va detrás de la dona.
     idx_bloque = next(i for i, el in enumerate(orden)
                       if isinstance(getattr(el, "value", None), str)
                       and "vd-bloque-head" in el.value)
-    assert idx_dona < idx_bloque
-
+    if "UnknownElement" in tipos:
+        assert tipos.index("UnknownElement") > idx_bloque, (
+            f"la dona volvió a abrir la pantalla: {tipos}")
+    titulares = [getattr(el, "value", "") for el in orden[:idx_bloque]]
+    assert any("Sube tu historial" in str(v) for v in titulares), (
+        "el titular ya no abre la hoja")
 
 def test_antes_de_confirmar_todo_pendiente_y_analyze_no_corre(monkeypatch):
     """§4.3 + criterio 5 — antes de confirmar posiciones los 5 segmentos van pendientes
@@ -674,10 +694,16 @@ def test_antes_de_confirmar_todo_pendiente_y_analyze_no_corre(monkeypatch):
     at.run()
     assert at.exception == []
 
-    d = _datos_dona(at)
-    assert d["verificados"] == 0
-    assert [s["estado"] for s in d["segmentos"]] == ["pendiente"] * 5
-    assert llamadas == [], "la dona disparó analyze_portfolio antes de confirmar"
+    assert llamadas == [], "la carga disparó analyze_portfolio antes de confirmar"
+    # Desde el 13-nov la hoja ni siquiera PIDE los datos del medidor antes de confirmar: la
+    # frase vive al pie y solo se dibuja cuando ya hay algo que decidir, así que el trabajo
+    # no se hace en mitad del formulario. Si alguien los vuelve a pedir antes, que al menos
+    # sigan saliendo los cinco pendientes (§4.3).
+    vistos = _espia_cobertura.vistos
+    if vistos:
+        d = vistos[-1]
+        assert d["verificados"] == 0
+        assert [s["estado"] for s in d["segmentos"]] == ["pendiente"] * 5
 
 
 def test_tras_confirmar_la_dona_lee_el_cache(monkeypatch, request):
