@@ -62,6 +62,8 @@ def test_f2_uploader_avisa_de_gemini(monkeypatch):
     at.session_state["_wizard_csv_ticker_data"] = {}
     at.session_state["_wizard_broker"] = "schwab"
     at.session_state["_wizard_csv_name"] = "synthetic_transactions.csv"
+    # 13-nov: en Schwab se abre el archivo de posiciones; este test mira el uploader de fotos.
+    at.session_state["_vd_modo_pos"] = "captura"
     at.run()
     assert at.exception == []
 
@@ -341,6 +343,8 @@ def test_s1_editar_borra_el_contexto_con_fotos_de_igual_nombre_y_tamano(monkeypa
     at.session_state["_wizard_csv_ticker_data"] = {"MSTY": {"shares": 40.0, "invested": 1000.0}}
     at.session_state["_wizard_broker"] = "schwab"
     at.session_state["_wizard_csv_name"] = "cartera_A.csv"
+    # 13-nov: en Schwab se abre el archivo; este test mide la firma de las FOTOS.
+    at.session_state["_vd_modo_pos"] = "captura"
     at.run()
     assert at.exception == []
     sig_a = _ss(at, "_wizard_photo_sig")

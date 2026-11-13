@@ -199,7 +199,7 @@ def _desde_a_mano(at, camino):
     la tabla no se esconde."""
     at.session_state["_vd_modo_pos"] = "mano"
     at.run()
-    at.button_group(key="_vd_modo_pos").set_value(camino).run()
+    [b for b in at.button if b.key == f"_vd_modo_a_{camino}"][0].click().run()
 
 
 def _confirmar(at):
@@ -263,6 +263,8 @@ def test_csv_llena_los_campos_y_el_ausente_va_a_cero(sin_clave):
 
 def test_csv_gana_a_la_foto(con_foto):
     at = _at()
+    # 13-nov: en Schwab se abre el archivo; este test parte de la captura.
+    at.session_state["_vd_modo_pos"] = "captura"
     at.session_state["_test_foto_bytes"] = b"foto"
     at.run()
     assert _campo(at, "_vd_sh_MSTY") == 1.0              # sin CSV manda la foto
@@ -273,7 +275,7 @@ def test_csv_gana_a_la_foto(con_foto):
     assert "vista previa" not in texto
     assert "Los valores vienen de tu archivo de posiciones" not in texto
     at.session_state["_wizard_pos_csv_sig"] = None
-    at.button_group(key="_vd_modo_pos").set_value("archivo").run()
+    [b for b in at.button if b.key == "_vd_modo_a_archivo"][0].click().run()
     assert _campo(at, "_vd_sh_MSTY") == 1.0              # la tabla sigue con la foto
     _subir_pos(at)
     assert not at.exception
@@ -400,7 +402,7 @@ def test_foto_ilegible_no_pisa_lo_tecleado(monkeypatch):
     at.session_state["_vd_modo_pos"] = "mano"
     at.run()
     [w for w in at.number_input if w.proto.id.endswith("_vd_sh_MSTY")][0].set_value(7.0).run()
-    at.button_group(key="_vd_modo_pos").set_value("captura").run()
+    [b for b in at.button if b.key == "_vd_modo_a_captura"][0].click().run()
     at.session_state["_test_foto_bytes"] = b"foto"
     at.run()
     assert not at.exception

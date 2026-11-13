@@ -414,17 +414,21 @@ def render_bloque_posiciones() -> bool:
     clave = _clave_gemini()
     caminos = {}
     if clave:
-        caminos["captura"] = "Captura · recomendada"
+        caminos["captura"] = "Subir una captura"
     if st.session_state.get("_wizard_broker") == "schwab" or csv_leido:
-        caminos["archivo"] = "Archivo de Schwab"
-    caminos["mano"] = "A mano"
+        caminos["archivo"] = "Subir el archivo de posiciones"
+    caminos["mano"] = "Escribirlas a mano"
+    # Un solo camino a la vista (13-nov). Antes se dibujaban los tres como `segmented_control`
+    # y el cliente tenía que elegir ANTES de entender qué se le pedía. Ahora se abre el más
+    # fiable que tenga ESE cliente y los otros caben en una línea, nombrados por lo que hacen.
+    # El orden no es cosmético: el archivo de posiciones sale del bróker y NO depende de la
+    # clave de Gemini — con el lector de capturas caído (medido el 13-nov), abrir por captura
+    # dejaba al cliente sin salida. En Interactive Brokers no hay archivo, así que manda la foto.
+    recomendado = next(m for m in ("archivo", "captura", "mano") if m in caminos)
     if csv_leido:
         st.session_state["_vd_modo_pos"] = "archivo"
     elif st.session_state.get("_vd_modo_pos") not in caminos:
-        st.session_state["_vd_modo_pos"] = next(iter(caminos))
-    if len(caminos) > 1 and not csv_leido:
-        st.segmented_control("¿Cómo nos das tus posiciones?", tuple(caminos),
-                             format_func=caminos.get, key="_vd_modo_pos", required=True)
+        st.session_state["_vd_modo_pos"] = recomendado
     modo = st.session_state["_vd_modo_pos"]
 
     # ── CSV de posiciones de Schwab ───────────────────────────────────────────
@@ -549,10 +553,26 @@ def render_bloque_posiciones() -> bool:
     # con «Cambiar», o en el demo, sale con lo confirmado.
     tabla = (st.session_state.get("_vd_pos_tabla")
              or st.session_state.get("_wizard_positions") or {})
+
+    # Los otros caminos, en una línea, mientras el paso 2 siga abierto. Dos intentos de
+    # acotarla dejaron atrapado al cliente y los cazaron los tests: mirar `tabla` encerraba a
+    # quien eligiera «a mano» (ahí la tabla existe desde el primer render), y mirar `leido`
+    # encerraba a quien ya hubiera leído una foto mala y quisiera subir el archivo. Cambiar de
+    # camino no borra lo tecleado (ver el comentario de `tabla`), así que no hay nada que
+    # proteger. Con el CSV leído manda el archivo y la salida es su botón «quitar archivo».
+    otros = [m for m in caminos if m != modo]
+    if otros and not csv_leido:
+        with st.container(horizontal=True, vertical_alignment="center", gap="small",
+                          key="_vd_otra_forma"):
+            st.caption("¿Prefieres otra forma?")
+            for m in otros:
+                if st.button(caminos[m], key=f"_vd_modo_a_{m}", type="tertiary"):
+                    st.session_state["_vd_modo_pos"] = m
+                    st.rerun()
+
     if modo != "mano" and not leido and not tabla:
         que = "la captura" if modo == "captura" else "el archivo"
-        st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo. "
-                   f"¿No {'la' if modo == 'captura' else 'lo'} tienes? Elige «A mano».")
+        st.caption(f"Sube {que} y aquí aparece la tabla para que revises cada fondo.")
         _render_excluidos_carga(excluidos)
         return False
 
@@ -1013,12 +1033,43 @@ def _resultados_para_cobertura() -> dict:
 
 
 def _render_cobertura() -> None:
-    """La dona de 5 segmentos (U4 · integrada v2): arriba del flujo de carga, debajo del
-    wordmark. Mide verificación REAL — los estados salen de `ui.adapters.cobertura_data`,
-    el componente no calcula nada (Regla 3)."""
+    """La dona de 5 segmentos. Mide verificación REAL — los estados salen de
+    `ui.adapters.cobertura_data`, el componente no calcula nada (Regla 3).
+
+    Ya NO abre la pantalla. Hasta el 13-nov se dibujaba arriba del todo, debajo del
+    wordmark; medido en el piloto, en teléfono salía ANTES del título y «4 de 5
+    verificados · Falta: información fiscal» se leía como una nota de examen y como un
+    error del cliente, cuando ese paso es opcional. Hoy la sustituye `_render_cobertura_frase`
+    al pie, justo antes de «Ver resultados», que es donde el dato decide algo. Se conserva
+    por si se quiere volver a ella en otra pantalla.
+    """
     tema = st.session_state.get("vd_tema", "Claro")
     componentes.render_cobertura(
         adapters.cobertura_data(_resultados_para_cobertura()), tema)
+
+
+def _render_cobertura_frase() -> None:
+    """El medidor, en una frase y al pie (Q1 + quinta vuelta del piloto, 13-nov).
+
+    Misma fuente que la dona (`adapters.cobertura_data`): esto solo redacta. La frase dice
+    qué puede hacer el cliente, no qué nota sacó, y nombra lo que falta en vez de contar
+    «4 de 5»; el detalle de los cinco controles queda a un clic, con su «qué falta» y su
+    «cómo», que es lo que daban los pop-outs de la dona.
+    """
+    datos = adapters.cobertura_data(_resultados_para_cobertura())
+    faltan = [s for s in datos["segmentos"] if s["estado"] != "ok"]
+    if faltan:
+        nombres = [s["nombre"].lower() for s in faltan]
+        lista = nombres[0] if len(nombres) == 1 else ", ".join(nombres[:-1]) + " y " + nombres[-1]
+        st.caption(f"Con esto ya salen tus cifras. Para afinarlas falta {lista}.")
+    else:
+        st.caption("Tus cinco controles están revisados.")
+    with st.expander("Ver qué revisamos"):
+        for s in datos["segmentos"]:
+            marca = "✓" if s["estado"] == "ok" else "·"
+            st.markdown(f"**{marca} {s['nombre']}** — {s['falta']}")
+            if s["estado"] != "ok" and s["como"]:
+                st.caption(s["como"])
 
 
 def _capturar_caso() -> None:
@@ -1124,9 +1175,13 @@ def render_carga() -> bool:
                     unsafe_allow_html=True, width="content")
         st.session_state["_vd_hueco_roc"] = st.empty()
 
-    # La dona de cobertura va ARRIBA de los tres bloques (integrada v2: antes vivía al
-    # final; ver spec U4 §5.1.4 y referencia-carga-cobertura-integrada-v2.html).
-    _render_cobertura()
+    # Un titular, y una frase que dice cuánto falta en vez de explicar lo que se verá
+    # después (13-nov): el cliente que está subiendo archivos necesita saber cuánto trabajo
+    # le queda, no el detalle de la pantalla siguiente. El medidor ya no abre la hoja: baja
+    # al pie, en `_render_cobertura_frase`, junto a «Ver resultados».
+    st.markdown('<h1 class="vd-h1-carga">Sube tu historial y mira cuánto has ganado '
+                'de verdad</h1>', unsafe_allow_html=True)
+    st.caption("Tres pasos. El primero es el único obligatorio.")
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:
@@ -1153,6 +1208,8 @@ def render_carga() -> bool:
 
     render_bloque_1042s()
 
+    _render_cobertura_frase()
+
     if st.button("Ver resultados →", key="_vd_ir_resultados", type="primary"):
         # F2 §4.2: la captura del caso (si hay consentimiento) ocurre AQUÍ, una sola
         # vez por sesión, justo antes de pasar a resultados — no en cada render.
@@ -1166,6 +1223,17 @@ def render_carga() -> bool:
 
 
 ESTILOS_CARGA = """
+        /* Titular de la carga (13-nov). Vuelve un título propio: el wordmark solo decía la
+           marca, no qué se obtiene aquí. Compacto a propósito — `feedback_titulos-compactos`:
+           una cifra grande por página, y ésta no es la página de las cifras. */
+        .vd-h1-carga {
+          font-size: clamp(21px, 2.9vw, 27px);
+          line-height: 1.18;
+          letter-spacing: -.015em;
+          font-weight: 700;
+          margin: 4px 0 0;
+          max-width: 24ch;
+        }
         /* Fila 34 — animación de revelación progresiva, copiada literal de
            `.da-reveal`/`@keyframes da-rev` en `app_old.py:1314-1319` (mismo timing y easing,
            solo el prefijo cambia de `da-` a `vd-`). */
