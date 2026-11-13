@@ -8,7 +8,10 @@ from curl_cffi import requests as crequests
 import re
 import io
 import os
+import logging
 from collections import Counter, defaultdict
+
+_log = logging.getLogger(__name__)
 
 from filas_csv import (  # noqa: F401 — re-export: consumidores históricos vía logic.X
     _clean_money, _row_year,
@@ -42,17 +45,29 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
     Devuelve {TICKER: {'cost_basis': float, 'shares': float|None, 'market_value': float|None}}
     para los tickers solicitados que aparezcan con costo base > 0.
     images: lista de (bytes, mime_type). candidate_tickers: simbolos a buscar. api_key: Gemini API.
-    Nunca lanza excepcion: devuelve {} ante cualquier fallo (sin SDK/red/cuota/JSON invalido).
+    Nunca lanza excepcion, pero SI distingue los dos fracasos, que no son el mismo:
+      - {} -> la llamada fue bien y ninguno de los tickers pedidos aparece en las imagenes.
+      - {'error': 'lector'} -> fallo tecnico (sin SDK, sin clave, sin red, cuota, 4xx/5xx,
+        JSON invalido). Ademas queda en el log, que antes no: la excepcion se tragaba entera
+        y un servicio caido era indistinguible de una captura mala, tanto en pantalla como
+        en los registros del servidor. Medido el 13-nov-2026, con el lector caido una semana
+        por una regresion del SDK: el aviso culpaba a la captura del cliente.
+    La clave 'error' no colisiona con ningun ticker (van en mayusculas), igual que en
+    `parse_schwab_positions_csv`.
     """
-    if not images or not candidate_tickers or not api_key:
+    if not images or not candidate_tickers:
         return {}
+    if not api_key:
+        _log.warning("lector de capturas: no hay clave de Gemini configurada")
+        return {'error': 'lector'}
     try:
         from google import genai
         from google.genai import types
         import json as _json
         import time as _time
     except Exception:
-        return {}
+        _log.exception("lector de capturas: no se pudo importar el SDK google-genai")
+        return {'error': 'lector'}
 
     cand = [str(t).upper().strip() for t in candidate_tickers]
     cand_set = set(cand)
@@ -101,7 +116,8 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
     try:
         client = genai.Client(api_key=api_key)
     except Exception:
-        return {}
+        _log.exception("lector de capturas: no se pudo crear el cliente de Gemini")
+        return {'error': 'lector'}
 
     def _num(v):
         try:
@@ -142,6 +158,8 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
                 return out  # llamada exitosa (out puede estar vacio si no encontro tickers)
             except Exception as _e:
                 _msg = str(_e)
+                _log.warning("lector de capturas: %s devolvio %s: %s",
+                             _model, type(_e).__name__, _msg[:400])
                 _transient = any(s in _msg for s in (
                     "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
                 if _transient and _attempt == 0:
@@ -152,7 +170,9 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
                     continue  # reintentar el mismo modelo
                 break  # error no transitorio o ya reintentado -> probar siguiente modelo
 
-    return {}
+    _log.error("lector de capturas: ningun modelo respondio (%s)",
+               ", ".join([GEMINI_VISION_MODEL] + GEMINI_VISION_FALLBACKS))
+    return {'error': 'lector'}
 
 
 _TICKER_POSICIONES = re.compile(r'^[A-Z][A-Z0-9./-]{0,9}$')
@@ -226,7 +246,8 @@ def parse_schwab_positions_csv(raw: bytes):
 def extract_cost_basis_from_images(images, candidate_tickers, api_key):
     """Wrapper de compatibilidad: devuelve solo {TICKER: costo_base_float}."""
     rich = extract_positions_from_images(images, candidate_tickers, api_key)
-    return {t: v["cost_basis"] for t, v in rich.items() if v.get("cost_basis")}
+    return {t: v["cost_basis"] for t, v in rich.items()
+            if isinstance(v, dict) and v.get("cost_basis")}  # salta la marca {'error': ...}
 
 
 def _dividendos_cuenta_fuente_eeuu(df: pd.DataFrame, start, end) -> tuple:
