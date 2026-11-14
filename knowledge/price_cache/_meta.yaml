@@ -1,117 +1,119 @@
 # Generado por fetch_price_cache.py. Fecha de generacion y rango cubierto por ticker del cache en knowledge/price_cache/*.parquet.
 # Refresco semanal via .github/workflows/refresh-price-cache.yml. No editar a mano.
 NVDY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2023-05-11'
-  end: '2026-11-06'
-  rows: 877
+  end: '2026-11-13'
+  rows: 882
   dividends_source: yieldmax_oficial
   dividend_corrections:
   - '2026-10-01: 0.076 -> 0.0874'
 TSLY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yieldmax_oficial
   dividend_corrections:
   - '2026-10-01: 0.219 -> 0.23'
 CONY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2023-08-15'
-  end: '2026-11-06'
-  rows: 812
+  end: '2026-11-13'
+  rows: 817
   dividends_source: yieldmax_oficial
   dividend_corrections:
   - '2026-10-01: 0.222 -> 0.2577'
 MSTY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2024-02-22'
-  end: '2026-11-06'
-  rows: 681
+  end: '2026-11-13'
+  rows: 686
   dividends_source: yieldmax_oficial
   dividend_corrections:
   - '2026-10-01: 0.245 -> 0.3111'
 CHPY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2025-04-08'
-  end: '2026-11-06'
-  rows: 399
+  end: '2026-11-13'
+  rows: 404
   dividends_source: yieldmax_oficial
-  dividend_corrections: []
+  dividend_corrections:
+  - '2026-11-10: 0.413 -> 0.0'
 SCHB:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 XLK:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 SMH:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 NFLY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2023-08-08'
-  end: '2026-11-06'
-  rows: 817
+  end: '2026-11-13'
+  rows: 822
   dividends_source: yieldmax_oficial
   dividend_corrections: []
 YMAX:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2024-01-17'
-  end: '2026-11-06'
-  rows: 706
+  end: '2026-11-13'
+  rows: 711
   dividends_source: yieldmax_oficial
-  dividend_corrections: []
+  dividend_corrections:
+  - '2026-11-10: 0.027 -> 0.0'
 NVDA:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 TSLA:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 COIN:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 MSTR:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 PLTY:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2024-10-08'
-  end: '2026-11-06'
-  rows: 523
+  end: '2026-11-13'
+  rows: 528
   dividends_source: yieldmax_oficial
   dividend_corrections:
   - '2026-10-01: 0.289 -> 0.2294'
 QYLD:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
 SVOL:
-  generated_at: '2026-11-07'
+  generated_at: '2026-11-14'
   start: '2022-11-23'
-  end: '2026-11-06'
-  rows: 992
+  end: '2026-11-13'
+  rows: 997
   dividends_source: yfinance
