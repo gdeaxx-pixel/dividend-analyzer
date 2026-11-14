@@ -372,13 +372,30 @@ def test_quitar_archivo_devuelve_la_vista_previa(sin_clave):
     assert _proto(at, "_vd_sh_MSTY").set_value
 
 
-def test_archivo_no_reconocido(sin_clave):
+def test_el_historial_de_transacciones_se_reconoce_y_se_dice(sin_clave):
+    """`_CSV` ES el historial del paso 1. Hasta el 13-nov recibía el aviso genérico «no
+    reconocimos este archivo», que es verdad pero inútil: le pasó a Daniel y lo mandó a
+    buscar el fallo donde no estaba. Ahora la app nombra el archivo y da la ruta del bueno."""
     at = _at()
     _desde_a_mano(at, "archivo")
     _subir_pos(at, _CSV.encode())
     assert not at.exception
-    assert "No reconocimos este archivo como el CSV de posiciones de Schwab" in _textos(at)
+    texto = _textos(at)
+    assert "Este es tu historial de transacciones" in texto
+    assert "Accounts → Positions" in texto, "el aviso no dice dónde está el archivo bueno"
     assert _campo(at, "_vd_sh_MSTY") == 40.0
+
+
+def test_un_archivo_de_verdad_irreconocible_sigue_con_el_aviso_general(sin_clave):
+    """Sin certeza de qué subió, el aviso vuelve a ser el de antes: decirle que subió el
+    archivo del paso 1 cuando no es verdad lo manda a dar vueltas."""
+    at = _at()
+    _desde_a_mano(at, "archivo")
+    _subir_pos(at, b"columna_a,columna_b\n1,2\n")
+    assert not at.exception
+    texto = _textos(at)
+    assert "No reconocimos este archivo como el CSV de posiciones de Schwab" in texto
+    assert "Este es tu historial" not in texto
 
 
 def test_csv_sin_ningun_analizable(sin_clave):

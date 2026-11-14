@@ -17,7 +17,7 @@ LIGHT = {
     'panel-tint': '#eef4f9',
     'ink': '#021C36',
     'ink-2': '#33475a',
-    'ink-mut': '#6a7b8a',
+    'ink-mut': '#61717e',
     'hair': '#d5e0ea',
     'hair-soft': '#e6edf3',
     'anchor': '#021C36',
