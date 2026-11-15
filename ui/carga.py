@@ -1252,7 +1252,9 @@ def render_carga() -> bool:
     # que el propio dato no diga después.
     st.markdown('<h2 class="vd-title vd-carga-h">Sube tu historial, mira cuánto has '
                 'ganado</h2>', unsafe_allow_html=True)
-    st.caption("Tres pasos. El primero es el único obligatorio.")
+    # Sin frase debajo (14-nov, Daniel): decía «tres pasos, el primero es el único obligatorio»
+    # y los propios pasos ya lo dicen — el 3 se titula «Información fiscal · opcional» y los que
+    # faltan salen bloqueados con su razón. Repetirlo solo añadía una línea que leer.
 
     hay_csv = render_bloque_transacciones()
     if not hay_csv:
