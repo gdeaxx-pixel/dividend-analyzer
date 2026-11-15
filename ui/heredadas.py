@@ -153,6 +153,9 @@ def _botones_ruta(rutas: list[dict]) -> None:
                       args=(r["cat"], r["vista"], r["etf"]))
         with c2:
             st.caption(r["que"])
+    # Esta vista ya dice a dónde ir, y con más criterio que el recorrido: el pie se calla.
+    from ui import estado
+    estado.ya_ofrece_a_donde_ir()
 
 
 def render_portafolios(resultados: dict, tema: str = "Claro") -> None:

@@ -25,6 +25,7 @@ import logic
 _CLAVE_PAIS = "_perfil_fiscal_pais"
 _CLAVE_FUENTE = "_perfil_fiscal_fuente"
 _CLAVE_SUBIR = "_vd_subir_al_inicio"
+_CLAVE_RUTAS = "_vd_rutas_propias"
 
 
 def pedir_subir_al_inicio() -> None:
@@ -37,6 +38,19 @@ def pedir_subir_al_inicio() -> None:
 def consumir_subir_al_inicio() -> bool:
     """True una sola vez por cada `pedir_subir_al_inicio`."""
     return bool(st.session_state.pop(_CLAVE_SUBIR, False))
+
+
+def ya_ofrece_a_donde_ir() -> None:
+    """La pide una vista que ya propone sus propios caminos —hoy «Para entenderlo a fondo»
+    de Portafolios (`ui.heredadas`)— para que el pie no añada un segundo «Siguiente»
+    debajo diciendo otra cosa. La consume `ui.chrome.render_siguiente` en la misma
+    corrida."""
+    st.session_state[_CLAVE_RUTAS] = True
+
+
+def consumir_ofrece_a_donde_ir() -> bool:
+    """True una sola vez por cada `ya_ofrece_a_donde_ir`."""
+    return bool(st.session_state.pop(_CLAVE_RUTAS, False))
 
 
 def perfil_fiscal() -> dict:

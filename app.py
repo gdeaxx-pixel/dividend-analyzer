@@ -29,7 +29,8 @@ from ui import carga, chrome, pie, vistas  # noqa: F401  — ídem
 stale_guard.asegurar_frescura()
 
 from ui.carga import notificar_progreso, render_carga  # noqa: E402  — tras el guardián
-from ui.chrome import etfs_habilitados, inyectar_estilos, render_encabezado, render_ruta
+from ui.chrome import (etfs_habilitados, inyectar_estilos, render_encabezado,
+                       render_ruta, render_siguiente)
 from ui.componentes import cerrar_roc_encabezado
 from ui.pie import render_pie
 from ui.validacion import nivel_confiabilidad
@@ -95,6 +96,7 @@ if con_datos:
                        confiabilidad=nivel)
     render_vista(ruta)
     cerrar_roc_encabezado(ruta.tema)
+    render_siguiente(ruta, etfs_habilitados(resultados))
     render_pie(resultados)
 else:
     render_carga()
