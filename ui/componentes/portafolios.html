@@ -139,14 +139,21 @@
   .wf { display: grid; gap: 16px; border-top: 1px solid var(--hair); padding-top: 18px; }
   .cards.single .wf { border-top: 0; padding-top: 0; }
   .wf-row { display: grid; gap: 8px; }
+  /* La fila entera se pulsa para que explique su parte. Botón sin aspecto de botón: la
+     gráfica no debe parecer un formulario. `.wf-row.total` (0,2,0) gana al reset (0,1,1)
+     y conserva su línea de separación. */
+  button.wf-row { width: 100%; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+  .wf-row:hover .wf-k, .wf-row:focus-visible .wf-k { color: var(--accent); }
+  .wf-row:hover .wf-bar, .wf-row:focus-visible .wf-bar { filter: brightness(1.08); }
+  .wf-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
   .wf-row.total { border-top: 1px solid var(--hair); padding-top: 16px; }
   .wf-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; }
-  .wf-label { margin: 0; font-size: 14px; line-height: 1.35; }
+  .wf-label { display: block; margin: 0; font-size: 14px; line-height: 1.35; }
   .wf-k { font-weight: 600; color: var(--ink); margin-right: 6px; }
   .wf-sub { font-size: 13px; color: var(--ink-mut); }
   .wf-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; white-space: nowrap; }
   .wf-row.total .wf-v { font-weight: 700; }
-  .wf-track { position: relative; height: 10px; }
+  .wf-track { display: block; position: relative; height: 10px; }
   .wf-track::before {
     content: ""; position: absolute; top: -4px; bottom: -4px; left: var(--zero); width: 1px; background: var(--ink-mut); opacity: .55;
   }
@@ -173,6 +180,29 @@
   @media (prefers-reduced-motion: reduce) {
     .narra .wf-bar, .narra .wf-v { animation: none; }
   }
+
+  /* ---- Ficha de una fila (modal) · mismo patrón que Riesgo y Comparación ---- */
+  #modal-porta { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px; }
+  #modal-porta.open { display: flex; }
+  .modal-box { background: var(--panel); border: 1px solid var(--hair); max-width: 500px; width: 100%; padding: clamp(22px, 4vw, 34px); position: relative; max-height: 90vh; overflow-y: auto; animation: fadeIn .18s ease both; }
+  .modal-close { position: absolute; top: 12px; right: 14px; font-family: var(--font-mono); font-size: 20px; font-weight: 700; background: none; border: none; color: var(--ink-mut); cursor: pointer; line-height: 1; padding: 4px 8px; transition: color .12s ease; }
+  .modal-close:hover { color: var(--ink); }
+  .modal-eyebrow { font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .modal-title { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--ink); margin: 0 0 14px; letter-spacing: -0.01em; }
+  .modal-lede { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 16px; }
+  .modal-lede b { color: var(--ink); font-weight: 600; }
+  .modal-formula { background: var(--panel-tint); border-left: 3px solid var(--accent); padding: 14px 16px; margin: 0 0 16px; }
+  .mf-eq { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); display: block; margin-bottom: 14px; line-height: 1.4; }
+  .mf-table { width: 100%; border-collapse: collapse; }
+  .mf-table td { font-family: var(--font-mono); font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid var(--hair-soft); vertical-align: baseline; }
+  .mf-table tr:last-child td { border-bottom: none; padding-top: 10px; font-weight: 700; font-size: 13px; }
+  .mf-table td:last-child { text-align: right; }
+  .mf-label { color: var(--ink-mut); }
+  .mf-val { color: var(--ink); }
+  .mf-table tr.is-on .mf-label, .mf-table tr.is-on .mf-val { color: var(--accent); font-weight: 700; }
+  .modal-note { font-size: 12.5px; color: var(--ink-mut); margin: 0; line-height: 1.6; }
+  .modal-note b { color: var(--ink-2); font-weight: 600; }
+  @keyframes fadeIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
 
   .b-price { background: var(--bar-price); }
   .b-div { background: var(--accent); }
@@ -223,6 +253,20 @@
   <div class="cards" id="cards"></div>
 
   <p class="foot">Retorno total = valor de hoy + efectivo cobrado − invertido. Resumen redondeado; no es una tasa anual.</p>
+</div>
+
+<div id="modal-porta" role="dialog" aria-modal="true" aria-labelledby="mp-title">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="mp-close" aria-label="Cerrar">×</button>
+    <p class="modal-eyebrow" id="mp-eyebrow"></p>
+    <h3 class="modal-title" id="mp-title"></h3>
+    <p class="modal-lede" id="mp-lede"></p>
+    <div class="modal-formula">
+      <span class="mf-eq">Precio + Dividendos = Retorno total</span>
+      <table class="mf-table"><tbody id="mp-tabla"></tbody></table>
+    </div>
+    <p class="modal-note" id="mp-note"></p>
+  </div>
 </div>
 
 <script>
@@ -348,16 +392,16 @@
     });
   }
 
+  const filas = (g) => [
+    { id: "precio", k: "Precio", sub: "sobre todas tus acciones", from: 0, to: g.precio, v: g.precio,
+      bar: g.precio >= 0 ? "b-price" : "b-loss", vc: g.precio < 0 ? "neg" : "" },
+    { id: "dividendos", k: "Dividendos", sub: "lo que cobraste", from: g.precio, to: g.precio + g.dividendos, v: g.dividendos, bar: "b-div", vc: "" },
+    { id: "retorno", k: "Retorno total", sub: "precio + dividendos", from: 0, to: g.retorno, v: g.retorno,
+      bar: g.retorno >= 0 ? "b-gain" : "b-loss", vc: g.retorno >= 0 ? "pos" : "neg", total: true }
+  ];
   function buildCards() {
     const host = $("cards");
     host.classList.toggle("single", single);
-    const filas = (g) => [
-      { k: "Precio", sub: "sobre todas tus acciones", from: 0, to: g.precio, v: g.precio,
-        bar: g.precio >= 0 ? "b-price" : "b-loss", vc: g.precio < 0 ? "neg" : "" },
-      { k: "Dividendos", sub: "lo que cobraste", from: g.precio, to: g.precio + g.dividendos, v: g.dividendos, bar: "b-div", vc: "" },
-      { k: "Retorno total", sub: "precio + dividendos", from: 0, to: g.retorno, v: g.retorno,
-        bar: g.retorno >= 0 ? "b-gain" : "b-loss", vc: g.retorno >= 0 ? "pos" : "neg", total: true }
-    ];
     /* Narrar UNA vez por cifras, no en cada repintado: Streamlit recrea el iframe en cada
        rerun, así que una bandera en memoria no sirve de nada. La firma son los datos; si no
        han cambiado, la gráfica sale ya puesta. `sessionStorage` puede fallar (ventana
@@ -378,16 +422,17 @@
       const tono = g.retorno >= 0 ? "pos" : "neg";
       const rows = filas(g).map((r) => {
         const a = pos(Math.min(r.from, r.to)), b = pos(Math.max(r.from, r.to));
-        return '<div class="wf-row' + (r.total ? ' total' : '') + '">' +
-          '<div class="wf-head"><p class="wf-label"><span class="wf-k">' + r.k + '</span><span class="wf-sub">' + r.sub + '</span></p>' +
-          '<span class="wf-v ' + r.vc + '">' + signed(r.v) + '</span></div>' +
-          '<div class="wf-track"><i class="wf-bar ' + r.bar + (r.v < 0 ? ' neg' : '') + '" style="left:' + a.toFixed(2) + '%;width:' + (b - a).toFixed(2) + '%"></i></div></div>';
+        return '<button type="button" class="wf-row' + (r.total ? ' total' : '') + '"' +
+          ' data-ficha="' + r.id + '" data-grupo="' + g.clave + '"' +
+          ' aria-label="' + r.k + ' ' + signed(r.v) + '. Ver por qué.">' +
+          '<span class="wf-head"><span class="wf-label"><span class="wf-k">' + r.k + '</span><span class="wf-sub">' + r.sub + '</span></span>' +
+          '<span class="wf-v ' + r.vc + '">' + signed(r.v) + '</span></span>' +
+          '<span class="wf-track"><i class="wf-bar ' + r.bar + (r.v < 0 ? ' neg' : '') + '" style="left:' + a.toFixed(2) + '%;width:' + (b - a).toFixed(2) + '%"></i></span></button>';
       }).join("");
 
       const card = document.createElement("article");
       card.className = "card";
       const peso = Math.max(0, Math.min(100, g.pct)).toFixed(2);
-      const etiqueta = 'Precio ' + signed(g.precio) + ', dividendos ' + signed(g.dividendos) + ', retorno total ' + signed(g.retorno);
       card.innerHTML =
         '<div class="card-main">' +
           '<div class="card-top"><h2 class="card-title">' + esc(g.nombre) + '</h2><span class="card-weight"><b>' + pctTxt(g.pct) + '</b> de tu dinero</span></div>' +
@@ -397,7 +442,7 @@
           '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>' +
           '<p class="verdict">' + (g.veredicto ? esc(g.veredicto) : '') + '</p>' +
         '</div>' +
-        '<div class="wf' + (narra ? ' narra' : '') + '" style="--zero:' + pos(0).toFixed(2) + '%" role="img" aria-label="' + etiqueta + '">' + rows + '</div>';
+        '<div class="wf' + (narra ? ' narra' : '') + '" style="--zero:' + pos(0).toFixed(2) + '%" role="group" aria-label="Cómo se llegó al retorno total">' + rows + '</div>';
       const sel = { type: "group", id: g.clave };
       card.addEventListener("pointerenter", () => preview(sel));
       card.addEventListener("pointerleave", () => preview(null));
@@ -452,6 +497,84 @@
     }
     $("reset").classList.toggle("is-visible", !!pinned);
   }
+
+  /* ---- La ficha de cada fila -------------------------------------------------------
+     La gráfica decía QUÉ pasó; faltaba el porqué: que el precio de un fondo que reparte
+     mucho baja por el propio reparto, y que lo cobrado ya viene con la retención
+     descontada (`dividends_net_total`, el objeto fiscal — ver `ui/adapters.py`).
+     La tabla repite las tres cifras que ya están en pantalla, sin aritmética nueva: así
+     ningún redondeo puede descuadrar aquí. */
+  const FICHAS = {
+    precio: {
+      t: "Lo que hizo el precio",
+      lede: "Cuánto vale hoy el total de tus acciones frente a lo que costaron. Verlo en rojo no significa que ya perdiste ese dinero: lo pierdes solo si vendes a este precio.",
+      nota: "En los fondos que reparten mucho, parte de la caída es el propio reparto: el fondo entrega el efectivo y su precio baja ese mismo día. Ese dinero no desapareció, está en la fila de abajo."
+    },
+    dividendos: {
+      t: "Lo que cobraste",
+      lede: "El dividendo que te pagaron estos fondos, <b>ya con la retención de impuestos descontada</b>. Es dinero que está en tu cuenta: lo puedes gastar o reinvertir.",
+      nota: "El desglose de lo retenido, fondo por fondo, está en Impuestos."
+    },
+    retorno: {
+      t: "Lo que te queda",
+      lede: "Precio y dividendos juntos: lo que de verdad ganaste o perdiste con este portafolio hasta hoy. <b>Es la fila que importa.</b>",
+      nota: "Puede salir en verde aunque el precio esté en rojo: pasa cuando lo que cobraste alcanza a cubrir la caída."
+    }
+  };
+
+  const md = document.getElementById("modal-porta");
+  let abridor = null;
+
+  function fichaFilas(g) {
+    return filas(g).map((r) => ({ id: r.id, k: r.k, v: signed(r.v) }));
+  }
+
+  function abrirFicha(clave, grupo, boton) {
+    const g = porClave[grupo], f = FICHAS[clave];
+    if (!g || !f) return;
+    abridor = boton;
+    document.getElementById("mp-eyebrow").textContent = g.nombre;
+    document.getElementById("mp-title").textContent = f.t;
+    document.getElementById("mp-lede").innerHTML = f.lede;
+    document.getElementById("mp-note").textContent = f.nota;
+    document.getElementById("mp-tabla").innerHTML = fichaFilas(g).map((r) =>
+      '<tr class="' + (r.id === clave ? "is-on" : "") + '">' +
+      '<td class="mf-label">' + r.k + '</td><td class="mf-val">' + r.v + '</td></tr>').join("");
+    /* Dentro de un iframe auto-dimensionado, `position: fixed` se centra en la altura del
+       iframe y el modal cae fuera de la pantalla. Mismo `abrir()` que Comparación (#188). */
+    const box = md.querySelector(".modal-box");
+    let top = 20;
+    md.classList.add("open");
+    try {
+      const fe = window.frameElement;
+      if (fe) {
+        const r = fe.getBoundingClientRect(), vh = fe.ownerDocument.defaultView.innerHeight;
+        box.style.maxHeight = (vh - 40) + "px";
+        top = Math.max(20, -r.top + Math.max(20, (vh - box.offsetHeight) / 2));
+        /* Centrarlo en la ventana no basta: el modal vive DENTRO del iframe y lo que
+           sobresalga de su alto se recorta (medido: la nota del pie quedaba cortada).
+           Así que además se sujeta al alto del propio iframe. */
+        top = Math.max(20, Math.min(top, document.documentElement.scrollHeight - box.offsetHeight - 20));
+      }
+    } catch (e) {}
+    md.style.alignItems = "flex-start";
+    md.style.paddingTop = top + "px";
+    document.getElementById("mp-close").focus();
+  }
+
+  function cerrarFicha() {
+    md.classList.remove("open");
+    if (abridor) { try { abridor.focus(); } catch (e) {} abridor = null; }
+  }
+
+  /* Delegado en el contenedor: `buildCards()` recrea las tarjetas en cada repintado. */
+  $("cards").addEventListener("click", (e) => {
+    const fila = e.target.closest(".wf-row");
+    if (fila) abrirFicha(fila.dataset.ficha, fila.dataset.grupo, fila);
+  });
+  document.getElementById("mp-close").addEventListener("click", cerrarFicha);
+  md.addEventListener("click", (e) => { if (e.target === md) cerrarFicha(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && md.classList.contains("open")) cerrarFicha(); });
 
   $("reset").addEventListener("click", () => pin(null));
   buildDonut();
