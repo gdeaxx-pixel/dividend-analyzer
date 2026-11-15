@@ -397,7 +397,10 @@
   .cmp-lede { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; max-width: 70ch; line-height: 1.5; }
   .cmp-lede b { color: var(--ink); font-weight: 600; }
 
-  .cmp-controls { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+  /* Dos columnas en pantalla ancha (14-nov). Medido: los cuatro campos apilados ocupaban
+     212 px de los 485 que había antes de la primera gráfica — más que el título, el lede y
+     el veredicto juntos. `auto-fit` los devuelve a una sola columna en el teléfono. */
+  .cmp-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; margin-bottom: 20px; align-items: start; }
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
   .cmp-lab { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-mut); font-weight: 700; }
   .cmp-row { display: flex; gap: 6px; flex-wrap: wrap; }
