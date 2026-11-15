@@ -135,3 +135,16 @@ def test_el_titular_lleva_su_regla_de_tamano():
         "falta la regla que vence al tamaño por defecto de Streamlit")
     assert "!important" in carga.ESTILOS_CARGA.split("h2.vd-title.vd-carga-h")[1][:200], (
         "la regla del titular ya no reafirma el tamaño y Streamlit vuelve a ganar")
+
+
+def test_la_hoja_no_repite_lo_que_dicen_los_pasos():
+    """14-nov: «Tres pasos. El primero es el único obligatorio.» salía bajo el titular, y los
+    propios pasos ya lo dicen — el 3 se titula «Información fiscal · opcional» y los demás
+    aparecen bloqueados con su razón. Daniel: «ya los pasos que son obligatorios lo dejan
+    saber y los opcionales también»."""
+    at = AppTest.from_string(_CARGA, default_timeout=25)
+    at.run()
+    assert at.exception == []
+    texto = _texto(at)
+    assert "Tres pasos" not in texto, "volvió la frase que repite lo que dicen los pasos"
+    assert "opcional" in texto, "el paso fiscal ya no se anuncia como opcional"
