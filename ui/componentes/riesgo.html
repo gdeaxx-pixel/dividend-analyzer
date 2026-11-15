@@ -45,7 +45,7 @@
   .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-bottom: 8px; }
 
   .panel { background: var(--panel); padding: clamp(20px, 4vw, 40px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
-  .title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; text-wrap: balance; }
+  .title { margin: 0; font-size: clamp(18px, 2.2vw, 21px); font-weight: 700; letter-spacing: -.015em; line-height: 1.2; text-wrap: balance; }
   .lede { margin: 6px 0 0; color: var(--ink-2); max-width: 58ch; text-wrap: pretty; }
   .k { margin: 0; font-size: 13px; color: var(--ink-mut); }
   .aviso { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); max-width: 70ch; }
@@ -116,7 +116,7 @@
 
   .loss-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: clamp(28px, 5vw, 56px); align-items: start; }
   .big { margin: 2px 0 8px; display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
-  .big .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(38px, 5vw, 48px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .big .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(24px, 3vw, 28px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
   .big .delta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; }
   .neg { color: var(--loss); }
   .pos { color: var(--cash); }
@@ -188,7 +188,7 @@
   }
   @media (max-width: 560px) {
     .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .title { font-size: 23px; }
+    .title { font-size: 19px; }
     .hoy dd small { font-size: 12px; }
     .readout { min-height: calc(1.55em * 2); }
     .modo-resumen { min-height: calc(1.55em * 3); }
