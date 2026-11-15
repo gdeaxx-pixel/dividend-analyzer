@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import os
+from pathlib import Path
 
 import streamlit as st
 
@@ -216,6 +217,34 @@ def _resumen_con_cambiar(titulo: str, detalle: str, clave: str) -> bool:
         return st.button("Cambiar", key=clave, type="tertiary", width="content")
 
 
+GUIA_PDF = Path(__file__).resolve().parent.parent / "docs" / "guias" / "guia-carga-schwab.pdf"
+
+
+@st.cache_data(show_spinner=False)
+def _guia_bytes(ruta: str, marca: float) -> bytes:
+    """El PDF, leído una vez por proceso. `marca` es la fecha de modificación: si el archivo
+    cambia en un deploy, la clave de caché cambia con él."""
+    return Path(ruta).read_bytes()
+
+
+def _boton_guia() -> None:
+    """La guía paso a paso, para descargar desde el propio paso 1 (Daniel, 14-nov).
+
+    Va dentro de la app y no en un enlace a la web: así no depende de que esa página siga
+    viva ni de que el cliente pase un login justo cuando está atascado subiendo un archivo,
+    y no se lo lleva a otra pestaña a mitad del proceso. El PDF no trae datos de ninguna
+    cuenta — sus ejemplos son inventados (AAAA, BBBB) y las ilustraciones están dibujadas,
+    comprobado antes de publicarlo.
+    """
+    try:
+        datos = _guia_bytes(str(GUIA_PDF), GUIA_PDF.stat().st_mtime)
+    except OSError:
+        return                                  # sin guía, el paso 1 sigue funcionando igual
+    st.download_button("Descargar la guía · PDF, 6 páginas", datos,
+                       file_name="guia-carga-schwab.pdf", mime="application/pdf",
+                       key="_vd_guia_pdf", type="tertiary")
+
+
 def render_bloque_transacciones() -> bool:
     """Bloque 1. Devuelve True cuando ya hay un CSV cargado."""
     # Sin encabezado (el bloque suelto, como en los tests) se dibuja aquí mismo.
@@ -270,6 +299,7 @@ def render_bloque_transacciones() -> bool:
     rutas = "<br>".join(f"{broker}: {ruta}" for broker, ruta in _AYUDA_BROKER)
     st.markdown(f'<p class="vd-ayuda-broker"><b>¿Dónde lo exporto?</b><br>{rutas}</p>',
                 unsafe_allow_html=True)
+    _boton_guia()
     if archivo is None:
         _roc_bloque1(hueco_roc, "vigilante", None,
                      {"tipo": "arrastre", "frase": adapters.ROC_FRASE_ARRASTRE})
