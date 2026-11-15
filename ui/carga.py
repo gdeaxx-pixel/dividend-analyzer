@@ -1217,8 +1217,11 @@ def render_carga() -> bool:
     # `vd-title` es la clase de títulos de la app (`ui/chrome.py`), que ya resuelve la pelea de
     # especificidad con los h1-h6 de Streamlit. Una clase propia para esto salía a 44 px en el
     # teléfono —el tema la pisaba— y partía el titular en cinco líneas. Medido el 13-nov.
-    st.markdown('<h2 class="vd-title vd-carga-h">Sube tu historial y mira cuánto has '
-                'ganado de verdad</h2>', unsafe_allow_html=True)
+    # Más corto todavía (14-nov, Daniel): «y mira cuánto has ganado de verdad» eran tres
+    # líneas en teléfono. La coma hace el mismo trabajo que «y», y «de verdad» no añadía nada
+    # que el propio dato no diga después.
+    st.markdown('<h2 class="vd-title vd-carga-h">Sube tu historial, mira cuánto has '
+                'ganado</h2>', unsafe_allow_html=True)
     st.caption("Tres pasos. El primero es el único obligatorio.")
 
     hay_csv = render_bloque_transacciones()
@@ -1270,7 +1273,12 @@ ESTILOS_CARGA = """
         .block-container h2.vd-title.vd-carga-h {
           font-size: clamp(20px, 3.2vw, 26px) !important;
           line-height: 1.2;
-          max-width: min(30ch, 100%);
+          /* 34ch, no 30: con el titular corto del 14-nov, 30ch lo partía en TRES líneas en
+             escritorio y 34 lo deja en dos (94 px → 63 px de alto). En teléfono manda el ancho
+             de la pantalla, no este tope. `balance` reparte las líneas en vez de dejar una
+             huérfana de dos palabras. */
+          max-width: min(34ch, 100%);
+          text-wrap: balance;
           margin: 4px 0 0;
         }
 
