@@ -151,6 +151,29 @@
     content: ""; position: absolute; top: -4px; bottom: -4px; left: var(--zero); width: 1px; background: var(--ink-mut); opacity: .55;
   }
   .wf-bar { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+
+  /* ---- Narración (14-nov) -------------------------------------------------------
+     Patrón de `guia-graficas.md` § «Cómo se revela una gráfica»: una barra a la vez y el
+     rótulo cuando esa barra para. Aquí ya existían las tres filas —precio, dividendos y el
+     total— pero aparecían juntas y había que reconstruir el orden leyendo.
+     El origen del crecimiento va con el signo: una barra negativa nace en el cero y avanza
+     hacia la izquierda; si creciera desde su extremo izquierdo parecería ir al revés.
+     ~4,5 s, y solo la primera vez que estas cifras se dibujan. */
+  @keyframes wf-crece { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes wf-entra { from { opacity: 0; } to { opacity: 1; } }
+  .narra .wf-bar { transform-origin: left center; animation: wf-crece 1100ms cubic-bezier(.33, 1, .68, 1) both; }
+  .narra .wf-bar.neg { transform-origin: right center; }
+  .narra .wf-row:nth-of-type(1) .wf-bar { animation-delay: 250ms; }
+  .narra .wf-row:nth-of-type(2) .wf-bar { animation-delay: 1500ms; }
+  .narra .wf-row:nth-of-type(3) .wf-bar { animation-delay: 2750ms; animation-duration: 800ms; }
+  .narra .wf-v { animation: wf-entra 400ms ease-out both; }
+  .narra .wf-row:nth-of-type(1) .wf-v { animation-delay: 1350ms; }
+  .narra .wf-row:nth-of-type(2) .wf-v { animation-delay: 2600ms; }
+  .narra .wf-row:nth-of-type(3) .wf-v { animation-delay: 3550ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .narra .wf-bar, .narra .wf-v { animation: none; }
+  }
+
   .b-price { background: var(--bar-price); }
   .b-div { background: var(--accent); }
   .b-gain { background: var(--cash); }
@@ -335,6 +358,17 @@
       { k: "Retorno total", sub: "precio + dividendos", from: 0, to: g.retorno, v: g.retorno,
         bar: g.retorno >= 0 ? "b-gain" : "b-loss", vc: g.retorno >= 0 ? "pos" : "neg", total: true }
     ];
+    /* Narrar UNA vez por cifras, no en cada repintado: Streamlit recrea el iframe en cada
+       rerun, así que una bandera en memoria no sirve de nada. La firma son los datos; si no
+       han cambiado, la gráfica sale ya puesta. `sessionStorage` puede fallar (ventana
+       privada, cookies bloqueadas) y entonces simplemente no se anima. */
+    let narra = false;
+    try {
+      const firma = JSON.stringify(grupos.map((g) => [g.clave, g.retorno, g.precio]));
+      narra = sessionStorage.getItem("vd_narra_port") !== firma;
+      if (narra) sessionStorage.setItem("vd_narra_port", firma);
+    } catch (e) { narra = false; }
+
     const extremos = [0];
     grupos.forEach((g) => filas(g).forEach((r) => extremos.push(r.from, r.to)));
     const lo = Math.min(...extremos), hi = Math.max(...extremos);
@@ -347,7 +381,7 @@
         return '<div class="wf-row' + (r.total ? ' total' : '') + '">' +
           '<div class="wf-head"><p class="wf-label"><span class="wf-k">' + r.k + '</span><span class="wf-sub">' + r.sub + '</span></p>' +
           '<span class="wf-v ' + r.vc + '">' + signed(r.v) + '</span></div>' +
-          '<div class="wf-track"><i class="wf-bar ' + r.bar + '" style="left:' + a.toFixed(2) + '%;width:' + (b - a).toFixed(2) + '%"></i></div></div>';
+          '<div class="wf-track"><i class="wf-bar ' + r.bar + (r.v < 0 ? ' neg' : '') + '" style="left:' + a.toFixed(2) + '%;width:' + (b - a).toFixed(2) + '%"></i></div></div>';
       }).join("");
 
       const card = document.createElement("article");
@@ -363,7 +397,7 @@
           '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>' +
           '<p class="verdict">' + (g.veredicto ? esc(g.veredicto) : '') + '</p>' +
         '</div>' +
-        '<div class="wf" style="--zero:' + pos(0).toFixed(2) + '%" role="img" aria-label="' + etiqueta + '">' + rows + '</div>';
+        '<div class="wf' + (narra ? ' narra' : '') + '" style="--zero:' + pos(0).toFixed(2) + '%" role="img" aria-label="' + etiqueta + '">' + rows + '</div>';
       const sel = { type: "group", id: g.clave };
       card.addEventListener("pointerenter", () => preview(sel));
       card.addEventListener("pointerleave", () => preview(null));
