@@ -195,11 +195,23 @@ def _orden(categoria: str) -> tuple:
     return tuple(sorted(orden, key=lambda v: (categoria, v) in _VISTAS_DE_EJEMPLO))
 
 
-def _origen(categoria: str, vista: str) -> tuple[str, str]:
-    """(clase, texto) de la etiqueta que dice de dónde salen las cifras de la vista (P7)."""
+_CATS_CON_EJEMPLO = {cat for cat, _ in _VISTAS_DE_EJEMPLO}
+
+
+def _origen(categoria: str, vista: str) -> tuple[str, str] | None:
+    """(clase, texto) de la etiqueta que dice de dónde salen las cifras de la vista (P7),
+    o `None` cuando no hay nada que distinguir (Q4).
+
+    «Caso de ejemplo» avisa siempre: esas cifras no son las del cliente. «Con tus datos»
+    solo tiene sentido al lado de una vista de ejemplo —en Comparación y en Método— o
+    cuando no hay archivo y TODA la app va con el caso de la clase. En el resto de las
+    secciones no distinguía nada y era una pieza más en pantalla.
+    """
     if (categoria, vista) in _VISTAS_DE_EJEMPLO or riesgo.sin_archivo():
         return "ejemplo", "Caso de ejemplo"
-    return "tus", "Con tus datos"
+    if categoria in _CATS_CON_EJEMPLO:
+        return "tus", "Con tus datos"
+    return None
 
 
 def inyectar_estilos(tema: str) -> None:
@@ -433,12 +445,65 @@ def render_ruta(alerta: bool = False, habilitados: dict | None = None,
                     "ETF", habilitados[categoria], key=f"vd_etf_w_{categoria}",
                     on_change=_sync_etf, args=(categoria,), label_visibility="collapsed",
                 )
-        clase, texto = _origen(categoria, vista)
-        st.markdown(f'<span class="vd-origen vd-origen-{clase}">{texto}</span>',
-                    unsafe_allow_html=True, width="content")
+        origen = _origen(categoria, vista)
+        if origen is not None:
+            clase, texto = origen
+            st.markdown(f'<span class="vd-origen vd-origen-{clase}">{texto}</span>',
+                        unsafe_allow_html=True, width="content")
 
     return Ruta(categoria=categoria, vista=vista, etf=etf,
                 tema=st.session_state.get("vd_tema", "Claro"))
+
+
+def _recorrido(habilitados: dict | None = None) -> list[tuple[str, str]]:
+    """Todas las vistas, en el orden en que se recorren: sección por sección y, dentro de
+    cada una, el orden que ya usa la fila de vistas. Mismo filtro que `render_ruta`: una
+    categoría de ETFs sin ninguno no está en el menú, así que tampoco en el recorrido."""
+    if habilitados is None:
+        habilitados = dict(nav.CATS)
+    cats = [c for c in CAT_ORDER_TOTAL if c not in nav.CATS or habilitados.get(c)]
+    return [(c, v) for c in cats for v in _orden(c)]
+
+
+def paso_siguiente(ruta: "Ruta", habilitados: dict | None = None) -> tuple[str, str] | None:
+    """La vista que sigue a la actual, o `None` si es la última del recorrido."""
+    pasos = _recorrido(habilitados)
+    try:
+        i = pasos.index((ruta.categoria, ruta.vista))
+    except ValueError:
+        return None
+    return pasos[i + 1] if i + 1 < len(pasos) else None
+
+
+def _ir_al_paso(categoria: str, vista: str) -> None:
+    st.session_state.vd_categoria = categoria
+    st.session_state.vd_vista = vista
+
+
+def render_siguiente(ruta: "Ruta", habilitados: dict | None = None) -> None:
+    """A3 — el paso siguiente, al pie de la sección.
+
+    Al terminar de leer una vista no había a dónde ir: tocaba volver arriba y adivinar
+    cuál sigue. Un solo botón, con el nombre de lo que viene. En la última vista no se
+    dibuja nada (no hay a dónde mandar a nadie).
+
+    Botón nativo y no un enlace: la ruta vive en `st.session_state` y solo un callback de
+    Python puede cambiarla (mismo motivo que `heredadas._botones_ruta`).
+    """
+    if estado.consumir_ofrece_a_donde_ir():
+        return
+    paso = paso_siguiente(ruta, habilitados)
+    if paso is None:
+        return
+    categoria, vista = paso
+    nombre = CAT_LABELS_TOTAL[categoria]
+    vistas = _vistas(categoria)
+    if len(vistas) > 1 and vista in vistas:
+        nombre = f"{nombre} › {vistas[vista]}"
+    with st.container(key="vd_siguiente"):
+        st.markdown('<p class="vd-sig-k">Siguiente</p>', unsafe_allow_html=True)
+        st.button(f"{nombre} →", key="vd_ir_siguiente", type="tertiary",
+                  on_click=_ir_al_paso, args=(categoria, vista))
 
 
 def render_placeholder(ruta: "Ruta | None" = None, titulo: str | None = None) -> None:
@@ -633,6 +698,15 @@ _ESTILOS = """
         .st-key-vd_subfila { row-gap: 6px; margin-top: 2px; }
         .st-key-vd_subfila > div:has(.vd-origen) { margin-left: auto; }
         .st-key-vd_etfs [data-testid="stButtonGroup"] { flex-wrap: wrap; row-gap: 4px; }
+        .st-key-vd_siguiente { border-top: 1px solid var(--hair); margin-top: 32px; padding-top: 14px; }
+        /* Con `.vd-sig-k` a secas gana el tamaño de párrafo de Streamlit (medido: 16px).
+           Mismo selector que `vd-her-subtitulo`, que sí se ve a 11. */
+        [data-testid="stMarkdownContainer"] p.vd-sig-k {
+          font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+          letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mut);
+          margin: 0 0 2px;
+        }
+        .st-key-vd_siguiente .stButton button { padding-left: 0; }
         .vd-origen {
           display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
           font-family: var(--font-mono); font-size: 11px; font-weight: 600;
