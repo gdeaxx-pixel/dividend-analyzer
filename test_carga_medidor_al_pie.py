@@ -52,7 +52,8 @@ def test_la_hoja_abre_con_el_titular_y_sin_el_medidor(donas):
     at = AppTest.from_string(_CARGA, default_timeout=25)
     at.run()
     assert at.exception == []
-    assert "cuánto has ganado de verdad" in _markdown(at), "falta el titular de la carga"
+    assert "Sube tu historial, mira cuánto has ganado" in _markdown(at), (
+        "falta el titular de la carga")
     assert not donas, "la dona volvió a abrir la pantalla"
 
 
