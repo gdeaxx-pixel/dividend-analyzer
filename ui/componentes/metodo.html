@@ -665,6 +665,19 @@
      recuadro + la línea que las une es lo único que las agrupa. El color del
      rótulo NO se toca: el morado en el texto competía con los datos. */
   .he-h.he-mark .he-lab { border: 1px dashed var(--mark); padding: 3px 6px; }
+  /* ---- Narración (14-nov) · SOLO el momento de la duplicación -------------------
+     `guia-graficas.md` § «Cómo se revela una gráfica» decidió para esta vista: se narra
+     el instante en que la hoja vuelve a sumar el dividendo, que es la demostración del
+     error; la matriz entera, no. Primero se dibujan los bordes de las dos columnas que
+     la hoja suma, y después aparece el puente que las une en el Total. ~2,4 s, una vez
+     por visita, y nada se mueve de sitio. */
+  @keyframes dup-marca { from { border-color: transparent; } to { border-color: var(--mark); } }
+  @keyframes dup-entra { from { opacity: 0; } to { opacity: 1; } }
+  .narra-dup .he-h.he-mark .he-lab { animation: dup-marca 600ms ease-out both; animation-delay: 1000ms; }
+  .narra-dup .he-bridge { animation: dup-entra 500ms ease-out both; animation-delay: 1900ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .narra-dup .he-h.he-mark .he-lab, .narra-dup .he-bridge { animation: none; }
+  }
 
   /* Puente entre los dos recuadros. La fila abarca la tabla entera y el tramo
      visible se posiciona con JS (placeBridge) midiendo el borde derecho de la
@@ -2941,6 +2954,16 @@
   }
   crearPuenteMark("tmGrid", "tmBridge");
   crearPuenteMark("tmConDripGrid", "tmConDripBridge");
+  /* La duplicación se señala una vez por visita: esta vista se vuelve a dibujar al
+     cambiar de fondo y animar en cada clic sería ruido (`guia-graficas.md`). */
+  try {
+    if (!sessionStorage.getItem("vd_narra_metodo_dup")) {
+      sessionStorage.setItem("vd_narra_metodo_dup", "1");
+      var _b = document.getElementById("tmConDripBlock");
+      if (_b) _b.classList.add("narra-dup");
+    }
+  } catch (e) {}
+
   crearPuenteMark("tmSinDripGrid", "tmSinDripBridge");
 
   // ---- Modal: Método tradicional (click sobre el ⓘ del título) ----

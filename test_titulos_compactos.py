@@ -20,9 +20,11 @@ import pytest
 COMPONENTES = Path(__file__).resolve().parent / "ui" / "componentes"
 
 # `metodo_real.html` lo GENERA `tools/extract_metodo_real.py` desde el demo del vault
-# (`test_contrato_componentes::test_los_contratos_vivos_siguen_pasando_su_check`): se
-# compacta cambiando el demo y regenerando, no a mano. Por eso queda fuera.
-GENERADOS = {"metodo_real.html"}
+# (`test_contrato_componentes::test_los_contratos_vivos_siguen_pasando_su_check`), así que
+# se compactó allí —en `demos/viaje-dinero-waterfall.html`— y se regeneró. Ya entra aquí:
+# si alguien vuelve a generarlo desde un demo sin compactar, esto cae, que es lo que debe
+# pasar.
+GENERADOS: set[str] = set()
 
 # Las clases de título que SÍ se usan en el marcado. `soon-title` (27 px) no aparece en
 # ningún `class=`: es CSS muerto y vigilarlo solo daría ruido.

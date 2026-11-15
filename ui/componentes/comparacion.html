@@ -400,6 +400,30 @@
   /* Dos columnas en pantalla ancha (14-nov). Medido: los cuatro campos apilados ocupaban
      212 px de los 485 que había antes de la primera gráfica — más que el título, el lede y
      el veredicto juntos. `auto-fit` los devuelve a una sola columna en el teléfono. */
+
+  /* ---- Narración (14-nov) ---------------------------------------------------------
+     Patrón de `APPs/Dividend-Analyzer/guia-graficas.md`: una cosa a la vez, en el orden
+     en que se leen, y la interpretación al final. Aquí NO se traza la línea: solo
+     aparecen las piezas. ~3,8 s, y solo la primera vez que se abre la vista. */
+  @keyframes cmp-entra { from { opacity: 0; } to { opacity: 1; } }
+  .narra-v .v-kick,
+  .narra-v .v-big,
+  .narra-v .v-sub,
+  .narra-v .io-row,
+  .narra-v .cmp-note,
+  .narra-v .cmp-plot-wrap { animation: cmp-entra 420ms ease-out both; }
+  .narra-v .v-kick { animation-delay: 200ms; }
+  .narra-v .v-big { animation-delay: 800ms; }
+  .narra-v .v-sub { animation-delay: 1400ms; }
+  .narra-v .io-row:nth-of-type(1) { animation-delay: 2000ms; }
+  .narra-v .io-row:nth-of-type(2) { animation-delay: 2500ms; }
+  .narra-v .cmp-note { animation-delay: 3000ms; }
+  .narra-v .cmp-plot-wrap { animation-delay: 3400ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .narra-v .v-kick, .narra-v .v-big, .narra-v .v-sub,
+    .narra-v .io-row, .narra-v .cmp-note, .narra-v .cmp-plot-wrap { animation: none; }
+  }
+
   .cmp-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 28px; margin-bottom: 20px; align-items: start; }
   .cmp-field { display: flex; flex-direction: column; gap: 8px; }
   .cmp-pair { display: flex; gap: 20px; flex-wrap: wrap; }
@@ -1472,6 +1496,20 @@
       return out;
     }
     function cvUsd(v){ var p = Math.abs(v).toFixed(2).split("."); return (v<0?"−":"") + "$" + p[0].replace(/\B(?=(\d{3})+$)/g, ",") + "." + p[1]; }
+
+    /* Narrar la primera vez que esta vista se abre en la visita, no en cada repintado:
+       cada chip de control vuelve a dibujar el veredicto y animar en cada clic sería
+       justo lo contrario de lo que pide la guía. `sessionStorage` puede fallar (ventana
+       privada, cookies bloqueadas) y entonces no se anima, que es el lado seguro. */
+    try {
+      var _clave = "vd_narra_cmp_sim";
+      if (!sessionStorage.getItem(_clave)) {
+        sessionStorage.setItem(_clave, "1");
+        var _p = document.getElementById("cmp-panel-sim");
+        if (_p) _p.classList.add("narra-v");
+      }
+    } catch (e) {}
+
     function cvBar(n, v, max, color){
       var f = document.getElementById("cvF"+n), o = document.getElementById("cvO"+n), s = document.getElementById("cvV"+n);
       var w = max > 0 ? Math.max(0, v/max*100) : 0;
