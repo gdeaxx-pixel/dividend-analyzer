@@ -103,6 +103,14 @@ def _subir_al_inicio_si_toca() -> None:
 # final; y el 2026-10-28 «Riesgo» pasa a ser su propia categoría, en segundo lugar.
 # `CAT_LABELS_TOTAL` se construye EN ese orden porque el popover recorre el dict: antes
 # se armaba desde `nav.CAT_LABELS` y Portafolios salía quinto aunque fuera el aterrizaje.
+# «Largo Plazo» y «Dividendos» son dos categorías de la taxonomía (cada fondo pertenece a
+# una) pero UNA sola entrada del menú desde el 14-nov (Q3): abrían la misma pantalla y
+# solo cambiaba la lista del selector, así que para encontrar un fondo había que acertar
+# antes en qué grupo estaba. Dentro, los dos grupos siguen separados y con su nombre.
+CAT_FONDOS = "fondos"
+LABEL_FONDOS = "Fondo por fondo"
+CATS_FONDOS = ("largo", "dividendos")
+
 CAT_ORDER_TOTAL = (heredadas.CAT_CLAVE, riesgo.CAT_CLAVE, "largo", "dividendos", "comparacion",
                    "metodo", impuestos.CAT_CLAVE)
 _LABELS = {**nav.CAT_LABELS, heredadas.CAT_CLAVE: heredadas.CAT_LABEL,
@@ -268,6 +276,22 @@ def etfs_habilitados(resultados: dict) -> dict:
     return adapters.fondos_por_categoria(resultados)
 
 
+def _en_el_menu(categoria: str) -> str:
+    """La entrada del menú que corresponde a una categoría real."""
+    return CAT_FONDOS if categoria in CATS_FONDOS else categoria
+
+
+def _elegir_fondo(grupo: str) -> None:
+    """`on_change` de los chips de un grupo dentro de «Fondo por fondo»: elegir un fondo
+    también dice en qué grupo estamos, que es lo que la ruta necesita por dentro."""
+    seleccion = st.session_state.get(f"vd_etf_w_{grupo}")
+    if seleccion is None:          # segundo clic sobre el activo: se conserva
+        return
+    st.session_state[f"vd_etf_{grupo}"] = seleccion
+    st.session_state["vd_categoria"] = grupo
+    st.session_state["vd_panel"] = None
+
+
 def _sync_etf(categoria: str) -> None:
     """`on_change` de los botones de ETF: un segundo clic sobre el activo lo deselecciona y
     llega `None`; ahí se conserva el ETF anterior."""
@@ -386,11 +410,26 @@ def render_ruta(alerta: bool = False, habilitados: dict | None = None,
 
     if habilitados is None:
         habilitados = dict(nav.CATS)
-    categorias = {c: texto for c, texto in CAT_LABELS_TOTAL.items()
-                  if c not in nav.CATS or habilitados.get(c)}
+    categorias = {}
+    for c, texto in CAT_LABELS_TOTAL.items():
+        if c in nav.CATS and not habilitados.get(c):
+            continue
+        if c in CATS_FONDOS:
+            categorias.setdefault(CAT_FONDOS, LABEL_FONDOS)   # una sola entrada para las dos
+        else:
+            categorias[c] = texto
 
     st.session_state.setdefault("vd_categoria", CAT_ORDER_TOTAL[0])
-    if st.session_state.vd_categoria not in categorias:
+    # El menú ofrece «Fondo por fondo»; por dentro la ruta sigue siendo la categoría real
+    # del fondo activo, que es lo que entienden las vistas y los adaptadores.
+    cat = st.session_state.vd_categoria
+    if cat == CAT_FONDOS or (cat in CATS_FONDOS and not habilitados.get(cat)):
+        # El menú ya no distingue los dos grupos, así que un grupo sin fondos en el
+        # archivo no echa al cliente de la sección: lo pasa al grupo que sí los tiene.
+        # Si no hay ninguno, la entrada no está en el menú y se cae a Portafolios abajo.
+        st.session_state.vd_categoria = next(
+            (c for c in CATS_FONDOS if habilitados.get(c)), CAT_ORDER_TOTAL[0])
+    if _en_el_menu(st.session_state.vd_categoria) not in categorias:
         st.session_state.vd_categoria = CAT_ORDER_TOTAL[0]
     categoria = st.session_state.vd_categoria
 
@@ -423,7 +462,7 @@ def render_ruta(alerta: bool = False, habilitados: dict | None = None,
     _render_ayuda(alerta, categoria, vista)
 
     with st.container(key="vd_secciones"):
-        st.session_state["vd_cat_w"] = categoria
+        st.session_state["vd_cat_w"] = _en_el_menu(categoria)
         st.segmented_control(
             "Sección", tuple(categorias), format_func=categorias.get, key="vd_cat_w",
             on_change=_sync_categoria, label_visibility="collapsed", required=True,
@@ -438,7 +477,25 @@ def render_ruta(alerta: bool = False, habilitados: dict | None = None,
                 on_change=_sync_vista, args=(categoria,), label_visibility="collapsed",
                 required=True,
             )
-        if con_etf:
+        if con_etf and categoria in CATS_FONDOS:
+            # Un control por grupo, con su rótulo: la separación entre fondos de
+            # crecimiento y de dividendos es parte del método, no un detalle del menú.
+            with st.container(key="vd_etfs", horizontal=True, gap="medium",
+                              vertical_alignment="center"):
+                for grupo in CATS_FONDOS:
+                    fondos = habilitados.get(grupo) or []
+                    if not fondos:
+                        continue
+                    # El nombre del grupo es la etiqueta del propio control, no un párrafo
+                    # aparte: con un `<p>` suelto, Streamlit le daba a cada grupo una caja
+                    # de 128 px en el teléfono para 34 px de contenido (medido).
+                    st.session_state[f"vd_etf_w_{grupo}"] = (
+                        etf if grupo == categoria else None)
+                    st.segmented_control(
+                        CAT_LABELS_TOTAL[grupo], fondos, key=f"vd_etf_w_{grupo}",
+                        on_change=_elegir_fondo, args=(grupo,),
+                    )
+        elif con_etf:
             with st.container(key="vd_etfs"):
                 st.session_state[f"vd_etf_w_{categoria}"] = etf
                 st.segmented_control(
@@ -461,7 +518,13 @@ def _recorrido(habilitados: dict | None = None) -> list[tuple[str, str]]:
     categoría de ETFs sin ninguno no está en el menú, así que tampoco en el recorrido."""
     if habilitados is None:
         habilitados = dict(nav.CATS)
-    cats = [c for c in CAT_ORDER_TOTAL if c not in nav.CATS or habilitados.get(c)]
+    cats = []
+    for c in CAT_ORDER_TOTAL:
+        if c in nav.CATS and not habilitados.get(c):
+            continue
+        if c in CATS_FONDOS and any(x in cats for x in CATS_FONDOS):
+            continue          # las dos son una sola parada: «Fondo por fondo»
+        cats.append(c)
     return [(c, v) for c in cats for v in _orden(c)]
 
 
@@ -496,7 +559,7 @@ def render_siguiente(ruta: "Ruta", habilitados: dict | None = None) -> None:
     if paso is None:
         return
     categoria, vista = paso
-    nombre = CAT_LABELS_TOTAL[categoria]
+    nombre = LABEL_FONDOS if categoria in CATS_FONDOS else CAT_LABELS_TOTAL[categoria]
     vistas = _vistas(categoria)
     if len(vistas) > 1 and vista in vistas:
         nombre = f"{nombre} › {vistas[vista]}"
@@ -707,6 +770,23 @@ _ESTILOS = """
           margin: 0 0 2px;
         }
         .st-key-vd_siguiente .stButton button { padding-left: 0; }
+        /* En el teléfono los dos grupos lado a lado dejan a cada uno medio ancho y
+           los chips quedan cortados (medido a 390 px: «SCHB XLK SM…»). Apilados, cada
+           grupo usa la fila entera. */
+        /* En el teléfono los dos grupos lado a lado dejan a cada uno medio ancho y los
+           chips quedan cortados (medido a 390 px: «SCHB XLK SM…»); apilados, cada grupo
+           usa la fila entera. */
+        @media (max-width: 700px) {
+          .st-key-vd_etfs { flex-direction: column !important; align-items: stretch !important; gap: 8px !important; }
+          .st-key-vd_etfs > div { width: 100%; }
+        }
+        /* El nombre de cada grupo de fondos es la etiqueta del control. */
+        .st-key-vd_etfs label p {
+          font-family: var(--font-mono) !important; font-size: 11px !important;
+          font-weight: 700 !important; letter-spacing: .12em; text-transform: uppercase;
+          color: var(--ink-mut) !important;
+        }
+        .st-key-vd_etfs label { margin-bottom: 2px !important; }
         .vd-origen {
           display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
           font-family: var(--font-mono); font-size: 11px; font-weight: 600;

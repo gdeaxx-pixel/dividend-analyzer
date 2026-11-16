@@ -57,9 +57,19 @@ def _claves(at) -> set:
 # ── P1 · secciones a la vista ─────────────────────────────────────────────────────────
 
 def test_las_secciones_estan_a_la_vista_y_no_en_un_popover():
+    """Desde el 14-nov (Q3) «Largo Plazo» y «Dividendos» son UNA entrada, «Fondo por
+    fondo»: abrían la misma pantalla y solo cambiaba la lista del selector."""
     at = _app(_vd_resultados=_RESULTADOS)
     secciones = list(at.button_group(key="vd_cat_w").options)
-    assert secciones == [chrome.CAT_LABELS_TOTAL[c] for c in chrome.CAT_ORDER_TOTAL]
+    esperadas = []
+    for c in chrome.CAT_ORDER_TOTAL:
+        etiqueta = (chrome.LABEL_FONDOS if c in chrome.CATS_FONDOS
+                    else chrome.CAT_LABELS_TOTAL[c])
+        if etiqueta not in esperadas:
+            esperadas.append(etiqueta)
+    assert secciones == esperadas
+    assert chrome.LABEL_FONDOS in secciones
+    assert "Largo Plazo" not in secciones and "Dividendos" not in secciones
     assert not [k for k in _claves(at) if (k or "").startswith("vd_pop_")]
 
 

@@ -78,10 +78,20 @@ def test_la_ultima_vista_no_ofrece_siguiente():
 
 
 def test_el_recorrido_no_repite_ni_se_salta_ninguna_vista():
+    """El recorrido es el menú: «Fondo por fondo» es una sola parada aunque por dentro
+    sean dos categorías, porque esa entrada del menú es una."""
     pasos = chrome._recorrido()
     assert len(pasos) == len(set(pasos)), "una vista aparece dos veces"
-    esperadas = [(c, v) for c in chrome.CAT_ORDER_TOTAL for v in chrome._orden(c)]
+    vistos = []
+    esperadas = []
+    for c in chrome.CAT_ORDER_TOTAL:
+        if c in chrome.CATS_FONDOS:
+            if vistos:
+                continue
+            vistos.append(c)
+        esperadas += [(c, v) for v in chrome._orden(c)]
     assert pasos == esperadas
+    assert sum(1 for c, _ in pasos if c in chrome.CATS_FONDOS) == 1
 
 
 def test_una_seccion_sin_etf_no_entra_en_el_recorrido():

@@ -9,6 +9,7 @@ import os
 
 from streamlit.testing.v1 import AppTest
 
+from ui import chrome
 from ui.chrome import etfs_habilitados
 
 _RAIZ = os.path.dirname(os.path.abspath(__file__))
@@ -65,14 +66,23 @@ def test_deseleccionar_el_activo_conserva_el_etf():
     assert at.button_group(key="vd_etf_w_dividendos").value == "NVDY"
 
 
-def test_categoria_sin_etfs_se_oculta_del_menu():
-    # Desde el 30-oct (P1) las secciones son una fila visible, no un popover.
+def test_con_fondos_en_un_solo_grupo_la_seccion_sigue_en_el_menu():
+    # Desde el 30-oct (P1) las secciones son una fila visible, no un popover; desde el
+    # 14-nov (Q3) los dos grupos de fondos son UNA entrada, «Fondo por fondo».
     at = _app(_hab={"dividendos": ("TSLY",), "largo": ()}, vd_categoria="dividendos")
     secciones = list(at.button_group(key="vd_cat_w").options)   # etiquetas visibles
-    assert "Dividendos" in secciones
-    assert "Largo Plazo" not in secciones
+    assert chrome.LABEL_FONDOS in secciones
+    assert "Dividendos" not in secciones and "Largo Plazo" not in secciones
 
 
-def test_categoria_activa_sin_etfs_vuelve_a_portafolios():
+def test_un_grupo_vacio_pasa_al_otro_sin_echarte_de_la_seccion():
+    """Antes, con el grupo activo vacío, se salía a Portafolios. Ahora el menú no
+    distingue los dos grupos, así que quedarse es lo que espera el cliente."""
     at = _app(_hab={"dividendos": ("TSLY",), "largo": ()}, vd_categoria="largo")
+    assert at.session_state["_ruta"] == ("dividendos", "TSLY")
+
+
+def test_sin_fondos_en_ninguno_de_los_dos_vuelve_a_portafolios():
+    at = _app(_hab={"dividendos": (), "largo": ()}, vd_categoria="largo")
     assert at.session_state["_ruta"] == ("detalle", None)
+    assert chrome.LABEL_FONDOS not in list(at.button_group(key="vd_cat_w").options)
