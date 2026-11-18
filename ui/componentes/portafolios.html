@@ -59,16 +59,29 @@
   /* ── Asignación ── */
   .alloc-grid {
     display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 480px);
-    justify-content: start; gap: clamp(28px, 7vw, 96px); align-items: center;
+    justify-content: start; gap: clamp(28px, 7vw, 96px); align-items: start;
   }
-  .donut { position: relative; width: 100%; max-width: 300px; aspect-ratio: 1; margin-inline: auto; }
-  .donut svg { width: 100%; height: 100%; display: block; overflow: visible; }
-  .seg { cursor: pointer; transition: opacity .2s ease; }
-  .ring-mark { fill: var(--ink); opacity: 0; transition: opacity .2s ease; pointer-events: none; }
-  .center {
-    position: absolute; inset: 0; display: grid; place-content: center; text-align: center;
-    pointer-events: none; grid-template-rows: 20px 44px 20px; gap: 2px;
+  /* Reparto en barras (18-nov). Las dos pistas miden lo mismo y cada barra ocupa el peso
+     de su portafolio, así que la proporción entre los dos se lee sin comparar ángulos.
+     Dentro, un tramo por fondo. */
+  .reparto { display: grid; gap: 20px; align-content: center; min-width: 0; }
+  .rep-g { display: grid; gap: 7px; }
+  .rep-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .rep-n {
+    appearance: none; border: 0; background: transparent; color: inherit; font: inherit;
+    padding: 0; cursor: pointer; font-weight: 600; font-size: 14px; text-align: left;
   }
+  .rep-n:hover, .rep-n:focus-visible { color: var(--accent); }
+  .rep-v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+  .rep-track { height: 16px; background: var(--panel-tint); }
+  .rep-bar { display: flex; height: 100%; gap: 2px; }
+  .rep-seg {
+    appearance: none; border: 0; padding: 0; min-width: 3px; cursor: pointer;
+    transition: opacity .2s ease, outline-color .2s ease; outline: 2px solid transparent; outline-offset: 1px;
+  }
+  .rep-seg.is-on { outline-color: var(--ink); }
+  .rep-seg:focus-visible { outline-color: var(--accent); }
+  .rep-total { display: grid; gap: 2px; border-top: 1px solid var(--hair); padding-top: 12px; }
   .c-k { font-size: 13px; color: var(--ink-mut); white-space: nowrap; }
   .c-v { font-family: var(--font-mono); font-weight: 700; font-size: 34px; line-height: 44px; letter-spacing: -.02em; }
   .c-s { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
@@ -213,7 +226,6 @@
 
   @media (max-width: 760px) {
     .alloc-grid { grid-template-columns: minmax(0, 1fr); }
-    .donut { max-width: 260px; }
     .cards, .cards.single .card { grid-template-columns: minmax(0, 1fr); }
     .cards.single .verdict { margin-bottom: 24px; }
     .cards.single .wf { border-top: 1px solid var(--hair); padding-top: 18px; }
@@ -225,16 +237,16 @@
     .legend-foot { padding-inline: 8px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .seg, .ring-mark, .row, .card { transition: none; }
+    .rep-seg, .row, .card { transition: none; }
   }
 </style>
 
 <div class="wrap" id="port-root">
   <section class="panel" aria-label="Dónde está tu dinero hoy">
     <div class="alloc-grid">
-      <div class="donut">
-        <svg id="donut" viewBox="0 0 280 280" role="img"></svg>
-        <div class="center" aria-live="polite">
+      <div class="reparto">
+        <div id="rep-filas"></div>
+        <div class="rep-total" aria-live="polite">
           <span class="c-k" id="c-k"></span>
           <span class="c-v" id="c-v"></span>
           <span class="c-s" id="c-s"></span>
@@ -279,10 +291,7 @@
     return;
   }
 
-  const NS = "http://www.w3.org/2000/svg";
   const RAMPA = { crec: ["--f1", "--f3"], div: ["--f4", "--f5"] };
-  const FUND_GAP = 1.5, GROUP_GAP = 4.5, MIN_DEG = 1.2;
-  const CX = 140, CY = 140, R0 = 86, R1 = 118, M0 = 123, M1 = 127;
 
   const $ = (id) => document.getElementById(id);
   const money = (v) => "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
@@ -308,49 +317,58 @@
   const fondos = grupos.flatMap((g) => g.fondos);
   const single = grupos.length === 1;
 
-  const segEls = {}, markEls = {}, rowEls = [], cardEls = {};
+  const segEls = {}, rowEls = [], cardEls = {};
   let pinned = null, hovered = null;
 
-  function arc(ra, rb, a0, a1) {
-    const rad = (d) => (d - 90) * Math.PI / 180;
-    const A0 = rad(a0), A1 = rad(a1), large = a1 - a0 > 180 ? 1 : 0;
-    const p = (r, a) => (CX + r * Math.cos(a)).toFixed(2) + " " + (CY + r * Math.sin(a)).toFixed(2);
-    return `M${p(rb, A0)} A${rb} ${rb} 0 ${large} 1 ${p(rb, A1)} L${p(ra, A1)} A${ra} ${ra} 0 ${large} 0 ${p(ra, A0)} Z`;
-  }
-
-  /* Un grupo de un solo fondo se selecciona como grupo: su fila de fondo no existe. */
   const selDeFondo = (f) => (porClave[f.g].fondos.length === 1 ? { type: "group", id: f.g } : { type: "fund", id: f.ticker });
 
-  function buildDonut() {
-    const svg = $("donut");
-    svg.setAttribute("aria-label", "Distribución por fondo: " + fondos.map((f) => `${f.ticker} ${pctTxt(f.pct)}`).join(", "));
-    const total = fondos.reduce((a, f) => a + f.mv, 0) || 1;
-    const gaps = fondos.map((f, i) => (fondos.length > 1 && fondos[(i + 1) % fondos.length].g === f.g ? FUND_GAP : GROUP_GAP));
-    const usable = 360 - (fondos.length > 1 ? gaps.reduce((a, b) => a + b, 0) : 0);
-    const bruto = fondos.map((f) => Math.max(f.mv / total * usable, MIN_DEG));
-    const escala = usable / bruto.reduce((a, b) => a + b, 0);
-    let cursor = fondos.length > 1 ? GROUP_GAP / 2 : 0;
-    fondos.forEach((f, i) => {
-      const deg = Math.min(bruto[i] * escala, 359.99);
-      const a0 = cursor, a1 = cursor + deg;
-      cursor = a1 + gaps[i];
+  function buildBarras() {
+    const host = $("rep-filas");
+    host.className = "reparto-filas";
+    host.style.display = "grid";
+    host.style.gap = "20px";
+    grupos.forEach((g) => {
+      const fila = document.createElement("div");
+      fila.className = "rep-g";
 
-      const mark = document.createElementNS(NS, "path");
-      mark.setAttribute("d", arc(M0, M1, a0, a1));
-      mark.setAttribute("class", "ring-mark");
-      svg.appendChild(mark);
-      markEls[f.ticker] = mark;
+      const head = document.createElement("div");
+      head.className = "rep-head";
+      const nombre = document.createElement("button");
+      nombre.type = "button";
+      nombre.className = "rep-n";
+      nombre.textContent = g.nombre;
+      const selG = { type: "group", id: g.clave };
+      nombre.addEventListener("click", () => pin(selG));
+      bindRow(nombre, selG);
+      const cifra = document.createElement("span");
+      cifra.className = "rep-v";
+      cifra.textContent = money(g.mv) + " · " + pctTxt(g.pct);
+      head.append(nombre, cifra);
 
-      const seg = document.createElementNS(NS, "path");
-      seg.setAttribute("d", arc(R0, R1, a0, a1));
-      seg.setAttribute("class", "seg");
-      seg.style.fill = f.color;
-      const sel = selDeFondo(f);
-      seg.addEventListener("pointerenter", () => preview(sel));
-      seg.addEventListener("pointerleave", () => preview(null));
-      seg.addEventListener("click", () => pin(sel));
-      svg.appendChild(seg);
-      segEls[f.ticker] = seg;
+      /* La pista mide el total; la barra, lo que pesa este portafolio. Las dos filas
+         comparten escala, que es lo que la dona no dejaba comparar. */
+      const track = document.createElement("div");
+      track.className = "rep-track";
+      const bar = document.createElement("div");
+      bar.className = "rep-bar";
+      bar.style.width = Math.max(0, Math.min(100, g.pct)).toFixed(2) + "%";
+      g.fondos.forEach((f) => {
+        const seg = document.createElement("button");
+        seg.type = "button";
+        seg.className = "rep-seg";
+        seg.style.flex = String(Math.max(f.mv, 0.0001));
+        seg.style.background = f.color;
+        seg.setAttribute("aria-label", f.ticker + ", " + pctTxt(f.pct) + " de tu dinero");
+        const sel = selDeFondo(f);
+        seg.addEventListener("pointerenter", () => preview(sel));
+        seg.addEventListener("pointerleave", () => preview(null));
+        seg.addEventListener("click", () => pin(sel));
+        bar.appendChild(seg);
+        segEls[f.ticker] = seg;
+      });
+      track.appendChild(bar);
+      fila.append(head, track);
+      host.appendChild(fila);
     });
   }
 
@@ -465,8 +483,10 @@
 
     fondos.forEach((f) => {
       const on = activos.includes(f.ticker);
-      segEls[f.ticker].style.opacity = sel && !on ? 0.2 : 1;
-      markEls[f.ticker].style.opacity = sel && on ? 1 : 0;
+      const seg = segEls[f.ticker];
+      if (!seg) return;
+      seg.style.opacity = sel && !on ? 0.2 : 1;
+      seg.classList.toggle("is-on", !!sel && on);
     });
 
     rowEls.forEach(({ el, sel: rs }) => {
@@ -577,7 +597,7 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && md.classList.contains("open")) cerrarFicha(); });
 
   $("reset").addEventListener("click", () => pin(null));
-  buildDonut();
+  buildBarras();
   buildLegend();
   buildCards();
   render();
