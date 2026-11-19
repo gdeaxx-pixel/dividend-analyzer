@@ -50,6 +50,16 @@ VIEW_ORDER = ("portafolios",)
 
 # ── Fila 8 — Tus dos portafolios ────────────────────────────────────────────────
 
+def _usd(v: float, signo: bool = False) -> str:
+    """Dólares sin centavos, con separador de miles; el menos va delante del signo de
+    moneda y nunca sale «−$0»."""
+    entero = round(v)
+    if entero == 0:
+        entero = 0
+    marca = "−" if entero < 0 else ("+" if signo else "")
+    return f"{marca}${abs(entero):,.0f}"
+
+
 def _agregados(resultados: dict, tickers: list[str]) -> tuple:
     from ui.adapters import _tiene_datos
 
@@ -158,6 +168,31 @@ def _botones_ruta(rutas: list[dict]) -> None:
     estado.ya_ofrece_a_donde_ir()
 
 
+def _render_total_cuenta(resultados: dict) -> None:
+    """A1 — la primera línea de los resultados: la cuenta entera en tres cifras.
+
+    Antes había que sumar mentalmente las dos tarjetas de portafolio para saber cómo va la
+    cuenta. Las cifras las arma `ui.adapters.total_cuenta_data`; aquí solo se pintan.
+    """
+    from ui.adapters import total_cuenta_data
+
+    d = total_cuenta_data(resultados)
+    if d is None:
+        return
+    signo = "pos" if d["retorno_vista"] >= 0 else "neg"
+    st.markdown(
+        '<div class="vd-cuenta">'
+        f'<div class="vd-cta"><span class="vd-cta-k">Pusiste</span>'
+        f'<span class="vd-cta-v">{_usd(d["pusiste_vista"])}</span></div>'
+        f'<div class="vd-cta"><span class="vd-cta-k">Tienes hoy</span>'
+        f'<span class="vd-cta-v">{_usd(d["tienes_hoy_vista"])}</span></div>'
+        f'<div class="vd-cta vd-cta-r"><span class="vd-cta-k">Tu resultado</span>'
+        f'<span class="vd-cta-v {signo}">{_usd(d["retorno_vista"], signo=True)}'
+        f'<small class="{signo}">{d["pct"]:+.1f}%</small></span></div>'
+        '</div>',
+        unsafe_allow_html=True)
+
+
 def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
     if not resultados:
         st.markdown('<span class="vd-badge">Portafolios</span>', unsafe_allow_html=True)
@@ -165,6 +200,7 @@ def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
         st.markdown('<p class="vd-lede">Carga tu CSV de transacciones para ver esta vista.</p>',
                     unsafe_allow_html=True)
         return
+    _render_total_cuenta(resultados)
     classify_map = logic.classify_tickers(list(resultados.keys()))
     mode_a, _mode_b = _tus_dos_portafolios(resultados, classify_map, tema)
     _portafolio_dividendos(resultados, mode_a)
@@ -181,6 +217,23 @@ def render_vista(vista: str, ruta) -> None:
 
 
 ESTILOS_HEREDADAS = """
+        .vd-cuenta {
+          display: flex; flex-wrap: wrap; gap: 8px 40px; align-items: baseline;
+          border-bottom: 1px solid var(--hair); padding-bottom: 14px; margin-bottom: 4px;
+        }
+        .vd-cta { display: grid; gap: 1px; }
+        .vd-cta-k {
+          font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+          letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mut);
+        }
+        .vd-cta-v {
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+          font-size: 20px; font-weight: 700; color: var(--ink); letter-spacing: -.02em;
+        }
+        .vd-cta-r .vd-cta-v { font-size: 30px; }
+        .vd-cta-v small { font-size: 13px; font-weight: 700; margin-left: 8px; }
+        .vd-cta-v.pos, .vd-cta-v small.pos { color: var(--cash); }
+        .vd-cta-v.neg, .vd-cta-v small.neg { color: var(--loss); }
         [data-testid="stMarkdownContainer"] p.vd-her-subtitulo {
           font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);
