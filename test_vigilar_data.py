@@ -233,39 +233,49 @@ def test_tokens_del_componente_en_los_cuatro_bloques():
 
 # ── V10 · los botones de ruta navegan (AppTest) ────────────────────────────────────────
 
-_RUTAS_V10 = [
-    {"clave": "viaje", "etiqueta": "Dividendos › MSTY", "que": "q",
-     "cat": "dividendos", "vista": "viaje", "etf": "MSTY"},
-    {"clave": "impuestos", "etiqueta": "Impuestos", "que": "q",
-     "cat": "impuestos", "vista": "impuestos", "etf": None},
-]
+# El bloque de abajo dejó de ser un índice de destinos: desde A2 (18-nov) son cuatro
+# preguntas con su cifra, y las cifras salen de los resultados.
+_STATS_BOTONES = {
+    "MSTY": {"pocket_investment": 1000.0, "market_value": 900.0, "net_profit": -50.0,
+             "dividends_gross_total": 200.0, "withheld_tax_total": 60.0,
+             "roc_accumulated": 80.0, "dividends_cash_net": 50.0,
+             "dividends_net_total": 140.0},
+}
 
 _SCRIPT_BOTONES = """
 import sys
 sys.path.insert(0, {path!r})
 from ui import heredadas
-RUTAS = {rutas!r}
-heredadas._botones_ruta(RUTAS)
-""".format(path=_RAIZ, rutas=_RUTAS_V10)
+heredadas._botones_ruta({stats!r})
+""".format(path=_RAIZ, stats=_STATS_BOTONES)
 
 
 def test_botones_ruta_navegan():
+    """Cada pregunta lleva a su vista, y una pregunta sin ETF propio no borra el ETF de
+    contexto anterior."""
     at = AppTest.from_string(_SCRIPT_BOTONES, default_timeout=25)
     at.run()
-    assert at.exception == []
+    assert at.exception == [], [e.value for e in at.exception]
 
-    boton = at.button(key="vd_vig_ruta_viaje")
-    assert boton.label == "1 · Dividendos › MSTY →"
-    boton.click().run()
+    assert at.button(key="vd_preg_pagado").label == "Fondo por fondo →"
+    at.button(key="vd_preg_pagado").click().run()
     assert at.session_state["vd_categoria"] == "dividendos"
     assert at.session_state["vd_vista"] == "viaje"
     assert at.session_state["vd_etf_dividendos"] == "MSTY"
 
-    at.button(key="vd_vig_ruta_impuestos").click().run()
+    at.button(key="vd_preg_retenido").click().run()
     assert at.session_state["vd_categoria"] == "impuestos"
     assert at.session_state["vd_vista"] == "impuestos"
     assert at.session_state["vd_etf_dividendos"] == "MSTY", (
-        "una ruta sin ETF no debe borrar el ETF de contexto anterior")
+        "una pregunta sin ETF no debe borrar el ETF de contexto anterior")
+
+
+def test_las_cuatro_preguntas_salen_con_su_cifra():
+    at = AppTest.from_string(_SCRIPT_BOTONES, default_timeout=25)
+    at.run()
+    textos = " ".join(m.value for m in at.markdown)
+    for cifra in ("$200", "$60", "$80", "$50"):
+        assert cifra in textos, (cifra, textos)
 
 
 # ── V11 · el modal abre la explicación del punto tocado (Node) ─────────────────────────

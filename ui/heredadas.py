@@ -137,7 +137,11 @@ def _portafolio_dividendos(resultados: dict, mode_a: list[str]) -> None:
     if datos is None:
         return
     componentes.render_vigilar(datos, tema)
-    _botones_ruta(datos["rutas"])
+    _botones_ruta(resultados)
+
+
+_DESTINO = {"dividendos": "Fondo por fondo", "impuestos": "Impuestos",
+            "comparacion": "Comparación", "metodo": "Método tradicional"}
 
 
 def _ir_a_ruta(cat: str, vista: str, etf: str | None) -> None:
@@ -147,22 +151,45 @@ def _ir_a_ruta(cat: str, vista: str, etf: str | None) -> None:
         st.session_state[f"vd_etf_{cat}"] = etf
 
 
-def _botones_ruta(rutas: list[dict]) -> None:
-    """«Para entenderlo a fondo»: las vistas de la calculadora donde se estudia cada punto,
-    en orden de estudio. Botones nativos: la ruta vive en `st.session_state` y solo un
-    callback de Python puede cambiarla."""
-    if not rutas:
+def _botones_ruta(resultados: dict) -> None:
+    """A2 — «Lo que conviene que mires»: cuatro preguntas, cada una con su cifra y con el
+    enlace a la vista donde se estudia.
+
+    Antes era «Para entenderlo a fondo», un índice de destinos con una frase de qué se
+    encontraba en cada uno. Ahora la línea responde y el enlace es opcional.
+
+    Las tres columnas tienen el MISMO reparto en las cuatro filas (`[6, 2, 3]`): con una
+    rejilla por fila, una celda más larga —«Fondo por fondo» frente a «Impuestos»— corre la
+    cifra de esa fila y las columnas bailan (pedido de Daniel, 18-nov).
+
+    Botones nativos: la ruta vive en `st.session_state` y solo un callback de Python puede
+    cambiarla. Las cifras las arma `ui.adapters.preguntas_clave_data`; aquí solo se pintan.
+    """
+    from ui.adapters import preguntas_clave_data
+
+    d = preguntas_clave_data(resultados)
+    if d is None:
         return
-    st.markdown('<p class="vd-her-subtitulo">Para entenderlo a fondo, en este orden</p>',
+    st.markdown('<p class="vd-her-subtitulo">Lo que conviene que mires</p>',
                 unsafe_allow_html=True)
-    for i, r in enumerate(rutas, 1):
-        c1, c2 = st.columns([2, 3])
+    for p in d["preguntas"]:
+        c1, c2, c3 = st.columns([6, 2, 3], vertical_alignment="center")
         with c1:
-            st.button(f"{i} · {r['etiqueta']} →", key=f"vd_vig_ruta_{r['clave']}",
-                      type="tertiary", on_click=_ir_a_ruta,
-                      args=(r["cat"], r["vista"], r["etf"]))
+            st.markdown(f'<p class="vd-pregunta">{p["pregunta"]}</p>', unsafe_allow_html=True)
         with c2:
-            st.caption(r["que"])
+            # El menos solo cuando de verdad salió dinero: una cuenta sin retención
+            # mostraba «−$0» (medido en el caso de ejemplo).
+            resta = p["negativa"] and round(p["valor"]) != 0
+            clase = "vd-preg-v neg" if resta else "vd-preg-v"
+            marca = "−" if resta else ""
+            st.markdown(f'<p class="{clase}">{marca}{_usd(p["valor"])}</p>',
+                        unsafe_allow_html=True)
+        with c3:
+            st.button(_DESTINO[p["cat"]] + " →", key=f"vd_preg_{p['clave']}",
+                      type="tertiary", on_click=_ir_a_ruta,
+                      args=(p["cat"], p["vista"], p["etf"]))
+    st.caption("El dinero de vuelta sale de la reclasificación anual del fondo, así que no "
+               "se resta de lo pagado: son dos momentos distintos.")
     # Esta vista ya dice a dónde ir, y con más criterio que el recorrido: el pie se calla.
     from ui import estado
     estado.ya_ofrece_a_donde_ir()
@@ -217,6 +244,14 @@ def render_vista(vista: str, ruta) -> None:
 
 
 ESTILOS_HEREDADAS = """
+        [data-testid="stMarkdownContainer"] p.vd-pregunta {
+          font-size: 15px; color: var(--ink); margin: 0; line-height: 1.4;
+        }
+        [data-testid="stMarkdownContainer"] p.vd-preg-v {
+          font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+          font-size: 17px; font-weight: 700; color: var(--ink); margin: 0; text-align: right;
+        }
+        [data-testid="stMarkdownContainer"] p.vd-preg-v.neg { color: var(--loss); }
         .vd-cuenta {
           display: flex; flex-wrap: wrap; gap: 8px 40px; align-items: baseline;
           border-bottom: 1px solid var(--hair); padding-bottom: 14px; margin-bottom: 4px;
