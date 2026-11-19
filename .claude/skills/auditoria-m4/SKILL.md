@@ -24,8 +24,8 @@ pasó (cierre de la ronda 1): se anotó como «flake» un rojo que era el mutant
 - Mediciones auxiliares (efecto en dólares, verificar un test nuevo): `git worktree add` aparte,
   con su propia rama. El arnés acepta `M4_REPO=<worktree>`.
 - **Un worktree no hereda lo que ignora git.** En local, antes de la línea base, enlaza los datos
-  reales y copia el CSV de CONY (ignorado por `*.csv`); sin ellos la base sale 1065/74 o una menos
-  que la de `CLAUDE.md` (ronda 3):
+  reales y copia el CSV de CONY (ignorado por `*.csv`); sin ellos la base sale con menos pasados y más
+  saltados que la de `CLAUDE.md` (en la ronda 3: 1065/74, o una menos):
   `ln -s <repo>/real_examples real_examples && cp <repo>/CONY_test.csv .`
   Al terminar, borra el enlace con `rm real_examples` (sin barra final) antes de
   `git worktree remove`.
@@ -42,7 +42,7 @@ pasó (cierre de la ronda 1): se anotó como «flake» un rojo que era el mutant
 
 - Tiene que coincidir con la línea base de `CLAUDE.md` para tu entorno (nube o local). Si no
   coincide, o hay algún rojo, **investígalo antes de medir mutantes**.
-- **Un skip no es un pass**: di cuántos se saltan y por qué. En la nube se saltan ~80 tests
+- **Un skip no es un pass**: di cuántos se saltan y por qué. En la nube se saltan decenas de tests (la cifra vigente está en la línea base de la nube de `CLAUDE.md`; eran ~80 en la ronda 2)
   (`real_examples/` y Yahoo).
 
 ## 2. Elegir guards y escribir mutantes
@@ -83,8 +83,9 @@ MUTANTES = [
 ./.venv/bin/python .claude/skills/auditoria-m4/scripts/m4.py run /ruta/mutantes.py [ID ...]
 ```
 
-Cada mutante tarda una suite completa (~70 s en la nube, ~3 min en local). El arnés imprime
-`objetivo=ASSERT|EXC|VIVE`, los rojos nuevos en la suite y las alertas `SOBREVIVE A LA SUITE` /
+Cada mutante tarda una suite completa: unos 8 min en local (medido el 2026-11-19, con 1949 tests) y
+menos en la nube, donde se saltan los de datos reales. Nueve mutantes son más de una hora: lánzalos
+en segundo plano. El arnés imprime `objetivo=ASSERT|EXC|VIVE`, los rojos nuevos en la suite y las alertas `SOBREVIVE A LA SUITE` /
 `frágil: 1 solo test`. El detalle queda en `res_<ID>.json`.
 
 - **Muerte por excepción ≠ muerte por aserción.** Repórtala aparte: el test cae, pero no por la
@@ -93,6 +94,12 @@ Cada mutante tarda una suite completa (~70 s en la nube, ~3 min en local). El ar
   hallazgo, aunque sea aceptable si ese test está dedicado a eso.
 - **Mide el efecto en dólares** de cada superviviente, en el worktree aparte: qué cifra cambia y
   de cuánto a cuánto. Sin eso no hay materialidad.
+- **Objetivo `VIVE` con rojos en la suite no es un hueco**: el objetivo estaba mal elegido. Mira en
+  `res_<ID>.json` qué tests lo cazaron (2026-11-19).
+- **Mira QUIÉN lo caza, no solo cuántos.** Si el único rojo es
+  `test_analyze_portfolio_identico_a_la_referencia`, en la nube no lo caza nadie: ese test compara
+  contra una referencia congelada de los datos privados y allí se salta. Es un guard de cambio,
+  no de corrección (2026-11-19).
 
 ## 4. Tests tautológicos — mídelos, no los afirmes
 
@@ -159,7 +166,8 @@ corrida no vale.
 4. **Nota 1-10**, comparable con las anteriores. Ronda 1: 8/10 (1 de 15 sobrevivía). Ronda 2:
    6/10 al empezar, 7.5/10 al cerrar (12 de 41 sobrevivían). Explica qué la mueve.
 
-Reglas del repo: rama + PR, **nunca** commit a `main`, Daniel mergea siempre. Si varios PRs tocan
+Reglas del repo: rama + PR, **nunca** commit a `main`; mergea el agente con las condiciones de
+`CLAUDE.md` (sección Deploy), desde el 2026-10-29. Si varios PRs tocan
 la línea base de `CLAUDE.md`, habrá conflicto al fusionar el primero: se resuelve con merge de
 `main` (nunca rebase de una rama ya publicada), volviendo a **medir** la suite sobre el árbol
 fusionado.
