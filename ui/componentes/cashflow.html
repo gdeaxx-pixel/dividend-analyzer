@@ -1179,7 +1179,7 @@
   // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Mismos nombres que el
   // rail nativo (`ui/adapters.py::STEP_LABELS`) y que el `lab` de cada columna (D5, 30-oct).
   var STEP_LABELS = ["Tu bolsillo","Dividendo bruto","Impuesto NRA","Efectivo apartado",
-                      "Capital trabajando","Impacto del mercado","Efectivo cobrado","Resultado real"];
+                      "Capital trabajando","Impacto del mercado","Resultado real"];
 
   var PLOT_H = 300, MAXV = PICO, sc = PLOT_H / MAXV;
   var pasoActual = {{PASO}}; // arranca en el estado final ya aprobado; se puede retroceder
@@ -1302,7 +1302,7 @@
     { segs:[{cls:"s-cash", lo:TOTAL_TRABAJANDO, hi:TOTAL_TRABAJANDO + CASH}],
       amt:"−$" + miles(CASH), cap:"cashc", lab:"Efectivo apartado", run:TOTAL_TRABAJANDO,
       th:"Efectivo apartado", tv:"−$" + miles(CASH),
-      td:"La parte del dividendo neto que NO reinviertes. No se pierde — se aparta, a salvo, del mercado." },
+      td:"La parte del dividendo neto que NO reinviertes. No se pierde — se aparta, a salvo, del mercado, y vuelve a sumar al final, en tu resultado." },
     { segs:[{cls:"s-anchor", lo:0, hi:POCKET}, {cls:"s-drip", lo:POCKET, hi:TOTAL_TRABAJANDO}],
       amt:"$" + miles(TOTAL_TRABAJANDO), cap:"base", lab:"Capital trabajando", sub:"= Bolsillo + DRIP", run:null,
       th:"Capital trabajando", tv:"$" + miles(TOTAL_TRABAJANDO),
@@ -1311,20 +1311,13 @@
       amt:mercadoAmt, cap:mercadoCap, lab:"Impacto del mercado", run:VALOR_HOY,
       th:"Impacto del mercado", tv:mercadoAmt,
       td:mercadoVerbo + " del precio del fondo. Tu capital de trabajo pasa de $" + miles(TOTAL_TRABAJANDO) + " a $" + miles(VALOR_HOY) + "." },
-    { segs:segsEfectivo(),
-      amt:"+$" + miles(CASH), cap:"cashc", lab:"Efectivo cobrado",
-      sub:HAY_OTROS ? ((OTROS >= 0 ? "+ $" : "− $") + miles(Math.abs(OTROS)) + " " + OTROS_LABEL) : null,
-      run:CAPITAL_ACTUAL,
-      th:"Efectivo cobrado", tv:"+$" + miles(CASH),
-      td:"El mismo efectivo que apartaste en el paso 4 vuelve a sumar." +
-        (HAY_OTROS ? " Aparte, " + (OTROS >= 0 ? "entraron" : "salieron") + " $" + miles(Math.abs(OTROS)) +
-          " por «" + OTROS_LABEL + "»: efectivo que no viene del dividendo — por eso va en su propia franja, rayada." : "") +
-        " Total: $" + miles(CAPITAL_ACTUAL) + "." },
     { segs:[{cls:"s-anchor", lo:0, hi:VALOR_HOY}].concat(segsEfectivo()),
-      amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:"vs. tu bolsillo", run:null,
+      amt:resultadoAmt, cap:resultadoCap, lab:"Resultado real", sub:HAY_OTROS ? ((OTROS >= 0 ? "+ $" : "− $") + miles(Math.abs(OTROS)) + " " + OTROS_LABEL) : "vs. tu bolsillo", run:null,
       th:"Resultado real", tv:resultadoAmt,
-      td:"Lo que tienes hoy ($" + miles(CAPITAL_ACTUAL) + ") frente a lo que pusiste ($" + miles(POCKET) + "). La diferencia es lo que el mercado " +
-        (RESULTADO >= 0 ? "sumó" : "se llevó") + "." }
+      td:"Lo que tienes hoy ($" + miles(CAPITAL_ACTUAL) + ") frente a lo que pusiste ($" + miles(POCKET) + "): el efectivo que apartaste vuelve a sumar aquí. La diferencia es lo que el mercado " +
+        (RESULTADO >= 0 ? "sumó" : "se llevó") + "." +
+        (HAY_OTROS ? " Aparte, " + (OTROS >= 0 ? "entraron" : "salieron") + " $" + miles(Math.abs(OTROS)) +
+          " por «" + OTROS_LABEL + "»: efectivo que no viene del dividendo — por eso va en su propia franja, rayada." : "") }
   ];
   function colsForStep(step) { return COLS.slice(0, step + 1); }
 

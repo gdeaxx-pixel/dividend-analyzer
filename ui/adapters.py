@@ -56,9 +56,12 @@ CMP_COSECHA_DESTINO = "SCHB"
 # `ui/componentes/cashflow.html`), aprobado por Daniel el 2026-10-30 (D5). Antes eran las
 # abreviaturas del demo (`viaje-dinero-waterfall.html:2131`) y en los pasos 4, 5 y 7 el
 # nombre del paso no coincidía con el de su columna.
+# Siete desde el 19-nov (C5, idea de Daniel): «Efectivo cobrado» era «Efectivo apartado»
+# otra vez —su texto decía «el mismo efectivo que apartaste en el paso 4 vuelve a sumar»—
+# y el paso final ya dibujaba ese efectivo. Ninguna cifra cambió al quitarlo.
 STEP_LABELS = (
     "Tu bolsillo", "Dividendo bruto", "Impuesto NRA", "Efectivo apartado",
-    "Capital trabajando", "Impacto del mercado", "Efectivo cobrado", "Resultado real",
+    "Capital trabajando", "Impacto del mercado", "Resultado real",
 )
 
 
