@@ -2680,6 +2680,53 @@ def _veredicto_portafolio(precio: float, dividendos: float, retorno: float,
     return f"El precio cayó {caida}% y los dividendos no alcanzan a cubrirlo."
 
 
+def total_cuenta_data(resultados: dict) -> dict | None:
+    """A1 — la cuenta entera en tres cifras: lo que pusiste, lo que tienes hoy y la
+    diferencia. `None` si no hay ningún fondo con datos (la línea no se dibuja).
+
+    **Base y momento** (Regla 2 del contrato). Las tres salen de los mismos campos que ya
+    publica `analyze_portfolio` por ticker, sumados sobre los fondos con datos:
+
+    - `pusiste` = `pocket_investment`, el capital aportado. Invariante (Regla 1): el ROC
+      no lo mueve.
+    - `tienes_hoy` = `market_value` + `dividends_cash_net` + `misc_cash_total`. Es la caja
+      de `logic.py` (`gross_value`), que allí no se publica: el valor de las acciones de
+      hoy, más el efectivo de dividendos que de verdad entró —NETO de retención, resuelto
+      por convención de fila— más el efectivo que no es dividendo (Cash In Lieu y
+      compañía), que va como sumando propio desde el 2026-09-24.
+    - `retorno` = `net_profit`, que en `logic.py` es esa misma resta.
+
+    **Lo que NO se usa, y por qué:** `dividends_net_total` (el objeto fiscal de
+    `build_dividend_tax_totals`) incluye los dividendos REINVERTIDOS, que ya están dentro
+    de `market_value` en forma de acciones. Sumarlo aquí contaría el mismo dólar dos veces
+    —el error que la propia app explica en «La matriz»—. Medido el 18-nov sobre los casos
+    reales: +$6.211,39 y +$269,92 de más en los dos de Schwab, 0 en IB, que no tiene DRIP
+    en ese caso.
+    """
+    filas = [s for s in resultados.values() if _tiene_datos(s)]
+    if not filas:
+        return None
+    pusiste = sum(s["pocket_investment"] for s in filas)
+    tienes = sum(s["market_value"] + (s.get("dividends_cash_net") or 0)
+                 + (s.get("misc_cash_total") or 0) for s in filas)
+    retorno = sum(s["net_profit"] for s in filas)
+    # En pantalla las tres van sin centavos, y redondear cada una por su cuenta descuadra
+    # la resta que el cliente puede hacer de cabeza: medido, $8,066 + $3,207 contra un
+    # «tienes hoy» de $11,274. Así que lo que se muestra se deriva de las dos primeras ya
+    # redondeadas y cierra siempre; el porcentaje sigue saliendo de las cifras exactas.
+    pusiste_r, tienes_r = round(pusiste), round(tienes)
+    return {
+        "pusiste": pusiste,
+        "tienes_hoy": tienes,
+        "retorno": retorno,
+        "pct": (retorno / pusiste * 100) if pusiste > 0 else 0.0,
+        "fondos": len(filas),
+        "pusiste_vista": pusiste_r,
+        "tienes_hoy_vista": tienes_r,
+        "retorno_vista": tienes_r - pusiste_r,
+    }
+
+
 def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
     """Datos de la vista Portafolios v3: dona agrupada + cascada por grupo.
 

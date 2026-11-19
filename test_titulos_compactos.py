@@ -71,16 +71,20 @@ def test_ninguna_cifra_pasa_de_la_respuesta_principal(ruta):
                         f"{TOPE_CIFRA}px")
 
 
-def test_las_dos_cifras_de_portafolio_son_mas_pequenas_que_el_total():
-    """Portafolios lleva tres cifras: el valor de mercado en el centro de la dona y el
-    retorno de cada portafolio. El total manda."""
-    fuente = (COMPONENTES / "portafolios.html").read_text(encoding="utf-8")
-    centro = re.search(r"\.c-v \{[^}]*font-size:\s*(\d+)px", fuente)
-    tarjeta = re.search(r"\.big \.num \{[^}]*font-size:\s*clamp\([^)]*?(\d+)px\s*\)", fuente)
-    assert centro and tarjeta, "cambiaron los selectores de las cifras"
-    assert int(tarjeta.group(1)) < int(centro.group(1)), (
-        f"la cifra de cada portafolio ({tarjeta.group(1)}px) no puede ser mayor que el "
-        f"valor de mercado ({centro.group(1)}px)")
+def test_la_respuesta_de_la_pantalla_es_la_cifra_mas_grande():
+    """Desde A1 (18-nov) la pantalla abre con el resultado de la cuenta, y esa es su
+    respuesta: por debajo van el retorno de cada portafolio y el valor de mercado del
+    reparto. Antes el valor de mercado era lo más grande sin ser la respuesta."""
+    comp = (COMPONENTES / "portafolios.html").read_text(encoding="utf-8")
+    vista = (Path(__file__).resolve().parent / "ui" / "heredadas.py").read_text(encoding="utf-8")
+    cuenta = re.search(r"\.vd-cta-r \.vd-cta-v \{ font-size: (\d+)px", vista)
+    tarjeta = re.search(r"\.big \.num \{[^}]*font-size:\s*clamp\([^)]*?(\d+)px\s*\)", comp)
+    centro = re.search(r"\.c-v \{[^}]*font-size:\s*(\d+)px", comp)
+    assert cuenta and tarjeta and centro, "cambiaron los selectores de las cifras"
+    escala = [int(cuenta.group(1)), int(tarjeta.group(1)), int(centro.group(1))]
+    assert escala == sorted(escala, reverse=True), (
+        f"la jerarquía está invertida: cuenta {escala[0]}px, portafolio {escala[1]}px, "
+        f"valor de mercado {escala[2]}px")
 
 
 def test_riesgo_tambien_baja_su_titulo_en_pantalla_estrecha():
