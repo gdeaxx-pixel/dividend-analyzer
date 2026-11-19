@@ -53,6 +53,77 @@ def consumir_ofrece_a_donde_ir() -> bool:
     return bool(st.session_state.pop(_CLAVE_RUTAS, False))
 
 
+# Zonas horarias del navegador por país de la lista de la app (`logic.NRA_COUNTRY_RATES`).
+# Solo las que identifican un país sin ambigüedad; lo que no esté aquí no se sugiere.
+_TZ_PAIS = {
+    "America/Bogota": "Colombia",
+    "America/Mexico_City": "México", "America/Tijuana": "México",
+    "America/Monterrey": "México", "America/Cancun": "México",
+    "America/Merida": "México", "America/Chihuahua": "México",
+    "America/Hermosillo": "México", "America/Mazatlan": "México",
+    "America/Matamoros": "México", "America/Ojinaga": "México",
+    "America/Santiago": "Chile", "Pacific/Easter": "Chile",
+    "America/Punta_Arenas": "Chile",
+    "America/Caracas": "Venezuela",
+    "Europe/Madrid": "España", "Atlantic/Canary": "España", "Africa/Ceuta": "España",
+    "America/Lima": "Perú",
+    "America/Sao_Paulo": "Brasil", "America/Bahia": "Brasil",
+    "America/Fortaleza": "Brasil", "America/Recife": "Brasil",
+    "America/Manaus": "Brasil", "America/Belem": "Brasil",
+    "America/New_York": "Estados Unidos", "America/Chicago": "Estados Unidos",
+    "America/Denver": "Estados Unidos", "America/Los_Angeles": "Estados Unidos",
+    "America/Phoenix": "Estados Unidos", "America/Anchorage": "Estados Unidos",
+    "America/Detroit": "Estados Unidos", "Pacific/Honolulu": "Estados Unidos",
+    # El resto de América Latina cae en la entrada que la app ya tiene para ellos.
+    "America/Guayaquil": "Otros LATAM", "America/La_Paz": "Otros LATAM",
+    "America/Asuncion": "Otros LATAM", "America/Montevideo": "Otros LATAM",
+    "America/Panama": "Otros LATAM", "America/Costa_Rica": "Otros LATAM",
+    "America/Guatemala": "Otros LATAM", "America/El_Salvador": "Otros LATAM",
+    "America/Tegucigalpa": "Otros LATAM", "America/Managua": "Otros LATAM",
+    "America/Santo_Domingo": "Otros LATAM", "America/Havana": "Otros LATAM",
+    "America/Puerto_Rico": "Otros LATAM", "America/Port-au-Prince": "Otros LATAM",
+}
+# Argentina reparte sus provincias en `America/Argentina/<ciudad>`: se resuelven por prefijo.
+_TZ_PREFIJO_PAIS = (("America/Argentina/", "Argentina"),)
+# Si el navegador no da zona horaria, queda el idioma con región (`es-CO`, `pt-BR`).
+_LOCALE_PAIS = {
+    "CO": "Colombia", "MX": "México", "CL": "Chile", "VE": "Venezuela", "ES": "España",
+    "PE": "Perú", "AR": "Argentina", "BR": "Brasil", "US": "Estados Unidos",
+    "EC": "Otros LATAM", "BO": "Otros LATAM", "PY": "Otros LATAM", "UY": "Otros LATAM",
+    "PA": "Otros LATAM", "CR": "Otros LATAM", "GT": "Otros LATAM", "SV": "Otros LATAM",
+    "HN": "Otros LATAM", "NI": "Otros LATAM", "DO": "Otros LATAM", "CU": "Otros LATAM",
+    "PR": "Otros LATAM",
+}
+
+
+def pais_sugerido(timezone: str | None, locale: str | None) -> str | None:
+    """El país desde donde PARECE que se conecta el cliente, o `None` si no se puede decir.
+
+    Función pura: la vista le pasa lo que el navegador reportó (`st.context.timezone` y
+    `st.context.locale`) y aquí no se toca ni la red ni la IP. La zona horaria manda sobre
+    el idioma: un navegador en inglés en Bogotá sigue estando en Bogotá.
+
+    **Esto NO declara nada.** Dónde te conectas no es dónde tributas, y de la residencia
+    cuelga la retención con derecho. La sugerencia se ofrece y el cliente la confirma.
+    """
+    import logic
+
+    tz = (timezone or "").strip()
+    if tz in _TZ_PAIS:
+        pais = _TZ_PAIS[tz]
+    else:
+        pais = next((p for pref, p in _TZ_PREFIJO_PAIS if tz.startswith(pref)), None)
+    if pais is None:
+        # Solo vale el idioma que trae REGIÓN: con «es» a secas, partir por el guion
+        # devolvía «ES» y un navegador en español genérico salía como España.
+        partes = (locale or "").replace("_", "-").split("-")
+        region = partes[-1].upper() if len(partes) >= 2 else ""
+        pais = _LOCALE_PAIS.get(region) if len(region) == 2 else None
+    # Un país que la app no sabe tasar no se puede sugerir: el botón declararía algo que
+    # `declarar_pais` descartaría en silencio.
+    return pais if pais in logic.NRA_COUNTRY_RATES else None
+
+
 def perfil_fiscal() -> dict:
     """Perfil fiscal vigente del cliente. Siempre devuelve un dict válido.
 
@@ -68,8 +139,9 @@ def perfil_fiscal() -> dict:
 def declarar_pais(country: str | None, source: str = "manual") -> None:
     """Declara la residencia fiscal. `country=None` la borra (vuelve a «sin declarar»).
 
-    `source` documenta de dónde salió: 'manual' (el cliente lo eligió) o '1042s' (detectado
-    del formulario y confirmado por él). Nunca se escribe sin que el cliente confirme.
+    `source` documenta de dónde salió: 'manual' (el cliente lo eligió), '1042s' (detectado
+    del formulario y confirmado por él) o 'navegador' (sugerido por la zona horaria y
+    confirmado con un clic, A4). Nunca se escribe sin que el cliente confirme.
     """
     if country in logic.NRA_COUNTRY_RATES:
         st.session_state[_CLAVE_PAIS] = country

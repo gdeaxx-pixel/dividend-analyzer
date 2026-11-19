@@ -345,6 +345,37 @@ _SIN_DECLARAR = "— No lo sé / prefiero no decirlo —"
 _CLAVE_SELECTOR_PAIS = "_vd_residencia"
 
 
+def _contexto_navegador() -> tuple:
+    """Zona horaria e idioma que reporta el navegador. `st.context` no existe en algunos
+    arneses de prueba, y un fallo aquí no puede tumbar la carga."""
+    try:
+        return st.context.timezone, st.context.locale
+    except Exception:
+        return None, None
+
+
+def _sugerir_pais(perfil: dict) -> None:
+    """A4 — el país desde donde parece que te conectas, como sugerencia (19-nov).
+
+    Daniel: «que lo sugiera… si se equivoca, la persona hace clic y aparece toda la lista
+    para seleccionarlo manualmente». Así que el desplegable de arriba no cambia: esto es
+    un botón debajo.
+
+    **Sugiere, no declara.** Dónde te conectas no es dónde tributas —Daniel vive en México
+    y tributa en Colombia— y de la residencia cuelga la retención con derecho, que decide
+    cuánto dice la app que te devuelven. Mismo patrón que el botón «Usar <país>» del
+    1042-S: el dato lo confirma el cliente.
+    """
+    if perfil["rate_declared"]:
+        return
+    sugerido = estado.pais_sugerido(*_contexto_navegador())
+    if not sugerido:
+        return
+    st.button(f"Parece que estás en {sugerido} · usarlo", key="_vd_pais_sugerido",
+              type="tertiary", on_click=estado.declarar_pais,
+              args=(sugerido,), kwargs={"source": "navegador"})
+
+
 def _render_residencia_fiscal() -> None:
     """Residencia fiscal del cliente — vive aquí porque es una propiedad de ÉL, no de una
     vista. Antes el único selector estaba enterrado en Detalle → Proyección, dentro de un
@@ -378,6 +409,9 @@ def _render_residencia_fiscal() -> None:
                  "estimamos cuánto de lo retenido puedes recuperar.")
 
     perfil = estado.perfil_fiscal()
+    with col_sel:
+        _sugerir_pais(perfil)
+
     with col_nota:
         if not perfil["rate_declared"]:
             st.markdown(
