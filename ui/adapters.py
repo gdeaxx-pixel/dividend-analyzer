@@ -2983,6 +2983,54 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
     return sorted(flags, key=lambda f: 0 if f["gravedad"] == "alto" else 1)
 
 
+PREGUNTAS_CLAVE = (
+    # (clave, pregunta, campo, momento, destino)
+    ("pagado", "¿Cuánto te pagaron en total?", "dividends_gross_total",
+     "al_cobro", ("dividendos", "viaje", True)),
+    ("retenido", "¿Cuánto se quedó el impuesto?", "withheld_tax_total",
+     "al_cobro", ("impuestos", "impuestos", False)),
+    ("roc", "¿Cuánto era tu propio dinero de vuelta?", "roc_accumulated",
+     "tras_reclasificacion_anual", ("impuestos", "impuestos", False)),
+    ("efectivo", "¿Cuánto quedó en efectivo, sin reinvertir?", "dividends_cash_net",
+     "al_cobro", ("dividendos", "viaje", True)),
+)
+
+
+def preguntas_clave_data(resultados: dict) -> dict | None:
+    """A2 — las cuatro preguntas de la cuenta, cada una con la cifra que la responde.
+
+    `None` cuando no hay nada que responder (ningún fondo con datos, o una cartera que no
+    cobró un solo dividendo: las cuatro cifras serían cero y el bloque sobraría).
+
+    **Cada cifra lleva su momento**, porque no todas son del mismo (Regla 2 del contrato):
+    lo pagado, lo retenido y el efectivo son `al cobro`; el ROC es
+    `tras_reclasificacion_anual`. Por eso el bloque los muestra en líneas separadas y
+    **no resta el ROC de lo pagado** — serían dos momentos distintos en la misma cuenta.
+
+    La identidad que sí se cumple, y que vigila un guard: pagado − retenido == el neto del
+    objeto fiscal (`dividends_net_total`). Medido en el caso real de Daniel: $422 − $127 =
+    $295, exacto.
+    """
+    filas = [s for s in resultados.values() if _tiene_datos(s)]
+    if not filas:
+        return None
+    cifras = {clave: sum((s.get(campo) or 0) for s in filas)
+              for clave, _p, campo, _m, _d in PREGUNTAS_CLAVE}
+    if round(cifras["pagado"], 2) <= 0:
+        return None
+    etf = next((t for t, s in resultados.items() if _tiene_datos(s)
+                and (s.get("dividends_gross_total") or 0) > 0), None)
+    preguntas = []
+    for clave, texto, _campo, momento, (cat, vista, con_etf) in PREGUNTAS_CLAVE:
+        preguntas.append({
+            "clave": clave, "pregunta": texto, "valor": cifras[clave], "momento": momento,
+            "negativa": clave == "retenido",
+            "cat": cat, "vista": vista, "etf": etf if con_etf else None,
+        })
+    return {"preguntas": preguntas, "neto": sum((s.get("dividends_net_total") or 0)
+                                                for s in filas)}
+
+
 def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
     """Datos del componente «Lo que toca vigilar».
 

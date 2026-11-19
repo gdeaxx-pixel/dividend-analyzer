@@ -429,8 +429,10 @@ def test_fila_9_dibuja_un_solo_roc_arriba_con_los_mismos_objetos(monkeypatch):
     monkeypatch.setattr(adapters, "vigilar_data", _vigilar)
     monkeypatch.setattr(componentes, "render_vigilar",
                         lambda datos, tema, alto=None: eventos.append(("render_vigilar",)))
+    # Desde A2 (18-nov) el bloque de abajo son preguntas con su cifra y las saca de los
+    # resultados, no de `datos["rutas"]`: el doble recibe lo mismo que la función real.
     monkeypatch.setattr(heredadas, "_botones_ruta",
-                        lambda rutas: eventos.append(("rutas", tuple(r["clave"] for r in rutas))))
+                        lambda res: eventos.append(("rutas", tuple(sorted(res)))))
 
     resultados = {t: {} for t in veredictos} | {"PLTY": {"error": "sin datos"}}
     heredadas._portafolio_dividendos(resultados, ["CONY", "MSTY", "NVDY", "PLTY"])
