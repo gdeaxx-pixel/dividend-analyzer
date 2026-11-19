@@ -214,7 +214,8 @@ def test_el_recorrido_se_llama_igual_que_sus_columnas():
     html = (RAIZ / "ui" / "componentes" / "cashflow.html").read_text(encoding="utf-8")
     js = json.loads("[" + re.search(r"var STEP_LABELS = \[(.*?)\];", html, re.S).group(1) + "]")
     columnas = re.findall(r'lab:"([^"]+)"', html)
-    assert len(columnas) == 8, columnas
+    # Siete desde el 19-nov (C5): «Efectivo cobrado» era «Efectivo apartado» otra vez.
+    assert len(columnas) == 7, columnas
     assert list(adapters.STEP_LABELS) == js == columnas
     mercado = re.search(r'STEP_LABELS\.indexOf\("([^"]+)"\)', html).group(1)
     assert mercado in adapters.STEP_LABELS, f"«{mercado}» no es un paso: indexOf daría -1"
