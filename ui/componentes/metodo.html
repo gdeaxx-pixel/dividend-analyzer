@@ -1040,6 +1040,7 @@
   #modal-sinmax.open { display: flex; }
   #modal-sindiv.open { display: flex; }
   #modal-sintuinv.open { display: flex; }
+  #modal-tmserie,
   #modal-coninv, #modal-condrip, #modal-contot, #modal-coninvhoy, #modal-condriphoy {
     display: none; position: fixed; inset: 0; z-index: 100;
     background: rgba(0,0,0,.65); align-items: center; justify-content: center; padding: 20px;
@@ -1048,6 +1049,7 @@
   #modal-coninvhoy.open { display: flex; }
   #modal-condrip.open { display: flex; }
   #modal-condriphoy.open { display: flex; }
+  #modal-tmserie.open { display: flex; }
   #modal-contot.open { display: flex; }
 </style>
 <style>
@@ -1139,6 +1141,7 @@
       <div class="he-block" id="tmSerieBlock">
         <p class="he-block-lab">Cómo llegó hasta aquí <span class="he-block-sub muted">— los seis escenarios, mes a mes</span></p>
         <p class="cmp-notes" id="tmSerieLede" style="margin-top:10px"></p>
+        <p class="cmp-notes" style="margin-top:6px"><button class="cmp-ib" type="button" id="tmSerieInfo">ⓘ Cómo se midió</button></p>
         <div class="cmp-plot-wrap">
           <svg class="cmp-svg" id="tmSerieSvg" viewBox="0 0 920 400" role="img" aria-label="Valor de la cartera del caso de estudio mes a mes, en dólares, bajo tres escenarios fiscales con y sin reinversión de dividendos"></svg>
         </div>
@@ -1477,6 +1480,16 @@
 </div>
 
 <!-- ============ MODAL: DRIP Hoy (matriz Con DRIP) ============ -->
+<div id="modal-tmserie" role="dialog" aria-modal="true" aria-labelledby="modal-tmserie-title">
+  <div class="modal-box">
+    <button class="modal-close" id="modal-tmserie-close" aria-label="Cerrar">×</button>
+    <div class="modal-eyebrow">Cómo se midió</div>
+    <div class="modal-title" id="modal-tmserie-title">Los seis escenarios, mes a mes</div>
+    <p class="modal-lede" id="mSerieLede"></p>
+    <div id="mSerieNotas"></div>
+  </div>
+</div>
+
 <div id="modal-condriphoy" role="dialog" aria-modal="true" aria-labelledby="modal-condriphoy-title">
   <div class="modal-box">
     <button class="modal-close" id="modal-condriphoy-close" aria-label="Cerrar">×</button>
@@ -2671,16 +2684,22 @@
         .filter(function (v) { return v != null; });
       var rocMin = Math.min.apply(null, efectivas), rocMax = Math.max.apply(null, efectivas);
 
+      // En pantalla, la frase que sitúa la gráfica. El resto —qué es cada línea— lo dice
+      // ya la leyenda de la propia gráfica, así que viaja al popup «Cómo se midió» (Q5,
+      // regla de Riesgo v15). Nada se borra: el texto entero está ahí.
       setHtml("tmSerieLede",
-        'Las dos tablas de arriba son la foto de hoy; esto es la película. Cada línea es lo que ' +
-        'valía <b>la cartera completa</b> al cierre de cada mes: las cinco posiciones sumadas, en ' +
-        'dólares. Hay seis porque los tres escenarios fiscales se cruzan con las dos maneras de ' +
-        'tratar un dividendo — <b>reinvertirlo</b> (línea sólida) o <b>cobrarlo en efectivo</b> ' +
-        '(línea de guiones). La línea gris punteada es el <b>capital aportado</b>: sube por ' +
-        'escalones porque las cinco posiciones no se abrieron el mismo día, y cada escalón es ' +
-        'dinero nuevo entrando, no rendimiento.');
+        'Las dos tablas de arriba son la foto de hoy; esto es la película: lo que valía ' +
+        '<b>la cartera completa</b> al cierre de cada mes.');
 
-      setHtml("tmSerieNotas",
+      setHtml("mSerieLede",
+        'Cada línea es lo que valía <b>la cartera completa</b> al cierre de cada mes: las cinco ' +
+        'posiciones sumadas, en dólares. Hay seis porque los tres escenarios fiscales se cruzan ' +
+        'con las dos maneras de tratar un dividendo — <b>reinvertirlo</b> (línea sólida) o ' +
+        '<b>cobrarlo en efectivo</b> (línea de guiones). La línea gris punteada es el ' +
+        '<b>capital aportado</b>: sube por escalones porque las cinco posiciones no se abrieron ' +
+        'el mismo día, y cada escalón es dinero nuevo entrando, no rendimiento.');
+
+      setHtml("mSerieNotas",
         '<ul>' +
         '<li><b>Qué mide la altura.</b> El valor de mercado de las acciones más el efectivo que ' +
         'se haya quedado sin reinvertir. Nunca las dos cosas a la vez: un dividendo reinvertido ' +
@@ -2804,6 +2823,40 @@
     var closeBtn = document.getElementById("modal-condrip-close");
     var trigger = document.querySelector('[data-tip="tm-c-drip"]');
     function openModal() { modal.classList.add("open"); closeBtn.focus(); }
+    function closeModal() { modal.classList.remove("open"); }
+    if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
+  })();
+
+  // ---- Modal: «Cómo se midió» de la serie mensual (Q5, el texto largo sale de la vista) ----
+  (function () {
+    var modal = document.getElementById("modal-tmserie");
+    var closeBtn = document.getElementById("modal-tmserie-close");
+    var trigger = document.getElementById("tmSerieInfo");
+    /* El componente vive en un iframe tan alto como su contenido, así que un modal
+       `position: fixed` centrado se coloca en el centro de TODO el iframe y aparece fuera
+       de la pantalla (medido: este abría cortado por arriba). Se coloca contra la ventana
+       real y se sujeta al alto del iframe, igual que en Comparación (#188) y en
+       Portafolios. Los demás modales de este archivo siguen sin el tope: preexistente. */
+    function openModal() {
+      var box = modal.querySelector(".modal-box");
+      var top = 20;
+      modal.classList.add("open");
+      try {
+        var fe = window.frameElement;
+        if (fe) {
+          var r = fe.getBoundingClientRect(), vh = fe.ownerDocument.defaultView.innerHeight;
+          box.style.maxHeight = (vh - 40) + "px";
+          top = Math.max(20, -r.top + Math.max(20, (vh - box.offsetHeight) / 2));
+          top = Math.max(20, Math.min(top, document.documentElement.scrollHeight - box.offsetHeight - 20));
+        }
+      } catch (e) {}
+      modal.style.alignItems = "flex-start";
+      modal.style.paddingTop = top + "px";
+      closeBtn.focus();
+    }
     function closeModal() { modal.classList.remove("open"); }
     if (trigger) trigger.addEventListener("click", function (e) { e.stopPropagation(); openModal(); });
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
