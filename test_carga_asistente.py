@@ -126,3 +126,56 @@ def test_h4_el_rotulo_de_ingresos_dice_cargados():
     texto = _markdown(at)
     assert "Ingresos cargados" in texto
     assert "Ingresos validados" not in texto
+
+
+
+def _avisos(at):
+    return [c.value for c in at.caption if c.value.startswith("⚠️")]
+
+
+def test_la_fecha_ilegible_se_avisa_aparte_de_las_as_of(sin_clave):
+    at = _at()
+    at.session_state["_wizard_csv_descarte"] = {
+        "total": 3, "por_accion": {"Stock Split": 1}, "fecha_ilegible": 2}
+    at.run()
+    assert not at.exception
+    assert _avisos(at) == [
+        "⚠️ 1 fila con fecha «... as of ...» que no se pudo ubicar en el tiempo, excluida: "
+        "1× Stock Split.",
+        "⚠️ 2 filas con una fecha que no pudimos leer, excluidas."]
+
+
+def test_solo_fechas_ilegibles_no_habla_de_as_of(sin_clave):
+    at = _at()
+    at.session_state["_wizard_csv_descarte"] = {"total": 1, "por_accion": {}, "fecha_ilegible": 1}
+    at.run()
+    assert not at.exception
+    assert _avisos(at) == ["⚠️ 1 fila con una fecha que no pudimos leer, excluida."]
+
+
+_INGRESOS_CSV = (
+    b'"Investment Income Transactions as of 06/30/2025"\n'
+    b'Transaction Date,Account Number,Account Name,Account Type,Security Description,Symbol,'
+    b'Security Type,Transaction Type,Transaction Amount,Income Type,\n'
+    b'02/28/2025,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,40.00,Received,\n'
+    b'%s,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,%s,Received,\n')
+
+
+def _con_ingresos(fecha, importe):
+    at = _at_con_posiciones_confirmadas()
+    df = carga.logic.parse_schwab_income_csv(_INGRESOS_CSV % (fecha, importe))
+    at.session_state["_wizard_income_df"] = df
+    at.session_state["_wizard_income_summary"] = carga.logic.summarize_income(df)
+    at.run()
+    assert not at.exception
+    return at
+
+
+def test_el_resumen_de_ingresos_avisa_de_los_pagos_que_quedaron_fuera():
+    assert _avisos(_con_ingresos(b"sin fecha", b"25.00")) == [
+        "⚠️ 1 pago recibido quedó fuera: no pudimos leer su importe o su fecha."]
+
+
+def test_el_resumen_de_ingresos_no_avisa_si_no_quedo_nada_fuera():
+    assert _avisos(_con_ingresos(b"03/28/2025", b"25.00")) == []
+

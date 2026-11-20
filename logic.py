@@ -177,19 +177,111 @@ def extract_positions_from_images(images, candidate_tickers, api_key):
 
 _TICKER_POSICIONES = re.compile(r'^[A-Z][A-Z0-9./-]{0,9}$')
 
+_NUM_EXPONENTE = re.compile(r'^[+-]?(\d+\.?\d*|\.\d+)[eE][+-]?\d+$')
+_NUM_BASURA = re.compile(r'[^\d.,+-]')
+_MILES_COMA = re.compile(r'^[1-9]\d{0,2}(,\d{3})+$')
+_MILES_PUNTO = re.compile(r'^[1-9]\d{0,2}(\.\d{3})+$')
 
-def _num_posiciones(txt):
-    """Número de una celda del CSV de posiciones de Schwab ('$1,234.56', '-$12.34', '--')."""
-    t = str(txt or '').strip().replace('$', '').replace(',', '').replace(' ', '')
-    if t in ('', '--', 'N/A', '-', '+'):
+
+def _limpiar_numero(texto):
+    """(cuerpo, negativo) de una celda numérica, o None si no trae ningún dígito."""
+    s = str(texto).strip()
+    neg = False
+    if len(s) > 1 and s.startswith('(') and s.endswith(')'):
+        neg = True
+        s = s[1:-1]
+    s = _NUM_BASURA.sub('', s)
+    if s.startswith('-') or s.endswith('-'):
+        neg = True
+    s = s.strip('-+')
+    if not re.search(r'\d', s) or '-' in s or '+' in s:
         return None
-    neg = t.startswith('-') or t.endswith('-')
-    t = t.strip('-+')
+    return s, neg
+
+
+def leer_numero(texto, coma_decimal=False):
+    """Número de una celda de un archivo de bróker, o None si no hay número.
+
+    Paréntesis = negativo. Con coma y punto a la vez el último es el decimal. Con solo
+    comas: si todas van seguidas de exactamente tres dígitos son miles (salvo
+    `coma_decimal=True`, que obliga a leer la única coma como decimal); si no, la coma es
+    el decimal. Con solo un punto, es el decimal (salvo `coma_decimal=True` y exactamente
+    tres dígitos detrás: ahí son miles). `coma_decimal` lo decide el archivo, no la celda:
+    `columnas_usan_coma_decimal`.
+    """
+    if texto is None or isinstance(texto, bool):
+        return None
+    if isinstance(texto, (int, float, np.integer, np.floating)):
+        v = float(texto)
+        return None if v != v else v
+    s0 = str(texto).strip()
+    if _NUM_EXPONENTE.match(s0):
+        return float(s0)
+    limpio = _limpiar_numero(s0)
+    if limpio is None:
+        return None
+    s, neg = limpio
+    n_coma, n_punto = s.count(','), s.count('.')
+    if n_coma and n_punto:
+        dec = ',' if s.rfind(',') > s.rfind('.') else '.'
+        mil = '.' if dec == ',' else ','
+        if s.count(dec) > 1:
+            return None
+        s = s.replace(mil, '').replace(dec, '.')
+    elif n_coma:
+        if _MILES_COMA.match(s) and (n_coma > 1 or not coma_decimal):
+            s = s.replace(',', '')
+        elif n_coma == 1:
+            s = s.replace(',', '.')
+        else:
+            return None
+    elif coma_decimal and _MILES_PUNTO.match(s):
+        s = s.replace('.', '')
+    elif n_punto > 1:
+        return None
     try:
-        v = float(t)
+        v = float(s)
     except ValueError:
         return None
     return -v if neg else v
+
+
+def _prueba_coma_decimal(texto):
+    """True si la celda prueba coma decimal, False si prueba lo contrario, None si no dice."""
+    if texto is None or isinstance(texto, (bool, int, float, np.integer, np.floating)):
+        return None
+    limpio = _limpiar_numero(texto)
+    if limpio is None:
+        return None
+    s = limpio[0]
+    n_coma, n_punto = s.count(','), s.count('.')
+    if n_coma and n_punto:
+        return s.rfind(',') > s.rfind('.')
+    if n_coma > 1:
+        return False if _MILES_COMA.match(s) else None
+    if n_coma == 1:
+        return None if _MILES_COMA.match(s) else True
+    if n_punto > 1:
+        return True if _MILES_PUNTO.match(s) else None
+    if n_punto == 1:
+        return None if _MILES_PUNTO.match(s) else False
+    return None
+
+
+def columnas_usan_coma_decimal(columnas):
+    """Una bandera por columna: vale la coma decimal si la columna lo prueba sola, o si alguna
+    celda del archivo lo prueba y ninguna prueba lo contrario."""
+    pruebas = [[_prueba_coma_decimal(v) for v in c] for c in columnas]
+    todas = [p for ps in pruebas for p in ps]
+    archivo = True in todas and False not in todas
+    return [archivo or (True in ps and False not in ps) for ps in pruebas]
+
+
+def _num_posiciones(txt):
+    """Número de una celda del CSV de posiciones de Schwab ('$1,234.56', '-$12.34', '--')."""
+    if not txt:
+        return None
+    return leer_numero(txt)
 
 
 def parse_schwab_positions_csv(raw: bytes):
@@ -468,6 +560,52 @@ def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_FORMATOS_FECHA = (
+    '%m/%d/%Y', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y %H:%M',
+    '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M',
+    '%m/%d/%Y %I:%M %p', '%m/%d/%Y %I:%M:%S %p', '%m/%d/%y', '%d.%m.%Y', '%d-%m-%Y',
+)
+_FORMATOS_FECHA_DIA_PRIMERO = (
+    '%d/%m/%Y', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M',
+)
+_FECHA_BARRAS = re.compile(r'^(\d{1,2})/(\d{1,2})/\d{4}(?:[ T].*)?$')
+_FECHA_NUMERICA = re.compile(r'^\d{1,2}/\d{1,2}/\d{2,4}')
+
+
+def _leer_fechas_serie(cadenas: pd.Series) -> pd.Series:
+    """Fecha de cada celda por sí misma: ninguna se pierde porque la primera fila tenga
+    otro formato. `DD/MM/YYYY` solo si el archivo lo prueba (algún primer número mayor
+    que 12 y ningún segundo número mayor que 12)."""
+    barras = cadenas.dropna().map(lambda t: _FECHA_BARRAS.match(t))
+    primeros = [int(m.group(1)) for m in barras if m]
+    segundos = [int(m.group(2)) for m in barras if m]
+    dia_primero = any(n > 12 for n in primeros) and not any(n > 12 for n in segundos)
+    formatos = (_FORMATOS_FECHA_DIA_PRIMERO + _FORMATOS_FECHA[1:2] + _FORMATOS_FECHA[4:7] + _FORMATOS_FECHA[9:]
+                if dia_primero else _FORMATOS_FECHA)
+    piezas = []
+    pendiente = cadenas.notna()
+    for fmt in formatos:
+        if not pendiente.any():
+            break
+        leido = pd.to_datetime(cadenas[pendiente], format=fmt, errors='coerce')
+        ok = leido.notna()
+        piezas.append(leido[ok])
+        pendiente.loc[leido.index[ok]] = False
+    for idx in cadenas.index[pendiente]:
+        t = cadenas.loc[idx]
+        if _FECHA_NUMERICA.match(t):
+            continue
+        try:
+            v = pd.to_datetime(t, errors='coerce')
+        except (ValueError, TypeError):
+            continue
+        if pd.notna(v):
+            piezas.append(pd.Series([v.tz_localize(None) if v.tzinfo else v], index=[idx]))
+    if not piezas:
+        return pd.to_datetime(cadenas, errors='coerce')
+    return pd.concat(piezas).reindex(cadenas.index)
+
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -583,7 +721,17 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensure Date is datetime
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        _cadenas = df['Date'].astype(str).str.strip()
+        _con_texto = df['Date'].notna() & ~_cadenas.str.lower().isin(('', 'nan', 'nat', 'none'))
+        if pd.api.types.is_datetime64_any_dtype(df['Date']):
+            _fechas = df['Date']
+        else:
+            _fechas = _leer_fechas_serie(_cadenas.where(df['Date'].notna()))
+        _sin_leer = _fechas.isna() & _con_texto
+        _n_ilegibles = int((_sin_leer & ~_mask_asof).sum())
+        df['Date'] = _fechas
+        normalize_csv.ultimo_descarte["fecha_ilegible"] = _n_ilegibles
+        normalize_csv.ultimo_descarte["total"] += _n_ilegibles
         df = df.dropna(subset=['Date'])
     
     # Clean Ticker (remove spaces)
@@ -592,47 +740,11 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
         df = _resolver_filas_tda(df)
 
     # Clean Numeric Columns (Aggressive Regex)
-    cols_to_clean = ['Quantity', 'Price', 'Amount']
-    for col in cols_to_clean:
-        if col in df.columns:
-            # European Format Handling: 1.000,00 -> 1000.00
-            # 1. Remove thousands separator (.) if present
-            # 2. Replace decimal separator (,) with (.)
-            # NOTE: This approach optimizes for the user's specific Screenshot format ($ 2,34)
-            # It assumes the file is NOT using commas for thousands (e.g. 1,000.00 would break)
-            
-            # Helper to clean single value
-            # Disambiguates US (1,234.56) vs European (1.234,56) by the LAST
-            # separator: whichever of '.'/',' appears last is the decimal point;
-            # the other is the thousands separator and gets stripped.
-            def clean_val(x):
-                s = str(x).strip()
-                has_comma = ',' in s
-                has_dot = '.' in s
-                if has_comma and has_dot:
-                    if s.rfind(',') > s.rfind('.'):
-                        # European: 12.500,00 -> dot=thousands, comma=decimal
-                        s = s.replace('.', '').replace(',', '.')
-                    else:
-                        # US: 12,500.00 -> comma=thousands, dot=decimal
-                        s = s.replace(',', '')
-                elif has_comma:
-                    # Only a comma present: treat as decimal (European / IB '0,155').
-                    # NOTA: no se puede distinguir la coma de miles US ("1,234"→1234) del
-                    # decimal europeo ("579,314"→579.314) desde el string — ambos son
-                    # \d{1,3},\d{3}. Se prioriza IB (formato real en uso); un CSV genérico
-                    # US con miles y sin decimales es un caso hipotético que no se soporta.
-                    s = s.replace(',', '.')
-                # only a dot or no separator: already valid
-                return s
-
-            df[col] = df[col].apply(clean_val)
-            
-            # 1. Convert to string
-            # 2. Remove anything that is NOT a digit, dot, or minus sign
-            # 3. Handle empty strings resulting from bad data
-            df[col] = df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+    cols_to_clean = [c for c in ('Quantity', 'Price', 'Amount') if c in df.columns]
+    for col, _cd in zip(cols_to_clean, columnas_usan_coma_decimal([df[c] for c in cols_to_clean])):
+        df[col] = pd.to_numeric(
+            pd.Series([leer_numero(v, _cd) for v in df[col]], index=df.index, dtype='float64'),
+            errors='coerce').fillna(0.0)
 
     return df
 
@@ -1231,16 +1343,8 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
 
 # Helper for defensive parsing
 def safe_float(val):
-    try:
-        if pd.isna(val): return 0.0
-        return float(val)
-    except ValueError:
-        # Cleaning fallback
-        clean_val = str(val).replace('$', '').replace(',', '').replace(' ', '')
-        try:
-            return float(clean_val)
-        except ValueError:
-            return 0.0
+    v = leer_numero(val)
+    return 0.0 if v is None else v
 
 
 def _recorrer_transacciones(ticker_df, _splits_col):
@@ -2434,18 +2538,26 @@ def parse_schwab_income_csv(raw_bytes: bytes):
     out['TxnType'] = df[c_txn].astype(str) if c_txn else ''
     out['IncomeType'] = df[c_inc].astype(str).str.strip()
     out['Account'] = df[c_acct].astype(str).str.strip() if c_acct else ''
-    out['Amount'] = df[c_amt].apply(_clean_money)
+    out['Amount'] = [float('nan') if v is None else v for v in map(leer_numero, df[c_amt])]
 
     # Excluir interés de cash (no es de un ticker) y montos/fechas malformados.
     mask_cash = (out['SecurityType'].str.contains('cash', case=False, na=False)
                  | out['Symbol'].str.upper().isin(['NO NUMBER', 'NAN', '']))
     out = out[~mask_cash].copy()
+    _recibida = out['IncomeType'].str.lower() == 'received'
+    _importe_mal = _recibida & out['Amount'].isna() & df.loc[out.index, c_amt].notna()
+    _fecha_mal = _recibida & out['Date'].isna() & df.loc[out.index, c_date].notna()
+    descartadas = {'importe_ilegible': int(_importe_mal.sum()),
+                   'fecha_ilegible': int(_fecha_mal.sum()),
+                   'total': int((_importe_mal | _fecha_mal).sum())}
     out = out.dropna(subset=['Date', 'Amount'])
 
     resolved = [_resolve_income_ticker(s, d) for s, d in zip(out['Symbol'], out['Description'])]
     out['Ticker'] = [r[0] for r in resolved]
     out['folded'] = [r[1] for r in resolved]
-    return out.reset_index(drop=True)
+    out = out.reset_index(drop=True)
+    out.attrs['descartadas_received'] = descartadas
+    return out
 
 
 def summarize_income(df) -> dict:
@@ -2502,12 +2614,9 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     lines = text.splitlines()
     frames = []
 
-    def _safe_float(raw: str) -> float:
-        s = str(raw).strip().replace(',', '')
-        try:
-            return float(s)
-        except (ValueError, TypeError):
-            return 0.0
+    def _safe_float(raw, coma_decimal=False) -> float:
+        v = leer_numero(raw, coma_decimal)
+        return 0.0 if v is None else v
 
     def _solo_fecha(raw) -> str:
         # Activity Statement: Trades trae "2024-01-15, 09:30:00" y Dividends "2024-01-20".
@@ -2568,6 +2677,12 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             price_col = next((c for c in tx_df.columns if c.lower() == 'price' or c.lower() == 'precio'), None) or 'Price'
             date_col = next((c for c in tx_df.columns if c.lower() in ('date', 'fecha')), None) or 'Date'
 
+            def _celdas(*cols):
+                return [v for c in cols if c and c in tx_df.columns for v in tx_df[c]]
+
+            cd_qty, cd_price, cd_amount = columnas_usan_coma_decimal(
+                [_celdas(qty_col), _celdas(price_col), _celdas(gross_col, net_col)])
+
             result_rows = []
             for _, row in tx_df.iterrows():
                 action = action_map.get(str(row.get(tx_type_col, '')).strip(), '')
@@ -2577,10 +2692,10 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                 price_raw = str(row.get(price_col, '-')).strip()
                 gross_raw = str(row.get(gross_col, '-')).strip() if gross_col else '-'
                 net_raw = str(row.get(net_col, '-')).strip() if net_col else '-'
-                qty = 0.0 if qty_raw in ('-', '') else _safe_float(qty_raw)
-                price = 0.0 if price_raw in ('-', '') else _safe_float(price_raw)
+                qty = 0.0 if qty_raw in ('-', '') else _safe_float(qty_raw, cd_qty)
+                price = 0.0 if price_raw in ('-', '') else _safe_float(price_raw, cd_price)
                 amount_raw = (net_raw if net_raw not in ('-', '') else gross_raw) if action.startswith('Dividend') else gross_raw
-                amount = 0.0 if amount_raw in ('-', '') else _safe_float(amount_raw)
+                amount = 0.0 if amount_raw in ('-', '') else _safe_float(amount_raw, cd_amount)
                 raw_ticker = str(row.get(symbol_col, '')).strip()
                 # Normalizar sufijos IB: TSLY.OLD → TSLY, XYZ.WS → XYZ, etc.
                 norm_ticker = raw_ticker.split('.')[0] if '.' in raw_ticker and raw_ticker.split('.')[-1].upper() in ('OLD', 'WS', 'WI', 'RT', 'CV') else raw_ticker
@@ -2632,8 +2747,12 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
 
             # Derive Action from Quantity sign
             if 'Quantity' in trades_df.columns:
+                _cd_qty = columnas_usan_coma_decimal(
+                    [trades_df[c] for c in ('Quantity', 'Price', 'Amount') if c in trades_df.columns])[0]
                 trades_df['Quantity_num'] = pd.to_numeric(
-                    trades_df['Quantity'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    pd.Series([leer_numero(v, _cd_qty) for v in trades_df['Quantity']],
+                              index=trades_df.index, dtype='float64'),
+                    errors='coerce').fillna(0)
                 trades_df['Action'] = trades_df['Quantity_num'].apply(
                     lambda q: 'Buy' if q > 0 else 'Sell')
                 trades_df['Quantity'] = trades_df['Quantity_num'].abs()
@@ -4134,15 +4253,8 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         return vacio
 
     def _safe_float(val):
-        try:
-            if pd.isna(val):
-                return 0.0
-            return float(val)
-        except (ValueError, TypeError):
-            try:
-                return float(str(val).replace('$', '').replace(',', '').replace(' ', ''))
-            except ValueError:
-                return 0.0
+        v = leer_numero(val)
+        return 0.0 if v is None else v
 
     def _dia(dt):
         """Fecha de la fila como número de días. None si no se puede leer."""
