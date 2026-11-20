@@ -670,7 +670,9 @@ def render_bloque_posiciones() -> bool:
         _render_excluidos_carga(excluidos)
         return False
 
-    previa = st.session_state.get("_wizard_csv_ticker_data") or {}
+    previa = {}
+    for t_previa, v_previa in (st.session_state.get("_wizard_csv_ticker_data") or {}).items():
+        previa.setdefault(str(t_previa).strip().upper(), v_previa)
     posiciones = {}
 
     col_h1, col_h2, col_h3 = st.columns([1.2, 1, 1.4])
