@@ -531,8 +531,11 @@ def _recorrido(habilitados: dict | None = None) -> list[tuple[str, str]]:
 def paso_siguiente(ruta: "Ruta", habilitados: dict | None = None) -> tuple[str, str] | None:
     """La vista que sigue a la actual, o `None` si es la última del recorrido."""
     pasos = _recorrido(habilitados)
+    categoria = ruta.categoria
+    if categoria in CATS_FONDOS:
+        categoria = next((c for c, _ in pasos if c in CATS_FONDOS), categoria)
     try:
-        i = pasos.index((ruta.categoria, ruta.vista))
+        i = pasos.index((categoria, ruta.vista))
     except ValueError:
         return None
     return pasos[i + 1] if i + 1 < len(pasos) else None
