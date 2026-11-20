@@ -32,6 +32,8 @@ MODOS_VALIDOS = ("aplicar", "observar", "apagado")
 
 PRODUCT_ID_ESPERADO = 4903539
 
+LISTA_CADUCA_HORAS = 72
+
 
 def hash_correo(correo: str, clave: str) -> str:
     normalizado = correo.strip().lower()
@@ -86,6 +88,20 @@ def _lista_valida(lista) -> bool:
 def lista_vieja(lista, ahora: datetime) -> bool:
     generado = datetime.fromisoformat(lista["generated_at"].replace("Z", "+00:00"))
     return (ahora - generado) > timedelta(hours=24)
+
+
+def lista_caducada(lista, ahora: datetime) -> bool:
+    generado = datetime.fromisoformat(lista["generated_at"].replace("Z", "+00:00"))
+    return (ahora - generado) > timedelta(hours=LISTA_CADUCA_HORAS)
+
+
+def enmascarar_correo(correo: str) -> str:
+    local, arroba, dominio = correo.strip().rpartition("@")
+    if not arroba:
+        return "***"
+    if len(local) <= 2:
+        return f"***@{dominio}"
+    return f"{local[:2]}***@{dominio}"
 
 
 class ListaCache:
@@ -163,6 +179,7 @@ def decidir(
     clave: str,
     admins: frozenset = frozenset(),
     lista_esperada: bool = False,
+    hoy: Optional[date] = None,
 ) -> Decision:
     """`lista_esperada` distingue los dos motivos por los que `lista` puede ser None, que
     antes se trataban igual: (a) no hay allowlist configurada —sin PAT ni hmac_key— y no hay
@@ -201,6 +218,12 @@ def decidir(
     h = hash_correo(correo, clave)
     entrada = lista.get("entries", {}).get(h)
 
+    if entrada is not None and entrada.get("estado") == "gracia":
+        if hoy is None:
+            hoy = datetime.now(timezone.utc).date()
+        if date.fromisoformat(entrada.get("hasta")) < hoy:
+            entrada = None
+
     if entrada is None:
         if modo == "aplicar":
             return Decision(accion="rechazar")
@@ -236,7 +259,7 @@ class Avisador:
         if self._rechazos_enviados.get(normalizado) == hoy:
             return
         self._rechazos_enviados[normalizado] = hoy
-        self._enviar_seguro(f"Rechazo (observar): {correo}")
+        self._enviar_seguro(f"Rechazo (observar): {enmascarar_correo(correo)}")
 
     def _con_freno_6h(self, tipo: str, mensaje: str) -> None:
         ahora = self._ahora()
@@ -246,11 +269,19 @@ class Avisador:
         self._ultimo_por_tipo[tipo] = ahora
         self._enviar_seguro(mensaje)
 
-    def lista_ilegible(self) -> None:
-        self._con_freno_6h("lista_ilegible", "La allowlist no se pudo leer.")
+    def lista_ilegible(self, modo: str = "observar") -> None:
+        desenlace = "CERRADA" if modo == "aplicar" else "ABIERTA"
+        self._con_freno_6h(
+            "lista_ilegible",
+            f"La allowlist no se pudo leer: la puerta quedó {desenlace} (modo {modo}).")
 
     def lista_vieja(self) -> None:
         self._con_freno_6h("lista_vieja", "La allowlist tiene más de 24 h.")
+
+    def lista_caducada(self) -> None:
+        self._con_freno_6h(
+            "lista_caducada",
+            f"La allowlist tiene más de {LISTA_CADUCA_HORAS} h: la puerta dejó de confiar en ella.")
 
     def modo_invalido(self) -> None:
         self._con_freno_6h("modo_invalido", "El modo de acceso configurado es inválido.")
@@ -424,13 +455,17 @@ def _puerta() -> bool:
 
     avisador = _avisador_singleton(token, chat_id)
 
+    ahora = datetime.now(timezone.utc)
     if origen == "ninguna":
-        avisador.lista_ilegible()
-    elif lista is not None and lista_vieja(lista, datetime.now(timezone.utc)):
+        avisador.lista_ilegible(modo)
+    elif lista is not None and lista_caducada(lista, ahora):
+        avisador.lista_caducada()
+        lista = None
+    elif lista is not None and lista_vieja(lista, ahora):
         avisador.lista_vieja()
 
     decision = decidir(modo, usuario, lista, clave, admins=admins,
-                       lista_esperada=bool(pat and clave))
+                       lista_esperada=bool(pat and clave), hoy=ahora.date())
 
     if _debe_avisar_rechazo(modo, decision):
         avisador.rechazo_observar(decision.correo_rechazado)

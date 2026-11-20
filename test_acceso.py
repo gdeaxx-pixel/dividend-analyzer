@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -255,12 +255,12 @@ def test_gracia_solo_estado_gracia():
     lista_vigente = _lista({h: {"estado": "vigente", "hasta": "2026-09-19"}})
     usuario = {"is_logged_in": True, "email_verified": True, "email": correo}
 
-    decision = acceso.decidir("aplicar", usuario, lista_vigente, CLAVE)
+    decision = acceso.decidir("aplicar", usuario, lista_vigente, CLAVE, hoy=date(2026, 9, 19))
     assert decision.accion == "pasar"
     assert decision.gracia_hasta is None
 
     lista_gracia = _lista({h: {"estado": "gracia", "hasta": "2026-09-19"}})
-    decision2 = acceso.decidir("aplicar", usuario, lista_gracia, CLAVE)
+    decision2 = acceso.decidir("aplicar", usuario, lista_gracia, CLAVE, hoy=date(2026, 9, 19))
     assert decision2.accion == "pasar"
     assert decision2.gracia_hasta == "2026-09-19"
 
@@ -351,6 +351,8 @@ def _restaurar_internals_acceso():
 def _script_puerta_no_socio():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     class _ListaDoble:
@@ -358,7 +360,7 @@ def _script_puerta_no_socio():
             return (
                 {
                     "version": 1,
-                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "product_id": 4903539,
                     "count": 0,
                     "entries": {},
@@ -367,7 +369,7 @@ def _script_puerta_no_socio():
             )
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -402,6 +404,8 @@ def test_puerta_aplicar_no_socio_ve_rechazo():
 def _script_puerta_socio_entra():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     correo = "socio@ejemplo.com"
@@ -413,7 +417,7 @@ def _script_puerta_socio_entra():
             return (
                 {
                     "version": 1,
-                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "product_id": 4903539,
                     "count": 1,
                     "entries": {h: {"estado": "vigente"}},
@@ -422,7 +426,7 @@ def _script_puerta_socio_entra():
             )
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -453,6 +457,8 @@ def test_puerta_aplicar_socio_entra():
 def _script_puerta_gracia():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     correo = "gracia@ejemplo.com"
@@ -464,16 +470,16 @@ def _script_puerta_gracia():
             return (
                 {
                     "version": 1,
-                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "product_id": 4903539,
                     "count": 1,
-                    "entries": {h: {"estado": "gracia", "hasta": "2026-09-15"}},
+                    "entries": {h: {"estado": "gracia", "hasta": "2099-09-15"}},
                 },
                 "fresca",
             )
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -512,6 +518,8 @@ def test_freno_normaliza_correo():
 def _script_puerta_sin_hmac_key():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     class _ListaDoble:
@@ -519,7 +527,7 @@ def _script_puerta_sin_hmac_key():
             return (
                 {
                     "version": 1,
-                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "product_id": 4903539,
                     "count": 0,
                     "entries": {},
@@ -528,7 +536,7 @@ def _script_puerta_sin_hmac_key():
             )
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -609,6 +617,8 @@ def test_app_aplicar_sin_sesion_muestra_login(monkeypatch):
 def _script_puerta_modo_ausente():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     avisos = []
@@ -618,7 +628,7 @@ def _script_puerta_modo_ausente():
             return None, "ninguna"
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -683,6 +693,8 @@ def test_lista_hasta_mal_formado_invalida():
 def _script_puerta_error_interno():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     def _usuario_que_falla():
@@ -745,6 +757,8 @@ def test_puerta_toml_invalido_abre(monkeypatch, tmp_path):
 def _script_puerta_normal():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     st.session_state["resultado"] = acceso.puerta()
@@ -752,6 +766,8 @@ def _script_puerta_normal():
 
 def _script_puerta_doble_stop():
     import streamlit as st
+
+    from datetime import datetime, timezone
 
     import acceso
 
@@ -782,6 +798,8 @@ def test_red_no_traga_rerun(monkeypatch):
 
 
 def _script_puerta_error_con_correo():
+    from datetime import datetime, timezone
+
     import acceso
 
     def _usuario_que_falla():
@@ -860,6 +878,8 @@ def test_app_login_roto_no_abre_la_app(monkeypatch, lanza_en):
 
 def _script_puerta_error_avisa(lanza):
     import streamlit as st
+
+    from datetime import datetime, timezone
 
     import acceso
 
@@ -1054,6 +1074,8 @@ def test_decidir_sin_admins_default_es_igual_que_antes():
 def _script_puerta_admin_fuera_de_lista():
     import streamlit as st
 
+    from datetime import datetime, timezone
+
     import acceso
 
     class _ListaDoble:
@@ -1061,7 +1083,7 @@ def _script_puerta_admin_fuera_de_lista():
             return (
                 {
                     "version": 1,
-                    "generated_at": "2026-09-13T12:00:00+00:00",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
                     "product_id": 4903539,
                     "count": 0,
                     "entries": {},
@@ -1070,7 +1092,7 @@ def _script_puerta_admin_fuera_de_lista():
             )
 
     class _AvisadorDoble:
-        def lista_ilegible(self):
+        def lista_ilegible(self, *args):
             pass
 
         def lista_vieja(self):
@@ -1105,3 +1127,217 @@ def test_puerta_pasa_admins_a_decidir():
     at.run()
     assert at.session_state["resultado"] is True
     assert len(at.error) == 0
+
+
+# ============================================================
+# Arreglos de la auditoría s13 (ACC-2 a ACC-6)
+# ============================================================
+
+HOY = date(2026, 11, 20)
+CORREO_SOCIO = "cliente@ejemplo.com"
+USUARIO_SOCIO = {"is_logged_in": True, "email_verified": True, "email": CORREO_SOCIO}
+
+
+def _lista_con_gracia(hasta):
+    h = acceso.hash_correo(CORREO_SOCIO, CLAVE)
+    return _lista({h: {"estado": "gracia", "hasta": hasta}})
+
+
+@pytest.mark.parametrize("modo", ["aplicar", "observar"])
+@pytest.mark.parametrize("hasta, vigente", [
+    ("2026-11-19", False),
+    ("2026-11-20", True),
+    ("2026-11-21", True),
+])
+def test_gracia_caduca_con_la_fecha(modo, hasta, vigente):
+    decision = acceso.decidir(modo, USUARIO_SOCIO, _lista_con_gracia(hasta), CLAVE, hoy=HOY)
+    if vigente:
+        assert decision.accion == "pasar"
+        assert decision.gracia_hasta == hasta
+        assert decision.correo_rechazado is None
+    elif modo == "aplicar":
+        assert decision.accion == "rechazar"
+    else:
+        assert decision.accion == "pasar"
+        assert decision.correo_rechazado == CORREO_SOCIO
+        assert decision.gracia_hasta is None
+
+
+def test_gracia_vencida_por_defecto_usa_la_fecha_utc_de_hoy():
+    ayer = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    manana = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    assert acceso.decidir("aplicar", USUARIO_SOCIO, _lista_con_gracia(ayer), CLAVE).accion == "rechazar"
+    assert acceso.decidir("aplicar", USUARIO_SOCIO, _lista_con_gracia(manana), CLAVE).accion == "pasar"
+
+
+def test_lista_caducada_en_el_borde_de_72_horas():
+    generado = _dt("2026-11-17T12:00:00+00:00")
+    lista = _lista(generated_at=generado.isoformat())
+    limite = timedelta(hours=acceso.LISTA_CADUCA_HORAS)
+    assert acceso.lista_caducada(lista, generado + limite - timedelta(minutes=1)) is False
+    assert acceso.lista_caducada(lista, generado + limite) is False
+    assert acceso.lista_caducada(lista, generado + limite + timedelta(minutes=1)) is True
+
+
+def test_la_lista_caduca_a_las_72_horas():
+    assert acceso.LISTA_CADUCA_HORAS == 72
+
+
+def _script_puerta_edad_lista(minutos_de_edad, es_admin):
+    from datetime import datetime, timedelta, timezone
+
+    import streamlit as st
+
+    import acceso
+
+    correo = "cliente@ejemplo.com"
+    h = acceso.hash_correo(correo, "clave-de-prueba")
+    generado = datetime.now(timezone.utc) - timedelta(minutes=minutos_de_edad)
+    avisos = []
+
+    class _ListaDoble:
+        def obtener(self):
+            return (
+                {
+                    "version": 1,
+                    "generated_at": generado.isoformat(),
+                    "product_id": 4903539,
+                    "count": 1,
+                    "entries": {h: {"estado": "vigente"}},
+                },
+                "fresca",
+            )
+
+    class _AvisadorDoble:
+        def __getattr__(self, nombre):
+            return lambda *args: avisos.append(nombre)
+
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True,
+        "email_verified": True,
+        "email": "nuevo@ejemplo.com" if es_admin is None else correo,
+    }
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    st.session_state["resultado"] = acceso.puerta()
+    st.session_state["avisos"] = list(avisos)
+
+
+def _correr_puerta_edad(minutos, modo, correo_en_lista, admin=False):
+    at = AppTest.from_function(_script_puerta_edad_lista, args=(minutos, None if not correo_en_lista else True))
+    at.secrets["auth"] = {}
+    acceso_secrets = {"modo": modo, "hmac_key": CLAVE, "allowlist_pat": "pat-fake"}
+    if admin:
+        acceso_secrets["admins"] = ["nuevo@ejemplo.com"]
+    at.secrets["acceso"] = acceso_secrets
+    at.run()
+    return at
+
+
+LIMITE_MIN = acceso.LISTA_CADUCA_HORAS * 60
+
+
+@pytest.mark.parametrize("minutos, caducada", [
+    (LIMITE_MIN - 1, False),
+    (LIMITE_MIN + 1, True),
+])
+def test_puerta_aplicar_lista_caducada_no_deja_pasar_a_un_socio(minutos, caducada):
+    at = _correr_puerta_edad(minutos, "aplicar", correo_en_lista=True)
+    assert at.session_state["resultado"] is (not caducada)
+    assert ("lista_caducada" in at.session_state["avisos"]) is caducada
+    assert len(at.error) == (1 if caducada else 0)
+    if caducada:
+        assert "No pudimos verificar tu acceso" in at.error[0].value
+
+
+@pytest.mark.parametrize("minutos", [LIMITE_MIN - 1, LIMITE_MIN + 1])
+def test_puerta_aplicar_admin_pasa_con_la_lista_caducada_o_no(minutos):
+    at = _correr_puerta_edad(minutos, "aplicar", correo_en_lista=False, admin=True)
+    assert at.session_state["resultado"] is True
+
+
+@pytest.mark.parametrize("minutos", [LIMITE_MIN - 1, LIMITE_MIN + 1])
+def test_puerta_observar_pasa_con_la_lista_caducada_o_no(minutos):
+    at = _correr_puerta_edad(minutos, "observar", correo_en_lista=True)
+    assert at.session_state["resultado"] is True
+    assert len(at.error) == 0
+
+
+def test_puerta_aplicar_fuera_de_lista_con_lista_al_dia_sigue_rechazando():
+    at = _correr_puerta_edad(60, "aplicar", correo_en_lista=False)
+    assert at.session_state["resultado"] is False
+    assert "no tiene acceso activo" in at.error[0].value
+
+
+def test_aviso_lista_caducada_con_freno_6h():
+    enviados = []
+    reloj = {"t": _dt("2026-11-20T10:00:00+00:00")}
+    avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: reloj["t"])
+    avisador.lista_caducada()
+    avisador.lista_caducada()
+    assert enviados == [
+        f"La allowlist tiene más de {acceso.LISTA_CADUCA_HORAS} h: la puerta dejó de confiar en ella."]
+    reloj["t"] += timedelta(hours=6, minutes=1)
+    avisador.lista_caducada()
+    assert len(enviados) == 2
+    avisador.lista_vieja()
+    assert enviados[-1] == "La allowlist tiene más de 24 h."
+
+
+def test_aviso_lista_ilegible_dice_si_la_puerta_quedo_cerrada_o_abierta():
+    enviados = []
+    for modo in ("aplicar", "observar"):
+        avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: _dt("2026-11-20T10:00:00+00:00"))
+        avisador.lista_ilegible(modo)
+    assert "CERRADA" in enviados[0] and "ABIERTA" not in enviados[0]
+    assert "ABIERTA" in enviados[1] and "CERRADA" not in enviados[1]
+
+
+def _script_puerta_lista_ilegible(modo_esperado):
+    import streamlit as st
+
+    import acceso
+
+    avisos = []
+
+    class _ListaDoble:
+        def obtener(self):
+            return None, "ninguna"
+
+    class _AvisadorDoble:
+        def lista_ilegible(self, *args):
+            avisos.append(args)
+
+        def __getattr__(self, nombre):
+            return lambda *args: None
+
+    acceso._usuario_actual = lambda: {"is_logged_in": False}
+    acceso._lista_cache_singleton = lambda pat: _ListaDoble()
+    acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
+
+    acceso.puerta()
+    st.session_state["avisos"] = list(avisos)
+
+
+@pytest.mark.parametrize("modo", ["aplicar", "observar"])
+def test_puerta_pasa_el_modo_al_aviso_de_lista_ilegible(modo):
+    at = AppTest.from_function(_script_puerta_lista_ilegible, args=(modo,))
+    at.secrets["auth"] = {}
+    at.secrets["acceso"] = {"modo": modo, "hmac_key": CLAVE, "allowlist_pat": "pat-fake"}
+    at.run()
+    assert at.session_state["avisos"] == [(modo,)]
+
+
+@pytest.mark.parametrize("correo, esperado", [
+    ("juan.perez@gmail.com", "ju***@gmail.com"),
+    ("abc@x.com", "ab***@x.com"),
+    ("ab@x.com", "***@x.com"),
+    ("a@x.com", "***@x.com"),
+])
+def test_aviso_de_rechazo_enmascara_el_correo(correo, esperado):
+    enviados = []
+    avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: _dt("2026-11-20T10:00:00+00:00"))
+    avisador.rechazo_observar(correo)
+    assert enviados == [f"Rechazo (observar): {esperado}"]
+    assert correo not in enviados[0]
