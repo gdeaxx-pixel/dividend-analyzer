@@ -23,6 +23,9 @@ NAN = float("nan")
     ("(80.00)", False, -80.0), ("(80.00)", True, -80.0),
     ("-27,500", False, -27500.0), ("-27,500", True, -27.5),
     ("27.50", False, 27.5), ("27.50", True, 27.5),
+    ("579,314", False, 579314.0), ("579,314", True, 579.314),
+    ("1.000", False, 1.0), ("1.000", True, 1000.0),
+    ("1.234.567", False, None), ("1.234.567", True, 1234567.0),
     ("", False, None), ("--", False, None), ("N/A", False, None),
     (None, False, None), (NAN, False, None),
     ("", True, None), ("--", True, None), ("N/A", True, None),
@@ -163,6 +166,67 @@ def test_la_columna_con_miles_en_coma_no_se_vuelve_decimal():
     _, n = _cadena(contenido)
     assert n["Quantity"].tolist() == [1000.0, 10.0]
     assert n["Amount"].tolist() == pytest.approx([-27500.0, -1234.56])
+
+
+def test_el_archivo_decide_la_coma_de_la_columna_que_sola_no_dice():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"579,314","12,50","-7.241,43"\n'
+                 b'2025-01-16,Buy,AAA,"1.000","12,50","-12.500,00"\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == pytest.approx([579.314, 1000.0])
+    assert n["Price"].tolist() == [12.5, 12.5]
+    assert n["Amount"].tolist() == pytest.approx([-7241.43, -12500.0])
+
+
+def test_sin_ninguna_pista_la_coma_con_tres_digitos_son_miles():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"579,314",5,-2896570\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == [579314.0]
+
+
+def test_si_el_archivo_se_contradice_cada_columna_decide_sola():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"1,000","12,50","-12,500.00"\n'
+                 b'2025-01-16,Buy,AAA,10,"1,000","-10,000.00"\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == [1000.0, 10.0]
+    assert n["Price"].tolist() == [12.5, 1.0]
+    assert n["Amount"].tolist() == [-12500.0, -10000.0]
+
+
+def test_un_precio_con_punto_decimal_impide_que_una_celda_suelta_arrastre_al_archivo():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"1,000",$27.50,-27500\n'
+                 b'2025-01-16,Dividend,AAA,0,0,"12,5"\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == [1000.0, 0.0]
+    assert n["Price"].tolist() == [27.5, 0.0]
+    assert n["Amount"].tolist() == [-27500.0, 12.5]
+
+
+def test_ibkr_transaction_history_la_cantidad_sigue_al_archivo():
+    contenido = (
+        b'Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,Quantity,Price,Gross Amount,Commission,Net Amount\n'
+        b'Transaction History,Data,2025-01-15,U1,Buy,Buy,AAA,"579,314","12,50","-7.241,43",-1,"-7.242,43"\n'
+        b'Transaction History,Data,2025-01-16,U1,Buy,Buy,AAA,"1.000","12,50","-12.500,00",-1,"-12.501,00"\n')
+    broker, n = _cadena(contenido)
+    assert broker == "ibkr"
+    assert n["Quantity"].tolist() == pytest.approx([579.314, 1000.0])
+    assert n["Amount"].tolist() == pytest.approx([-7241.43, -12500.0])
+
+
+def test_ibkr_activity_la_cantidad_sigue_al_archivo():
+    contenido = (
+        b'Statement,Header,Field Name,Field Value\nStatement,Data,BrokerName,Interactive Brokers LLC\n'
+        b'Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,Code\n'
+        b'Trades,Data,Order,Stocks,USD,SCHD,"2025-01-16, 09:30:00","579,314","12,50","12,50","-7.241,43",-1,7242,0,O\n')
+    broker, n = _cadena(contenido)
+    assert broker == "ibkr"
+    compra = n[n["Action"] == "Buy"].iloc[0]
+    assert compra["Quantity"] == pytest.approx(579.314)
+    assert compra["Price"] == 12.5
+    assert compra["Amount"] == pytest.approx(-7241.43)
 
 
 def test_fechas_con_y_sin_hora_no_pierden_el_dividendo():

@@ -879,10 +879,13 @@ def test_clean_val_us_thousands_separator():
 
 
 def test_clean_val_european_format_preserved():
-    """El formato europeo (coma decimal, como el export de IB) sigue funcionando."""
+    """El formato europeo (coma decimal, como el export de IB) sigue funcionando cuando el
+    archivo lo prueba. Una celda 'n,nnn' sin ninguna otra pista son miles: así vienen las
+    cantidades de Schwab ('1,000' acciones), que antes se leían mil veces más pequeñas."""
     assert _norm_amounts(["12.500,00"]) == [12500.0]
     assert _norm_amounts(["0,155"]) == [0.155]
-    assert _norm_amounts(["579,314"]) == [579.314]
+    assert _norm_amounts(["0,155", "579,314"]) == [0.155, 579.314]
+    assert _norm_amounts(["579,314"]) == [579314.0]
 
 
 def test_clean_val_plain_formats():

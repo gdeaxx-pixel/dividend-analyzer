@@ -205,7 +205,9 @@ def leer_numero(texto, coma_decimal=False):
     Paréntesis = negativo. Con coma y punto a la vez el último es el decimal. Con solo
     comas: si todas van seguidas de exactamente tres dígitos son miles (salvo
     `coma_decimal=True`, que obliga a leer la única coma como decimal); si no, la coma es
-    el decimal. Con solo un punto, es el decimal.
+    el decimal. Con solo un punto, es el decimal (salvo `coma_decimal=True` y exactamente
+    tres dígitos detrás: ahí son miles). `coma_decimal` lo decide el archivo, no la celda:
+    `columnas_usan_coma_decimal`.
     """
     if texto is None or isinstance(texto, bool):
         return None
@@ -233,11 +235,10 @@ def leer_numero(texto, coma_decimal=False):
             s = s.replace(',', '.')
         else:
             return None
+    elif coma_decimal and _MILES_PUNTO.match(s):
+        s = s.replace('.', '')
     elif n_punto > 1:
-        if coma_decimal and _MILES_PUNTO.match(s):
-            s = s.replace('.', '')
-        else:
-            return None
+        return None
     try:
         v = float(s)
     except ValueError:
@@ -259,8 +260,11 @@ def _prueba_coma_decimal(texto):
     if n_coma > 1:
         return False if _MILES_COMA.match(s) else None
     if n_coma == 1:
-        if n_punto == 0 and not _MILES_COMA.match(s):
-            return True
+        return None if _MILES_COMA.match(s) else True
+    if n_punto > 1:
+        return True if _MILES_PUNTO.match(s) else None
+    if n_punto == 1:
+        return None if _MILES_PUNTO.match(s) else False
     return None
 
 
@@ -274,6 +278,15 @@ def columna_usa_coma_decimal(valores):
         if p:
             hay = True
     return hay
+
+
+def columnas_usan_coma_decimal(columnas):
+    """Una bandera por columna: vale la coma decimal si la columna lo prueba sola, o si alguna
+    celda del archivo lo prueba y ninguna prueba lo contrario."""
+    pruebas = [[_prueba_coma_decimal(v) for v in c] for c in columnas]
+    todas = [p for ps in pruebas for p in ps]
+    archivo = True in todas and False not in todas
+    return [archivo or (True in ps and False not in ps) for ps in pruebas]
 
 
 def _num_posiciones(txt):
@@ -739,13 +752,11 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
         df = _resolver_filas_tda(df)
 
     # Clean Numeric Columns (Aggressive Regex)
-    cols_to_clean = ['Quantity', 'Price', 'Amount']
-    for col in cols_to_clean:
-        if col in df.columns:
-            _cd = columna_usa_coma_decimal(df[col])
-            df[col] = pd.to_numeric(
-                pd.Series([leer_numero(v, _cd) for v in df[col]], index=df.index, dtype='float64'),
-                errors='coerce').fillna(0.0)
+    cols_to_clean = [c for c in ('Quantity', 'Price', 'Amount') if c in df.columns]
+    for col, _cd in zip(cols_to_clean, columnas_usan_coma_decimal([df[c] for c in cols_to_clean])):
+        df[col] = pd.to_numeric(
+            pd.Series([leer_numero(v, _cd) for v in df[col]], index=df.index, dtype='float64'),
+            errors='coerce').fillna(0.0)
 
     return df
 
@@ -2680,12 +2691,11 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             price_col = next((c for c in tx_df.columns if c.lower() == 'price' or c.lower() == 'precio'), None) or 'Price'
             date_col = next((c for c in tx_df.columns if c.lower() in ('date', 'fecha')), None) or 'Date'
 
-            def _cd(*cols):
-                return columna_usa_coma_decimal(
-                    [v for c in cols if c in tx_df.columns for v in tx_df[c]])
+            def _celdas(*cols):
+                return [v for c in cols if c and c in tx_df.columns for v in tx_df[c]]
 
-            cd_qty, cd_price = _cd(qty_col), _cd(price_col)
-            cd_amount = _cd(*[c for c in (gross_col, net_col) if c])
+            cd_qty, cd_price, cd_amount = columnas_usan_coma_decimal(
+                [_celdas(qty_col), _celdas(price_col), _celdas(gross_col, net_col)])
 
             result_rows = []
             for _, row in tx_df.iterrows():
@@ -2751,7 +2761,8 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
 
             # Derive Action from Quantity sign
             if 'Quantity' in trades_df.columns:
-                _cd_qty = columna_usa_coma_decimal(trades_df['Quantity'])
+                _cd_qty = columnas_usan_coma_decimal(
+                    [trades_df[c] for c in ('Quantity', 'Price', 'Amount') if c in trades_df.columns])[0]
                 trades_df['Quantity_num'] = pd.to_numeric(
                     pd.Series([leer_numero(v, _cd_qty) for v in trades_df['Quantity']],
                               index=trades_df.index, dtype='float64'),
