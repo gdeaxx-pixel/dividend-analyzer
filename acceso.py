@@ -52,7 +52,7 @@ def resolver_modo(secrets: Mapping) -> str:
     modo = acceso.get("modo")
     if modo in MODOS_VALIDOS:
         return modo
-    return "observar"
+    return "aplicar"
 
 
 def _lista_valida(lista) -> bool:
@@ -284,7 +284,9 @@ class Avisador:
             f"La allowlist tiene más de {LISTA_CADUCA_HORAS} h: la puerta dejó de confiar en ella.")
 
     def modo_invalido(self) -> None:
-        self._con_freno_6h("modo_invalido", "El modo de acceso configurado es inválido.")
+        self._con_freno_6h(
+            "modo_invalido",
+            "El modo de acceso configurado es inválido: se está aplicando la lista.")
 
     def login_roto(self, nombre_error: str) -> None:
         self._con_freno_6h(

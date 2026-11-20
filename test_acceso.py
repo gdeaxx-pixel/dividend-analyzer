@@ -80,8 +80,8 @@ def test_resolver_modo_valido_y_default():
     assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "aplicar"}}) == "aplicar"
     assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "observar"}}) == "observar"
     assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "apagado"}}) == "apagado"
-    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "raro"}}) == "observar"
-    assert acceso.resolver_modo({"auth": {}}) == "observar"
+    assert acceso.resolver_modo({"auth": {}, "acceso": {"modo": "raro"}}) == "aplicar"
+    assert acceso.resolver_modo({"auth": {}}) == "aplicar"
 
 
 # --- M3: última buena no caduca por TTL ---
@@ -1283,6 +1283,25 @@ def test_aviso_lista_caducada_con_freno_6h():
     assert len(enviados) == 2
     avisador.lista_vieja()
     assert enviados[-1] == "La allowlist tiene más de 24 h."
+
+
+@pytest.mark.parametrize("secretos", [
+    {"auth": {}, "acceso": {"modo": "Aplicar"}},
+    {"auth": {}, "acceso": {"modo": "aplica"}},
+    {"auth": {}, "acceso": {"modo": None}},
+    {"auth": {}, "acceso": {}},
+    {"auth": {}},
+])
+def test_modo_mal_escrito_o_ausente_aplica(secretos):
+    assert acceso.resolver_modo(secretos) == "aplicar"
+
+
+def test_modo_invalido_avisa_que_se_aplica_la_lista():
+    enviados = []
+    avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: _dt("2026-11-20T10:00:00+00:00"))
+    avisador.modo_invalido()
+    assert len(enviados) == 1
+    assert "se está aplicando la lista" in enviados[0]
 
 
 def test_aviso_lista_ilegible_dice_si_la_puerta_quedo_cerrada_o_abierta():
