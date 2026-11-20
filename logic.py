@@ -6365,6 +6365,47 @@ def _safe_round(v, nd: int = 4):
         return None
 
 
+CAPTURE_ACCIONES_CONOCIDAS = {a.lower(): a for a in (
+    'Buy', 'Sell', 'Dividend', 'Cash Dividend', 'Qualified Dividend', 'Reinvest Dividend',
+    'Reinvest Shares', 'Special Qual Div', 'NRA Tax Adj', 'Foreign Tax Paid',
+    'Dividend - Foreign Tax Withholding', 'MoneyLink Transfer', 'Cash In Lieu',
+    'Credit Interest', 'Bank Interest', 'ADR Mgmt Fee', 'Wire Received', 'Wire Sent',
+    'Stock Split', 'Reverse Split', 'Journal', 'Journaled Shares', 'Funds Received',
+    'Long Term Cap Gain', 'Short Term Cap Gain')}
+
+
+def _accion_cerrada(action) -> str:
+    """Action de la copia: un valor de vocabulario cerrado, nunca texto libre.
+
+    Un Action conocido del bróker se conserva tal cual. Otro se reduce a la etiqueta
+    canónica que el motor clasifica igual (mismas palabras clave y mismo orden); si no
+    cae en ninguna categoría, `OTRO`.
+    """
+    a = ' '.join(str(action).split())
+    conocida = CAPTURE_ACCIONES_CONOCIDAS.get(a.lower())
+    if conocida:
+        return conocida
+    low = a.lower()
+    if _is_foreign_tax_credit_action(low):
+        return 'Foreign Tax Paid'
+    if _is_tax_row_action(low):
+        return 'NRA Tax Adj'
+    if 'reinvest' in low or 'reinversión' in low or 'drip' in low:
+        return 'Reinvest Dividend'
+    if 'split' in low:
+        return 'Stock Split'
+    if 'sell' in low or 'sold' in low or 'venta' in low:
+        return 'Sell'
+    if 'buy' in low or 'bought' in low or 'compra' in low:
+        return 'Buy'
+    if ('deposit' in low or 'depósito' in low or 'transfer' in low or 'journal' in low
+            or 'contribution' in low):
+        return 'Journal'
+    if 'dividend' in low or 'dividendo' in low or 'yield' in low or 'interest' in low:
+        return 'Dividend'
+    return 'OTRO'
+
+
 def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     """Reduce un DataFrame normalizado a SOLO las columnas del pipeline.
 
@@ -6385,9 +6426,10 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     if 'Ticker' in out.columns:
         vacio = out['Ticker'].isna()
         t = out['Ticker'].astype(str).str.strip().str.upper()
-        out['Ticker'] = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
+        t = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
+        out['Ticker'] = t.where(t.eq('') | t.str.fullmatch(r'[A-Z0-9][A-Z0-9.\-]{0,9}'), 'OTRO')
     if 'Action' in out.columns:
-        out['Action'] = out['Action'].astype(str).str.strip()
+        out['Action'] = out['Action'].map(_accion_cerrada)
     return out.reset_index(drop=True)
 
 
