@@ -210,3 +210,45 @@ def test_el_descuadre_de_tsly_es_exactamente_su_caja_miscelanea(monkeypatch):
     assert ultimo['Market Value'] == pytest.approx(r['market_value'], abs=0.01)
     assert ultimo['Invested Capital'] == pytest.approx(r['pocket_investment'], abs=0.01)
     assert ultimo['User Profit'] + r['misc_cash_total'] == pytest.approx(r['net_profit'], abs=0.01)
+
+
+# ── M7: un día sin precio no envenena la serie ──────────────────────────────────────────
+
+SERIE = ['Market Value', 'User Profit', 'User Return %']
+
+
+def test_cierre_ausente_a_mitad_de_serie_se_valora_al_ultimo_valido(monkeypatch):
+    r = _analizar(monkeypatch, [COMPRA], [100.0] * 30 + [float('nan')] + [110.0] * 29)
+    dt = r['daily_trend']
+    assert int(dt[SERIE].isna().sum().sum()) == 0
+    assert dt['Market Value'].iloc[30] == pytest.approx(1000.0, abs=0.01)
+    assert dt['User Profit'].iloc[-1] == pytest.approx(100.0, abs=0.01)
+    assert dt['User Return %'].iloc[-1] == pytest.approx(10.0, abs=1e-6)
+    assert r['volatilidad_anualizada'] > 0
+
+
+@pytest.mark.parametrize('invalido', [0.0, -5.0])
+def test_cierre_cero_o_negativo_un_dia_no_hunde_el_retorno(monkeypatch, invalido):
+    r = _analizar(monkeypatch, [COMPRA], [100.0] * 30 + [invalido] + [100.0] * 29)
+    dt = r['daily_trend']
+    assert dt['Market Value'].iloc[30] == pytest.approx(1000.0, abs=0.01)
+    assert dt['User Return %'].min() == pytest.approx(0.0, abs=1e-6)
+    assert dt['User Return %'].iloc[-1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_cierre_ausente_en_la_ultima_barra_vale_el_ultimo_cierre_valido(monkeypatch):
+    r = _analizar(monkeypatch, [COMPRA], [100.0] * 58 + [105.0, float('nan')])
+    ultimo = r['daily_trend'].iloc[-1]
+    assert r['net_profit'] == pytest.approx(50.0, abs=0.01)
+    assert ultimo['Market Value'] == pytest.approx(1050.0, abs=0.01)
+    assert ultimo['User Profit'] == pytest.approx(50.0, abs=0.01)
+    assert ultimo['User Return %'] == pytest.approx(5.0, abs=1e-6)
+
+
+def test_cierre_ausente_el_dia_de_la_compra_se_valora_al_primero_posterior(monkeypatch):
+    r = _analizar(monkeypatch, [COMPRA], [float('nan')] + [100.0] * 58 + [120.0])
+    dt = r['daily_trend']
+    assert int(dt[SERIE].isna().sum().sum()) == 0
+    assert dt['Market Value'].iloc[0] == pytest.approx(1000.0, abs=0.01)
+    assert dt['User Profit'].iloc[-1] == pytest.approx(200.0, abs=0.01)
+    assert dt['User Return %'].iloc[-1] == pytest.approx(20.0, abs=1e-6)

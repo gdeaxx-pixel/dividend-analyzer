@@ -1169,8 +1169,11 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
 
     daily_history['Shares Held'] = shares_series
     
-    # 4. Calculate Values
-    daily_history['Price'] = market_data['Close']
+    # 4. Calculate Values. Un día sin cierre válido (NaN, 0 o negativo) se valora al último
+    # cierre válido anterior y, si no lo hay, al primero posterior: un solo hueco dejaba el
+    # TWR encadenado en NaN (o en −100 %) hasta el final de la serie.
+    _cierre = market_data['Close']
+    daily_history['Price'] = _cierre.where(_cierre > 0).ffill().bfill()
     daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
     
     # 5. Calculate Cumulative Investment (Cost Basis) over time
