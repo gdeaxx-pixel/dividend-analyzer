@@ -252,3 +252,27 @@ def test_cierre_ausente_el_dia_de_la_compra_se_valora_al_primero_posterior(monke
     assert dt['Market Value'].iloc[0] == pytest.approx(1000.0, abs=0.01)
     assert dt['User Profit'].iloc[-1] == pytest.approx(200.0, abs=0.01)
     assert dt['User Return %'].iloc[-1] == pytest.approx(20.0, abs=1e-6)
+
+
+# ── M11: la fila fuente de la reinversión no suma acciones ──────────────────────────────
+
+def test_fila_fuente_de_reinversion_con_cantidad_no_suma_acciones(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA,
+        dict(Date='2024-01-10', Action='Reinvest Dividend', Quantity=2, Amount=200.0),
+        dict(Date='2024-01-10', Action='Reinvest Shares', Quantity=2, Amount=-200.0),
+    ])
+    ultimo = r['daily_trend'].iloc[-1]
+    assert r['shares_owned'] == pytest.approx(12.0, abs=1e-9)
+    assert ultimo['Market Value'] == pytest.approx(1200.0, abs=0.01)
+    assert ultimo['User Profit'] == pytest.approx(200.0, abs=0.01)
+    assert ultimo['User Return %'] == pytest.approx(20.0, abs=1e-6)
+
+
+def test_reinversion_de_rotulo_ambiguo_sigue_sumando_acciones(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA,
+        dict(Date='2024-01-10', Action='Reinvestment', Quantity=2, Amount=-200.0),
+    ])
+    assert r['shares_owned'] == pytest.approx(12.0, abs=1e-9)
+    assert r['daily_trend']['Market Value'].iloc[-1] == pytest.approx(1200.0, abs=0.01)

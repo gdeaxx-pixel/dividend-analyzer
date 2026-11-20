@@ -1106,10 +1106,17 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     # 'split' is excluded: the split loop below (Stock Splits column from yfinance) is
     # the authoritative handler. If the broker CSV also records splits as share-adding rows,
     # including 'split' here would double-count (CSV shares + loop multiplication).
-    qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
+    # La fila FUENTE de la reinversión ('Reinvest Dividend') tampoco suma acciones aunque el
+    # bróker le llene Quantity: mismo criterio que el patrón 2 de `_recorrer_transacciones`.
+    _accion = ticker_df['Action'].str.lower()
+    _fuente_reinversion = (
+        _accion.str.contains(r'reinvest|reinversión|drip', na=False, regex=True)
+        & ~_accion.str.contains('share|acciones', na=False)
+        & _accion.str.contains('dividend|dividendo', na=False))
+    qty_rows = ticker_df[_accion.str.contains(
         r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
         na=False, regex=True
-    )].copy()
+    ) & ~_fuente_reinversion].copy()
     # Schwab (y algunos otros brokers) exporta Quantity positiva para ventas.
     # Negamos explícitamente las filas de venta para que el cumsum reste shares correctamente.
     sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
