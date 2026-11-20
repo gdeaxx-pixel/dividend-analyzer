@@ -268,18 +268,6 @@ def _prueba_coma_decimal(texto):
     return None
 
 
-def columna_usa_coma_decimal(valores):
-    """True si alguna celda de la columna prueba coma decimal y ninguna prueba lo contrario."""
-    hay = False
-    for v in valores:
-        p = _prueba_coma_decimal(v)
-        if p is False:
-            return False
-        if p:
-            hay = True
-    return hay
-
-
 def columnas_usan_coma_decimal(columnas):
     """Una bandera por columna: vale la coma decimal si la columna lo prueba sola, o si alguna
     celda del archivo lo prueba y ninguna prueba lo contrario."""
@@ -2550,9 +2538,7 @@ def parse_schwab_income_csv(raw_bytes: bytes):
     out['TxnType'] = df[c_txn].astype(str) if c_txn else ''
     out['IncomeType'] = df[c_inc].astype(str).str.strip()
     out['Account'] = df[c_acct].astype(str).str.strip() if c_acct else ''
-    _cd_amt = columna_usa_coma_decimal(df[c_amt])
-    out['Amount'] = [float('nan') if v is None else v
-                     for v in (leer_numero(x, _cd_amt) for x in df[c_amt])]
+    out['Amount'] = [float('nan') if v is None else v for v in map(leer_numero, df[c_amt])]
 
     # Excluir interés de cash (no es de un ticker) y montos/fechas malformados.
     mask_cash = (out['SecurityType'].str.contains('cash', case=False, na=False)

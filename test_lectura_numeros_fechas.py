@@ -205,6 +205,15 @@ def test_un_precio_con_punto_decimal_impide_que_una_celda_suelta_arrastre_al_arc
     assert n["Amount"].tolist() == [-27500.0, 12.5]
 
 
+def test_los_millones_con_comas_tambien_impiden_leer_miles_como_decimales():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"1,000",1235,"-1,234,567"\n'
+                 b'2025-01-16,Dividend,AAA,0,0,"12,5"\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == [1000.0, 0.0]
+    assert n["Amount"].tolist() == [-1234567.0, 12.5]
+
+
 def test_ibkr_transaction_history_la_cantidad_sigue_al_archivo():
     contenido = (
         b'Transaction History,Header,Date,Account,Description,Transaction Type,Symbol,Quantity,Price,Gross Amount,Commission,Net Amount\n'
