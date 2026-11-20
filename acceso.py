@@ -32,7 +32,7 @@ MODOS_VALIDOS = ("aplicar", "observar", "apagado")
 
 PRODUCT_ID_ESPERADO = 4903539
 
-LISTA_CADUCA_HORAS = 72
+LISTA_CADUCA_HORAS = 7 * 24
 
 
 def hash_correo(correo: str, clave: str) -> str:
@@ -269,19 +269,20 @@ class Avisador:
         self._ultimo_por_tipo[tipo] = ahora
         self._enviar_seguro(mensaje)
 
-    def lista_ilegible(self, modo: str = "observar") -> None:
-        desenlace = "CERRADA" if modo == "aplicar" else "ABIERTA"
-        self._con_freno_6h(
-            "lista_ilegible",
-            f"La allowlist no se pudo leer: la puerta quedó {desenlace} (modo {modo}).")
+    def lista_ilegible(self, cerrada: bool, configurada: bool = True) -> None:
+        causa = "no se pudo leer" if configurada else "no está configurada (falta allowlist_pat o hmac_key)"
+        desenlace = "CERRADA" if cerrada else "ABIERTA"
+        self._con_freno_6h("lista_ilegible", f"La allowlist {causa}: la puerta quedó {desenlace}.")
 
     def lista_vieja(self) -> None:
         self._con_freno_6h("lista_vieja", "La allowlist tiene más de 24 h.")
 
-    def lista_caducada(self) -> None:
+    def lista_caducada(self, cerrada: bool) -> None:
+        desenlace = "CERRADA" if cerrada else "ABIERTA"
         self._con_freno_6h(
             "lista_caducada",
-            f"La allowlist tiene más de {LISTA_CADUCA_HORAS} h: la puerta dejó de confiar en ella.")
+            f"La allowlist lleva más de {LISTA_CADUCA_HORAS // 24} días sin actualizarse: "
+            f"la puerta dejó de confiar en ella y quedó {desenlace}.")
 
     def modo_invalido(self) -> None:
         self._con_freno_6h(
@@ -457,17 +458,19 @@ def _puerta() -> bool:
 
     avisador = _avisador_singleton(token, chat_id)
 
+    lista_esperada = bool(pat and clave)
+    cierra_sin_lista = modo == "aplicar" and lista_esperada
     ahora = datetime.now(timezone.utc)
     if origen == "ninguna":
-        avisador.lista_ilegible(modo)
+        avisador.lista_ilegible(cierra_sin_lista, lista_esperada)
     elif lista is not None and lista_caducada(lista, ahora):
-        avisador.lista_caducada()
+        avisador.lista_caducada(cierra_sin_lista)
         lista = None
     elif lista is not None and lista_vieja(lista, ahora):
         avisador.lista_vieja()
 
     decision = decidir(modo, usuario, lista, clave, admins=admins,
-                       lista_esperada=bool(pat and clave), hoy=ahora.date())
+                       lista_esperada=lista_esperada, hoy=ahora.date())
 
     if _debe_avisar_rechazo(modo, decision):
         avisador.rechazo_observar(decision.correo_rechazado)

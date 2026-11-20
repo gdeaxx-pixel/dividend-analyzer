@@ -321,7 +321,7 @@ def test_avisador_traga_errores():
 
     avisador = acceso.Avisador(enviar=enviar_falla, ahora=lambda: _dt("2026-09-13T10:00:00+00:00"))
     avisador.rechazo_observar("cliente@ejemplo.com")
-    avisador.lista_ilegible()
+    avisador.lista_ilegible(True)
     avisador.lista_vieja()
     avisador.modo_invalido()
     # No debe propagar ninguna excepción.
@@ -1170,7 +1170,7 @@ def test_gracia_vencida_por_defecto_usa_la_fecha_utc_de_hoy():
     assert acceso.decidir("aplicar", USUARIO_SOCIO, _lista_con_gracia(manana), CLAVE).accion == "pasar"
 
 
-def test_lista_caducada_en_el_borde_de_72_horas():
+def test_lista_caducada_en_el_borde():
     generado = _dt("2026-11-17T12:00:00+00:00")
     lista = _lista(generated_at=generado.isoformat())
     limite = timedelta(hours=acceso.LISTA_CADUCA_HORAS)
@@ -1179,8 +1179,8 @@ def test_lista_caducada_en_el_borde_de_72_horas():
     assert acceso.lista_caducada(lista, generado + limite + timedelta(minutes=1)) is True
 
 
-def test_la_lista_caduca_a_las_72_horas():
-    assert acceso.LISTA_CADUCA_HORAS == 72
+def test_la_lista_caduca_a_los_7_dias():
+    assert acceso.LISTA_CADUCA_HORAS == 168
 
 
 def _script_puerta_edad_lista(minutos_de_edad, es_admin):
@@ -1194,6 +1194,7 @@ def _script_puerta_edad_lista(minutos_de_edad, es_admin):
     h = acceso.hash_correo(correo, "clave-de-prueba")
     generado = datetime.now(timezone.utc) - timedelta(minutes=minutos_de_edad)
     avisos = []
+    avisos_args = {}
 
     class _ListaDoble:
         def obtener(self):
@@ -1210,7 +1211,7 @@ def _script_puerta_edad_lista(minutos_de_edad, es_admin):
 
     class _AvisadorDoble:
         def __getattr__(self, nombre):
-            return lambda *args: avisos.append(nombre)
+            return lambda *args: (avisos.append(nombre), avisos_args.__setitem__(nombre, args))
 
     acceso._usuario_actual = lambda: {
         "is_logged_in": True,
@@ -1222,6 +1223,7 @@ def _script_puerta_edad_lista(minutos_de_edad, es_admin):
 
     st.session_state["resultado"] = acceso.puerta()
     st.session_state["avisos"] = list(avisos)
+    st.session_state["avisos_args"] = dict(avisos_args)
 
 
 def _correr_puerta_edad(minutos, modo, correo_en_lista, admin=False):
@@ -1274,12 +1276,14 @@ def test_aviso_lista_caducada_con_freno_6h():
     enviados = []
     reloj = {"t": _dt("2026-11-20T10:00:00+00:00")}
     avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: reloj["t"])
-    avisador.lista_caducada()
-    avisador.lista_caducada()
+    avisador.lista_caducada(True)
+    avisador.lista_caducada(True)
     assert enviados == [
-        f"La allowlist tiene más de {acceso.LISTA_CADUCA_HORAS} h: la puerta dejó de confiar en ella."]
+        "La allowlist lleva más de 7 días sin actualizarse: "
+        "la puerta dejó de confiar en ella y quedó CERRADA."]
     reloj["t"] += timedelta(hours=6, minutes=1)
-    avisador.lista_caducada()
+    avisador.lista_caducada(False)
+    assert enviados[-1].endswith("quedó ABIERTA.")
     assert len(enviados) == 2
     avisador.lista_vieja()
     assert enviados[-1] == "La allowlist tiene más de 24 h."
@@ -1306,14 +1310,17 @@ def test_modo_invalido_avisa_que_se_aplica_la_lista():
 
 def test_aviso_lista_ilegible_dice_si_la_puerta_quedo_cerrada_o_abierta():
     enviados = []
-    for modo in ("aplicar", "observar"):
+    for cerrada, configurada in ((True, True), (False, True), (False, False)):
         avisador = acceso.Avisador(enviar=enviados.append, ahora=lambda: _dt("2026-11-20T10:00:00+00:00"))
-        avisador.lista_ilegible(modo)
-    assert "CERRADA" in enviados[0] and "ABIERTA" not in enviados[0]
-    assert "ABIERTA" in enviados[1] and "CERRADA" not in enviados[1]
+        avisador.lista_ilegible(cerrada, configurada)
+    assert enviados == [
+        "La allowlist no se pudo leer: la puerta quedó CERRADA.",
+        "La allowlist no se pudo leer: la puerta quedó ABIERTA.",
+        "La allowlist no está configurada (falta allowlist_pat o hmac_key): la puerta quedó ABIERTA.",
+    ]
 
 
-def _script_puerta_lista_ilegible(modo_esperado):
+def _script_puerta_sin_lista():
     import streamlit as st
 
     import acceso
@@ -1331,21 +1338,40 @@ def _script_puerta_lista_ilegible(modo_esperado):
         def __getattr__(self, nombre):
             return lambda *args: None
 
-    acceso._usuario_actual = lambda: {"is_logged_in": False}
+    acceso._usuario_actual = lambda: {
+        "is_logged_in": True, "email_verified": True, "email": "cliente@ejemplo.com"}
     acceso._lista_cache_singleton = lambda pat: _ListaDoble()
     acceso._avisador_singleton = lambda token, chat_id: _AvisadorDoble()
 
-    acceso.puerta()
+    st.session_state["resultado"] = acceso.puerta()
     st.session_state["avisos"] = list(avisos)
 
 
-@pytest.mark.parametrize("modo", ["aplicar", "observar"])
-def test_puerta_pasa_el_modo_al_aviso_de_lista_ilegible(modo):
-    at = AppTest.from_function(_script_puerta_lista_ilegible, args=(modo,))
+SIN_LISTA = [
+    ("aplicar", {"hmac_key": CLAVE, "allowlist_pat": "pat-fake"}, (True, True)),
+    ("observar", {"hmac_key": CLAVE, "allowlist_pat": "pat-fake"}, (False, True)),
+    ("aplicar", {"hmac_key": CLAVE}, (False, False)),
+    ("aplicar", {"allowlist_pat": "pat-fake"}, (False, False)),
+    ("observar", {}, (False, False)),
+]
+
+
+@pytest.mark.parametrize("modo, secretos, aviso", SIN_LISTA)
+def test_sin_lista_el_aviso_dice_lo_que_la_puerta_hizo(modo, secretos, aviso):
+    at = AppTest.from_function(_script_puerta_sin_lista)
     at.secrets["auth"] = {}
-    at.secrets["acceso"] = {"modo": modo, "hmac_key": CLAVE, "allowlist_pat": "pat-fake"}
+    at.secrets["acceso"] = {"modo": modo, **secretos}
     at.run()
-    assert at.session_state["avisos"] == [(modo,)]
+    assert at.session_state["avisos"] == [aviso]
+    cerrada_segun_aviso = at.session_state["avisos"][0][0]
+    assert at.session_state["resultado"] is (not cerrada_segun_aviso)
+
+
+@pytest.mark.parametrize("modo, cerrada", [("aplicar", True), ("observar", False)])
+def test_lista_caducada_el_aviso_dice_lo_que_la_puerta_hizo(modo, cerrada):
+    at = _correr_puerta_edad(LIMITE_MIN + 1, modo, correo_en_lista=True)
+    assert at.session_state["avisos_args"]["lista_caducada"] == (cerrada,)
+    assert at.session_state["resultado"] is (not cerrada)
 
 
 @pytest.mark.parametrize("correo, esperado", [
