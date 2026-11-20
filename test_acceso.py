@@ -8,6 +8,35 @@ import acceso
 CLAVE = "clave-de-prueba"
 
 
+@pytest.fixture(autouse=True)
+def _sin_red(monkeypatch):
+    intentos = []
+
+    def _urlopen_bloqueado(request, *args, **kwargs):
+        url = getattr(request, "full_url", request)
+        intentos.append(url)
+        raise AssertionError(f"test sin red: intento de salir a internet ({url})")
+
+    monkeypatch.setattr(acceso.urllib.request, "urlopen", _urlopen_bloqueado)
+    yield
+    assert not intentos, f"test sin red: intentos de salir a internet {intentos}"
+
+
+class _ListaSinRed:
+    def obtener(self):
+        return None, "ninguna"
+
+
+class _AvisadorSinRed:
+    def __getattr__(self, nombre):
+        return lambda *args: None
+
+
+def _dobles_sin_red(monkeypatch):
+    monkeypatch.setattr(acceso, "_lista_cache_singleton", lambda pat: _ListaSinRed())
+    monkeypatch.setattr(acceso, "_avisador_singleton", lambda token, chat_id: _AvisadorSinRed())
+
+
 def _dt(iso: str) -> datetime:
     return datetime.fromisoformat(iso)
 
@@ -566,7 +595,8 @@ def test_sin_secrets_toml_es_apagado(monkeypatch, tmp_path):
     assert resultado is True
 
 
-def test_app_aplicar_sin_sesion_muestra_login():
+def test_app_aplicar_sin_sesion_muestra_login(monkeypatch):
+    _dobles_sin_red(monkeypatch)
     at = AppTest.from_file("app.py", default_timeout=60)
     at.secrets["auth"] = {}
     at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
@@ -735,7 +765,8 @@ def _script_puerta_doble_stop():
     st.session_state["nunca_llega"] = True
 
 
-def test_red_no_traga_rerun():
+def test_red_no_traga_rerun(monkeypatch):
+    _dobles_sin_red(monkeypatch)
     at_login = AppTest.from_function(_script_puerta_normal)
     at_login.secrets["auth"] = {}
     at_login.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
@@ -765,7 +796,8 @@ def _script_puerta_error_con_correo():
     acceso.puerta()
 
 
-def test_red_no_imprime_mensaje(capsys):
+def test_red_no_imprime_mensaje(capsys, monkeypatch):
+    _dobles_sin_red(monkeypatch)
     at = AppTest.from_function(_script_puerta_error_con_correo)
     at.secrets["auth"] = {}
     at.secrets["acceso"] = {"modo": "aplicar", "hmac_key": CLAVE_SECRETS, "allowlist_pat": "pat-fake"}
