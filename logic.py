@@ -559,6 +559,52 @@ def _resolver_filas_tda(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_FORMATOS_FECHA = (
+    '%m/%d/%Y', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y %H:%M',
+    '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M',
+    '%m/%d/%Y %I:%M %p', '%m/%d/%Y %I:%M:%S %p', '%m/%d/%y', '%d.%m.%Y', '%d-%m-%Y',
+)
+_FORMATOS_FECHA_DIA_PRIMERO = (
+    '%d/%m/%Y', '%d/%m/%Y %H:%M:%S', '%d/%m/%Y %H:%M',
+)
+_FECHA_BARRAS = re.compile(r'^(\d{1,2})/(\d{1,2})/\d{4}(?:[ T].*)?$')
+_FECHA_NUMERICA = re.compile(r'^\d{1,2}/\d{1,2}/\d{2,4}')
+
+
+def _leer_fechas_serie(cadenas: pd.Series) -> pd.Series:
+    """Fecha de cada celda por sí misma: ninguna se pierde porque la primera fila tenga
+    otro formato. `DD/MM/YYYY` solo si el archivo lo prueba (algún primer número mayor
+    que 12 y ningún segundo número mayor que 12)."""
+    barras = cadenas.dropna().map(lambda t: _FECHA_BARRAS.match(t))
+    primeros = [int(m.group(1)) for m in barras if m]
+    segundos = [int(m.group(2)) for m in barras if m]
+    dia_primero = any(n > 12 for n in primeros) and not any(n > 12 for n in segundos)
+    formatos = (_FORMATOS_FECHA_DIA_PRIMERO + _FORMATOS_FECHA[1:2] + _FORMATOS_FECHA[4:7] + _FORMATOS_FECHA[9:]
+                if dia_primero else _FORMATOS_FECHA)
+    piezas = []
+    pendiente = cadenas.notna()
+    for fmt in formatos:
+        if not pendiente.any():
+            break
+        leido = pd.to_datetime(cadenas[pendiente], format=fmt, errors='coerce')
+        ok = leido.notna()
+        piezas.append(leido[ok])
+        pendiente.loc[leido.index[ok]] = False
+    for idx in cadenas.index[pendiente]:
+        t = cadenas.loc[idx]
+        if _FECHA_NUMERICA.match(t):
+            continue
+        try:
+            v = pd.to_datetime(t, errors='coerce')
+        except (ValueError, TypeError):
+            continue
+        if pd.notna(v):
+            piezas.append(pd.Series([v.tz_localize(None) if v.tzinfo else v], index=[idx]))
+    if not piezas:
+        return pd.to_datetime(cadenas, errors='coerce')
+    return pd.concat(piezas).reindex(cadenas.index)
+
+
 def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardizes a broker's CSV export into a unified format for analysis.
@@ -674,7 +720,17 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensure Date is datetime
     if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        _cadenas = df['Date'].astype(str).str.strip()
+        _con_texto = df['Date'].notna() & ~_cadenas.str.lower().isin(('', 'nan', 'nat', 'none'))
+        if pd.api.types.is_datetime64_any_dtype(df['Date']):
+            _fechas = df['Date']
+        else:
+            _fechas = _leer_fechas_serie(_cadenas.where(df['Date'].notna()))
+        _sin_leer = _fechas.isna() & _con_texto
+        _n_ilegibles = int((_sin_leer & ~_mask_asof).sum())
+        df['Date'] = _fechas
+        normalize_csv.ultimo_descarte["fecha_ilegible"] = _n_ilegibles
+        normalize_csv.ultimo_descarte["total"] += _n_ilegibles
         df = df.dropna(subset=['Date'])
     
     # Clean Ticker (remove spaces)
@@ -2491,12 +2547,20 @@ def parse_schwab_income_csv(raw_bytes: bytes):
     mask_cash = (out['SecurityType'].str.contains('cash', case=False, na=False)
                  | out['Symbol'].str.upper().isin(['NO NUMBER', 'NAN', '']))
     out = out[~mask_cash].copy()
+    _recibida = out['IncomeType'].str.lower() == 'received'
+    _importe_mal = _recibida & out['Amount'].isna() & df.loc[out.index, c_amt].notna()
+    _fecha_mal = _recibida & out['Date'].isna() & df.loc[out.index, c_date].notna()
+    descartadas = {'importe_ilegible': int(_importe_mal.sum()),
+                   'fecha_ilegible': int(_fecha_mal.sum()),
+                   'total': int((_importe_mal | _fecha_mal).sum())}
     out = out.dropna(subset=['Date', 'Amount'])
 
     resolved = [_resolve_income_ticker(s, d) for s, d in zip(out['Symbol'], out['Description'])]
     out['Ticker'] = [r[0] for r in resolved]
     out['folded'] = [r[1] for r in resolved]
-    return out.reset_index(drop=True)
+    out = out.reset_index(drop=True)
+    out.attrs['descartadas_received'] = descartadas
+    return out
 
 
 def summarize_income(df) -> dict:

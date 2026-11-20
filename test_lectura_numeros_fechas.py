@@ -163,3 +163,69 @@ def test_la_columna_con_miles_en_coma_no_se_vuelve_decimal():
     _, n = _cadena(contenido)
     assert n["Quantity"].tolist() == [1000.0, 10.0]
     assert n["Amount"].tolist() == pytest.approx([-27500.0, -1234.56])
+
+
+def test_fechas_con_y_sin_hora_no_pierden_el_dividendo():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,10,5,-50\n'
+                 b'2025-01-20 09:30:00,Dividend,AAA,0,0,3\n'
+                 b'2025-02-01,Dividend,AAA,0,0,4\n')
+    _, n = _cadena(contenido)
+    assert n["Date"].tolist() == [pd.Timestamp("2025-01-15"),
+                                  pd.Timestamp("2025-01-20 09:30:00"),
+                                  pd.Timestamp("2025-02-01")]
+    assert logic.normalize_csv.ultimo_descarte["fecha_ilegible"] == 0
+
+
+def test_fechas_dia_primero_cuando_el_archivo_lo_prueba():
+    contenido = (_ENC +
+                 '"01/02/2025","Buy","AAA","x","10","$5","","-$50.00"\n'
+                 '"15/01/2025","Qualified Dividend","AAA","x","","","","$3.00"\n'
+                 '"20/01/2025","Qualified Dividend","AAA","x","","","","$4.00"\n').encode()
+    _, n = _cadena(contenido)
+    assert n["Date"].tolist() == [pd.Timestamp("2025-02-01"), pd.Timestamp("2025-01-15"),
+                                  pd.Timestamp("2025-01-20")]
+
+
+def test_fechas_mes_primero_si_el_archivo_no_prueba_lo_contrario():
+    contenido = (_ENC +
+                 '"01/02/2025","Buy","AAA","x","10","$5","","-$50.00"\n'
+                 '"03/04/2025","Qualified Dividend","AAA","x","","","","$3.00"\n').encode()
+    _, n = _cadena(contenido)
+    assert n["Date"].tolist() == [pd.Timestamp("2025-01-02"), pd.Timestamp("2025-03-04")]
+
+
+def test_la_fecha_ilegible_se_descarta_pero_se_cuenta():
+    contenido = (_ENC +
+                 '"01/15/2025","Buy","AAA","x","10","$5","","-$50.00"\n'
+                 '"15/01/2025","Qualified Dividend","AAA","x","","","","$3.00"\n'
+                 '"ayer","Qualified Dividend","AAA","x","","","","$4.00"\n'
+                 '"02/20/2025","Qualified Dividend","AAA","x","","","","$5.00"\n').encode()
+    _, n = _cadena(contenido)
+    assert len(n) == 2
+    d = logic.normalize_csv.ultimo_descarte
+    assert d["fecha_ilegible"] == 2
+    assert d["total"] == 2
+
+
+def test_las_filas_as_of_no_se_cuentan_dos_veces():
+    contenido = (_ENC +
+                 '"01/15/2025","Buy","AAA","x","10","$5","","-$50.00"\n'
+                 '"12/05/2025 as of 12/04/2025","Stock Split","XLK","x","11","","",""\n').encode()
+    _cadena(contenido)
+    d = logic.normalize_csv.ultimo_descarte
+    assert d["total"] == 1
+    assert d["fecha_ilegible"] == 0
+
+
+def test_ingreso_cuenta_las_received_descartadas():
+    inc = (b'"Investment Income Transactions as of 06/30/2025"\n'
+           b'Transaction Date,Account Number,Account Name,Account Type,Security Description,Symbol,Security Type,Transaction Type,Transaction Amount,Income Type,\n'
+           b'02/28/2025,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,40.00,Received,\n'
+           b'03/28/2025,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,abc,Received,\n'
+           b'29/03/2025,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,50,Received,\n'
+           b'04/28/2025,...111,Ind,BROKERAGE,Fund A,TSLY,ETFs,Dividend,60,Received,\n')
+    d = logic.parse_schwab_income_csv(inc)
+    assert d["Amount"].tolist() == [40.0, 60.0]
+    assert d.attrs["descartadas_received"] == {
+        "importe_ilegible": 1, "fecha_ilegible": 1, "total": 2}
