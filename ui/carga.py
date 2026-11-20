@@ -280,15 +280,24 @@ def render_bloque_transacciones() -> bool:
             # fechas no reconoce se descartaba en silencio — Stock Split, MoneyLink
             # Transfer, Pr Yr Div Reinvest, etc. Las que SÍ se recuperan (paso 2, la
             # fecha efectiva) no llegan aquí: esto son las que se siguen descartando.
-            _detalle = ", ".join(f"{v}× {k}" for k, v in
-                                 sorted(_descarte["por_accion"].items(),
-                                        key=lambda kv: -kv[1]))
-            filas = texto.plural(
-                _descarte["total"],
-                "fila con fecha «... as of ...» que no se pudo ubicar en el tiempo, excluida",
-                "filas con fecha «... as of ...» que no se pudieron ubicar en el tiempo, "
-                "excluidas")
-            st.caption(f"⚠️ {filas}: {_detalle}.")
+            _ilegibles = _descarte.get("fecha_ilegible", 0)
+            _as_of = _descarte["total"] - _ilegibles
+            if _as_of:
+                _detalle = ", ".join(f"{v}× {k}" for k, v in
+                                     sorted(_descarte["por_accion"].items(),
+                                            key=lambda kv: -kv[1]))
+                filas = texto.plural(
+                    _as_of,
+                    "fila con fecha «... as of ...» que no se pudo ubicar en el tiempo, excluida",
+                    "filas con fecha «... as of ...» que no se pudieron ubicar en el tiempo, "
+                    "excluidas")
+                st.caption(f"⚠️ {filas}: {_detalle}.")
+            if _ilegibles:
+                filas = texto.plural(
+                    _ilegibles,
+                    "fila con una fecha que no pudimos leer, excluida",
+                    "filas con una fecha que no pudimos leer, excluidas")
+                st.caption(f"⚠️ {filas}.")
         return True
 
     st.markdown(bloque_header(1, "Transacciones", "activo"),
@@ -972,6 +981,11 @@ def _render_income_resumen() -> None:
     if st.session_state.get("_wizard_income_multi"):
         st.caption("⚠️ El archivo incluye más de una cuenta; los totales podrían mezclarse. "
                    "Para una validación exacta, exporta el income de una sola cuenta.")
+    fuera = (getattr(st.session_state.get("_wizard_income_df"), "attrs", None) or {}).get(
+        "descartadas_received", {}).get("total", 0)
+    if fuera:
+        pagos = texto.plural(fuera, "pago recibido quedó fuera", "pagos recibidos quedaron fuera")
+        st.caption(f"⚠️ {pagos}: no pudimos leer su importe o su fecha.")
 
 
 def _render_income_uploader() -> None:
