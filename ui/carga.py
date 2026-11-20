@@ -1058,11 +1058,18 @@ def render_bloque_1042s() -> None:
     tiene_1042s = st.session_state.get("_wizard_1042s") is not None
     tiene_income = st.session_state.get("_wizard_income_summary") is not None
 
+    if tiene_1042s:
+        _render_1042s_resumen()
+    if tiene_income:
+        _render_income_resumen()
+    if tiene_1042s and tiene_income:
+        return
     if tiene_1042s or tiene_income:
-        if tiene_1042s:
-            _render_1042s_resumen()
-        if tiene_income:
-            _render_income_resumen()
+        with st.expander("Añadir documentos · 1042-S / Investment Income", expanded=False):
+            if not tiene_1042s:
+                _render_1042s_uploader()
+            if not tiene_income:
+                _render_income_uploader()
         return
 
     es_ibkr = st.session_state.get("_wizard_broker") == "ibkr"
