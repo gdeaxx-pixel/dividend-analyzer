@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 import logic
+from test_riesgo_mezcla import RECETA
+from test_riesgo_sin_archivo import _ENTRADA, app  # noqa: F401
 from ui import chrome, pie, validacion
 
 
@@ -91,6 +93,15 @@ def test_pie_sin_resultados_dibuja_el_aviso_legal(fake):
     pie.render_pie({})
     assert "Versión Beta" in fake.texto()
     assert "no constituye asesoría financiera" in fake.texto()
+
+
+def test_la_entrada_sin_archivo_llega_con_el_aviso_legal(app):  # noqa: F811
+    at = app(dict(RECETA))
+    at.button(key=_ENTRADA).click().run()
+    assert len(at.exception) == 0
+    assert at.session_state["vd_categoria"] == "riesgo"
+    pagina = " ".join(m.value for m in at.markdown)
+    assert "no constituye asesoría financiera" in pagina
 
 
 def test_validacion_sin_datos_no_queda_en_blanco(fake):
