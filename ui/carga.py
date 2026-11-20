@@ -463,7 +463,8 @@ def render_bloque_posiciones() -> bool:
         # del paso 1, pero borrando SOLO la confirmación — NO todo
         # CLAVES_CONTEXTO_CARTERA: eso tiraría también el CSV del paso 1.
         if _resumen_con_cambiar("Posiciones confirmadas",
-                                texto.plural(len(posiciones), "instrumento", "instrumentos"),
+                                texto.plural(sum(1 for p in posiciones.values() if (p.get("shares") or 0) > 0),
+                                            "instrumento", "instrumentos"),
                                 "_vd_edit_pos"):
             st.session_state["_wizard_pos_confirmed"] = False
             st.session_state["_wizard_listo"] = False
@@ -960,7 +961,7 @@ def _render_income_resumen() -> None:
     """Income CSV ya leído: tarjeta resumen + «Cambiar». Literal de `app_old.py:1599-1612`."""
     inc_sum = st.session_state.get("_wizard_income_summary") or {}
     nrec = sum(1 for d in (inc_sum.get("tickers") or {}).values() if d.get("received_total"))
-    if _resumen_con_cambiar("Ingresos validados",
+    if _resumen_con_cambiar("Ingresos cargados",
                             texto.plural(nrec, "ticker con dividendos recibidos",
                                          "tickers con dividendos recibidos"),
                             "_vd_edit_inc"):
