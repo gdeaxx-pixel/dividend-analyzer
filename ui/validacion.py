@@ -14,6 +14,8 @@ haberla escondido detrás de un clic (mockup aprobado por Daniel en la misma ses
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 import streamlit as st
 
 import logic
@@ -115,9 +117,15 @@ def _render_calidad_datos(resultados: dict) -> None:
                         f'<p class="vd-pie-card-cuerpo">{razon}</p>{accion}'),
                 unsafe_allow_html=True)
     else:
-        verificadas = texto.plural(len(resultados), "posición verificada", "posiciones verificadas")
-        st.markdown(_tarjeta("--cash", f"Datos completos · {verificadas}", ""),
-                    unsafe_allow_html=True)
+        verificadas = texto.plural(len(dq), "posición verificada", "posiciones verificadas")
+        sin_precios = sum(1 for s in resultados.values()
+                          if isinstance(s, dict) and not s.get("skipped") and "error" in s)
+        if sin_precios:
+            titulo = f"Datos incompletos · {verificadas} · {sin_precios} sin precios"
+            st.markdown(_tarjeta("--warn", titulo, ""), unsafe_allow_html=True)
+        else:
+            st.markdown(_tarjeta("--cash", f"Datos completos · {verificadas}", ""),
+                        unsafe_allow_html=True)
 
     ingreso = st.session_state.get("_wizard_income_summary")
     if ingreso and ingreso.get("tickers"):
@@ -152,6 +160,11 @@ def _render_calidad_datos(resultados: dict) -> None:
                     unsafe_allow_html=True)
 
 
+def _razon_split(ratio: float) -> str:
+    f = Fraction(ratio).limit_denominator(100)
+    return f"{f.numerator}:{f.denominator}"
+
+
 def _tech_events(resultados: dict) -> list[dict]:
     """Splits, reconciliaciones y dividendos especiales por ticker (antes en `ui.pie`)."""
     eventos = []
@@ -162,7 +175,7 @@ def _tech_events(resultados: dict) -> list[dict]:
             ratio = split["ratio"]
             tipo = "Split" if ratio > 1 else "Reverse Split"
             eventos.append({"date": split["date"], "ticker": ticker, "tipo": tipo,
-                            "desc": f"{ratio:.0f}:1 — las cantidades de acciones se ajustaron automáticamente."})
+                            "desc": f"{_razon_split(ratio)} — las cantidades de acciones se ajustaron automáticamente."})
 
         calidad = logic.assess_ticker_quality(resultados, ticker)
         if calidad["level"] == "reconciled":
@@ -381,6 +394,7 @@ def hay_alertas(resultados: dict) -> bool:
 def render_validacion_datos(resultados: dict) -> None:
     """Punto único de entrada: el panel «Validación datos» completo."""
     if not resultados:
+        st.markdown("Todavía no hay datos que validar. Sube tu archivo para ver esta revisión.")
         return
     st.markdown('<span class="vd-badge">Validación datos</span>', unsafe_allow_html=True)
 
