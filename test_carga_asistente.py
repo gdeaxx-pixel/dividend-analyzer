@@ -69,6 +69,22 @@ def test_h2_el_nombre_del_archivo_sale_escapado():
     assert "&lt;b onmouseover" in bloque
 
 
+def test_h2_el_simbolo_sale_escapado(sin_clave, monkeypatch):
+    hostil = "<IMG SRC=X ONERROR=ALERT(1)>"
+    monkeypatch.setattr(carga.logic, "classify_tickers", lambda ts: {t: "mode_a" for t in ts})
+    at = _at()
+    limpio = at.session_state["_wizard_df_clean"].copy()
+    limpio["Ticker"] = hostil
+    at.session_state["_wizard_df_clean"] = limpio
+    at.session_state["_wizard_csv_ticker_data"] = {hostil: {"shares": 1.0, "invested": 10.0}}
+    at.session_state["_vd_modo_pos"] = "mano"
+    at.run()
+    assert not at.exception
+    bloque = next(m.value for m in at.markdown if 'class="vd-ticker"' in m.value)
+    assert "<IMG" not in bloque
+    assert "&lt;IMG SRC=X ONERROR=ALERT(1)&gt;" in bloque
+
+
 def test_h3_un_simbolo_en_minusculas_no_deja_la_tabla_en_cero(sin_clave):
     at = _at()
     at.session_state["_wizard_csv_ticker_data"] = {
