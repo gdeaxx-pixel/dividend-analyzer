@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import html
 import os
 from pathlib import Path
 
@@ -260,7 +261,7 @@ def render_bloque_transacciones() -> bool:
         _roc_bloque1(hueco_roc, "vigilante", adapters.roc_csv_frase(broker, len(tickers)),
                      {"tipo": "asiente"} if asiente else None)
         if _resumen_con_cambiar("CSV cargado",
-                                f"{nombre} · {broker} · "
+                                f"{html.escape(nombre)} · {broker} · "
                                 f"{texto.plural(len(tickers), 'ticker', 'tickers')}",
                                 "_vd_edit_csv"):
             # `_vd_resultados` va en la lista: es el caché de `analyze_portfolio`, y sin
@@ -462,7 +463,8 @@ def render_bloque_posiciones() -> bool:
         # del paso 1, pero borrando SOLO la confirmación — NO todo
         # CLAVES_CONTEXTO_CARTERA: eso tiraría también el CSV del paso 1.
         if _resumen_con_cambiar("Posiciones confirmadas",
-                                texto.plural(len(posiciones), "instrumento", "instrumentos"),
+                                texto.plural(sum(1 for p in posiciones.values() if (p.get("shares") or 0) > 0),
+                                            "instrumento", "instrumentos"),
                                 "_vd_edit_pos"):
             st.session_state["_wizard_pos_confirmed"] = False
             st.session_state["_wizard_listo"] = False
@@ -669,7 +671,9 @@ def render_bloque_posiciones() -> bool:
         _render_excluidos_carga(excluidos)
         return False
 
-    previa = st.session_state.get("_wizard_csv_ticker_data") or {}
+    previa = {}
+    for t_previa, v_previa in (st.session_state.get("_wizard_csv_ticker_data") or {}).items():
+        previa.setdefault(str(t_previa).strip().upper(), v_previa)
     posiciones = {}
 
     col_h1, col_h2, col_h3 = st.columns([1.2, 1, 1.4])
@@ -717,7 +721,7 @@ def render_bloque_posiciones() -> bool:
         col_t, col_a, col_c = st.columns([1.2, 1, 1.4])
         marca = (f'<span class="vd-ocr">{"archivo" if csv_leido else "captura"}</span>'
                  if ocr else "")
-        col_t.markdown(f'<p class="vd-ticker">{ticker} {marca}</p>',
+        col_t.markdown(f'<p class="vd-ticker">{html.escape(ticker)} {marca}</p>',
                        unsafe_allow_html=True)
         acciones = col_a.number_input(
             "Acciones", min_value=0.0, **v_sh,
@@ -957,7 +961,7 @@ def _render_income_resumen() -> None:
     """Income CSV ya leído: tarjeta resumen + «Cambiar». Literal de `app_old.py:1599-1612`."""
     inc_sum = st.session_state.get("_wizard_income_summary") or {}
     nrec = sum(1 for d in (inc_sum.get("tickers") or {}).values() if d.get("received_total"))
-    if _resumen_con_cambiar("Ingresos validados",
+    if _resumen_con_cambiar("Ingresos cargados",
                             texto.plural(nrec, "ticker con dividendos recibidos",
                                          "tickers con dividendos recibidos"),
                             "_vd_edit_inc"):
@@ -1054,11 +1058,18 @@ def render_bloque_1042s() -> None:
     tiene_1042s = st.session_state.get("_wizard_1042s") is not None
     tiene_income = st.session_state.get("_wizard_income_summary") is not None
 
+    if tiene_1042s:
+        _render_1042s_resumen()
+    if tiene_income:
+        _render_income_resumen()
+    if tiene_1042s and tiene_income:
+        return
     if tiene_1042s or tiene_income:
-        if tiene_1042s:
-            _render_1042s_resumen()
-        if tiene_income:
-            _render_income_resumen()
+        with st.expander("Añadir documentos · 1042-S / Investment Income", expanded=False):
+            if not tiene_1042s:
+                _render_1042s_uploader()
+            if not tiene_income:
+                _render_income_uploader()
         return
 
     es_ibkr = st.session_state.get("_wizard_broker") == "ibkr"

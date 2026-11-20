@@ -86,10 +86,10 @@ def _render_disclaimer() -> None:
 
 def render_pie(resultados: dict) -> None:
     """Punto único de entrada: el pie, siempre visible al final de resultados."""
-    if not resultados:
-        return
     st.markdown(HTML_REGLA, unsafe_allow_html=True)
     _render_disclaimer()
+    if not resultados:
+        return
     # F2 §4.3 — código del caso capturado: línea discreta, una sola vez por render,
     # solo si esta sesión capturó un caso (el id lo guarda `ui/carga.py::_capturar_caso`).
     case_id = st.session_state.get("_captura_case_id")
