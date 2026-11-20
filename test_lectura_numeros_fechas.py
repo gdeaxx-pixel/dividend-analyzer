@@ -145,3 +145,21 @@ def test_las_fixtures_se_leen_igual_que_antes(ruta):
     assert n["Quantity"].sum() == pytest.approx(qty, abs=1e-6)
     assert n["Price"].sum() == pytest.approx(price, abs=1e-6)
     assert n["Amount"].sum() == pytest.approx(amount, abs=1e-6)
+
+
+def test_la_columna_con_coma_decimal_lee_1_000_como_uno():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,10,"12,50","-125,00"\n'
+                 b'2025-01-16,Buy,AAA,10,"1,000","-27,500"\n')
+    _, n = _cadena(contenido)
+    assert n["Price"].tolist() == [12.5, 1.0]
+    assert n["Amount"].tolist() == pytest.approx([-125.0, -27.5])
+
+
+def test_la_columna_con_miles_en_coma_no_se_vuelve_decimal():
+    contenido = (b'Date,Action,Ticker,Quantity,Price,Amount\n'
+                 b'2025-01-15,Buy,AAA,"1,000",5,"-27,500"\n'
+                 b'2025-01-16,Buy,AAA,10,5,"-1,234.56"\n')
+    _, n = _cadena(contenido)
+    assert n["Quantity"].tolist() == [1000.0, 10.0]
+    assert n["Amount"].tolist() == pytest.approx([-27500.0, -1234.56])
