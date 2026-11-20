@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import html
 import os
 from pathlib import Path
 
@@ -260,7 +261,7 @@ def render_bloque_transacciones() -> bool:
         _roc_bloque1(hueco_roc, "vigilante", adapters.roc_csv_frase(broker, len(tickers)),
                      {"tipo": "asiente"} if asiente else None)
         if _resumen_con_cambiar("CSV cargado",
-                                f"{nombre} · {broker} · "
+                                f"{html.escape(nombre)} · {broker} · "
                                 f"{texto.plural(len(tickers), 'ticker', 'tickers')}",
                                 "_vd_edit_csv"):
             # `_vd_resultados` va en la lista: es el caché de `analyze_portfolio`, y sin
@@ -717,7 +718,7 @@ def render_bloque_posiciones() -> bool:
         col_t, col_a, col_c = st.columns([1.2, 1, 1.4])
         marca = (f'<span class="vd-ocr">{"archivo" if csv_leido else "captura"}</span>'
                  if ocr else "")
-        col_t.markdown(f'<p class="vd-ticker">{ticker} {marca}</p>',
+        col_t.markdown(f'<p class="vd-ticker">{html.escape(ticker)} {marca}</p>',
                        unsafe_allow_html=True)
         acciones = col_a.number_input(
             "Acciones", min_value=0.0, **v_sh,
