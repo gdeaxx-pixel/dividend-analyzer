@@ -140,8 +140,8 @@ def _load_real(glob_pat):
     return logic.normalize_csv(df), os.path.basename(paths[0])
 
 
-def _ida_y_vuelta(dfc):
-    csv = logic.anonymize_to_min_rows(dfc).to_csv(index=False)
+def _ida_y_vuelta(dfc, broker=None):
+    csv = logic.anonymize_to_min_rows(dfc, broker).to_csv(index=False)
     return logic.normalize_csv(logic.load_capture_fixture(io.StringIO(csv)))
 
 
@@ -169,7 +169,7 @@ def test_fixture_reproduce_los_totales_fiscales(glob_pat, broker):
     completo. Con las filas sin ticker descartadas, schwab1 daba bruto $5,835.50 en vez
     de $6,646.08 (medido 2026-09-25): el caso capturado habría probado otra cosa."""
     dfc, _ = _load_real(glob_pat)
-    mn2 = _ida_y_vuelta(dfc)
+    mn2 = _ida_y_vuelta(dfc, broker)
     a, b = logic.build_dividend_tax_totals(dfc), logic.build_dividend_tax_totals(mn2)
     assert json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str), \
         "build_dividend_tax_totals difiere entre CSV completo y fixture"
@@ -180,7 +180,7 @@ def test_fixture_reproduce_los_totales_fiscales(glob_pat, broker):
 def test_fixture_conserva_todas_las_filas_con_fecha(glob_pat, broker):
     dfc, _ = _load_real(glob_pat)
     con_fecha = int(pd.to_datetime(dfc["Date"], errors="coerce").notna().sum())
-    assert len(_ida_y_vuelta(dfc)) == con_fecha
+    assert len(_ida_y_vuelta(dfc, broker)) == con_fecha
 
 
 @pytest.mark.parametrize("glob_pat,broker", _REAL_CASES)

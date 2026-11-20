@@ -77,6 +77,49 @@ def test_cap1_fidelidad_mismas_cifras_original_y_copia():
             assert any(k in o for k in kw.split('|')) == any(k in c for k in kw.split('|')), (orig, cop)
 
 
+SCHWAB_FUERA_DE_LA_LISTA = ['Bond Interest', 'Internal Transfer', 'MoneyLink Deposit', 'MoneyLink Adj',
+                            'Pr Yr Div Reinvest']
+
+
+def _filas(acciones, importes=None):
+    n = len(acciones)
+    return pd.DataFrame({'Date': ['2025-01-15'] * n, 'Action': acciones, 'Ticker': ['XYZQ'] * n,
+                         'Quantity': [0.0] * n, 'Price': [0.0] * n,
+                         'Amount': importes or [1.0] * n})
+
+
+@pytest.mark.parametrize('broker', ['schwab', 'ibkr'])
+def test_cap1_el_action_propio_del_broker_no_se_reescribe(broker):
+    mn = logic.anonymize_to_min_rows(_filas(SCHWAB_FUERA_DE_LA_LISTA), broker)
+    assert list(mn['Action']) == SCHWAB_FUERA_DE_LA_LISTA
+
+
+@pytest.mark.parametrize('broker', [None, 'generic', 'normalized', 'otro'])
+def test_cap1_sin_broker_conocido_el_vocabulario_es_cerrado(broker):
+    mn = logic.anonymize_to_min_rows(_filas(['JUAN PEREZ RETIRO', 'Bond Interest', 'Buy']), broker)
+    assert list(mn['Action']) == ['OTRO', 'Credit Interest', 'Buy']
+
+
+def test_cap1_ni_con_broker_conocido_viaja_un_numero_largo():
+    mn = logic.anonymize_to_min_rows(_filas(['RETIRO CTA 12345678', 'Buy', 'Bond Interest']), 'schwab')
+    assert list(mn['Action']) == ['OTRO', 'Buy', 'Bond Interest']
+
+
+def test_cap1_el_bundle_le_pasa_el_broker_a_la_copia():
+    df = _filas(['Bond Interest', 'JUAN PEREZ RETIRO'])
+    assert 'Bond Interest' in logic.build_capture_bundle(df, 'schwab', {}, {})['transactions_min_csv']
+    generico = logic.build_capture_bundle(df, 'generic', {}, {})['transactions_min_csv']
+    assert 'Bond Interest' not in generico and 'JUAN' not in generico
+
+
+def test_cap1_un_interes_no_se_vuelve_dividendo():
+    df = _filas(['Dividendo en efectivo', 'Interest on cash', 'Retención de impuesto NRA'], [20.0, 5.0, -6.0])
+    copia = logic.anonymize_to_min_rows(df)
+    assert list(copia['Action']) == ['Dividend', 'Credit Interest', 'NRA Tax Adj']
+    copia['Date'] = pd.to_datetime(copia['Date'])
+    assert logic.build_dividend_tax_totals(copia) == logic.build_dividend_tax_totals(df)
+
+
 @pytest.mark.parametrize('malo', ['..', '../x', 'a/b', '', 'a b', 'a\\b', '.'])
 def test_prom1_rechaza_argumentos_invalidos(monkeypatch, malo):
     llamadas = []

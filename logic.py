@@ -6372,6 +6372,7 @@ CAPTURE_ACCIONES_CONOCIDAS = {a.lower(): a for a in (
     'Credit Interest', 'Bank Interest', 'ADR Mgmt Fee', 'Wire Received', 'Wire Sent',
     'Stock Split', 'Reverse Split', 'Journal', 'Journaled Shares', 'Funds Received',
     'Long Term Cap Gain', 'Short Term Cap Gain')}
+CAPTURE_BROKERS_ACCION_PROPIA = ('schwab', 'ibkr')
 
 
 def _accion_cerrada(action) -> str:
@@ -6401,12 +6402,14 @@ def _accion_cerrada(action) -> str:
     if ('deposit' in low or 'depósito' in low or 'transfer' in low or 'journal' in low
             or 'contribution' in low):
         return 'Journal'
-    if 'dividend' in low or 'dividendo' in low or 'yield' in low or 'interest' in low:
+    if 'dividend' in low or 'dividendo' in low:
         return 'Dividend'
+    if 'yield' in low or 'interest' in low:
+        return 'Credit Interest'
     return 'OTRO'
 
 
-def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
+def anonymize_to_min_rows(df_clean: pd.DataFrame, broker: str = None) -> pd.DataFrame:
     """Reduce un DataFrame normalizado a SOLO las columnas del pipeline.
 
     Whitelist estricta: descarta por construcción cualquier columna del broker
@@ -6417,6 +6420,11 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     «NRA Tax Adj», transferencias. `build_dividend_tax_totals` las lee; descartarlas
     cambiaba el bruto y la retención por año en los 3 casos Schwab (schwab1:
     $6,646.08 → $5,835.50, medido el 2026-09-25).
+
+    `Action` y `Ticker` nunca llevan texto libre. Con Schwab e IBKR el Action es un valor
+    del propio bróker y se conserva: reducirlo a una etiqueta cambiaba el objeto fiscal
+    (140 filas en 3 casos reales, medido el 2026-11-20). Con cualquier otro origen, o si
+    trae 4 dígitos seguidos, pasa por `_accion_cerrada`.
     """
     cols = [c for c in CAPTURE_MIN_COLUMNS if c in df_clean.columns]
     out = df_clean[cols].copy()
@@ -6429,7 +6437,9 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
         t = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
         out['Ticker'] = t.where(t.eq('') | t.str.fullmatch(r'[A-Z0-9][A-Z0-9.\-]{0,9}'), 'OTRO')
     if 'Action' in out.columns:
-        out['Action'] = out['Action'].map(_accion_cerrada)
+        a = out['Action'].astype(str).str.strip()
+        propia = (broker in CAPTURE_BROKERS_ACCION_PROPIA) & ~a.str.contains(r'\d{4}')
+        out['Action'] = a.where(propia, a.map(_accion_cerrada))
     return out.reset_index(drop=True)
 
 
@@ -6556,7 +6566,7 @@ def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
     `origen` es la salida de `origen_posiciones`; sin él, ninguna cifra es promovible.
     """
     import uuid
-    min_df = anonymize_to_min_rows(df_clean)
+    min_df = anonymize_to_min_rows(df_clean, broker)
     case_id = uuid.uuid4().hex[:12]
 
     ground_truth = {}
