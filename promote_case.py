@@ -17,6 +17,7 @@ import os
 import json
 import argparse
 import pprint
+import re
 
 import storage
 
@@ -59,7 +60,14 @@ def promotable_shares(gt: dict, q: dict) -> dict:
             and v.get("origen_shares") in ORIGENES_PROMOVIBLES}
 
 
+def _validar_ids(broker: str, case_id: str):
+    for nombre, v in (("broker", broker), ("case_id", case_id)):
+        if not isinstance(v, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", v):
+            raise ValueError(f"{nombre} inválido: solo letras, números, «_» y «-» ({v!r})")
+
+
 def show(broker: str, case_id: str):
+    _validar_ids(broker, case_id)
     files = storage.fetch_case(broker, case_id)
     if not files:
         print(f"  (no encontrado: {broker}/{case_id})")
@@ -74,6 +82,7 @@ def show(broker: str, case_id: str):
 
 
 def promote(broker: str, case_id: str) -> bool:
+    _validar_ids(broker, case_id)
     files = show(broker, case_id)
     if not files:
         return False

@@ -6365,7 +6365,51 @@ def _safe_round(v, nd: int = 4):
         return None
 
 
-def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
+CAPTURE_ACCIONES_CONOCIDAS = {a.lower(): a for a in (
+    'Buy', 'Sell', 'Dividend', 'Cash Dividend', 'Qualified Dividend', 'Reinvest Dividend',
+    'Reinvest Shares', 'Special Qual Div', 'NRA Tax Adj', 'Foreign Tax Paid',
+    'Dividend - Foreign Tax Withholding', 'MoneyLink Transfer', 'Cash In Lieu',
+    'Credit Interest', 'Bank Interest', 'ADR Mgmt Fee', 'Wire Received', 'Wire Sent',
+    'Stock Split', 'Reverse Split', 'Journal', 'Journaled Shares', 'Funds Received',
+    'Long Term Cap Gain', 'Short Term Cap Gain')}
+CAPTURE_BROKERS_ACCION_PROPIA = ('schwab', 'ibkr')
+
+
+def _accion_cerrada(action) -> str:
+    """Action de la copia: un valor de vocabulario cerrado, nunca texto libre.
+
+    Un Action conocido del bróker se conserva tal cual. Otro se reduce a la etiqueta
+    canónica que el motor clasifica igual (mismas palabras clave y mismo orden); si no
+    cae en ninguna categoría, `OTRO`.
+    """
+    a = ' '.join(str(action).split())
+    conocida = CAPTURE_ACCIONES_CONOCIDAS.get(a.lower())
+    if conocida:
+        return conocida
+    low = a.lower()
+    if _is_foreign_tax_credit_action(low):
+        return 'Foreign Tax Paid'
+    if _is_tax_row_action(low):
+        return 'NRA Tax Adj'
+    if 'reinvest' in low or 'reinversión' in low or 'drip' in low:
+        return 'Reinvest Dividend'
+    if 'split' in low:
+        return 'Stock Split'
+    if 'sell' in low or 'sold' in low or 'venta' in low:
+        return 'Sell'
+    if 'buy' in low or 'bought' in low or 'compra' in low:
+        return 'Buy'
+    if ('deposit' in low or 'depósito' in low or 'transfer' in low or 'journal' in low
+            or 'contribution' in low):
+        return 'Journal'
+    if 'dividend' in low or 'dividendo' in low:
+        return 'Dividend'
+    if 'yield' in low or 'interest' in low:
+        return 'Credit Interest'
+    return 'OTRO'
+
+
+def anonymize_to_min_rows(df_clean: pd.DataFrame, broker: str = None) -> pd.DataFrame:
     """Reduce un DataFrame normalizado a SOLO las columnas del pipeline.
 
     Whitelist estricta: descarta por construcción cualquier columna del broker
@@ -6376,6 +6420,11 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     «NRA Tax Adj», transferencias. `build_dividend_tax_totals` las lee; descartarlas
     cambiaba el bruto y la retención por año en los 3 casos Schwab (schwab1:
     $6,646.08 → $5,835.50, medido el 2026-09-25).
+
+    `Action` y `Ticker` nunca llevan texto libre. Con Schwab e IBKR el Action es un valor
+    del propio bróker y se conserva: reducirlo a una etiqueta cambiaba el objeto fiscal
+    (140 filas en 3 casos reales, medido el 2026-11-20). Con cualquier otro origen, o si
+    trae 4 dígitos seguidos, pasa por `_accion_cerrada`.
     """
     cols = [c for c in CAPTURE_MIN_COLUMNS if c in df_clean.columns]
     out = df_clean[cols].copy()
@@ -6385,9 +6434,12 @@ def anonymize_to_min_rows(df_clean: pd.DataFrame) -> pd.DataFrame:
     if 'Ticker' in out.columns:
         vacio = out['Ticker'].isna()
         t = out['Ticker'].astype(str).str.strip().str.upper()
-        out['Ticker'] = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
+        t = t.where(~(vacio | t.isin(['', 'NAN', 'NONE'])), '')
+        out['Ticker'] = t.where(t.eq('') | t.str.fullmatch(r'[A-Z0-9][A-Z0-9.\-]{0,9}'), 'OTRO')
     if 'Action' in out.columns:
-        out['Action'] = out['Action'].astype(str).str.strip()
+        a = out['Action'].astype(str).str.strip()
+        propia = (broker in CAPTURE_BROKERS_ACCION_PROPIA) & ~a.str.contains(r'\d{4}')
+        out['Action'] = a.where(propia, a.map(_accion_cerrada))
     return out.reset_index(drop=True)
 
 
@@ -6514,7 +6566,7 @@ def build_capture_bundle(df_clean: pd.DataFrame, broker: str, overrides: dict,
     `origen` es la salida de `origen_posiciones`; sin él, ninguna cifra es promovible.
     """
     import uuid
-    min_df = anonymize_to_min_rows(df_clean)
+    min_df = anonymize_to_min_rows(df_clean, broker)
     case_id = uuid.uuid4().hex[:12]
 
     ground_truth = {}
