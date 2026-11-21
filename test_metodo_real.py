@@ -116,6 +116,18 @@ def test_xirr_no_anualiza_por_encima_de_once_veces_al_ano():
     assert logic.xirr([(hoy - pd.Timedelta(days=30), -100.0), (hoy, 5000.0)]) is None
 
 
+def test_xirr_con_dos_soluciones_no_elige_una():
+    """Un cobro ANTES de la primera compra (acciones que llegaron sin costo) da flujos
+    +100, −230, +132 a un año de distancia: la ecuación se anula en ~10 % y en ~20 %.
+    Ninguna de las dos es «la» rentabilidad, y el resultado es sin dato. El cálculo por
+    mes que tenía `irr_anual` devolvía una de las dos."""
+    t0 = pd.Timestamp("2024-01-01")
+    flujos = [(t0, 100.0), (t0 + pd.Timedelta(days=365), -230.0), (t0 + pd.Timedelta(days=730), 132.0)]
+    vpn = lambda r: sum(v / (1 + r) ** ((d - t0).days / 365.25) for d, v in flujos)
+    assert vpn(0.05) > 0 > vpn(0.15) and vpn(0.25) > 0
+    assert logic.xirr(flujos) is None
+
+
 def test_xirr_pesa_por_tiempo_no_por_monto_promedio():
     """El punto de usar TIR y no un CAGR sobre plazo promedio: dos aportes iguales en
     fechas distintas NO dan lo mismo que un aporte doble en la fecha media."""
