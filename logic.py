@@ -4863,21 +4863,26 @@ def forward_realized_yield(history_df, market_value, today=None) -> dict:
         return out
     today = pd.Timestamp.today().normalize() if today is None else pd.Timestamp(today).normalize()
 
-    dates = list(ev.index[-12:])
+    # Un día cuyo neto es una reversa no es un pago: ni marca el ritmo ni se anualiza
+    # (último día −60 daba un rendimiento a futuro de −14,4 %).
+    pagos = ev[ev > 0]
+    dates = list(pagos.index[-12:])
     gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates)) if (dates[i] - dates[i - 1]).days > 0]
     median_gap = sorted(gaps)[len(gaps) // 2] if gaps else 30
     ppy = max(1, round(365 / median_gap)) if median_gap > 0 else 12
 
-    last_payment = float(ev.iloc[-1])
+    last_payment = float(pagos.iloc[-1]) if len(pagos) else None
     ttm = float(ev[ev.index >= today - pd.Timedelta(days=365)].sum())
     out['payments_per_year'] = int(ppy)
-    out['last_payment'] = round(last_payment, 4)
+    out['last_payment'] = round(last_payment, 4) if last_payment is not None else None
     out['ttm_income'] = round(ttm, 2)
     out['realized_yield'] = round(ttm / market_value * 100, 2)
 
     # Rancio: el último pago es más viejo que ~varios intervalos esperados → la posición dejó de
     # pagar (vendida/transferida). No proyectamos un forward inflado sobre ese pago muerto.
-    days_since_last = (today - ev.index[-1]).days
+    if last_payment is None:
+        return out
+    days_since_last = (today - pagos.index[-1]).days
     if days_since_last > max(2.5 * median_gap, 45):
         out['stale'] = True
         return out                      # forward_yield queda None
@@ -5282,7 +5287,7 @@ def estimate_roc_refund_by_year(gross_by_year, withheld_by_year, ticker, base_ra
         else:
             roc_pct, fuente = 0.0, 'sin_dato'
         res = estimate_roc_refund(gross, withheld, roc_pct, base_rate=base_rate)
-        out[y] = dict(res, roc_pct_usado=round(roc_pct, 2), roc_fuente=fuente)
+        out[y] = dict(res, roc_pct_usado=round(max(0.0, min(100.0, roc_pct)), 2), roc_fuente=fuente)
         tot_fair += res['fair_withholding']
         tot_refund += res['refund']
         tot_withheld += withheld
@@ -5298,7 +5303,7 @@ def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, r
     sin país) y el objeto fiscal con país compartan una sola implementación (Regla 3).
 
     Más de un año con retención al cobro (`> 0.01`), o uno solo que ya tiene cierre fiscal
-    (Regla 4b), usa el %ROC de CADA año (`estimate_roc_refund_by_year`); si no, el agregado
+    (Regla 4b) o que convive con bruto de otros años, usa el %ROC de CADA año (`estimate_roc_refund_by_year`); si no, el agregado
     (`estimate_roc_refund`) con `roc_pct` único. Devuelve {'fair_withholding', 'refund', 'refund_pct', 'method',
     'by_year': bool, 'refund_by_year': dict|None}.
     """
@@ -5319,7 +5324,12 @@ def _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, r
         _, _fuentes = roc_pct_by_year(str(ticker).upper(), load_roc_19a(), load_roc_ici(),
                                       con_fuente=True)
         _cierre_unico = _fuentes.get(years_wh[0]) == 'cierre'
-    if len(years_wh) > 1 or _cierre_unico:
+    # Un solo año con retención y bruto en OTROS años: el agregado medía la retención de un
+    # año contra el bruto de todos, y la retención justa salía inflada (bruto 1.000 sin
+    # retención + 1.000 con 300 retenidos, ROC 50 %: justa 300 y devolución 0; por año, 150 y 150).
+    _bruto_fuera = len(years_wh) == 1 and any(
+        y != years_wh[0] and float(g or 0.0) > 0.01 for y, g in (gross_by_year or {}).items())
+    if len(years_wh) > 1 or _cierre_unico or _bruto_fuera:
         rby = estimate_roc_refund_by_year(gross_by_year, wap_by_year, ticker,
                                           base_rate=rate_pct / 100.0, roc_fallback_pct=roc_pct)
         rby_total = (rby or {}).get('total')
@@ -5438,12 +5448,34 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         _roc_src = stats.get('roc_source')
         if _roc_known is not None and _roc_known < 0:
             _roc_known, _roc_src = None, None
+        # El ROC no puede pasar del bruto: un 111 % sale de una reversa fechada en otro año
+        # con otro porcentaje, y publicado tal cual deja la parte gravable en negativo.
+        if _roc_known is not None and _roc_known > 100:
+            _roc_known = 100.0
 
         # Orden de guardas intacto: `withheld_real <= 0.01` corta antes que `_undeclared`, y
         # las dos antes del cálculo (reordenar cambia el `label_long` que ve el cliente y
         # puede resucitar la estimación de devolución sin tasa). Ambas rutas publican ahora
         # el % de ROC conocido — es daño colateral que cayera con ellas.
-        if withheld_real <= 0.01:
+        gross_by_year = stats.get('dividends_gross_by_year') or {}
+        withheld_by_year = stats.get('withheld_by_year') or {}
+        obs_by_year = stats.get('tax_refund_observed_by_year') or {}
+        obs_total = round(sum(obs_by_year.values()), 2)
+        # Retención AL COBRO por año (F6): la devolución total se mide contra ella, no contra el
+        # saldo. `analyze_portfolio` la publica desde el clasificador único; stats armados a
+        # mano caen a la identidad del contrato `al_cobro = neteado + devuelto`.
+        wap_by_year = stats.get('withheld_at_payment_by_year')
+        if wap_by_year is None:
+            wap_by_year = {y: round(float(withheld_by_year.get(y, 0.0) or 0.0)
+                                    + float(obs_by_year.get(y, 0.0) or 0.0), 2)
+                           for y in set(withheld_by_year) | set(obs_by_year)}
+        withheld_at_payment = (round(sum(wap_by_year.values()), 2) if wap_by_year
+                               else round(withheld_real + obs_total, 2))
+
+
+        # Sin retención hoy Y sin retención al cobro: no hubo. Si se retuvo y el bróker ya lo
+        # devolvió todo, el saldo es cero pero el hecho existe y se publica con sus cifras.
+        if withheld_real <= 0.01 and withheld_at_payment <= 0.01:
             return _null(withheld_real, 'No hay retención NRA registrada para este fondo.',
                          roc_pct_used=_roc_known, roc_source=_roc_src)
 
@@ -5467,21 +5499,6 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
         # (stats crudos armados a mano, sin pasar por analyze_portfolio).
         _gross_declared = stats.get('dividends_gross_total')
         gross = float(_gross_declared) if _gross_declared is not None else (net_div + withheld_real)
-        gross_by_year = stats.get('dividends_gross_by_year') or {}
-        withheld_by_year = stats.get('withheld_by_year') or {}
-        obs_by_year = stats.get('tax_refund_observed_by_year') or {}
-        obs_total = round(sum(obs_by_year.values()), 2)
-        # Retención AL COBRO por año (F6): la devolución total se mide contra ella, no contra el
-        # saldo. `analyze_portfolio` la publica desde el clasificador único; stats armados a
-        # mano caen a la identidad del contrato `al_cobro = neteado + devuelto`.
-        wap_by_year = stats.get('withheld_at_payment_by_year')
-        if wap_by_year is None:
-            wap_by_year = {y: round(float(withheld_by_year.get(y, 0.0) or 0.0)
-                                    + float(obs_by_year.get(y, 0.0) or 0.0), 2)
-                           for y in set(withheld_by_year) | set(obs_by_year)}
-        withheld_at_payment = (round(sum(wap_by_year.values()), 2) if wap_by_year
-                               else round(withheld_real + obs_total, 2))
-
         r = _refund_total_al_cobro(gross, gross_by_year, wap_by_year, roc_pct, ticker, _rate)
         refund_info = r
         method = r['method']
@@ -5505,6 +5522,8 @@ def build_tax_summary(stats: dict, ticker: str, base_rate_pct: float = None,
             f'19a), con {method}. '
             f'No es efectivo ya recibido — es una proyección; lo definitivo lo fija tu 1042-S.'
             if refund_estimated > 0.01 else
+            'La retención de este fondo ya fue devuelta por el bróker: no queda saldo retenido.'
+            if withheld_real <= 0.01 else
             'Con el % ROC de este fondo, la reclasificación anual no reduce la retención real.'
         )
         return {
@@ -5734,8 +5753,10 @@ def _withheld_on_reinvested(history_df) -> float:
 def withheld_tax_total_by_year(history_df) -> dict:
     """Como `withheld_tax_total` pero agrupada por año calendario de la fila (`Date`).
 
-    Netea por signo dentro de cada año (retenciones − reembolsos), acotado a ≥0, igual que
-    `withheld_tax_total`; sin reembolsos la suma de todos los años cuadra con esa función.
+    Netea por signo dentro de cada año (retenciones − reembolsos) y NO acota a cero: el
+    reembolso de un año suele acreditarse en ene–mar del siguiente, y con el tope por año la
+    suma dejaba de cuadrar con `withheld_tax_total` (255 contra 300) y se rompía
+    `al cobro == neteado + devuelto`. Un año negativo es efectivo que entró ese año.
 
     OJO con el supuesto de la reclasificación: opera por año fiscal, PERO en los casos reales
     observados la devolución de la porción ROC NO aparece como movimiento en el broker (ni un
@@ -5760,7 +5781,7 @@ def withheld_tax_total_by_year(history_df) -> dict:
             continue
         signed[y] = signed.get(y, 0.0) + float(amt)
     for y, s in signed.items():
-        out[y] = round(max(0.0, -s), 2)  # retención neta del año (≥0)
+        out[y] = round(-s, 2)  # neta del año, con signo: un reembolso del año anterior la deja negativa
     return out
 
 

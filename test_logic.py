@@ -1918,10 +1918,12 @@ def test_withheld_tax_total_nets_refunds_not_abs():
         {'Date': '2026-03-01', 'Action': 'NRA Tax Adj', 'Amount': 50},
     ])
     assert logic.withheld_tax_total(hist2) == 0.0
-    # by_year netea por año: 2025 retiene 100, 2026 recibe reembolso → 0 (no negativo)
+    # by_year netea por año CON signo: 2025 retiene 100 y el reembolso de 2026 deja ese año
+    # en −30. Con el tope a cero por año la suma (100) no cuadraba con el total (70).
     wby = logic.withheld_tax_total_by_year(hist)
     assert wby.get(2025) == pytest.approx(100.0)
-    assert wby.get(2026) == 0.0
+    assert wby.get(2026) == pytest.approx(-30.0)
+    assert sum(wby.values()) == pytest.approx(logic.withheld_tax_total(hist))
 
 
 def test_clean_money_quita_el_signo_de_dolar():
