@@ -1068,6 +1068,36 @@ def _metricas_riesgo(daily_history):
     return volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta, alpha
 
 
+def _retencion_diaria_en_efectivo(ticker_df):
+    """Lo que la retención en fila aparte le quita al efectivo cada día (negativo = sale).
+
+    Es la regla de la cifra escalar (`withheld_tax_total` − `_withheld_on_reinvested`)
+    aplicada al historial hasta cada día: neteo por signo acotado a ≥0, y la retención
+    fechada el día de una fila fuente de reinversión no sale del efectivo, porque la compra
+    ya es neta de ella. Con la retención plegada en las filas de dividendo
+    (`_dividend_tax_netted`) no hay nada aparte que restar: esas filas ya suman con signo.
+    """
+    vacia = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+    if _dividend_tax_netted(ticker_df):
+        return vacia
+    accion = ticker_df['Action'].astype(str).str.lower()
+    dia = pd.to_datetime(ticker_df['Date'], errors='coerce').dt.normalize()
+    retencion = pd.to_numeric(ticker_df['Amount'], errors='coerce')[
+        accion.map(_is_nra_withholding_action)].groupby(dia).sum()
+    if retencion.empty:
+        return vacia
+    es_fuente = (accion.str.contains('reinvest|reinversión|drip')
+                 & accion.str.contains('dividend|dividendo')
+                 & ~accion.map(_is_tax_row_action))
+    reinvertida = retencion.where(retencion.index.isin(dia[es_fuente]), 0.0)
+
+    def soportada(firmada):
+        return (-firmada.cumsum()).map(lambda v: round(max(0.0, v), 2))
+
+    en_efectivo = soportada(retencion) - soportada(reinvertida)
+    return -en_efectivo.diff().fillna(en_efectivo)
+
+
 def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment):
     # --- Calculate Daily History (For Chart) ---
     # 1. Resample transactions to daily to handle multiple trades per day
@@ -1076,10 +1106,17 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     # 'split' is excluded: the split loop below (Stock Splits column from yfinance) is
     # the authoritative handler. If the broker CSV also records splits as share-adding rows,
     # including 'split' here would double-count (CSV shares + loop multiplication).
-    qty_rows = ticker_df[ticker_df['Action'].str.lower().str.contains(
+    # La fila FUENTE de la reinversión ('Reinvest Dividend') tampoco suma acciones aunque el
+    # bróker le llene Quantity: mismo criterio que el patrón 2 de `_recorrer_transacciones`.
+    _accion = ticker_df['Action'].str.lower()
+    _fuente_reinversion = (
+        _accion.str.contains(r'reinvest|reinversión|drip', na=False, regex=True)
+        & ~_accion.str.contains('share|acciones', na=False)
+        & _accion.str.contains('dividend|dividendo', na=False))
+    qty_rows = ticker_df[_accion.str.contains(
         r'buy|bought|compra|sell|sold|venta|reinvest|reinversión|drip|deposit|transfer|journal|contribution',
         na=False, regex=True
-    )].copy()
+    ) & ~_fuente_reinversion].copy()
     # Schwab (y algunos otros brokers) exporta Quantity positiva para ventas.
     # Negamos explícitamente las filas de venta para que el cumsum reste shares correctamente.
     sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
@@ -1139,8 +1176,11 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
 
     daily_history['Shares Held'] = shares_series
     
-    # 4. Calculate Values
-    daily_history['Price'] = market_data['Close']
+    # 4. Calculate Values. Un día sin cierre válido (NaN, 0 o negativo) se valora al último
+    # cierre válido anterior y, si no lo hay, al primero posterior: un solo hueco dejaba el
+    # TWR encadenado en NaN (o en −100 %) hasta el final de la serie.
+    _cierre = market_data['Close']
+    daily_history['Price'] = _cierre.where(_cierre > 0).ffill().bfill()
     daily_history['Market Value'] = daily_history['Shares Held'] * daily_history['Price']
     
     # 5. Calculate Cumulative Investment (Cost Basis) over time
@@ -1190,9 +1230,11 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
         (~ticker_df['Date'].isin(drip_dates))
     ]
     
-    # Resample cash divs to daily
-    if not cash_div_rows.empty:
-        daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().abs()
+    # Resample cash divs to daily. Con signo (una reversa resta) y neto de la retención que
+    # la cifra escalar descuenta del efectivo: `User Profit` del último día == `net_profit`.
+    daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().add(
+        _retencion_diaria_en_efectivo(ticker_df), fill_value=0.0)
+    if not daily_cash_divs.empty:
         # Mismo alineamiento que la actividad: un dividendo pagado en día no bursátil
         # desaparecía del acumulado de efectivo cobrado.
         daily_cash_divs = _snap_to_trading_days(daily_cash_divs, market_data.index)
