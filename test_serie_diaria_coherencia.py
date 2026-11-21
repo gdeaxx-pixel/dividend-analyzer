@@ -26,8 +26,10 @@ def _sin_cache():
     return getattr(logic.analyze_portfolio, '__wrapped__', logic.analyze_portfolio)
 
 
-def _analizar(monkeypatch, filas, cierres=None, inicio='2024-01-02'):
+def _analizar(monkeypatch, filas, cierres=None, inicio='2024-01-02', splits=None):
     md = _mercado([100.0] * 60 if cierres is None else cierres, inicio)
+    for fecha, factor in (splits or {}).items():
+        md.loc[pd.Timestamp(fecha), 'Stock Splits'] = factor
     bench = _mercado([100.0] * len(md), inicio)
     df = pd.DataFrame(filas)
     df['Ticker'] = 'VTI'
@@ -182,9 +184,6 @@ POSICIONES = {
 # `User Profit` final − `net_profit` de las posiciones que no cuadran por una causa que no es
 # de esta tanda. Cada cifra sale de las filas del CSV de la fixture, no del motor.
 DESCUADRE_FUERA_DE_ALCANCE = {
-    # Caja miscelánea: `Cash In Lieu` de $0.37 (02-may-2025). Entra en `net_profit` y no en
-    # la serie; sumarla sin soltar la fracción de acción que paga la contaría dos veces.
-    ('schwab_synth_1', 'TSLY'): -0.37,
     # M4: `Cash Dividend` de $5.00 y su `Reinvest Shares` el mismo día (25-mar-2024). La
     # escalar lo cuenta como efectivo y como acciones; la serie, solo como acciones.
     ('schwab_tda_synth', 'VTI'): -5.00,
@@ -203,13 +202,135 @@ def test_ultimo_dia_de_la_serie_cuadra_con_net_profit(monkeypatch, fixture):
             DESCUADRE_FUERA_DE_ALCANCE.get((fixture, ticker), 0.0), abs=0.01), (fixture, ticker)
 
 
-def test_el_descuadre_de_tsly_es_exactamente_su_caja_miscelanea(monkeypatch):
+def test_la_caja_miscelanea_de_tsly_entra_en_la_serie_el_dia_que_se_paga(monkeypatch):
     r = _analizar_fixture(monkeypatch, 'schwab_synth_1')['TSLY']
     assert r['misc_cash_total'] == pytest.approx(0.37, abs=0.001)
+    dt = r['daily_trend']
+    salto = (dt['User Profit'] - dt['Market Value'] + dt['Invested Capital']).diff()
+    assert salto.loc['2025-05-02'] == pytest.approx(0.37, abs=0.001)
+    assert dt['Market Value'].iloc[-1] == pytest.approx(r['market_value'], abs=0.01)
+    assert dt['User Profit'].iloc[-1] == pytest.approx(r['net_profit'], abs=0.01)
+
+
+# ── Split inverso: la fila del bróker reinicia las acciones y la fracción se cobra ──────
+# Compra 15 acciones a $10. Split inverso 1 por 10 el 1-feb: el bróker deja 1 acción entera
+# y paga la media acción sobrante en efectivo ($50) al día siguiente. Cierra a $120.
+
+COMPRA_15 = dict(Date='2024-01-02', Action='Buy', Quantity=15, Amount=-150.0)
+CIERRES_SPLIT = [10.0] * 22 + [100.0] * 28 + [120.0] * 10
+SPLIT_YAHOO = {'2024-02-01': 0.1}
+
+
+def _acciones(r):
+    valor = r['daily_trend']['Market Value']
+    return valor / pd.Series(CIERRES_SPLIT, index=valor.index)
+
+
+def test_split_inverso_con_fila_y_fraccion_pagada_en_efectivo(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-02-01', Action='Reverse Split', Quantity=1),
+        dict(Date='2024-02-02', Action='Cash In Lieu', Amount=50.0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(1.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(20.0, abs=0.01)
+    assert _acciones(r).loc['2024-01-31'] == pytest.approx(15.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(1.0, abs=1e-9)
+    assert _ganancia(r).loc['2024-01-31'] == pytest.approx(0.0, abs=0.01)
+    assert _ganancia(r).loc['2024-02-01'] == pytest.approx(-50.0, abs=0.01)
+    assert _ganancia(r).loc['2024-02-02'] == pytest.approx(0.0, abs=0.01)
     ultimo = r['daily_trend'].iloc[-1]
-    assert ultimo['Market Value'] == pytest.approx(r['market_value'], abs=0.01)
-    assert ultimo['Invested Capital'] == pytest.approx(r['pocket_investment'], abs=0.01)
-    assert ultimo['User Profit'] + r['misc_cash_total'] == pytest.approx(r['net_profit'], abs=0.01)
+    assert ultimo['Market Value'] == pytest.approx(120.0, abs=0.01)
+    assert ultimo['User Profit'] == pytest.approx(20.0, abs=0.01)
+
+
+def test_fila_de_split_un_dia_antes_que_el_split_del_mercado_no_multiplica_dos_veces(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-01-31', Action='Reverse Split', Quantity=1),
+        dict(Date='2024-02-02', Action='Cash In Lieu', Amount=50.0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(1.0, abs=1e-9)
+    assert _acciones(r).loc['2024-01-31'] == pytest.approx(15.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(1.0, abs=1e-9)
+    assert _ganancia(r).loc['2024-01-31'] == pytest.approx(0.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(20.0, abs=0.01)
+
+
+def test_fila_de_split_sin_split_en_el_mercado_reinicia_en_la_fecha_de_la_fila(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-02-01', Action='Reverse Split', Quantity=1),
+        dict(Date='2024-02-02', Action='Cash In Lieu', Amount=50.0),
+    ], CIERRES_SPLIT)
+    assert r['shares_owned'] == pytest.approx(1.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(20.0, abs=0.01)
+    assert _acciones(r).loc['2024-01-31'] == pytest.approx(15.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(1.0, abs=1e-9)
+    assert _ganancia(r).iloc[-1] == pytest.approx(20.0, abs=0.01)
+
+
+def test_compra_el_mismo_dia_despues_de_la_fila_de_split_se_suma(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-02-01', Action='Reverse Split', Quantity=1),
+        dict(Date='2024-02-01', Action='Buy', Quantity=2, Amount=-200.0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(3.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(3.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(10.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(10.0, abs=0.01)
+
+
+def test_compra_el_mismo_dia_antes_de_la_fila_de_split_queda_dentro_del_reinicio(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-02-01', Action='Buy', Quantity=5, Amount=-50.0),
+        dict(Date='2024-02-01', Action='Reverse Split', Quantity=2),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(2.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(2.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(40.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(40.0, abs=0.01)
+
+
+def test_compra_entre_la_fila_de_split_y_el_split_del_mercado_se_convierte(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-01-30', Action='Reverse Split', Quantity=1),
+        dict(Date='2024-01-31', Action='Buy', Quantity=10, Amount=-100.0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(2.0, abs=1e-9)
+    assert _acciones(r).loc['2024-01-31'] == pytest.approx(25.0, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(2.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(-10.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(-10.0, abs=0.01)
+
+
+def test_fila_de_split_sin_cantidad_no_reinicia(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15,
+        dict(Date='2024-02-01', Action='Reverse Split', Quantity=0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(1.5, abs=1e-9)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(1.5, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(30.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(30.0, abs=0.01)
+
+
+def test_fraccion_pagada_en_efectivo_sin_fila_de_split_sigue_a_la_escalar(monkeypatch):
+    r = _analizar(monkeypatch, [COMPRA, dict(Date='2024-02-01', Action='Cash In Lieu', Amount=0.37)])
+    assert r['net_profit'] == pytest.approx(0.37, abs=0.001)
+    assert _ganancia(r).loc['2024-01-31'] == pytest.approx(0.0, abs=0.001)
+    assert _ganancia(r).iloc[-1] == pytest.approx(0.37, abs=0.001)
+
+
+def test_cargo_de_custodia_resta_en_la_serie(monkeypatch):
+    r = _analizar(monkeypatch, [COMPRA, dict(Date='2024-02-01', Action='ADR Mgmt Fee', Amount=-3.0)])
+    assert r['net_profit'] == pytest.approx(-3.0, abs=0.01)
+    assert _ganancia(r).loc['2024-01-31'] == pytest.approx(0.0, abs=0.01)
+    assert _ganancia(r).loc['2024-02-01'] == pytest.approx(-3.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(-3.0, abs=0.01)
 
 
 # ── M7: un día sin precio no envenena la serie ──────────────────────────────────────────
