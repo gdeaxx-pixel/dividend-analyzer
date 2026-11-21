@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import numpy_financial as npf
 import yfinance as yf
 import datetime
 import streamlit as st
@@ -872,6 +871,9 @@ def simulate_strategy_cached(ticker, start_date_str, initial_investment):
     return simulate_strategy(ticker, start_date, initial_investment)
 
 
+_XIRR_PISO = -1.0 + 1e-9
+
+
 def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
     """Retorno anual exacto de flujos de caja en fechas arbitrarias (TIR extendida).
 
@@ -892,8 +894,8 @@ def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
 
     Bisección y no Newton a propósito: no necesita derivada, no diverge con flujos
     irregulares y no depende de una semilla afortunada. `npf.irr` (que usa la app en
-    `analyze_portfolio` para `irr_anual`, agrupando por mes) devuelve `NaN` cuando no
-    converge — de hecho hoy devuelve `None` para varias posiciones reales.
+    `analyze_portfolio` hasta nov-2026 para `irr_anual`, agrupando por mes) devuelve `NaN`
+    cuando no converge.
 
     Devuelve `None` —nunca `0.0`— cuando la pregunta no tiene respuesta: sin al menos un
     flujo negativo y uno positivo, o sin cambio de signo del VPN en el intervalo. Un 0%
@@ -909,6 +911,8 @@ def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
             continue
         if ts is pd.NaT or ts != ts or valor != valor:
             continue
+        if ts.tzinfo is not None:
+            ts = ts.tz_localize(None)
         puntos.append((ts, valor))
     if not puntos:
         return None
@@ -923,6 +927,12 @@ def xirr(flows, guess_lo: float = -0.9999, guess_hi: float = 10.0):
 
     lo, hi = guess_lo, guess_hi
     v_lo, v_hi = vpn(lo), vpn(hi)
+    # Una pérdida de más del 99,99 % anual queda por debajo de `guess_lo`: es una tasa con
+    # respuesta, no un «sin dato». Por arriba el tope se queda: anualizar un múltiplo de
+    # más de 11 veces al año es casi siempre una tenencia de días.
+    if v_lo == v_lo and v_hi == v_hi and (v_lo > 0) == (v_hi > 0) and lo > _XIRR_PISO:
+        lo = _XIRR_PISO
+        v_lo = vpn(lo)
     if v_lo != v_lo or v_hi != v_hi or (v_lo > 0) == (v_hi > 0):
         return None
     for _ in range(200):
@@ -1926,23 +1936,12 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         # ── Fase 7: IRR anualizado con timing real de flujos ─────────────
         irr_anual = None
         try:
-            _irr_all = list(irr_flows_dated) + [(fecha_valoracion, market_value)]
-            _buckets  = defaultdict(float)
-            for _dt, _amt in _irr_all:
-                _ts = pd.Timestamp(_dt)
-                _buckets[(_ts.year, _ts.month)] += _amt
-            _min_k = min(_buckets.keys())
-            _max_k = max(_buckets.keys())
-            _keys, _y, _m = [], _min_k[0], _min_k[1]
-            while (_y, _m) <= _max_k:
-                _keys.append((_y, _m))
-                _m += 1
-                if _m > 12:
-                    _m, _y = 1, _y + 1
-            _cf_list = [_buckets.get(k, 0.0) for k in _keys]
-            _monthly  = npf.irr(_cf_list)
-            if _monthly is not None and not np.isnan(_monthly) and not np.isinf(_monthly) and _monthly > -1:
-                irr_anual = round(((1 + _monthly) ** 12 - 1) * 100, 2)
+            # Tasa exacta sobre las fechas reales (`xirr`), la misma que usan las vistas.
+            # Agrupar por mes calendario movía la cifra varios puntos con correr una compra
+            # un día (31-ene → 1-feb: 33,1 % → 38,6 %; la exacta, 32,2 % → 32,4 %).
+            _tasa = xirr(list(irr_flows_dated) + [(fecha_valoracion, market_value)])
+            if _tasa is not None:
+                irr_anual = round(_tasa * 100, 2)
         except Exception:
             irr_anual = None
 

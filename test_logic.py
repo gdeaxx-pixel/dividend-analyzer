@@ -3166,6 +3166,60 @@ def test_irr_incluye_deposito_con_costo(monkeypatch):
     assert abs(s["irr_anual"]) < 20
 
 
+def _irr_anual(monkeypatch, filas, ultimo_dia, cierre_final, version):
+    """`irr_anual` de una posición con cierres planos a $100 y `cierre_final` el último día."""
+    dias = pd.bdate_range("2024-01-02", ultimo_dia)
+    md = pd.DataFrame({"Close": [100.0] * (len(dias) - 1) + [cierre_final],
+                       "Dividends": 0.0, "Stock Splits": 0.0}, index=dias)
+    monkeypatch.setattr(logic, "fetch_market_data", lambda t, d: (md.copy(), None))
+    monkeypatch.setattr(logic, "_descargar_benchmark", lambda df, ticker="VOO": md.copy())
+    return logic.analyze_portfolio(_roc_norm_df(filas), version=version)["MSTY"]["irr_anual"]
+
+
+def test_irr_anual_es_la_tasa_exacta_de_un_solo_aporte(monkeypatch):
+    """$1,000 que valen $1,100 a los 366 días: `1.1 ** (365.25 / 366) − 1` = 9,98 %."""
+    r = _irr_anual(monkeypatch, [("2024-01-02", "Buy", "MSTY", 10, -1000.0)],
+                   "2025-01-02", 110.0, "TEST_IRR_EXACTA")
+    assert r == pytest.approx((1.1 ** (365.25 / 366) - 1) * 100, abs=0.006)
+    assert r == pytest.approx(9.98, abs=0.006)
+
+
+def test_irr_anual_de_una_posicion_cerrada_usa_los_dias_reales(monkeypatch):
+    """Compra y venta con +20 % en 182 días: `1.2 ** (365.25 / 182) − 1` = 44,18 %. El
+    valor de hoy es cero y la tasa sale de los dos flujos."""
+    r = _irr_anual(monkeypatch, [("2024-01-02", "Buy", "MSTY", 10, -1000.0),
+                                 ("2024-07-02", "Sell", "MSTY", 10, 1200.0)],
+                   "2025-01-02", 100.0, "TEST_IRR_CERRADA")
+    assert r == pytest.approx(44.18, abs=0.006)
+
+
+def test_irr_anual_no_salta_al_cruzar_un_fin_de_mes(monkeypatch):
+    """M13: la misma compra el 31-ene o el 1-feb cambiaba la cifra 5,5 puntos, porque los
+    flujos se agrupaban por mes calendario. Un día de diferencia mueve la tasa centésimas,
+    y cada tasa anula el valor presente de SUS flujos (la ecuación que la define)."""
+    tasas = {}
+    for dia in ("2024-01-31", "2024-02-01"):
+        r = _irr_anual(monkeypatch, [("2024-01-02", "Buy", "MSTY", 10, -1000.0),
+                                     (dia, "Buy", "MSTY", 10, -1000.0)],
+                       "2025-01-02", 130.0, "TEST_IRR_MES_" + dia)
+        fin = pd.Timestamp("2025-01-02")
+        flujos = [("2024-01-02", -1000.0), (dia, -1000.0), (fin, 2600.0)]
+        vpn = sum(v * (1 + r / 100) ** ((fin - pd.Timestamp(d)).days / 365.25) for d, v in flujos)
+        assert vpn == pytest.approx(0.0, abs=0.2)
+        tasas[dia] = r
+    assert 31.0 < tasas["2024-01-31"] < tasas["2024-02-01"] < 31.7
+    assert tasas["2024-02-01"] - tasas["2024-01-31"] < 0.2
+
+
+def test_irr_anual_de_un_mes_no_da_miles_por_ciento(monkeypatch):
+    """Treinta días con +10 % anualizan a `1.1 ** (365.25 / 30) − 1` = 219 %; con +30 % la
+    cuenta pasaría de 2.000 % y la cifra se queda sin dato (tope de `xirr`)."""
+    compra = [("2024-01-02", "Buy", "MSTY", 10, -1000.0)]
+    r = _irr_anual(monkeypatch, compra, "2024-02-01", 110.0, "TEST_IRR_MES_10")
+    assert r == pytest.approx((1.1 ** (365.25 / 30) - 1) * 100, abs=0.02)
+    assert _irr_anual(monkeypatch, compra, "2024-02-01", 130.0, "TEST_IRR_MES_30") is None
+
+
 def test_triple_comparison_reinvierte_dividendos(monkeypatch):
     """Fix 1: simulate_triple_comparison reinvierte los dividendos (total return).
     Con 1 dividendo de 10 sobre 10 acciones a $100, el valor final sube de 1000 a 1100
