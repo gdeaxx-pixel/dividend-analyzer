@@ -1098,7 +1098,26 @@ def _retencion_diaria_en_efectivo(ticker_df):
     return -en_efectivo.diff().fillna(en_efectivo)
 
 
-def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment):
+def _reinicios_por_split(ticker_df, qty_rows, sesiones):
+    """Filas `split` con cantidad positiva: `_recorrer_transacciones` deja ahí el balance en
+    esa cantidad. Devuelve {sesión: (cantidad, acciones del mismo día anteriores a la fila)}."""
+    accion = ticker_df['Action'].astype(str).str.lower()
+    cantidad = pd.to_numeric(ticker_df['Quantity'], errors='coerce')
+    posicion = pd.Series(np.arange(len(ticker_df)), index=ticker_df.index)
+    reinicios = {}
+    for etiqueta in ticker_df.index[accion.str.contains('split', na=False) & (cantidad > 0)]:
+        fecha = ticker_df.at[etiqueta, 'Date']
+        destino = _snap_to_trading_days(pd.Series([0.0], index=[fecha]), sesiones).index
+        if len(destino) == 0 or destino[0] not in sesiones:
+            continue
+        previas = qty_rows[(qty_rows['Date'] == fecha)
+                           & (posicion.reindex(qty_rows.index) < posicion.at[etiqueta])]
+        reinicios[destino[0]] = (float(cantidad.at[etiqueta]), float(previas['Quantity'].sum()))
+    return reinicios
+
+
+def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment,
+                  misc_cash_dated=()):
     # --- Calculate Daily History (For Chart) ---
     # 1. Resample transactions to daily to handle multiple trades per day
     # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
@@ -1142,10 +1161,17 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     else:
          splits = pd.Series(0, index=daily_history.index)
 
+    # La fila `split` del CSV con cantidad positiva reinicia el balance, igual que en
+    # `_recorrer_transacciones`: tras un split inverso el bróker paga la fracción en efectivo
+    # (`Cash In Lieu`) y la serie no puede seguir contándola como acciones. Si el split de
+    # Yahoo llega unas sesiones después de la fila, el reinicio espera a ese día.
+    reinicios = _reinicios_por_split(ticker_df, qty_rows, daily_history.index)
+    sesiones_con_split = [i for i, v in enumerate(splits.to_numpy()) if v > 0]
+    pendiente = None
     running_shares = 0.0
     shares_series = []
 
-    for date in daily_history.index:
+    for loc_hoy, date in enumerate(daily_history.index):
         split_val = splits.loc[date]
         if split_val != 0 and split_val > 0:
             loc = daily_history.index.get_loc(date)
@@ -1169,7 +1195,18 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
                 running_shares *= split_val
 
         net_qty = daily_history.loc[date, 'Quantity']
+        if pendiente is not None and split_val > 0:
+            running_shares = pendiente[0] + pendiente[1] * split_val
+            pendiente = None
+        if date in reinicios:
+            cantidad_csv, previas = reinicios[date]
+            if not split_val > 0 and any(loc_hoy < i <= loc_hoy + 5 for i in sesiones_con_split):
+                pendiente = [cantidad_csv, -previas]
+            else:
+                running_shares = cantidad_csv - previas
         running_shares += net_qty
+        if pendiente is not None:
+            pendiente[1] += net_qty
         if running_shares < 0:
             running_shares = 0.0
         shares_series.append(running_shares)
@@ -1232,8 +1269,13 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     
     # Resample cash divs to daily. Con signo (una reversa resta) y neto de la retención que
     # la cifra escalar descuenta del efectivo: `User Profit` del último día == `net_profit`.
+    # Más la caja que no es distribución (`Cash In Lieu` y demás de la rama I5), fechada por el
+    # propio recorrido: `net_profit` la cuenta.
+    _caja_misc = pd.Series([float(m) for _, m in misc_cash_dated],
+                           index=pd.to_datetime([f for f, _ in misc_cash_dated]), dtype=float)
     daily_cash_divs = cash_div_rows.groupby('Date')['Amount'].sum().add(
-        _retencion_diaria_en_efectivo(ticker_df), fill_value=0.0)
+        _retencion_diaria_en_efectivo(ticker_df), fill_value=0.0).add(
+        _caja_misc.groupby(level=0).sum(), fill_value=0.0)
     if not daily_cash_divs.empty:
         # Mismo alineamiento que la actividad: un dividendo pagado en día no bursátil
         # desaparecía del acumulado de efectivo cobrado.
@@ -1404,6 +1446,7 @@ def _recorrer_transacciones(ticker_df, _splits_col):
     # mezclarlas rompía la identidad `neto = reinvertido + efectivo` del recorrido.
     misc_cash_total = 0.0
     misc_cash_breakdown = {}
+    misc_cash_dated = []
     history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
     
     # Iterate through transactions to build history
@@ -1550,6 +1593,7 @@ def _recorrer_transacciones(ticker_df, _splits_col):
             misc_cash_total += amount
             misc_cash_breakdown[str(row.get('Action', '')).strip()] = round(
                 misc_cash_breakdown.get(str(row.get('Action', '')).strip(), 0.0) + amount, 2)
+            misc_cash_dated.append((_tx_date, amount))
             irr_flows_dated.append((_tx_date, amount))
 
         elif is_sell:
@@ -1598,6 +1642,7 @@ def _recorrer_transacciones(ticker_df, _splits_col):
         'dividends_collected_drip': dividends_collected_drip,
         'misc_cash_total': misc_cash_total,
         'misc_cash_breakdown': misc_cash_breakdown,
+        'misc_cash_dated': misc_cash_dated,
         'history_incomplete': history_incomplete,
         'irr_flows_dated': irr_flows_dated,
     }
@@ -1887,7 +1932,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         total_dividends = dividends_collected_cash + dividends_collected_drip
         
         daily_history, benchmark_value, benchmark_roi = _serie_diaria(
-            ticker_df, market_data, _bench_df, first_date, pocket_investment)
+            ticker_df, market_data, _bench_df, first_date, pocket_investment,
+            misc_cash_dated=_rec['misc_cash_dated'])
 
         (volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta,
          alpha) = _metricas_riesgo(daily_history)
