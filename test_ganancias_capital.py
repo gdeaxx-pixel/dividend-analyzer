@@ -376,6 +376,38 @@ def test_el_split_del_csv_no_rejuvenece_las_acciones():
     assert cg['unrealized']['tramo'] == 'ge_2y'
 
 
+def test_la_fraccion_pagada_en_efectivo_baja_acciones_sin_tocar_base_ni_antiguedad():
+    """Media acción pagada en efectivo por un split que el CSV no declara: salen 0,5 acciones,
+    la base sigue en los $300 y la compra sigue siendo del 2-ene (160 días al 10-jun). Sin
+    reescalar Σ(acciones × día), el día medio de compra cae en el futuro y la tenencia sale 0."""
+    df = _df([
+        ('2024-01-02', 'Buy',          'AAA', 10, 30.00, -300.00),
+        ('2024-01-31', 'Cash In Lieu', 'AAA',  0,  0.00,   15.00),
+    ])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=40.00, today='2024-06-10',
+                                   fracciones={1: 0.5})
+
+    assert cg['estado'] == 'ok', cg['motivo']
+    assert cg['realized'] == []
+    pendiente = cg['unrealized']
+    assert pendiente['shares'] == pytest.approx(9.5, abs=1e-9)
+    assert pendiente['basis'] == pytest.approx(300.00, abs=0.01)
+    assert pendiente['gain'] == pytest.approx(80.00, abs=0.01)
+    assert pendiente['holding_days_ponderado'] == 160
+    assert pendiente['tramo'] == 'lt_2y'
+
+
+def test_sin_fracciones_el_pago_en_efectivo_no_mueve_las_acciones():
+    df = _df([
+        ('2024-01-02', 'Buy',          'AAA', 10, 30.00, -300.00),
+        ('2024-01-31', 'Cash In Lieu', 'AAA',  0,  0.00,   15.00),
+    ])
+    cg = logic.build_capital_gains(df, 'AAA', market_price=40.00, today='2024-06-10')
+
+    assert cg['unrealized']['shares'] == pytest.approx(10.0, abs=1e-9)
+    assert cg['unrealized']['holding_days_ponderado'] == 160
+
+
 # ── Ramas que los datos reales NO ejercitan (M4 §3): forzadas a mano ────────────────
 
 def test_traspaso_de_SALIDA_se_lleva_su_parte_de_la_base():

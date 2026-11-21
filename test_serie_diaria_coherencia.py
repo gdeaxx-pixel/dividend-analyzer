@@ -405,6 +405,14 @@ def test_pago_de_fraccion_a_diez_dias_del_split_si_cuenta(monkeypatch):
     assert r['shares_owned'] == pytest.approx(31.0, abs=1e-9)
 
 
+def test_fila_de_split_sin_cantidad_no_impide_soltar_la_fraccion(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5, dict(Date='2024-02-01', Action='Stock Split', Quantity=0), PAGO_FRACCION,
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.0, abs=1e-9)
+    assert _ganancia(r).iloc[-1] == pytest.approx(62.0, abs=0.01)
+
+
 def test_cargo_rotulado_como_fraccion_no_suma_acciones(monkeypatch):
     r = _analizar(monkeypatch, [
         COMPRA_10_5, dict(Date='2024-01-31', Action='Cash In Lieu', Amount=-5.0),
