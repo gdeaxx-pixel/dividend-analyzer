@@ -146,3 +146,16 @@ def test_solo_reversas_no_da_rendimiento_a_futuro():
     r = logic.forward_realized_yield(_hist([("2026-07-10", "Cash Dividend", "ZZZY", -60.0)]),
                                      5000.0, today="2026-07-20")
     assert r["last_payment"] is None and r["forward_yield"] is None
+
+
+def test_las_reversas_no_cuentan_para_el_ritmo_de_pagos():
+    """Tres pagos mensuales de $100 y, diez días después de cada uno, una reversa de −$10.
+    Entre pagos hay 31 y 28 días: 12 al año, 100 × 12 / 5.000 = 24 %. Contando las reversas
+    como pagos el intervalo típico bajaba a 10 días y salían 36 al año."""
+    filas = []
+    for dia in ("2026-01-10", "2026-02-10", "2026-03-10"):
+        filas.append((dia, "Cash Dividend", "ZZZY", 100.0))
+        filas.append((dia[:8] + "20", "Cash Dividend", "ZZZY", -10.0))
+    r = logic.forward_realized_yield(_hist(filas), 5000.0, today="2026-03-25")
+    assert r["payments_per_year"] == 12
+    assert r["forward_yield"] == pytest.approx(24.0)
