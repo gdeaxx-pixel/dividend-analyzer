@@ -85,6 +85,10 @@ AMDY:
   price_cagr: -9.2
   roc_pct: 54.4
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -13.5
+  roc_pct: 54.7
+  verdict: destructive
 AMZY:
 - date: '2026-06-27'
   price_cagr: -35.4
@@ -170,6 +174,10 @@ AMZY:
   price_cagr: -24.9
   roc_pct: 52.7
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -24.2
+  roc_pct: 52.5
+  verdict: destructive
 APLY:
 - date: '2026-10-31'
   price_cagr: -14.3
@@ -182,6 +190,10 @@ APLY:
 - date: '2026-11-14'
   price_cagr: -11.8
   roc_pct: 64.2
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -13.2
+  roc_pct: 64.8
   verdict: destructive
 CONY:
 - date: '2026-06-27'
@@ -268,6 +280,10 @@ CONY:
   price_cagr: -74.1
   roc_pct: 52.2
   verdict: mixed
+- date: '2026-11-21'
+  price_cagr: -75.5
+  roc_pct: 52.7
+  verdict: mixed
 DISO:
 - date: '2026-06-27'
   price_cagr: -33.9
@@ -289,6 +305,10 @@ GDXY:
 - date: '2026-11-14'
   price_cagr: -44.4
   roc_pct: 93.7
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -50.9
+  roc_pct: 93.6
   verdict: destructive
 GOOY:
 - date: '2026-06-27'
@@ -375,6 +395,10 @@ GOOY:
   price_cagr: -29.3
   roc_pct: 50.4
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -37.9
+  roc_pct: 51.8
+  verdict: destructive
 JPMO:
 - date: '2026-06-27'
   price_cagr: -17.3
@@ -460,6 +484,10 @@ JPMO:
   price_cagr: null
   roc_pct: 55.5
   verdict: insufficient
+- date: '2026-11-21'
+  price_cagr: null
+  roc_pct: 55.3
+  verdict: insufficient
 LFGY:
 - date: '2026-10-31'
   price_cagr: -57.2
@@ -473,6 +501,10 @@ LFGY:
   price_cagr: -50.5
   roc_pct: 58.1
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -56.1
+  roc_pct: 60.1
+  verdict: destructive
 MRNY:
 - date: '2026-10-31'
   price_cagr: 138.4
@@ -485,6 +517,10 @@ MRNY:
 - date: '2026-11-14'
   price_cagr: 156.3
   roc_pct: 58.6
+  verdict: accounting
+- date: '2026-11-21'
+  price_cagr: 146.5
+  roc_pct: 57.1
   verdict: accounting
 MSFO:
 - date: '2026-06-27'
@@ -571,6 +607,10 @@ MSFO:
   price_cagr: -26.9
   roc_pct: 92.1
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -28.4
+  roc_pct: 92.0
+  verdict: destructive
 MSTY:
 - date: '2026-06-27'
   price_cagr: -89.3
@@ -655,6 +695,10 @@ MSTY:
 - date: '2026-11-14'
   price_cagr: -73.7
   roc_pct: 67.5
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -78.5
+  roc_pct: 68.2
   verdict: destructive
 NFLY:
 - date: '2026-06-27'
@@ -741,6 +785,10 @@ NFLY:
   price_cagr: -60.3
   roc_pct: 54.9
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -60.6
+  roc_pct: 54.5
+  verdict: destructive
 NVDY:
 - date: '2026-06-27'
   price_cagr: -27.2
@@ -825,6 +873,10 @@ NVDY:
 - date: '2026-11-14'
   price_cagr: -41.6
   roc_pct: 43.5
+  verdict: mixed
+- date: '2026-11-21'
+  price_cagr: -53.0
+  roc_pct: 42.6
   verdict: mixed
 PLTY:
 - date: '2026-06-27'
@@ -911,6 +963,10 @@ PLTY:
   price_cagr: -45.0
   roc_pct: 57.8
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -48.8
+  roc_pct: 57.0
+  verdict: destructive
 PYPY:
 - date: '2026-10-31'
   price_cagr: -47.3
@@ -924,6 +980,10 @@ PYPY:
   price_cagr: -44.5
   roc_pct: 91.8
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -44.6
+  roc_pct: 91.9
+  verdict: destructive
 SNOY:
 - date: '2026-10-31'
   price_cagr: -38.5
@@ -936,6 +996,10 @@ SNOY:
 - date: '2026-11-14'
   price_cagr: -38.9
   roc_pct: 55.7
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -44.0
+  roc_pct: 57.0
   verdict: destructive
 TSLY:
 - date: '2026-06-27'
@@ -1022,6 +1086,10 @@ TSLY:
   price_cagr: -43.2
   roc_pct: 53.0
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -48.4
+  roc_pct: 52.5
+  verdict: destructive
 TSMY:
 - date: '2026-10-31'
   price_cagr: -17.7
@@ -1034,6 +1102,10 @@ TSMY:
 - date: '2026-11-14'
   price_cagr: -13.3
   roc_pct: 65.7
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -29.7
+  roc_pct: 65.5
   verdict: destructive
 ULTY:
 - date: '2026-10-31'
@@ -1048,6 +1120,10 @@ ULTY:
   price_cagr: -51.5
   roc_pct: 75.3
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -51.9
+  roc_pct: 74.3
+  verdict: destructive
 XOMO:
 - date: '2026-10-31'
   price_cagr: 0.9
@@ -1060,6 +1136,10 @@ XOMO:
 - date: '2026-11-14'
   price_cagr: -10.2
   roc_pct: 57.8
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -14.3
+  roc_pct: 56.8
   verdict: destructive
 YMAG:
 - date: '2026-06-27'
@@ -1146,6 +1226,10 @@ YMAG:
   price_cagr: -28.7
   roc_pct: 52.5
   verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -34.0
+  roc_pct: 53.2
+  verdict: destructive
 YMAX:
 - date: '2026-06-27'
   price_cagr: -42.7
@@ -1230,4 +1314,8 @@ YMAX:
 - date: '2026-11-14'
   price_cagr: -39.6
   roc_pct: 49.7
+  verdict: destructive
+- date: '2026-11-21'
+  price_cagr: -39.4
+  roc_pct: 50.3
   verdict: destructive
