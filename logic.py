@@ -1117,7 +1117,7 @@ def _reinicios_por_split(ticker_df, qty_rows, sesiones):
 
 
 def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment,
-                  misc_cash_dated=()):
+                  misc_cash_dated=(), fracciones_dated=()):
     # --- Calculate Daily History (For Chart) ---
     # 1. Resample transactions to daily to handle multiple trades per day
     # Only count Quantity from buy/sell/split/DRIP rows — cash dividend rows in Schwab CSVs
@@ -1141,6 +1141,10 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     sell_mask = qty_rows['Action'].str.lower().str.contains(r'sell|sold|venta', na=False, regex=True)
     qty_rows.loc[sell_mask, 'Quantity'] = -qty_rows.loc[sell_mask, 'Quantity'].abs()
     qty_by_date = qty_rows.groupby('Date')['Quantity'].sum()
+    # Fracción de acción pagada en efectivo sin fila de split: sale el día del pago, como en
+    # `_recorrer_transacciones`.
+    for _fecha, _fraccion in fracciones_dated:
+        qty_by_date = qty_by_date.add(pd.Series([-float(_fraccion)], index=[_fecha]), fill_value=0.0)
     daily_activity = ticker_df.groupby('Date')[['Amount', 'Cash_Flow_In']].sum()
     daily_activity['Quantity'] = qty_by_date.reindex(daily_activity.index).fillna(0)
     # Alinea al calendario bursátil ANTES de reindexar: sin esto, una transacción
@@ -1431,7 +1435,72 @@ def safe_float(val):
     return 0.0 if v is None else v
 
 
-def _recorrer_transacciones(ticker_df, _splits_col):
+_DIAS_FRACCION_SPLIT = 10
+
+
+def _cierre_en_unidades_de_hoy(market_data, fecha):
+    """Cierre de `fecha` (o el primero posterior) expresado en acciones de hoy. Yahoo suele
+    dar el cierre ya ajustado por splits; si en un split posterior el precio sí salta en la
+    razón del split, ese tramo venía sin ajustar y se convierte."""
+    cierres = market_data['Close']
+    cierres = cierres[cierres > 0]
+    if cierres.empty:
+        return None
+    desde = cierres[cierres.index >= fecha]
+    dia = desde.index[0] if len(desde) else cierres.index[-1]
+    precio = float(cierres.loc[dia])
+    if 'Stock Splits' not in market_data.columns:
+        return precio
+    splits = market_data['Stock Splits']
+    for sd, razon in splits[(splits > 0) & (splits.index > dia)].items():
+        antes = cierres[cierres.index < sd]
+        en = cierres[cierres.index >= sd]
+        if antes.empty or en.empty:
+            continue
+        salto = float(en.iloc[0]) / float(antes.iloc[-1])
+        if abs(salto - 1.0 / razon) / (1.0 / razon) <= 0.15:
+            precio /= float(razon)
+    return precio
+
+
+def _fracciones_pagadas_en_efectivo(ticker_df, market_data):
+    """Fracción de acción que el bróker pagó en efectivo (`Cash In Lieu`) por un split del
+    mercado que el CSV no declara con su propia fila. `{etiqueta de la fila: acciones de hoy}`.
+
+    Con fila `split` en el CSV no hace falta: esa fila ya deja el saldo sin la fracción.
+    Sin ella, el factor del mercado multiplica las acciones exactas y la fracción pagada se
+    quedaba contada como acciones Y como efectivo. Medido en los CSV reales (2026-11-21): 6
+    posiciones, el pago fechado un día antes del split, y acciones de la app − captura del
+    bróker = importe ÷ cierre de ese día (entre 0,06 y 0,30 acciones).
+    """
+    if market_data is None or market_data.empty or 'Stock Splits' not in market_data.columns:
+        return {}
+    accion = ticker_df['Action'].astype(str).str.lower()
+    importe = pd.to_numeric(ticker_df['Amount'], errors='coerce')
+    cantidad = pd.to_numeric(ticker_df['Quantity'], errors='coerce')
+    pagos = ticker_df.index[accion.str.contains('cash in lieu', na=False) & (importe > 0)]
+    if len(pagos) == 0:
+        return {}
+    ventana = pd.Timedelta(days=_DIAS_FRACCION_SPLIT)
+    filas_split = ticker_df.loc[accion.str.contains('split', na=False) & (cantidad > 0), 'Date']
+    splits = market_data['Stock Splits']
+    dias_split = splits[splits > 0].index
+    fracciones = {}
+    for etiqueta in pagos:
+        fecha = ticker_df.at[etiqueta, 'Date']
+        if pd.isna(fecha):
+            continue
+        if any(abs(f - fecha) <= ventana for f in filas_split):
+            continue
+        if not any(abs(sd - fecha) <= ventana for sd in dias_split):
+            continue
+        precio = _cierre_en_unidades_de_hoy(market_data, fecha)
+        if precio:
+            fracciones[etiqueta] = float(importe.at[etiqueta]) / precio
+    return fracciones
+
+
+def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     # --- Analysis Variables ---
     pocket_investment = 0.0 # Net cash flow from user's pocket
     shares_owned = 0.0
@@ -1447,6 +1516,7 @@ def _recorrer_transacciones(ticker_df, _splits_col):
     misc_cash_total = 0.0
     misc_cash_breakdown = {}
     misc_cash_dated = []
+    fracciones_dated = []
     history_incomplete = False  # True when sells exceed tracked buys (CSV missing prior history)
     
     # Iterate through transactions to build history
@@ -1595,6 +1665,13 @@ def _recorrer_transacciones(ticker_df, _splits_col):
                 misc_cash_breakdown.get(str(row.get('Action', '')).strip(), 0.0) + amount, 2)
             misc_cash_dated.append((_tx_date, amount))
             irr_flows_dated.append((_tx_date, amount))
+            _fraccion = min((fracciones or {}).get(idx, 0.0), shares_owned)
+            if _fraccion > 0:
+                _queda = 1.0 - _fraccion / shares_owned
+                shares_owned_pocket *= _queda
+                shares_owned_drip *= _queda
+                shares_owned -= _fraccion
+                fracciones_dated.append((_tx_date, _fraccion / _sf if _sf else _fraccion))
 
         elif is_sell:
             _adj_qty = abs(qty) * _sf
@@ -1643,6 +1720,7 @@ def _recorrer_transacciones(ticker_df, _splits_col):
         'misc_cash_total': misc_cash_total,
         'misc_cash_breakdown': misc_cash_breakdown,
         'misc_cash_dated': misc_cash_dated,
+        'fracciones_dated': fracciones_dated,
         'history_incomplete': history_incomplete,
         'irr_flows_dated': irr_flows_dated,
     }
@@ -1758,7 +1836,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             for _sd, _sr in _splits_col.items():
                 splits_detected.append({"date": str(_sd)[:10], "ratio": float(_sr)})
 
-        _rec = _recorrer_transacciones(ticker_df, _splits_col)
+        _fracciones = _fracciones_pagadas_en_efectivo(ticker_df, market_data)
+        _rec = _recorrer_transacciones(ticker_df, _splits_col, _fracciones)
         pocket_investment = _rec['pocket_investment']
         shares_owned = _rec['shares_owned']
         shares_owned_pocket = _rec['shares_owned_pocket']
@@ -1933,7 +2012,8 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
         
         daily_history, benchmark_value, benchmark_roi = _serie_diaria(
             ticker_df, market_data, _bench_df, first_date, pocket_investment,
-            misc_cash_dated=_rec['misc_cash_dated'])
+            misc_cash_dated=_rec['misc_cash_dated'],
+            fracciones_dated=_rec['fracciones_dated'])
 
         (volatilidad_anualizada, sharpe_ratio, sortino_ratio, max_drawdown, calmar_ratio, beta,
          alpha) = _metricas_riesgo(daily_history)
@@ -2198,6 +2278,7 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
                 # dos posiciones distintas para el mismo ticker.
                 broker_position=_ov,
                 roc_19a_published=_publica_19a,
+                fracciones=_fracciones,
             ),
             # Fecha de VALORACIÓN — la del último cierre usado para `current_price` y
             # `market_value`, NO el reloj de hoy: determinista con el precio que ya se
@@ -4221,7 +4302,8 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                         today=None, splits=None,
                         history_incomplete: bool = False,
                         roc_events=None, roc_source: str = None,
-                        broker_position=None, roc_19a_published: bool = False) -> dict:
+                        broker_position=None, roc_19a_published: bool = False,
+                        fracciones=None) -> dict:
     """Objeto único de GANANCIA DE CAPITAL por ticker — realizada y no realizada.
 
     Es un eje NUEVO, no una vista de uno existente. Antes de esta función no había ninguna
@@ -4412,7 +4494,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             roc_aplicado += baja
             roc_exceso += monto - baja
 
-    for _, row in ticker_df.iterrows():
+    for _etiqueta, row in ticker_df.iterrows():
         action = str(row.get('Action', '')).lower()
         qty = _safe_float(row.get('Quantity', 0))
         amount = _safe_float(row.get('Amount', 0))
@@ -4529,6 +4611,13 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             if shares > 0:
                 dias_wsum *= qty / shares
             shares = qty
+
+        # Fracción pagada en efectivo por un split sin fila en el CSV: mismo trato que el
+        # reinicio de arriba — salen acciones, la base en dólares no se toca.
+        _fraccion = min((fracciones or {}).get(_etiqueta, 0.0), shares)
+        if _fraccion > 0:
+            dias_wsum *= 1.0 - _fraccion / shares
+            shares -= _fraccion
 
     # Distribuciones posteriores a la última transacción del CSV: su ROC también bajó la base.
     _aplicar_roc_hasta(None)

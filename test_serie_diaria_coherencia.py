@@ -333,6 +333,104 @@ def test_cargo_de_custodia_resta_en_la_serie(monkeypatch):
     assert _ganancia(r).iloc[-1] == pytest.approx(-3.0, abs=0.01)
 
 
+# ── Fracción pagada en efectivo por un split que el CSV no declara ───────────────────────
+# Compra 10,5 acciones a $30. Split 3 por 1 el 1-feb: serían 31,5, el bróker deja 31 y paga
+# la media acción ($5 a $10) el día antes. Cierra a $12. Con el precio ya ajustado por el
+# split (como lo da Yahoo) y sin ajustar.
+
+COMPRA_10_5 = dict(Date='2024-01-02', Action='Buy', Quantity=10.5, Amount=-315.0)
+PAGO_FRACCION = dict(Date='2024-01-31', Action='Cash In Lieu', Amount=5.0)
+CIERRES_AJUSTADOS = [10.0] * 50 + [12.0] * 10
+CIERRES_SIN_AJUSTAR = [30.0] * 22 + [10.0] * 28 + [12.0] * 10
+SPLIT_3X1 = {'2024-02-01': 3.0}
+
+
+@pytest.mark.parametrize('cierres', [CIERRES_AJUSTADOS, CIERRES_SIN_AJUSTAR])
+def test_fraccion_pagada_antes_de_un_split_sin_fila_sale_de_las_acciones(monkeypatch, cierres):
+    r = _analizar(monkeypatch, [COMPRA_10_5, PAGO_FRACCION], cierres, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.0, abs=1e-9)
+    assert r['shares_owned_pocket'] == pytest.approx(31.0, abs=1e-9)
+    assert r['market_value'] == pytest.approx(372.0, abs=0.01)
+    assert r['net_profit'] == pytest.approx(62.0, abs=0.01)
+    valor = r['daily_trend']['Market Value']
+    assert valor.loc['2024-01-30'] == pytest.approx(315.0, abs=0.01)
+    assert valor.loc['2024-01-31'] == pytest.approx(310.0, abs=0.01)
+    assert valor.loc['2024-02-01'] == pytest.approx(310.0, abs=0.01)
+    assert _ganancia(r).loc['2024-01-31'] == pytest.approx(0.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(62.0, abs=0.01)
+    no_realizada = r['capital_gains']['unrealized']
+    assert no_realizada['shares'] == pytest.approx(31.0, abs=1e-9)
+    assert no_realizada['basis'] == pytest.approx(315.0, abs=0.01)
+
+
+def test_fraccion_pagada_tras_un_split_inverso_sin_fila_sale_de_las_acciones(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_15, dict(Date='2024-02-02', Action='Cash In Lieu', Amount=50.0),
+    ], CIERRES_SPLIT, splits=SPLIT_YAHOO)
+    assert r['shares_owned'] == pytest.approx(1.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(20.0, abs=0.01)
+    assert _acciones(r).loc['2024-02-01'] == pytest.approx(1.5, abs=1e-9)
+    assert _acciones(r).loc['2024-02-02'] == pytest.approx(1.0, abs=1e-9)
+    assert _ganancia(r).iloc[-1] == pytest.approx(20.0, abs=0.01)
+    assert r['capital_gains']['unrealized']['shares'] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_la_fraccion_sale_en_proporcion_de_lo_comprado_y_lo_reinvertido(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5,
+        dict(Date='2024-01-10', Action='Reinvest Dividend', Amount=105.0),
+        dict(Date='2024-01-10', Action='Reinvest Shares', Quantity=3.5, Amount=-105.0),
+        dict(Date='2024-01-31', Action='Cash In Lieu', Amount=10.0),
+    ], CIERRES_SIN_AJUSTAR, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(41.0, abs=1e-9)
+    assert r['shares_owned_pocket'] == pytest.approx(30.75, abs=1e-9)
+    assert r['shares_owned_drip'] == pytest.approx(10.25, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(41 * 12.0 + 10.0 - 315.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(187.0, abs=0.01)
+
+
+def test_pago_de_fraccion_lejos_de_cualquier_split_no_toca_las_acciones(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5, dict(Date='2024-01-18', Action='Cash In Lieu', Amount=5.0),
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.5, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(31.5 * 12.0 + 5.0 - 315.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(68.0, abs=0.01)
+
+
+def test_pago_de_fraccion_a_diez_dias_del_split_si_cuenta(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5, dict(Date='2024-01-22', Action='Cash In Lieu', Amount=5.0),
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.0, abs=1e-9)
+
+
+def test_fila_de_split_sin_cantidad_no_impide_soltar_la_fraccion(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5, dict(Date='2024-02-01', Action='Stock Split', Quantity=0), PAGO_FRACCION,
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.0, abs=1e-9)
+    assert _ganancia(r).iloc[-1] == pytest.approx(62.0, abs=0.01)
+
+
+def test_cargo_rotulado_como_fraccion_no_suma_acciones(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA_10_5, dict(Date='2024-01-31', Action='Cash In Lieu', Amount=-5.0),
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(31.5, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(31.5 * 12.0 - 5.0 - 315.0, abs=0.01)
+
+
+def test_pago_de_fraccion_mayor_que_la_posicion_la_deja_en_cero(monkeypatch):
+    r = _analizar(monkeypatch, [
+        dict(Date='2024-01-02', Action='Buy', Quantity=0.1, Amount=-3.0),
+        dict(Date='2024-01-31', Action='Cash In Lieu', Amount=5.0),
+    ], CIERRES_AJUSTADOS, splits=SPLIT_3X1)
+    assert r['shares_owned'] == pytest.approx(0.0, abs=1e-9)
+    assert r['net_profit'] == pytest.approx(2.0, abs=0.01)
+    assert _ganancia(r).iloc[-1] == pytest.approx(2.0, abs=0.01)
+
+
 # ── M7: un día sin precio no envenena la serie ──────────────────────────────────────────
 
 SERIE = ['Market Value', 'User Profit', 'User Return %']
