@@ -1174,6 +1174,9 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     pendiente = None
     running_shares = 0.0
     shares_series = []
+    # Por cada día, cuántas acciones de la serie vale una acción del CSV de ese día: 1 salvo
+    # antes de un split cuyo cierre Yahoo ya trae ajustado.
+    unidades_serie = []
 
     for loc_hoy, date in enumerate(daily_history.index):
         split_val = splits.loc[date]
@@ -1192,6 +1195,7 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
                     # retroactively scale all past share counts so the chart is smooth.
                     if abs(actual_ratio - expected_ratio) / expected_ratio > 0.15:
                         shares_series = [s * split_val for s in shares_series]
+                        unidades_serie = [u * split_val for u in unidades_serie]
                     running_shares *= split_val
                 except Exception:
                     running_shares *= split_val
@@ -1214,8 +1218,10 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
         if running_shares < 0:
             running_shares = 0.0
         shares_series.append(running_shares)
+        unidades_serie.append(1.0)
 
     daily_history['Shares Held'] = shares_series
+    _unidades_serie = pd.Series(unidades_serie, index=daily_history.index)
     
     # 4. Calculate Values. Un día sin cierre válido (NaN, 0 o negativo) se valora al último
     # cierre válido anterior y, si no lo hay, al primero posterior: un solo hueco dejaba el
@@ -1236,6 +1242,8 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
     # haría ver que la posición "aplasta" al S&P (falso). 'Flujo Efectivo' = efectivo +
     # transferencias se usa en AMBOS (benchmark y TWR). NO se toca Invested Capital (ROI).
     # Caso real: SCHB +18.9 acc. el 2024-05-13 (benchmark pasaba a $0).
+    # La cantidad del CSV va en acciones de ese día y `Price` puede venir ya ajustado por un
+    # split posterior: se pasa a las unidades de la serie antes de valorarla.
     transfer_flow = pd.Series(0.0, index=daily_history.index)
     try:
         _xfer = ticker_df[ticker_df['Action'].str.lower().str.contains(
@@ -1247,7 +1255,7 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
             if _xd in transfer_flow.index and pd.notna(_xq) and _xq != 0 and (pd.isna(_xa) or abs(_xa) < 0.01):
                 _xpx = float(daily_history['Price'].get(_xd, 0) or 0)
                 if _xpx > 0:
-                    transfer_flow.loc[_xd] += float(_xq) * _xpx
+                    transfer_flow.loc[_xd] += float(_xq) * float(_unidades_serie.get(_xd, 1.0)) * _xpx
     except Exception:
         pass
     daily_history['Transfer Flow'] = transfer_flow
@@ -1638,7 +1646,10 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
                 _adj_qty = abs(qty) * _sf
                 shares_owned += _adj_qty
                 shares_owned_drip += _adj_qty
-                if amount < 0:
+                # Con acciones en la fila, el importe es lo reinvertido venga con el signo
+                # que venga. Sin acciones y en positivo es la fila fuente: su compra llega
+                # en otra fila y contarla aquí la duplicaría.
+                if amount < 0 or qty != 0:
                     dividends_collected_drip += abs(amount)
 
         elif is_div_payout:
@@ -1685,7 +1696,9 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
             if shares_owned < 0:
                 shares_owned = 0.0
                 history_incomplete = True
+            # Lo que la venta no encuentra en lo comprado sale de lo reinvertido.
             if shares_owned_pocket < 0:
+                shares_owned_drip = max(shares_owned_drip + shares_owned_pocket, 0.0)
                 shares_owned_pocket = 0.0
 
         elif is_tax_only:
