@@ -495,3 +495,98 @@ def test_reinversion_de_rotulo_ambiguo_sigue_sumando_acciones(monkeypatch):
     ])
     assert r['shares_owned'] == pytest.approx(12.0, abs=1e-9)
     assert r['daily_trend']['Market Value'].iloc[-1] == pytest.approx(1200.0, abs=0.01)
+
+
+# ── Transferencia de acciones antes de un split: el índice recibe su valor de ese día ───
+# Se compra 1 acción a $20 y el 10-ene entran 10 más por transferencia, sin efectivo, cuando
+# cotiza a $20: $200. El 1-feb hay split 2 por 1 (22 acciones a $10). El índice dobla tras la
+# transferencia: los $220 puestos en él valen $440. Con el cierre ya ajustado y sin ajustar.
+
+def _analizar_con_indice(monkeypatch, filas, cierres, indice, splits=None):
+    md = _mercado(cierres)
+    for fecha, factor in (splits or {}).items():
+        md.loc[pd.Timestamp(fecha), 'Stock Splits'] = factor
+    bench = _mercado(indice)
+    df = pd.DataFrame(filas)
+    df['Ticker'] = 'VTI'
+    df['Date'] = pd.to_datetime(df['Date'])
+    for col in ('Quantity', 'Amount', 'Price'):
+        if col not in df:
+            df[col] = 0.0
+        df[col] = df[col].fillna(0.0)
+    monkeypatch.setattr(logic, 'fetch_market_data', lambda t, s: (md.copy(), None))
+    monkeypatch.setattr(logic, '_descargar_benchmark', lambda d, ticker='VOO': bench.copy())
+    return _sin_cache()(df)['VTI']
+
+
+INDICE_QUE_DOBLA = [100.0] * 20 + [200.0] * 40
+TRANSFERENCIA_ANTES_DEL_SPLIT = [
+    dict(Date='2024-01-02', Action='Buy', Quantity=1, Amount=-20.0),
+    dict(Date='2024-01-10', Action='Internal Transfer', Quantity=10),
+]
+
+
+@pytest.mark.parametrize('cierres', [[10.0] * 60, [20.0] * 22 + [10.0] * 38])
+def test_transferencia_antes_de_un_split_entra_al_indice_por_su_valor_de_ese_dia(monkeypatch, cierres):
+    r = _analizar_con_indice(monkeypatch, TRANSFERENCIA_ANTES_DEL_SPLIT, cierres,
+                             INDICE_QUE_DOBLA, splits={'2024-02-01': 2.0})
+    assert r['shares_owned'] == pytest.approx(22.0, abs=1e-9)
+    assert r['market_value'] == pytest.approx(220.0, abs=0.01)
+    assert r['benchmark_value'] == pytest.approx(440.0, abs=0.01)
+    assert r['daily_trend']['SPY Profit'].iloc[-1] == pytest.approx(440.0, abs=0.01)
+    assert _retorno(r).iloc[-1] == pytest.approx(0.0, abs=0.01)
+
+
+def test_transferencia_sin_split_posterior_no_cambia(monkeypatch):
+    r = _analizar_con_indice(monkeypatch, [
+        dict(Date='2024-01-02', Action='Buy', Quantity=2, Amount=-20.0),
+        dict(Date='2024-01-10', Action='Internal Transfer', Quantity=20),
+    ], [10.0] * 60, INDICE_QUE_DOBLA)
+    assert r['benchmark_value'] == pytest.approx(440.0, abs=0.01)
+    assert _retorno(r).iloc[-1] == pytest.approx(0.0, abs=0.01)
+
+
+def test_transferencia_despues_del_split_no_se_reescala(monkeypatch):
+    r = _analizar_con_indice(monkeypatch, [
+        dict(Date='2024-01-02', Action='Buy', Quantity=1, Amount=-20.0),
+        dict(Date='2024-02-05', Action='Internal Transfer', Quantity=20),
+    ], [10.0] * 60, [100.0] * 30 + [200.0] * 30, splits={'2024-02-01': 2.0})
+    assert r['shares_owned'] == pytest.approx(22.0, abs=1e-9)
+    assert r['benchmark_value'] == pytest.approx(440.0, abs=0.01)
+
+
+# ── M5: reinversión en una sola fila, con el importe en cualquier signo ─────────────────
+
+@pytest.mark.parametrize('importe', [100.0, -100.0])
+def test_reinversion_en_una_fila_cuenta_lo_reinvertido_con_cualquier_signo(monkeypatch, importe):
+    r = _analizar(monkeypatch, [
+        COMPRA, dict(Date='2024-02-01', Action='Reinvestment', Quantity=1, Amount=importe),
+    ])
+    assert r['shares_owned'] == pytest.approx(11.0, abs=1e-9)
+    assert r['dividends_collected_drip'] == pytest.approx(100.0, abs=0.01)
+    assert r['total_dividends'] == pytest.approx(100.0, abs=0.01)
+
+
+def test_fila_fuente_sin_acciones_no_duplica_lo_reinvertido(monkeypatch):
+    r = _analizar(monkeypatch, [
+        COMPRA,
+        dict(Date='2024-02-01', Action='Pr Yr Div Reinvest', Amount=100.0),
+        dict(Date='2024-02-05', Action='Reinvest Shares', Quantity=1, Amount=-100.0),
+    ])
+    assert r['shares_owned'] == pytest.approx(11.0, abs=1e-9)
+    assert r['dividends_collected_drip'] == pytest.approx(100.0, abs=0.01)
+
+
+# ── M12: vender más de lo comprado se lleva también lo reinvertido ──────────────────────
+
+@pytest.mark.parametrize('vendidas, queda_reinvertido', [(5, 2.0), (10, 2.0), (11, 1.0), (12, 0.0)])
+def test_la_venta_agota_lo_comprado_y_despues_lo_reinvertido(monkeypatch, vendidas, queda_reinvertido):
+    r = _analizar(monkeypatch, [
+        COMPRA,
+        dict(Date='2024-02-01', Action='Reinvest Dividend', Amount=200.0),
+        dict(Date='2024-02-01', Action='Reinvest Shares', Quantity=2, Amount=-200.0),
+        dict(Date='2024-02-10', Action='Sell', Quantity=vendidas, Amount=100.0 * vendidas),
+    ])
+    assert r['shares_owned'] == pytest.approx(12.0 - vendidas, abs=1e-9)
+    assert r['shares_owned_drip'] == pytest.approx(queda_reinvertido, abs=1e-9)
+    assert r['shares_owned_pocket'] == pytest.approx(12.0 - vendidas - queda_reinvertido, abs=1e-9)
