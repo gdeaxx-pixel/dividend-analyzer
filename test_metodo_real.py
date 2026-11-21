@@ -86,6 +86,48 @@ def test_xirr_ignora_nan_y_fechas_invalidas():
     assert r == pytest.approx(0.10, abs=1e-4)
 
 
+def test_xirr_no_revienta_si_una_fecha_trae_zona_horaria():
+    """Los cierres de Yahoo llegan a veces con zona horaria y las filas del CSV sin ella.
+    Restarlas lanzaba `TypeError`; ahora se compara la fecha de calendario."""
+    hoy = pd.Timestamp("2026-01-01")
+    antes = pd.Timestamp("2026-01-01", tz="UTC") - pd.Timedelta(days=365.25)
+    assert logic.xirr([(antes, -100.0), (hoy, 110.0)]) == pytest.approx(0.10, abs=1e-4)
+
+
+@pytest.mark.parametrize("queda, tasa", [(0.0001, -0.99999901), (0.001, -0.99999008), (1.0, -0.99003149)])
+def test_xirr_mide_una_perdida_casi_total(queda, tasa):
+    """−100 hace 365 días y `queda` hoy: la tasa es `(queda/100) ** (365.25/365) − 1`. Por
+    debajo de −99,99 % devolvía `None`, y una posición que lo perdió casi todo se leía
+    como «sin dato»."""
+    hoy = pd.Timestamp("2026-01-01")
+    r = logic.xirr([(hoy - pd.Timedelta(days=365), -100.0), (hoy, queda)])
+    assert r == pytest.approx((queda / 100) ** (365.25 / 365) - 1, abs=1e-9)
+    assert r == pytest.approx(tasa, abs=1e-8)
+
+
+def test_xirr_no_anualiza_por_encima_de_once_veces_al_ano():
+    """Decisión (nov-2026): el tope de arriba se queda. Multiplicar por 10 en un año
+    (+900 %) se mide; por 12 ya no — casi siempre es una tenencia de días, y anualizarla
+    pone en pantalla un porcentaje de varias cifras que no describe nada."""
+    hoy = pd.Timestamp("2026-01-01")
+    hace_un_ano = hoy - pd.Timedelta(days=365)
+    assert logic.xirr([(hace_un_ano, -100.0), (hoy, 1000.0)]) == pytest.approx(10 ** (365.25 / 365) - 1, abs=1e-6)
+    assert logic.xirr([(hace_un_ano, -100.0), (hoy, 1200.0)]) is None
+    assert logic.xirr([(hoy - pd.Timedelta(days=30), -100.0), (hoy, 5000.0)]) is None
+
+
+def test_xirr_con_dos_soluciones_no_elige_una():
+    """Un cobro ANTES de la primera compra (acciones que llegaron sin costo) da flujos
+    +100, −230, +132 a un año de distancia: la ecuación se anula en ~10 % y en ~20 %.
+    Ninguna de las dos es «la» rentabilidad, y el resultado es sin dato. El cálculo por
+    mes que tenía `irr_anual` devolvía una de las dos."""
+    t0 = pd.Timestamp("2024-01-01")
+    flujos = [(t0, 100.0), (t0 + pd.Timedelta(days=365), -230.0), (t0 + pd.Timedelta(days=730), 132.0)]
+    vpn = lambda r: sum(v / (1 + r) ** ((d - t0).days / 365.25) for d, v in flujos)
+    assert vpn(0.05) > 0 > vpn(0.15) and vpn(0.25) > 0
+    assert logic.xirr(flujos) is None
+
+
 def test_xirr_pesa_por_tiempo_no_por_monto_promedio():
     """El punto de usar TIR y no un CAGR sobre plazo promedio: dos aportes iguales en
     fechas distintas NO dan lo mismo que un aporte doble en la fecha media."""
