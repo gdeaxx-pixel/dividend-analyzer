@@ -292,6 +292,17 @@ LFGY:
   sustainability: "Distribución variable, atada a la volatilidad del sector cripto: cuando el cripto se calma, el income baja."
   note: "Son varias empresas, pero todas dependen del mismo factor (el cripto): en la práctica suele moverse en la misma dirección que MSTY y CONY. Tenerlo junto a ellos no diversifica ese riesgo."
 
+CHPY:
+  type: yieldmax
+  underlying: Multi
+  name: YieldMax Semiconductores
+  risk: HIGH
+  reason: "Cartera de un solo sector (semiconductores), cíclico y volátil"
+  income_mechanism: "Gestión activa: tiene entre 15 y 30 empresas de semiconductores y genera income vendiendo call spreads sobre ellas; paga income semanal."
+  nav_erosion: "Capa parte de la subida de sus acciones y se lleva sus caídas; las distribuciones mezclan income y retorno de capital (ROC), y algunas semanas han sido 100% ROC."
+  sustainability: "Distribución variable, atada a la volatilidad del sector: cuando los chips se calman, las primas y el income bajan."
+  note: "Son varias empresas, pero todas dependen del mismo ciclo (demanda de chips e IA): suele moverse en la misma dirección que NVDY, AMDY y TSMY. Tenerlo junto a ellos no diversifica ese riesgo."
+
 # ── Leveraged — NO es income ETF, es tracker apalancado ─────────────────────
 NVDL:
   type: leveraged

@@ -1310,6 +1310,25 @@ def test_todo_yieldmax_de_la_lista_blanca_tiene_ficha():
     assert not sin_ficha, f"YieldMax de la lista blanca sin ficha en knowledge/instruments.yaml: {sin_ficha}"
 
 
+def test_todo_fondo_de_pago_que_ofrece_comparacion_lo_reconoce_el_motor():
+    """Un fondo que Comparación ofrece como YieldMax y que el motor no tiene en su lista blanca
+    se descarta del análisis del cliente que lo tenga (`mode_skip`). Así estuvo CHPY."""
+    from ui import adapters
+    modos = logic.classify_tickers(list(adapters.TRG_YM))
+    fuera = sorted(t for t, m in modos.items() if m != 'mode_a')
+    assert not fuera, f"Comparación los ofrece como YieldMax y el motor los descarta: {fuera}"
+    assert set(modos) == set(adapters.TRG_YM)
+
+
+def test_chpy_se_analiza_como_fondo_de_cartera_y_no_de_una_sola_accion():
+    logic.load_instruments.clear()
+    ficha = logic.load_instruments()['CHPY']
+    assert logic.classify_tickers(['chpy ']) == {'CHPY': 'mode_a'}
+    assert ficha['type'] == 'yieldmax' and ficha['underlying'] == 'Multi'
+    import estres_2022
+    assert 'CHPY' not in estres_2022.subyacentes_yieldmax(logic.load_instruments())
+
+
 def test_build_interpretation_compensated_vs_deficit():
     """YieldMax: el bloque sintetiza COMPENSADO cuando el income supera la caída, y déficit si no."""
     comp = logic.build_interpretation(
