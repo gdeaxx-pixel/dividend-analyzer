@@ -49,6 +49,17 @@ def test_retencion_de_un_solo_ano_se_mide_contra_el_bruto_de_ese_ano(sin_avisos)
     assert ts["by_year"] is True
 
 
+def test_retencion_anotada_en_enero_de_un_dividendo_de_diciembre(sin_avisos):
+    """Dividendo de $1.000 el 30-dic-2025 y su retención de $300 anotada el 2-ene-2026. El
+    año retenido no tiene bruto propio: por año la retención justa de 2026 sería 0 y todo
+    parecería devolución (300). Emparejados, justa 150 y vuelven 150."""
+    ts = _resumen(_hist([("2025-12-30", "Cash Dividend", "ZZZY", 1000),
+                         ("2026-01-02", "NRA Tax Adj", "ZZZY", -300)]), 50.0, 1000)
+    assert ts["fair_withholding"] == pytest.approx(150.0)
+    assert ts["refund_total_estimated"] == pytest.approx(150.0)
+    assert ts["by_year"] is False
+
+
 def test_un_solo_ano_de_bruto_sigue_por_el_agregado(sin_avisos):
     """Sin bruto fuera del año retenido no hay nada que separar: misma cifra, rama agregada."""
     ts = _resumen(_hist([("2025-06-10", "Cash Dividend", "ZZZY", 1000),
@@ -71,6 +82,21 @@ def test_retencion_ya_devuelta_no_se_borra_del_resumen(sin_avisos):
     assert ts["refund_observed"] == pytest.approx(300.0)
     assert ts["refund_estimated"] == 0.0 and ts["net_estimated"] == 0.0
     assert "ya fue devuelta" in ts["label_long"]
+
+
+@pytest.mark.parametrize("roc, tasa", [(None, 30.0), (100.0, logic.RATE_UNDECLARED)])
+def test_retencion_ya_devuelta_sin_roc_o_sin_pais_no_dice_que_no_hubo(sin_avisos, roc, tasa):
+    h = _hist([("2025-06-10", "Cash Dividend", "ZZZY", 1000), ("2025-06-10", "NRA Tax Adj", "ZZZY", -300),
+               ("2026-02-15", "NRA Tax Adj", "ZZZY", 300)])
+    ts = logic.build_tax_summary(_stats(h, roc, 1000), "ZZZY", base_rate_pct=tasa)
+    assert "ya fue devuelta" in ts["label_long"]
+    assert ts["refund_estimated"] == 0.0
+
+
+def test_sin_pais_y_con_saldo_retenido_sigue_pidiendo_la_residencia(sin_avisos):
+    h = _hist([("2025-06-10", "Cash Dividend", "ZZZY", 1000), ("2025-06-10", "NRA Tax Adj", "ZZZY", -300)])
+    ts = logic.build_tax_summary(_stats(h, 50.0, 1000), "ZZZY", base_rate_pct=logic.RATE_UNDECLARED)
+    assert ts["label_long"].startswith("Declara tu residencia fiscal")
 
 
 def test_sin_ninguna_retencion_sigue_diciendo_que_no_hay(sin_avisos):
@@ -107,6 +133,12 @@ def test_roc_mayor_que_el_bruto_se_publica_como_cien(sin_avisos):
     assert ts["refund_total_estimated"] == pytest.approx(300.0)
     sin_pais = logic.build_tax_summary(_stats(h, 111.11, 1000), "ZZZY", base_rate_pct=logic.RATE_UNDECLARED)
     assert sin_pais["roc_pct_used"] == 100.0
+
+
+def test_el_diagnostico_tampoco_publica_un_roc_mayor_que_cien(sin_avisos):
+    h = _hist([("2025-06-10", "Cash Dividend", "ZZZY", 1000), ("2025-06-10", "NRA Tax Adj", "ZZZY", -300)])
+    d = logic.build_withholding_diagnosis(_stats(h, 111.11, 1000), "ZZZY", entitled_pct=30.0, country="Colombia")
+    assert d["roc_pct_usado"] == 100.0
 
 
 def test_cierre_fiscal_fuera_de_rango_no_se_publica_tal_cual(sin_avisos, monkeypatch):
