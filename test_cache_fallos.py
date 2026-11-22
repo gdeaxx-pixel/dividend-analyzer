@@ -107,8 +107,9 @@ def test_el_resultado_bueno_si_se_guarda(mercado):
     pedidos = len(mercado.llamadas)
     assert pedidos >= 1
     mercado.caidos = {'*'}
+    _pasa_el_minuto()
     r2 = logic.analyze_portfolio(df, version='T8_bueno')
-    assert len(mercado.llamadas) == pedidos
+    assert len(mercado.llamadas) == pedidos, "el resultado completo dura la hora, no el minuto"
     assert r2['VTI']['market_value'] == r1['VTI']['market_value']
 
 
