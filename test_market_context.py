@@ -106,6 +106,16 @@ def test_fechas_con_zona_horaria_y_ultimo_cierre_vacio():
     assert r["price"] == pytest.approx(1000.0 + len(hist) - 2)
 
 
+def test_ajustado_sin_la_ultima_barra_mide_desde_su_propio_ultimo_dato():
+    hist = _diaria("2025-01-01", "2026-11-20")
+    hist["Adj Close"] = hist["Close"]
+    hist.loc[pd.Timestamp("2026-11-20"), "Adj Close"] = float("nan")
+    r = mc.calcular(hist, HOY)
+    actual, base = _valor(hist, "2026-11-19"), _valor(hist, "2026-10-19")
+    assert r["1m"] == pytest.approx((actual - base) / base * 100)
+    assert r["price"] == _valor(hist, "2026-11-20")
+
+
 def test_historial_vacio_es_error():
     assert "error" in mc.calcular(pd.DataFrame(), HOY)
     assert "error" in mc.calcular(pd.DataFrame({"Close": [float("nan")]},
@@ -151,6 +161,24 @@ def test_corrida_buena_conserva_lo_que_daniel_escribio(tmp_path):
     assert "**Sin dato en esta corrida:** TLT" in texto
     assert "| **SPY** | $10.00 | $20.00 | -50.00% |" in texto
     assert "| **TLT** | — |" in texto
+
+
+@pytest.mark.parametrize("titulo", ["## notas de contexto manual", "##  Notas de Contexto Manual  "])
+def test_el_titulo_de_las_notas_se_reconoce_aunque_cambie_de_forma(titulo):
+    previo = "# vieja\n\n" + titulo + "\n\nlo mío\n"
+    assert mc.notas_manuales(previo) == titulo + "\n\nlo mío\n"
+
+
+def test_un_titulo_de_otro_nivel_o_en_mitad_de_linea_no_es_la_seccion():
+    assert mc.notas_manuales("### Notas de Contexto Manual\n\nx\n") == mc._NOTAS_VACIAS
+    assert mc.notas_manuales("ver ## Notas de Contexto Manual\n\nx\n") == mc._NOTAS_VACIAS
+    assert mc.notas_manuales("") == mc._NOTAS_VACIAS
+
+
+def test_la_nota_queda_legible_para_los_demas_programas(tmp_path):
+    ruta = tmp_path / "nota.md"
+    mc.guardar(str(ruta), "x")
+    assert (os.stat(ruta).st_mode & 0o777) == 0o644
 
 
 def test_sin_nota_previa_sale_la_plantilla_y_sin_aviso_si_todo_llego(tmp_path):

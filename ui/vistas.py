@@ -31,7 +31,7 @@ def obtener_resultados() -> dict:
 
 
 _REINTENTO_PRECIOS = "_vd_reintento_precios"
-_ESPERA_REINTENTO_S = 120
+_ESPERAS_REINTENTO_S = (120, 480, 1800)
 
 
 def _ahora() -> float:
@@ -42,10 +42,11 @@ def _toca_reintentar_precios() -> bool:
     """Si algún fondo quedó sin precios, se vuelve a pedir pasada la espera.
 
     Sin esto el fallo de un instante se quedaba en la sesión hasta volver a subir el CSV.
-    La espera evita repetir la descarga entera en cada clic mientras Yahoo sigue caído.
+    Las esperas crecen y se acaban: un símbolo que Yahoo no conoce no va a llegar nunca, y
+    reintentar sin fin repetiría la descarga de toda la cartera cada pocos minutos.
     """
-    desde = st.session_state.get(_REINTENTO_PRECIOS)
-    return desde is not None and _ahora() >= desde
+    pendiente = st.session_state.get(_REINTENTO_PRECIOS)
+    return pendiente is not None and _ahora() >= pendiente["desde"]
 
 
 def _resultados() -> dict:
@@ -104,17 +105,24 @@ def _resultados() -> dict:
         # se queda y, con él, el favicon girando en la pestaña para siempre.
         # El spinner va sin texto: la frase de ROC (`ROC_FRASE_CARGA`) ya dice lo mismo
         # justo encima, y se leían dos mensajes casi iguales (A4, 30-oct).
+        previo = st.session_state.get("_vd_resultados")
+        hechos = (st.session_state.get(_REINTENTO_PRECIOS) or {}).get("n", 0) if previo is not None else 0
         try:
             with st.spinner(""):
-                st.session_state["_vd_resultados"] = logic.analyze_portfolio(
-                    df, position_overrides=capturas)
-                st.session_state[_REINTENTO_PRECIOS] = (
-                    _ahora() + _ESPERA_REINTENTO_S
-                    if logic.tiene_fallo_de_mercado(st.session_state["_vd_resultados"]) else None)
+                nuevo = logic.analyze_portfolio(df, position_overrides=capturas)
+        except Exception:
+            # Un reintento que revienta no debe quitarle al cliente lo que ya veía.
+            if previo is None:
+                raise
+            nuevo = previo
         finally:
             hueco_roc.empty()
             if hueco_enc is not None:
                 hueco_enc.empty()
+        st.session_state["_vd_resultados"] = nuevo
+        st.session_state[_REINTENTO_PRECIOS] = (
+            {"desde": _ahora() + _ESPERAS_REINTENTO_S[hechos], "n": hechos + 1}
+            if logic.tiene_fallo_de_mercado(nuevo) and hechos < len(_ESPERAS_REINTENTO_S) else None)
     return st.session_state["_vd_resultados"] or {}
 
 

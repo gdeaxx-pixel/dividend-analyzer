@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import datetime
+import hashlib
 import streamlit as st
 from curl_cffi import requests as crequests
 import re
@@ -760,8 +761,25 @@ class _NoCachear(Exception):
         self.valor = valor
 
 
-@st.cache_data(ttl=3600)
-def _fetch_data_from_html_cacheado(ticker):
+def _huella_de_este_codigo() -> str:
+    """Cambia cuando cambia este archivo.
+
+    `st.cache_data` distingue versiones de una función por su código fuente. Con el cálculo
+    fuera de la función decorada, un despliegue que cambiara el cálculo seguiría sirviendo
+    lo guardado por el código anterior; la huella va como argumento para que no pase.
+    """
+    try:
+        with open(os.path.abspath(__file__), 'rb') as fh:
+            return hashlib.sha1(fh.read()).hexdigest()[:16]
+    except OSError:
+        return ""
+
+
+_HUELLA_CODIGO = _huella_de_este_codigo()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_data_from_html_cacheado(ticker, huella_codigo=""):
     df = _fetch_data_from_html_sin_cache(ticker)
     if df.empty:
         raise _NoCachear(df)
@@ -771,7 +789,7 @@ def _fetch_data_from_html_cacheado(ticker):
 def fetch_data_from_html(ticker):
     """Respaldo por scraping, con caché de 1 h solo cuando trae filas."""
     try:
-        return _fetch_data_from_html_cacheado(ticker)
+        return _fetch_data_from_html_cacheado(ticker, _HUELLA_CODIGO)
     except _NoCachear as e:
         return e.valor
 
@@ -2411,30 +2429,48 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
     return results
 
 
+_TTL_FALLO_DE_MERCADO_S = 60
+
+
 @st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
 def _analyze_portfolio_cacheado(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
-                                position_overrides: dict = None) -> dict:
+                                position_overrides: dict = None, huella_codigo: str = "") -> dict:
     results = _analyze_portfolio_sin_cache(df, version, ib_cost_basis_map, position_overrides)
     if tiene_fallo_de_mercado(results):
         raise _NoCachear(results)
     return results
 
 
-def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
-                      position_overrides: dict = None) -> dict:
-    """`_analyze_portfolio_sin_cache` con caché de 1 h, salvo si faltaron precios.
-
-    Un resultado con algún fondo sin precios se devuelve pero no se guarda: la siguiente
-    llamada vuelve a pedirlos.
-    """
+@st.cache_data(show_spinner=False, ttl=_TTL_FALLO_DE_MERCADO_S, max_entries=64)
+def _analyze_portfolio_reciente(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                                position_overrides: dict = None, huella_codigo: str = "") -> dict:
     try:
-        return _analyze_portfolio_cacheado(df, version, ib_cost_basis_map, position_overrides)
+        return _analyze_portfolio_cacheado(df, version, ib_cost_basis_map, position_overrides,
+                                           huella_codigo)
     except _NoCachear as e:
         return e.valor
 
 
-analyze_portfolio.clear = _analyze_portfolio_cacheado.clear
+def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                      position_overrides: dict = None) -> dict:
+    """`_analyze_portfolio_sin_cache` con caché: 1 h si llegaron todos los precios, 1 min si no.
+
+    Un resultado con algún fondo sin precios no dura la hora entera (un corte de Yahoo de
+    segundos dejaba el error fijo), pero tampoco se recalcula en cada llamada: un símbolo
+    que Yahoo no conoce haría repetir la descarga de toda la cartera sin fin.
+    """
+    return _analyze_portfolio_reciente(df, version, ib_cost_basis_map, position_overrides,
+                                       _HUELLA_CODIGO)
+
+
+def _vaciar_cache_de_analyze_portfolio():
+    _analyze_portfolio_reciente.clear()
+    _analyze_portfolio_cacheado.clear()
+
+
+analyze_portfolio.clear = _vaciar_cache_de_analyze_portfolio
 analyze_portfolio.__wrapped__ = _analyze_portfolio_sin_cache
+analyze_portfolio._info = _analyze_portfolio_cacheado._info
 
 def get_params_from_csv(df):
     """
@@ -3275,10 +3311,6 @@ def _yaml_en_memoria_vigente(cache: dict, ruta: str) -> bool:
     return huella is None or huella == _huella_de_archivo(ruta)
 
 
-def _anotar_yaml_en_memoria(cache: dict, ruta: str) -> None:
-    cache['_huella'] = _huella_de_archivo(ruta)
-
-
 _ROC19A_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_19a.yaml')
 _ROC19A_CACHE = {}
@@ -3294,6 +3326,7 @@ def load_roc_19a() -> dict:
     """
     if _yaml_en_memoria_vigente(_ROC19A_CACHE, _ROC19A_PATH):
         return _ROC19A_CACHE['data']
+    huella = _huella_de_archivo(_ROC19A_PATH)
     data = {}
     if _yaml is not None:
         try:
@@ -3303,9 +3336,9 @@ def load_roc_19a() -> dict:
                 data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
         except Exception:
             data = {}
-    _ROC19A_CACHE['_loaded'] = True
-    _anotar_yaml_en_memoria(_ROC19A_CACHE, _ROC19A_PATH)
     _ROC19A_CACHE['data'] = data
+    _ROC19A_CACHE['_huella'] = huella
+    _ROC19A_CACHE['_loaded'] = True
     return data
 
 
@@ -3337,6 +3370,7 @@ def load_roc_ici() -> dict:
     """
     if _yaml_en_memoria_vigente(_ROCICI_CACHE, _ROCICI_PATH):
         return _ROCICI_CACHE['data']
+    huella = _huella_de_archivo(_ROCICI_PATH)
     data = {}
     if _yaml is not None:
         try:
@@ -3346,9 +3380,9 @@ def load_roc_ici() -> dict:
                 data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
         except Exception:
             data = {}
-    _ROCICI_CACHE['_loaded'] = True
-    _anotar_yaml_en_memoria(_ROCICI_CACHE, _ROCICI_PATH)
     _ROCICI_CACHE['data'] = data
+    _ROCICI_CACHE['_huella'] = huella
+    _ROCICI_CACHE['_loaded'] = True
     return data
 
 
@@ -3452,6 +3486,7 @@ def load_distribution_rate() -> dict:
     """
     if _yaml_en_memoria_vigente(_DISTRATE_CACHE, _DISTRATE_PATH):
         return _DISTRATE_CACHE['data']
+    huella = _huella_de_archivo(_DISTRATE_PATH)
     data = {}
     if _yaml is not None:
         try:
@@ -3461,9 +3496,9 @@ def load_distribution_rate() -> dict:
                 data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, dict)}
         except Exception:
             data = {}
-    _DISTRATE_CACHE['_loaded'] = True
-    _anotar_yaml_en_memoria(_DISTRATE_CACHE, _DISTRATE_PATH)
     _DISTRATE_CACHE['data'] = data
+    _DISTRATE_CACHE['_huella'] = huella
+    _DISTRATE_CACHE['_loaded'] = True
     return data
 
 
@@ -3491,6 +3526,7 @@ def load_roc_health_history() -> dict:
     """
     if _yaml_en_memoria_vigente(_ROCHEALTH_CACHE, _ROCHEALTH_PATH):
         return _ROCHEALTH_CACHE['data']
+    huella = _huella_de_archivo(_ROCHEALTH_PATH)
     data = {}
     if _yaml is not None:
         try:
@@ -3500,9 +3536,9 @@ def load_roc_health_history() -> dict:
                 data = {str(k).upper(): v for k, v in raw.items() if isinstance(v, list)}
         except Exception:
             data = {}
-    _ROCHEALTH_CACHE['_loaded'] = True
-    _anotar_yaml_en_memoria(_ROCHEALTH_CACHE, _ROCHEALTH_PATH)
     _ROCHEALTH_CACHE['data'] = data
+    _ROCHEALTH_CACHE['_huella'] = huella
+    _ROCHEALTH_CACHE['_loaded'] = True
     return data
 
 

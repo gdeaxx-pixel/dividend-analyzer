@@ -9,6 +9,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import date, datetime
 import os
+import re
 import sys
 import tempfile
 
@@ -48,7 +49,7 @@ def calcular(hist: pd.DataFrame, hoy: date) -> dict:
     actual_total = float(total.iloc[-1])
 
     def ret(**desde):
-        objetivo = ultimo - pd.DateOffset(**desde)
+        objetivo = total.index[-1] - pd.DateOffset(**desde)
         previos = total[total.index <= objetivo]
         if previos.empty:
             return None
@@ -119,8 +120,9 @@ _NOTAS_VACIAS = "\n".join([
 
 def notas_manuales(texto_previo: str) -> str:
     """La sección manual de la nota anterior, tal cual; la plantilla si no existe."""
-    if texto_previo and _TITULO_NOTAS in texto_previo:
-        seccion = texto_previo[texto_previo.index(_TITULO_NOTAS):]
+    titulo = re.search(r"(?im)^##[ \t]+notas de contexto manual[ \t]*$", texto_previo or "")
+    if titulo:
+        seccion = texto_previo[titulo.start():]
         return seccion if seccion.endswith("\n") else seccion + "\n"
     return _NOTAS_VACIAS
 
@@ -189,6 +191,7 @@ def guardar(ruta: str, texto: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(texto)
+        os.chmod(tmp, 0o644)
         os.replace(tmp, ruta)
     except BaseException:
         if os.path.exists(tmp):

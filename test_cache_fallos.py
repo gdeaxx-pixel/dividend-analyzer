@@ -44,14 +44,19 @@ def mercado(monkeypatch):
     m = _Mercado()
     monkeypatch.setattr(logic, 'fetch_market_data', m)
     monkeypatch.setattr(logic, '_descargar_benchmark', lambda d, ticker='VOO': _mercado())
-    logic.analyze_portfolio.clear()
+    logic._vaciar_cache_de_analyze_portfolio()
     yield m
-    logic.analyze_portfolio.clear()
+    logic._vaciar_cache_de_analyze_portfolio()
 
 
 # ── analyze_portfolio ────────────────────────────────────────────────────────────────────
 
-def test_sin_precios_no_se_guarda_y_la_siguiente_llamada_los_vuelve_a_pedir(mercado):
+def _pasa_el_minuto():
+    """Lo que hace el reloj a los 60 s: caduca el caché corto. El de 1 h no se toca."""
+    logic._analyze_portfolio_reciente.clear()
+
+
+def test_sin_precios_dura_un_minuto_y_no_la_hora(mercado):
     df = _cartera()
     mercado.caidos = {'*'}
     r1 = logic.analyze_portfolio(df, version='T8_caido')
@@ -59,10 +64,41 @@ def test_sin_precios_no_se_guarda_y_la_siguiente_llamada_los_vuelve_a_pedir(merc
     assert logic.tiene_fallo_de_mercado(r1)
 
     mercado.caidos = set()
+    pedidos = len(mercado.llamadas)
     r2 = logic.analyze_portfolio(df, version='T8_caido')
-    assert 'error' not in r2['VTI']
-    assert r2['VTI']['market_value'] == pytest.approx(1000.0)
-    assert not logic.tiene_fallo_de_mercado(r2)
+    assert len(mercado.llamadas) == pedidos, "dentro del minuto no se repite la descarga"
+    assert 'error' in r2['VTI']
+
+    _pasa_el_minuto()
+    r3 = logic.analyze_portfolio(df, version='T8_caido')
+    assert 'error' not in r3['VTI']
+    assert r3['VTI']['market_value'] == pytest.approx(1000.0)
+
+
+def test_los_plazos_del_cache(mercado):
+    import ui.vistas as vistas
+    assert logic.analyze_portfolio._info.ttl == 3600
+    assert logic.analyze_portfolio._info.max_entries == 64
+    corto = logic._analyze_portfolio_reciente._info
+    assert corto.ttl == 60 and corto.max_entries == 64
+    assert corto.ttl < vistas._ESPERAS_REINTENTO_S[0], "el reintento de la pantalla leería el fallo guardado"
+
+
+def test_si_cambia_el_codigo_no_se_sirve_lo_guardado(mercado, monkeypatch):
+    df = _cartera()
+    logic.analyze_portfolio(df, version='T8_codigo')
+    pedidos = len(mercado.llamadas)
+    logic.analyze_portfolio(df, version='T8_codigo')
+    assert len(mercado.llamadas) == pedidos
+    monkeypatch.setattr(logic, '_HUELLA_CODIGO', 'otro-despliegue')
+    logic.analyze_portfolio(df, version='T8_codigo')
+    assert len(mercado.llamadas) > pedidos
+
+
+def test_la_huella_del_codigo_sale_del_archivo():
+    import hashlib
+    with open(os.path.join(BASE, 'logic.py'), 'rb') as fh:
+        assert logic._HUELLA_CODIGO == hashlib.sha1(fh.read()).hexdigest()[:16]
 
 
 def test_el_resultado_bueno_si_se_guarda(mercado):
@@ -82,6 +118,7 @@ def test_un_solo_fondo_sin_precios_basta_para_no_guardar(mercado):
     r1 = logic.analyze_portfolio(df, version='T8_parcial')
     assert 'error' not in r1['VTI'] and 'error' in r1['VOO']
     mercado.caidos = set()
+    _pasa_el_minuto()
     r2 = logic.analyze_portfolio(df, version='T8_parcial')
     assert 'error' not in r2['VOO']
 
@@ -152,6 +189,15 @@ def test_el_respaldo_vacio_no_se_guarda(sesion, fallo):
     df = logic.fetch_data_from_html('ZZZT')
     assert sesion.pedidos == 2
     assert len(df) == 1 and df['Close'].iloc[0] == 1.5 and df['Volume'].iloc[0] == 1000
+
+
+def test_el_respaldo_no_sirve_lo_guardado_por_otro_codigo(sesion, monkeypatch):
+    tabla = (200, "Historical Data <table>" + _FILA + "</table>")
+    sesion.respuestas = [tabla, tabla]
+    logic.fetch_data_from_html('ZZZT')
+    monkeypatch.setattr(logic, '_HUELLA_CODIGO', 'otro-despliegue')
+    logic.fetch_data_from_html('ZZZT')
+    assert sesion.pedidos == 2
 
 
 def test_el_respaldo_con_filas_si_se_guarda(sesion):
@@ -250,33 +296,98 @@ st.session_state["_salida"] = vistas.obtener_resultados()
 """.format(path=BASE)
 
 
-def test_la_pantalla_reintenta_pasada_la_espera_y_no_antes(mercado, monkeypatch):
+@pytest.fixture
+def pantalla(mercado, monkeypatch):
     import ui.vistas as vistas
     reloj = [1000.0]
     monkeypatch.setattr(vistas, '_ahora', lambda: reloj[0])
-
     at = AppTest.from_string(_SCRIPT, default_timeout=40)
     at.session_state["_wizard_df_clean"] = _cartera()
+
+    def correr(avanza=0.0):
+        reloj[0] += avanza
+        _pasa_el_minuto()
+        antes = len(mercado.llamadas)
+        at.run()
+        assert at.exception == []
+        return len(mercado.llamadas) - antes
+
+    return at, correr, reloj, vistas
+
+
+def test_la_pantalla_reintenta_pasada_la_espera_y_no_antes(mercado, pantalla):
+    at, correr, reloj, vistas = pantalla
+    e1 = vistas._ESPERAS_REINTENTO_S[0]
     mercado.caidos = {'*'}
-    at.run()
-    assert at.exception == []
+    assert correr() > 0
     assert 'error' in at.session_state["_salida"]['VTI']
-    assert at.session_state[vistas._REINTENTO_PRECIOS] == 1000.0 + vistas._ESPERA_REINTENTO_S
+    assert at.session_state[vistas._REINTENTO_PRECIOS] == {"desde": 1000.0 + e1, "n": 1}
 
     mercado.caidos = set()
-    pedidos = len(mercado.llamadas)
-    reloj[0] = 1000.0 + vistas._ESPERA_REINTENTO_S - 1
-    at.run()
-    assert len(mercado.llamadas) == pedidos
+    assert correr(e1 - 1) == 0
     assert 'error' in at.session_state["_salida"]['VTI']
 
-    reloj[0] = 1000.0 + vistas._ESPERA_REINTENTO_S
-    at.run()
-    assert at.exception == []
+    assert correr(1) > 0
     assert 'error' not in at.session_state["_salida"]['VTI']
     assert at.session_state[vistas._REINTENTO_PRECIOS] is None
 
-    pedidos = len(mercado.llamadas)
-    reloj[0] += 10_000
+    assert correr(100_000) == 0
+
+
+def test_los_reintentos_se_espacian_y_se_acaban(mercado, pantalla):
+    at, correr, reloj, vistas = pantalla
+    esperas = vistas._ESPERAS_REINTENTO_S
+    assert esperas == (120, 480, 1800)
+    mercado.caidos = {'*'}
+    assert correr() > 0
+    for n, espera in enumerate(esperas, start=1):
+        assert at.session_state[vistas._REINTENTO_PRECIOS]["n"] == n
+        assert at.session_state[vistas._REINTENTO_PRECIOS]["desde"] == reloj[0] + espera
+        assert correr(espera - 1) == 0
+        assert correr(1) > 0
+    assert at.session_state[vistas._REINTENTO_PRECIOS] is None
+    assert correr(1_000_000) == 0
+    assert 'error' in at.session_state["_salida"]['VTI']
+
+
+def test_una_cartera_nueva_empieza_la_cuenta_de_reintentos(mercado, pantalla):
+    at, correr, reloj, vistas = pantalla
+    mercado.caidos = {'*'}
+    correr()
+    correr(vistas._ESPERAS_REINTENTO_S[0])
+    assert at.session_state[vistas._REINTENTO_PRECIOS]["n"] == 2
+    at.session_state["_vd_resultados"] = None
+    logic.analyze_portfolio.clear()
+    assert correr() > 0
+    assert at.session_state[vistas._REINTENTO_PRECIOS] == {
+        "desde": reloj[0] + vistas._ESPERAS_REINTENTO_S[0], "n": 1}
+
+
+def test_si_el_reintento_revienta_se_queda_lo_que_ya_se_veia(mercado, pantalla, monkeypatch):
+    at, correr, reloj, vistas = pantalla
+    mercado.caidos = {'VOO'}
+    at.session_state["_wizard_df_clean"] = _cartera(('VTI', 'VOO'))
+    correr()
+    visto = at.session_state["_salida"]
+    assert 'error' in visto['VOO'] and 'error' not in visto['VTI']
+
+    def revienta(*a, **k):
+        raise RuntimeError("fallo inesperado")
+
+    monkeypatch.setattr(logic, 'analyze_portfolio', revienta)
+    correr(vistas._ESPERAS_REINTENTO_S[0])
+    assert at.session_state["_salida"]['VTI']['market_value'] == visto['VTI']['market_value']
+    assert at.session_state[vistas._REINTENTO_PRECIOS]["n"] == 2
+
+
+def test_si_el_primer_calculo_revienta_el_error_sube(mercado, monkeypatch):
+    import ui.vistas as vistas
+
+    def revienta(*a, **k):
+        raise RuntimeError("fallo inesperado")
+
+    monkeypatch.setattr(logic, 'analyze_portfolio', revienta)
+    at = AppTest.from_string(_SCRIPT, default_timeout=40)
+    at.session_state["_wizard_df_clean"] = _cartera()
     at.run()
-    assert len(mercado.llamadas) == pedidos
+    assert len(at.exception) == 1
