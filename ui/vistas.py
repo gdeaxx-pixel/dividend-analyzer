@@ -6,6 +6,8 @@ llegue su fase. Aquí no hay cálculo: se pide a `logic.py` y se pasa por `ui.ad
 
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 
 import logic
@@ -26,6 +28,25 @@ def obtener_resultados() -> dict:
     """Acceso público al cache de `_resultados()`, para el pie (`ui/pie.py`) — que no
     puede importar este módulo por el ciclo que crearía con `ui.componentes`."""
     return _resultados()
+
+
+_REINTENTO_PRECIOS = "_vd_reintento_precios"
+_ESPERAS_REINTENTO_S = (120, 480, 1800)
+
+
+def _ahora() -> float:
+    return time.monotonic()
+
+
+def _toca_reintentar_precios() -> bool:
+    """Si algún fondo quedó sin precios, se vuelve a pedir pasada la espera.
+
+    Sin esto el fallo de un instante se quedaba en la sesión hasta volver a subir el CSV.
+    Las esperas crecen y se acaban: un símbolo que Yahoo no conoce no va a llegar nunca, y
+    reintentar sin fin repetiría la descarga de toda la cartera cada pocos minutos.
+    """
+    pendiente = st.session_state.get(_REINTENTO_PRECIOS)
+    return pendiente is not None and _ahora() >= pendiente["desde"]
 
 
 def _resultados() -> dict:
@@ -56,7 +77,7 @@ def _resultados() -> dict:
     dos formas: la casilla 9 no se mueve. Subir la foto sigue sin cambiar cuánto impuesto te
     devuelven — solo cuánta base de costo podemos medir, que es justo lo que la foto sabe.
     """
-    if st.session_state.get("_vd_resultados") is None:
+    if st.session_state.get("_vd_resultados") is None or _toca_reintentar_precios():
         df = st.session_state.get("_wizard_df_clean")
         if df is None:
             return {}
@@ -84,14 +105,24 @@ def _resultados() -> dict:
         # se queda y, con él, el favicon girando en la pestaña para siempre.
         # El spinner va sin texto: la frase de ROC (`ROC_FRASE_CARGA`) ya dice lo mismo
         # justo encima, y se leían dos mensajes casi iguales (A4, 30-oct).
+        previo = st.session_state.get("_vd_resultados")
+        hechos = (st.session_state.get(_REINTENTO_PRECIOS) or {}).get("n", 0) if previo is not None else 0
         try:
             with st.spinner(""):
-                st.session_state["_vd_resultados"] = logic.analyze_portfolio(
-                    df, position_overrides=capturas)
+                nuevo = logic.analyze_portfolio(df, position_overrides=capturas)
+        except Exception:
+            # Un reintento que revienta no debe quitarle al cliente lo que ya veía.
+            if previo is None:
+                raise
+            nuevo = previo
         finally:
             hueco_roc.empty()
             if hueco_enc is not None:
                 hueco_enc.empty()
+        st.session_state["_vd_resultados"] = nuevo
+        st.session_state[_REINTENTO_PRECIOS] = (
+            {"desde": _ahora() + _ESPERAS_REINTENTO_S[hechos], "n": hechos + 1}
+            if logic.tiene_fallo_de_mercado(nuevo) and hechos < len(_ESPERAS_REINTENTO_S) else None)
     return st.session_state["_vd_resultados"] or {}
 
 
