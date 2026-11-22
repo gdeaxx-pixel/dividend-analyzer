@@ -113,6 +113,9 @@ def test_la_funcion_publica_conserva_clear_y_el_acceso_sin_cache(mercado):
     pedidos = len(mercado.llamadas)
     logic.analyze_portfolio.__wrapped__(df, version='T8_clear')
     assert len(mercado.llamadas) > pedidos
+    pedidos = len(mercado.llamadas)
+    logic.analyze_portfolio.__wrapped__(df, version='T8_clear')
+    assert len(mercado.llamadas) > pedidos
 
 
 # ── respaldo por scraping ────────────────────────────────────────────────────────────────
@@ -218,6 +221,13 @@ def test_el_archivo_que_desaparece_deja_de_servirse(yaml_vivo):
     assert valor() == 40.0
     ruta.unlink()
     assert cargar() == {}
+
+
+def test_el_archivo_que_aparece_despues_se_lee(yaml_vivo):
+    escribir, valor, cache, ruta, cargar = yaml_vivo
+    assert cargar() == {}
+    escribir(40.0, mtime=1_700_000_000)
+    assert valor() == 40.0
 
 
 def test_un_cache_rellenado_a_mano_se_respeta(yaml_vivo):

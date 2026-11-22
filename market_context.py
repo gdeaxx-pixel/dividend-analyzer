@@ -33,9 +33,6 @@ def calcular(hist: pd.DataFrame, hoy: date) -> dict:
     """
     if hist is None or hist.empty or "Close" not in hist:
         return {"error": "sin datos"}
-    hist = hist.copy()
-    if getattr(hist.index, "tz", None) is not None:
-        hist.index = hist.index.tz_localize(None)
     hist = hist.sort_index()
 
     close = hist["Close"].dropna()

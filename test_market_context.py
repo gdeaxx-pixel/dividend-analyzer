@@ -85,7 +85,7 @@ def test_niveles_del_cierre_sin_ajustar_y_rendimientos_del_ajustado():
     close = [50.0] * n
     close[10] = 80.0
     close[-1] = 40.0
-    adj = [20.0 + 20.0 * i / (n - 1) for i in range(n)]
+    adj = [15.0 + 15.0 * i / (n - 1) for i in range(n)]
     hist = pd.DataFrame({"Close": close, "Adj Close": adj}, index=idx)
     r = mc.calcular(hist, HOY)
     assert r["price"] == 40.0
@@ -94,7 +94,7 @@ def test_niveles_del_cierre_sin_ajustar_y_rendimientos_del_ajustado():
     assert r["52w_high"] == 50.0
     assert r["52w_low"] == 40.0
     base = float(hist["Adj Close"][pd.Timestamp("2025-11-20")])
-    assert r["1y"] == pytest.approx((40.0 - base) / base * 100)
+    assert r["1y"] == pytest.approx((30.0 - base) / base * 100)
     assert r["1y"] > 0
 
 
