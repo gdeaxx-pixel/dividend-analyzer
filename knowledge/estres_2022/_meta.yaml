@@ -80,6 +80,10 @@ BOTZ:
   generated_at: '2026-10-29'
   rows: 715
   start: '2021-03-01'
+CHPY:
+  generated_at: '2026-11-21'
+  primera_sesion: '2025-04-08'
+  rows: 0
 CIBR:
   end: '2023-12-29'
   generated_at: '2026-10-29'

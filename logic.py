@@ -3149,7 +3149,7 @@ YIELDMAX_WHITELIST = {
     'TSLY', 'NVDY', 'MSFO', 'AMZY', 'GOOY', 'CONY', 'JPMO', 'DISO',
     'YMAX', 'YMAG', 'MSTY', 'AMDY', 'ULTY', 'APLY', 'NFLY',
     'PYPY', 'GDXY', 'SNOY', 'XOMO', 'MRNY',
-    'TSMY', 'PLTY', 'ABNY', 'LFGY',
+    'TSMY', 'PLTY', 'ABNY', 'LFGY', 'CHPY',
 }
 
 # v2.2 — ETFs de crecimiento de largo plazo
