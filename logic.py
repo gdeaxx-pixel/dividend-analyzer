@@ -747,9 +747,39 @@ def normalize_csv(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+class _NoCachear(Exception):
+    """Saca un resultado de una función con `st.cache_data` sin que quede guardado.
+
+    `st.cache_data` no guarda lo que termina en excepción. Un fallo de red devuelto como
+    valor normal (tabla vacía, `{"error": ...}`) sí se guardaba, y el cliente lo veía
+    durante todo el `ttl` aunque Yahoo volviera a los cinco segundos.
+    """
+
+    def __init__(self, valor):
+        super().__init__("resultado que no se guarda")
+        self.valor = valor
+
+
 @st.cache_data(ttl=3600)
+def _fetch_data_from_html_cacheado(ticker):
+    df = _fetch_data_from_html_sin_cache(ticker)
+    if df.empty:
+        raise _NoCachear(df)
+    return df
+
 
 def fetch_data_from_html(ticker):
+    """Respaldo por scraping, con caché de 1 h solo cuando trae filas."""
+    try:
+        return _fetch_data_from_html_cacheado(ticker)
+    except _NoCachear as e:
+        return e.valor
+
+
+fetch_data_from_html.clear = _fetch_data_from_html_cacheado.clear
+
+
+def _fetch_data_from_html_sin_cache(ticker):
     """
     Fallback: Scrapes historical data from Yahoo Finance HTML if API fails.
     Uses curl_cffi to mimic a browser and regex to parse the table.
@@ -1749,9 +1779,23 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     }
 
 
-@st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
-def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
-                      position_overrides: dict = None) -> dict:
+_ERRORES_DE_MERCADO = ("No market data found", "No usable close price")
+
+
+def tiene_fallo_de_mercado(results) -> bool:
+    """¿Algún fondo quedó sin analizar porque no llegaron sus precios?
+
+    Es un fallo pasajero (Yahoo caído o limitando), no un dato de la cartera: quien guarde
+    el resultado tiene que poder reintentar.
+    """
+    if not isinstance(results, dict):
+        return False
+    return any(isinstance(s, dict) and str(s.get("error") or "").startswith(_ERRORES_DE_MERCADO)
+               for s in results.values())
+
+
+def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                                 position_overrides: dict = None) -> dict:
     """
     Performs a forensic analysis of a portfolio history to calculate true ROI and dividend performance.
     
@@ -2365,6 +2409,32 @@ def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_ma
             results[ticker], ticker, base_rate_pct=RATE_UNDECLARED)
 
     return results
+
+
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=64)
+def _analyze_portfolio_cacheado(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                                position_overrides: dict = None) -> dict:
+    results = _analyze_portfolio_sin_cache(df, version, ib_cost_basis_map, position_overrides)
+    if tiene_fallo_de_mercado(results):
+        raise _NoCachear(results)
+    return results
+
+
+def analyze_portfolio(df: pd.DataFrame, version: str = "1.2.1", ib_cost_basis_map: dict = None,
+                      position_overrides: dict = None) -> dict:
+    """`_analyze_portfolio_sin_cache` con caché de 1 h, salvo si faltaron precios.
+
+    Un resultado con algún fondo sin precios se devuelve pero no se guarda: la siguiente
+    llamada vuelve a pedirlos.
+    """
+    try:
+        return _analyze_portfolio_cacheado(df, version, ib_cost_basis_map, position_overrides)
+    except _NoCachear as e:
+        return e.valor
+
+
+analyze_portfolio.clear = _analyze_portfolio_cacheado.clear
+analyze_portfolio.__wrapped__ = _analyze_portfolio_sin_cache
 
 def get_params_from_csv(df):
     """
@@ -3184,6 +3254,31 @@ def load_instruments() -> dict:
         return base
 
 
+def _huella_de_archivo(ruta):
+    try:
+        st_ = os.stat(ruta)
+        return (ruta, st_.st_mtime_ns, st_.st_size)
+    except OSError:
+        return (ruta, None, None)
+
+
+def _yaml_en_memoria_vigente(cache: dict, ruta: str) -> bool:
+    """¿Sirve lo ya cargado? No, si el archivo cambió en disco desde entonces.
+
+    Los robots semanales commitean solo YAML, y `stale_guard` solo vigila `.py`: sin esto
+    un proceso vivo seguía sirviendo el %ROC de la semana anterior. Un caché rellenado a
+    mano (tests) no trae huella y se respeta tal cual.
+    """
+    if not cache.get('_loaded'):
+        return False
+    huella = cache.get('_huella')
+    return huella is None or huella == _huella_de_archivo(ruta)
+
+
+def _anotar_yaml_en_memoria(cache: dict, ruta: str) -> None:
+    cache['_huella'] = _huella_de_archivo(ruta)
+
+
 _ROC19A_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), 'knowledge', 'roc_19a.yaml')
 _ROC19A_CACHE = {}
@@ -3197,7 +3292,7 @@ def load_roc_19a() -> dict:
     Estructura por ticker (MAYÚSCULAS): {asof, source_url, weighted_pct,
     per_distribution: [{date, roc_pct}]}. Defensivo: archivo ausente/ inválido → {}.
     """
-    if _ROC19A_CACHE.get('_loaded'):
+    if _yaml_en_memoria_vigente(_ROC19A_CACHE, _ROC19A_PATH):
         return _ROC19A_CACHE['data']
     data = {}
     if _yaml is not None:
@@ -3209,6 +3304,7 @@ def load_roc_19a() -> dict:
         except Exception:
             data = {}
     _ROC19A_CACHE['_loaded'] = True
+    _anotar_yaml_en_memoria(_ROC19A_CACHE, _ROC19A_PATH)
     _ROC19A_CACHE['data'] = data
     return data
 
@@ -3239,7 +3335,7 @@ def load_roc_ici() -> dict:
     MSTY 2025 como ROC. El ICI decía 100.00%; el 19(a) decía 78.40%. Por eso, para un año ya
     cerrado, manda este archivo.
     """
-    if _ROCICI_CACHE.get('_loaded'):
+    if _yaml_en_memoria_vigente(_ROCICI_CACHE, _ROCICI_PATH):
         return _ROCICI_CACHE['data']
     data = {}
     if _yaml is not None:
@@ -3251,6 +3347,7 @@ def load_roc_ici() -> dict:
         except Exception:
             data = {}
     _ROCICI_CACHE['_loaded'] = True
+    _anotar_yaml_en_memoria(_ROCICI_CACHE, _ROCICI_PATH)
     _ROCICI_CACHE['data'] = data
     return data
 
@@ -3353,7 +3450,7 @@ def load_distribution_rate() -> dict:
     Estructura por ticker (MAYÚSCULAS): {rate_pct, as_of, source_url}. Defensivo: archivo
     ausente/ inválido → {}.
     """
-    if _DISTRATE_CACHE.get('_loaded'):
+    if _yaml_en_memoria_vigente(_DISTRATE_CACHE, _DISTRATE_PATH):
         return _DISTRATE_CACHE['data']
     data = {}
     if _yaml is not None:
@@ -3365,6 +3462,7 @@ def load_distribution_rate() -> dict:
         except Exception:
             data = {}
     _DISTRATE_CACHE['_loaded'] = True
+    _anotar_yaml_en_memoria(_DISTRATE_CACHE, _DISTRATE_PATH)
     _DISTRATE_CACHE['data'] = data
     return data
 
@@ -3391,7 +3489,7 @@ def load_roc_health_history() -> dict:
     Estructura por ticker (MAYÚSCULAS): [{date, verdict, roc_pct, price_cagr}].
     Defensivo: archivo ausente/ inválido → {}.
     """
-    if _ROCHEALTH_CACHE.get('_loaded'):
+    if _yaml_en_memoria_vigente(_ROCHEALTH_CACHE, _ROCHEALTH_PATH):
         return _ROCHEALTH_CACHE['data']
     data = {}
     if _yaml is not None:
@@ -3403,6 +3501,7 @@ def load_roc_health_history() -> dict:
         except Exception:
             data = {}
     _ROCHEALTH_CACHE['_loaded'] = True
+    _anotar_yaml_en_memoria(_ROCHEALTH_CACHE, _ROCHEALTH_PATH)
     _ROCHEALTH_CACHE['data'] = data
     return data
 
