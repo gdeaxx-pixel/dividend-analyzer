@@ -199,7 +199,7 @@ def test_render_metodo_inyecta_data_json():
     inicio = src.index("def render_metodo(")
     fin = src.index("\ndef ", inicio + 1)
     cuerpo = src[inicio:fin]
-    assert '"{{DATA_JSON}}"' in cuerpo and "json.dumps(datos" in cuerpo
+    assert '"{{DATA_JSON}}"' in cuerpo and "_json(datos" in cuerpo
 
 
 # ── Fase 3.3c (traspaso 2026-08-17) · Escalera / Payback / Tasa a datos reales ───────────
