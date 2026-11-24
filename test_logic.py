@@ -4917,3 +4917,22 @@ def test_i5_cash_in_lieu_y_companeros_entran_por_su_rama(monkeypatch):
     assert s["misc_cash_breakdown"] == {
         "Cash In Lieu": 5.00, "Special Qual Div": 2.52,
         "ADR Mgmt Fee": -0.06, "Wire Received": 3.00}
+
+
+def test_la_compra_por_reinversion_no_cuenta_como_aporte_en_la_rentabilidad_anual(monkeypatch):
+    """$1,000 de bolsillo; un dividendo de $100 se reinvierte y compra 1 acción a $100. Dinero
+    nuevo no entró: el único aporte es el de $1,000, y a los 366 días hay 11 acciones a $100.
+    Esperado a mano: `1.1 ** (365.25 / 366) − 1` = 9,98 %. Si la compra del DRIP contara como
+    aporte, la tasa saldría de $1,100 puestos y $1,100 de valor: cerca de cero."""
+    dias = pd.bdate_range("2024-01-02", "2025-01-02")
+    md = pd.DataFrame({"Close": 100.0, "Dividends": 0.0, "Stock Splits": 0.0}, index=dias)
+    monkeypatch.setattr(logic, "fetch_market_data", lambda t, d: (md.copy(), None))
+    monkeypatch.setattr(logic, "_descargar_benchmark", lambda df, ticker="VOO": md.copy())
+    s = logic.analyze_portfolio(_roc_norm_df([
+        ("2024-01-02", "Buy", "MSTY", 10, -1000.0),
+        ("2024-07-01", "Reinvest Dividend", "MSTY", 0, 100.0),
+        ("2024-07-01", "Reinvest Shares", "MSTY", 1, -100.0),
+    ]), version="TEST_IRR_DRIP_NO_ES_APORTE")["MSTY"]
+    flujos = [(str(d)[:10], round(a, 2)) for d, a in s["cash_flows_dated"]]
+    assert flujos == [("2024-01-02", -1000.0)], flujos
+    assert s["irr_anual"] == pytest.approx((1.1 ** (365.25 / 366) - 1) * 100, abs=0.006)

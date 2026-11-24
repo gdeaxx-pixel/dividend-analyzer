@@ -500,3 +500,44 @@ def test_sabotage_breaking_eligibility_cutoff_fails_the_gate():
         print(f"[sabotaje elegibilidad] gate FALLA como se esperaba: {diff_pct:.2f}% de "
               f"diferencia (motor roto reconstruyo ${engine_gross:,.2f} vs "
               f"${csv_gross:,.2f} real)")
+
+
+def _historia_con_hueco():
+    idx = pd.date_range("2024-01-01", periods=4, freq="D")
+    return idx, pd.DataFrame({"Close": [10.0, float("nan"), 10.0, 10.0],
+                              "Dividends": [0.0, 1.0, 0.0, 0.0]}, index=idx)
+
+
+def test_un_dia_sin_cierre_no_pierde_el_dividendo_reinvertido():
+    """10 acciones a $10 cobran $1 por acción el día que falta el cierre. Con el precio
+    plano, reinvertir o cobrar valen lo mismo: $110. Antes el motor apartaba esos $10 en
+    una caja que la reinversión nunca sumaba y terminaba en $100."""
+    idx, history = _historia_con_hueco()
+    r_drip = bt.run_backtest("FAKE", idx[0], initial_capital=100.0, drip=True,
+                             nra_rate=0.0, history=history)
+    r_cash = bt.run_backtest("FAKE", idx[0], initial_capital=100.0, drip=False,
+                             nra_rate=0.0, history=history)
+    assert r_drip.daily["total_value"].iloc[-1] == pytest.approx(110.0, abs=1e-9)
+    assert r_cash.daily["total_value"].iloc[-1] == pytest.approx(110.0, abs=1e-9)
+    assert r_drip.daily["shares"].iloc[-1] == pytest.approx(11.0, abs=1e-9)
+
+
+def test_un_dia_sin_cierre_se_valora_al_ultimo_cierre_valido():
+    idx, history = _historia_con_hueco()
+    history.loc[idx[1], "Dividends"] = 0.0
+    r = bt.run_backtest("FAKE", idx[0], initial_capital=100.0, drip=True,
+                        nra_rate=0.0, history=history)
+    assert list(r.daily["total_value"]) == pytest.approx([100.0] * 4, abs=1e-9)
+    assert r.daily["price"].iloc[1] == 10.0
+
+
+def test_la_caja_previa_al_primer_cierre_valido_cuenta_con_reinversion():
+    """Posición ya existente y el primer día sin cierre: el dividendo no puede comprar nada
+    todavía, pero es dinero de la cuenta desde ese día."""
+    idx = pd.date_range("2024-01-01", periods=3, freq="D")
+    history = pd.DataFrame({"Close": [float("nan"), 10.0, 10.0],
+                            "Dividends": [1.0, 0.0, 0.0]}, index=idx)
+    r = bt.run_backtest("FAKE", idx[0], initial_shares=10.0, drip=True,
+                        nra_rate=0.0, history=history)
+    assert r.daily["cash_accum"].iloc[-1] == pytest.approx(10.0, abs=1e-9)
+    assert r.daily["total_value"].iloc[-1] == pytest.approx(110.0, abs=1e-9)
