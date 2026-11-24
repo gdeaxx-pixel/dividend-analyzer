@@ -383,6 +383,9 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
     tramos = {"ge_2y": {"monto": 0.0, "n_ventas": 0},
               "lt_2y": {"monto": 0.0, "n_ventas": 0},
               "sin_tramo": {"monto": 0.0, "n_ventas": 0}}
+    # Ventas con compras a los dos lados del corte: el motor las pone enteras en el tramo de
+    # su antigüedad promedio, así que el reparto de esas ventas es aproximado y se dice.
+    ventas_tramo_aproximado = 0
     for _tk, _st in sorted((resultados or {}).items()):
         if not _tiene_datos(_st):
             continue
@@ -395,6 +398,8 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
                 _k = "sin_tramo"
             tramos[_k]["monto"] += _f(_v.get("gain"))
             tramos[_k]["n_ventas"] += 1
+            if _v.get("tramo_aproximado"):
+                ventas_tramo_aproximado += 1
     for _k in tramos:
         tramos[_k]["monto"] = round(tramos[_k]["monto"], 2)
 
@@ -474,6 +479,7 @@ def _impuesto_local_cartera(peldanos: dict, ganancias: dict | None,
             },
         },
         "realizado_por_tramo": tramos,
+        "ventas_tramo_aproximado": ventas_tramo_aproximado,
         "corte_tramo_dias": logic.CAPITAL_GAINS_TRAMO_DIAS,
         # Lo NO realizado se nombra para decir que NO entra: una posición que no vendiste no
         # se declara todavía. Callarlo invita a sumarlo.
@@ -629,6 +635,7 @@ def _ganancias_capital_cartera(resultados: dict) -> dict:
             "realizado": round(r_tot, 2) if (cg.get("realized") or []) else None,
             "no_realizado": round(_f(u_gain), 2) if u_gain is not None else None,
             "tramo": u.get("tramo"),
+            "tramo_aproximado": bool(u.get("tramo_aproximado")),
         })
 
     if not hay_dato and not indeterminados:
