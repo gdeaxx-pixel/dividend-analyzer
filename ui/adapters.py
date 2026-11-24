@@ -1483,6 +1483,24 @@ def _tasa_efectiva_neta(ticker: str, modo: str, roc19a: dict) -> float:
     return max(0.0, min(1.0, _CMP_FLAT_RATE * (1.0 - weighted / 100.0)))
 
 
+def _tasa_neta_simulada(corrida) -> float:
+    """Lo que la simulación acaba reteniendo de cada dólar repartido, ya cerrado el ciclo:
+    (retenido al cobro − reembolso cobrado − reembolso devengado por cobrar) / bruto.
+
+    Sale de la MISMA corrida que dibuja la curva «ROC», así que hereda su %ROC por año
+    (`logic.roc_pct_by_year`: el cierre anual ICI manda sobre el aviso 19(a), Regla 4b).
+    `_tasa_efectiva_neta` aplicaba el ponderado 19(a) a todo el horizonte, y la frase «la
+    tasa que acabas pagando» describía otra cuenta que la de la gráfica. Se lee de la
+    corrida SIN reinversión: con las acciones constantes cada año pesa por lo que repartió.
+    Sin distribuciones, la tasa al cobro."""
+    bruto = corrida.gross_dividends_total
+    if bruto <= 0:
+        return float(corrida.nra_rate)
+    neto = (corrida.nra_withheld_total - corrida.roc_refund_total
+            - corrida.roc_receivable_final)
+    return max(0.0, min(1.0, neto / bruto))
+
+
 def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
     """Remuestreo mensual (último cierre de cada mes) con la misma excepción de
     primer-mes que `trg_real_data`: el primer bin suele ser parcial (la incepción real
@@ -2372,8 +2390,8 @@ def metodo_serie_data() -> dict | None:
         for modo in TRG_MODOS:
             pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
             # La tasa que se REPORTA es la neta de reembolso —lo que el inversor acaba
-            # pagando— aunque el motor retenga el 30% y devuelva después. Es la cifra que
-            # la nota al pie usa para decir «8.7%–17.6% según el fondo».
+            # pagando— aunque el motor retenga el 30% y devuelva después. En «roc» se lee
+            # de la corrida sin reinversión, más abajo: es la que usa el cierre anual.
             tasa_efectiva[modo][tk] = round(_tasa_efectiva_neta(tk, modo, roc19a) * 100.0, 2)
             for drip in MET_SERIE_DRIP:
                 r = backtest.run_backtest(tk, start_date=caso["start"],
@@ -2382,6 +2400,8 @@ def metodo_serie_data() -> dict | None:
                                           roc_pct_by_year=pol.roc_pct_by_year)
                 if r.daily.empty:
                     return None
+                if modo == "roc" and drip == "sin":
+                    tasa_efectiva[modo][tk] = round(_tasa_neta_simulada(r) * 100.0, 2)
                 # `total_value` = valor de mercado de las acciones + efectivo acumulado.
                 # Es la única columna que se puede sumar entre escenarios sin doble
                 # conteo: con DRIP el dividendo reinvertido YA vive dentro de las
