@@ -557,6 +557,14 @@
              + (gapResidual ? "Prácticamente todo" : "Todo") + " el exceso vuelve solo.",
         sub: subResidual };
     }
+    // Sin exceso no quiere decir «justo»: si lo retenido queda por debajo de lo que
+    // tocaba se dice, comparando los dos importes tal como se pintan (a centavos).
+    var deMenos = Pc && R.monto != null && R.monto < Pc.monto && X !== Y;
+    if (deMenos) {
+      return { borde: "warn", kick: kick,
+        big: "Te retuvieron " + X + " — menos de los " + Y + " que te tocaban.",
+        sub: subResidual || "No hay exceso que recuperar: al cobro te descontaron menos de lo esperado para tu país." };
+    }
     return { borde: "cash", kick: kick,
       big: "Te retuvieron " + X + ", "
            + (gapResidual ? "prácticamente" : "justo") + " lo que te tocaba.",
@@ -595,7 +603,13 @@
 
   // ---- Título + lede (los de la vista «corte», que era la entrada) ----------------------
   set("impTitle", "La escalera de tus impuestos");
-  set("impLede",
+  // La escalera suma TODOS los años del archivo en un renglón: se dice cuáles son, para
+  // que nadie la lea como la cuenta de un solo año fiscal.
+  var ANIOS = DATA.anios_archivo || [];
+  var alcance = !ANIOS.length ? ""
+    : " Las cifras suman <b>todo tu archivo (" + esc(ANIOS.length === 1 ? ANIOS[0]
+        : ANIOS[0] + "–" + ANIOS[ANIOS.length - 1]) + ")</b>, no un solo año.";
+  set("impLede", (
     DATA.declarado
       // «EE.UU.» ya trae su punto: sin esta guarda salía «EE.UU..» (visto el 30-oct).
       ? "Vives en <b>" + esc(DATA.pais) + "</b>: te corresponde una retención del <b>" + esc(tasaTxt) + "</b>"
@@ -604,7 +618,8 @@
       // Sin país, la instrucción y la vía del 1042-S viven solo en el banner de abajo: antes
       // el lede las repetía palabra por palabra justo encima (A1, 30-oct).
       : "Esta escalera parte del dividendo bruto que declararon tus fondos y baja hasta lo que de verdad te retuvieron. "
-        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto.");
+        + "Sin país no publicamos el peldaño de «lo que te corresponde pagar»: la cifra dependería por entero del supuesto."
+    ) + alcance);
 
   // ---- Banner de estado de residencia (nuevo en U2, patrón de la referencia) ------------
   // La residencia está en el paso 3 de la carga desde el 23-sep (U4); el texto decía
@@ -1563,6 +1578,19 @@
       rutaA += '<p class="imp-ruta-p">Tu 1042-S dice que <b>' + money(A.pendiente) + '</b> sigue en el IRS: esa parte va por la Ruta B.</p>';
     } else if (A.tiene_1042s && A.veredicto === "devuelto") {
       rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
+    } else if (A.tiene_1042s && A.veredicto === "parcial") {
+      // Varios formularios, o uno a medias: se dice cada parte con su importe. Un
+      // formulario sin retención cuenta como «devuelto» con $0, así que la parte que
+      // se pinta en $0.00 no se anuncia.
+      var hayDev = money(A.devuelto) !== money(0), hayPend = money(A.pendiente) !== money(0);
+      if (hayDev && hayPend) {
+        rutaA += '<p class="imp-ruta-p">Una parte ya te la devolvieron y otra sigue pendiente: tu 1042-S dice que el bróker ya devolvió <b>'
+          + money(A.devuelto) + '</b> y que <b>' + money(A.pendiente) + '</b> siguen en el IRS. Esa parte va por la Ruta B.</p>';
+      } else if (hayPend) {
+        rutaA += '<p class="imp-ruta-p">Tu 1042-S dice que <b>' + money(A.pendiente) + '</b> sigue en el IRS: esa parte va por la Ruta B.</p>';
+      } else if (hayDev) {
+        rutaA += '<p class="imp-ruta-p">Tu 1042-S confirma que el bróker ya devolvió <b>' + money(A.devuelto) + '</b>.</p>';
+      }
     }
     // ---- Cuándo llega: la franja de meses (PR 4). SIN año y SIN marca de «hoy» ----
     var MESES = ["ENE","FEB","MAR","ABR","MAY","JUN",

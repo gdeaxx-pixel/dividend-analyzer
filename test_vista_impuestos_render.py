@@ -644,7 +644,8 @@ _VER_FIXTURES = {
     "parcial": ("warn", "no podemos decir cuánto sobra"),
     "gap": ("coral", "Te retuvieron $80.00 — te tocaban $210.23."),
     "solo_roc": ("warn", "Todo el exceso vuelve solo."),
-    "justo": ("cash", "justo lo que te tocaba"),
+    "justo": ("cash", "Te retuvieron $210.23, justo lo que te tocaba."),
+    "de_menos": ("warn", "Te retuvieron $80.00 — menos de los $210.23 que te tocaban."),
 }
 
 
@@ -664,9 +665,11 @@ def _D_para(rama):
         pass  # _D ya tiene gap_w8ben 18.71 y recuperable_roc 41.29
     elif rama == "solo_roc":
         R["gap_w8ben"] = {"monto": 0.0, "pct": 0.0}
-    elif rama == "justo":
+    elif rama in ("justo", "de_menos"):
         R["gap_w8ben"] = {"monto": 0.0, "pct": 0.0}
         R["recuperable_roc"] = {"monto": 0.0, "pct": 0.0}
+        if rama == "justo":
+            R["monto"] = d["peldanos"]["corresponde"]["monto"]
     return d
 
 
@@ -1116,6 +1119,7 @@ def _D_gap(gap, roc):
     R["gap_w8ben"] = {"monto": gap, "pct": 0.0}
     R["recuperable_roc"] = {"monto": roc, "pct": 0.7}
     R["correcta"] = {"monto": round(R["monto"] - gap - roc, 2), "pct": 0.3}
+    d["peldanos"]["corresponde"]["monto"] = R["correcta"]["monto"]
     return d
 
 
@@ -1241,3 +1245,79 @@ def test_menu_de_categorias_en_el_orden_de_daniel():
                 "Método tradicional", "Impuestos"]
     assert list(chrome.CAT_LABELS_TOTAL.values()) == esperado
     assert [chrome.CAT_LABELS_TOTAL[c] for c in chrome.CAT_ORDER_TOTAL] == esperado
+
+
+# --- Rótulos (24-nov): alcance de la escalera, 1042-S a medias -------------------------
+
+def test_el_adapter_publica_los_anios_que_suma_la_escalera():
+    """La escalera suma todos los años del archivo; se publican los que de verdad traen
+    dividendo o retención, leídos de las cifras por año del motor."""
+    import logic
+    from ui.adapters import impuestos_data
+    resultados = _res_minimo()
+    otro = dict(_res_minimo()["MSTY"])
+    otro["dividends_gross_by_year"] = {2023: 40.0, 2024: 0.0, 2026: 60.0}
+    otro["withheld_by_year"] = {2022: 5.0}
+    resultados["CONY"] = otro
+    crecimiento = dict(_res_minimo()["MSTY"])
+    crecimiento.update(dividends_gross_total=0.0, withheld_tax_total=0.0,
+                       dividends_gross_by_year={2019: 0.0}, withheld_by_year={})
+    resultados["SCHB"] = crecimiento
+    datos = impuestos_data(resultados, logic.build_fiscal_profile("Colombia"), [])
+    assert datos["anios_archivo"] == [2022, 2023, 2025, 2026]
+
+
+@_node
+@pytest.mark.parametrize("anios,frag", [
+    ([2024, 2025, 2026], "todo tu archivo (2024–2026)"),
+    ([2025], "todo tu archivo (2025)"),
+])
+@pytest.mark.parametrize("rama", ["gap", "sin_pais"])
+def test_la_entradilla_dice_que_anios_suma(anios, frag, rama):
+    d = _D_para(rama)
+    d["anios_archivo"] = anios
+    lede = _ejecutar(d=d)["fase0"]["impLede"]["html"]
+    assert frag in lede and "no un solo año" in lede, lede
+
+
+@_node
+def test_sin_anios_la_entradilla_no_inventa_un_rango():
+    lede = _ejecutar()["fase0"]["impLede"]["html"]
+    assert "todo tu archivo" not in lede and "undefined" not in lede, lede
+
+
+def _rutas(veredicto, devuelto, pendiente):
+    d = copy.deepcopy(_D)
+    d["ruta_a"].update(tiene_1042s=True, veredicto=veredicto, devuelto=devuelto,
+                       pendiente=pendiente, retenido_1042s=(devuelto or 0) + (pendiente or 0))
+    return _texto(_ejecutar(d=d))
+
+
+@_node
+def test_1042s_a_medias_dice_las_dos_partes_con_su_importe():
+    html = _rutas("parcial", 12.5, 30.0)
+    assert "Una parte ya te la devolvieron y otra sigue pendiente" in html
+    assert "ya devolvió <b>$12.50</b>" in html and "<b>$30.00</b> siguen en el IRS" in html
+
+
+@_node
+@pytest.mark.parametrize("devuelto,pendiente,si,no", [
+    (0.0, 30.0, "<b>$30.00</b> sigue en el IRS", "devolvi"),
+    (12.5, 0.0, "ya devolvió <b>$12.50</b>", "IRS: esa parte"),
+])
+def test_1042s_a_medias_no_anuncia_la_parte_que_es_cero(devuelto, pendiente, si, no):
+    """Un formulario sin retención cuenta como «devuelto» con $0: mezclado con uno
+    pendiente da «parcial» sin que nadie haya devuelto nada."""
+    html = _rutas("parcial", devuelto, pendiente)
+    assert si in html and "Una parte ya te la devolvieron" not in html, html
+    assert no not in html.split("no hay trámite que iniciar.")[1].split("Cuándo llega")[0], html
+
+
+@_node
+@pytest.mark.parametrize("veredicto,frag", [
+    ("pendiente", "<b>$30.00</b> sigue en el IRS"),
+    ("devuelto", "ya devolvió <b>$12.50</b>"),
+])
+def test_1042s_entero_conserva_su_frase(veredicto, frag):
+    html = _rutas(veredicto, 12.5, 30.0)
+    assert frag in html and "Una parte ya te la devolvieron" not in html

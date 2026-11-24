@@ -433,11 +433,22 @@ def build_1042s_validation(results: dict, parsed: dict, df_cuenta: pd.DataFrame 
     interes_cash   = sum(_num(f.get('gross_income')) for f in unique if _code(f) == '01')
     roc_pct        = (roc_1042s / bruto_1042s * 100.0) if bruto_1042s else 0.0
 
+    def _legible(v):
+        try:
+            return v is not None and str(v).strip() != '' and float(v) == float(v)
+        except (TypeError, ValueError):
+            return False
+
     year = parsed.get('tax_year')
     out = {
         'tax_year': year,
         'bruto_1042s': round(bruto_1042s, 2),
         'retenido_1042s': round(retenido_1042s, 2),
+        # Una casilla 7a que no se pudo leer NO es $0: la suma de arriba la cuenta como
+        # cero, así que quien la pinte tiene que mirar esta marca primero.
+        'retenido_1042s_completo': all(_legible(f.get('federal_tax_withheld'))
+                                       for f in div_forms),
+        'formularios_sin_leer': int(parsed.get('formularios_sin_leer') or 0),
         'roc_1042s': round(roc_1042s, 2),
         'interes_cash': round(interes_cash, 2),
         'bruto_portafolio': 0.0,

@@ -5,7 +5,7 @@ línea responde —te pagaron tanto, el impuesto se quedó tanto, tanto era tu p
 de vuelta, tanto quedó sin reinvertir— y el enlace solo está por si se quiere el detalle.
 
 Las cuatro cifras ya existían en las stats por ticker. Lo que hay que vigilar es su
-**momento** (Regla 2 del contrato): tres son al cobro y el ROC es de la reclasificación
+**momento** (Regla 2 del contrato): dos son al cobro, lo retenido ya descuenta lo devuelto y el ROC es de la reclasificación
 anual, así que se muestran en líneas separadas y nunca se restan entre sí.
 
 Contrastado contra una fuente independiente: en el caso de ejemplo la línea dice que el
@@ -60,7 +60,16 @@ def test_el_roc_declara_que_es_de_otro_momento():
     d = preguntas_clave_data({"A": _stats()})
     momentos = {p["clave"]: p["momento"] for p in d["preguntas"]}
     assert momentos["roc"] == "tras_reclasificacion_anual"
-    assert momentos["pagado"] == momentos["retenido"] == momentos["efectivo"] == "al_cobro"
+    assert momentos["pagado"] == momentos["efectivo"] == "al_cobro"
+
+
+def test_lo_retenido_declara_que_ya_descuenta_lo_devuelto():
+    """`withheld_tax_total` es lo retenido al cobro MENOS lo que el bróker devolvió: decir
+    «al cobro» a secas lo confundía con la cifra de Impuestos, que no lo descuenta."""
+    d = preguntas_clave_data({"A": _stats()})
+    momentos = {p["clave"]: p["momento"] for p in d["preguntas"]}
+    assert momentos["retenido"] == "al_cobro_menos_lo_devuelto"
+    assert "ya descuenta lo que el bróker te devolvió" in _bloque("_botones_ruta")
 
 
 def test_el_adaptador_no_resta_cifras_entre_si():

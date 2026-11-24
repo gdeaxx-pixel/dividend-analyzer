@@ -788,6 +788,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
     fondos_sin_roc: list[str] = []   # peldaño 2: sin dato de ROC → tributan sobre el 100% del bruto
+    anios_archivo: set[int] = set()
 
     for ticker, stats in sorted((resultados or {}).items()):
         if not _tiene_datos(stats):
@@ -797,6 +798,9 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         netted = _f(ts.get("withheld_real"), _f(stats.get("withheld_tax_total")))
         if bruto <= 0.005 and netted <= 0.005:
             continue  # posición de crecimiento sin distribuciones: no entra en la escalera
+        for campo in ("dividends_gross_by_year", "withheld_by_year"):
+            anios_archivo.update(int(a) for a, v in (stats.get(campo) or {}).items()
+                                 if abs(_f(v)) > 0.005)
 
         try:
             fuente_bruto = logic.build_dividend_tax_totals(
@@ -1008,6 +1012,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         "residencia_1042s": residencia_1042s,
         "tiene_tratado": bool(perfil.get("has_treaty")),
         "bruto_inicial": round(bruto_total, 2),
+        "anios_archivo": sorted(anios_archivo),
         "peldanos": peldanos,
         "fondos": fondos,
         "concentracion": concentracion,
@@ -2994,7 +2999,7 @@ PREGUNTAS_CLAVE = (
     ("pagado", "¿Cuánto te pagaron en total?", "dividends_gross_total",
      "al_cobro", ("dividendos", "viaje", True)),
     ("retenido", "¿Cuánto se quedó el impuesto?", "withheld_tax_total",
-     "al_cobro", ("impuestos", "impuestos", False)),
+     "al_cobro_menos_lo_devuelto", ("impuestos", "impuestos", False)),
     ("roc", "¿Cuánto era tu propio dinero de vuelta?", "roc_accumulated",
      "tras_reclasificacion_anual", ("impuestos", "impuestos", False)),
     ("efectivo", "¿Cuánto quedó en efectivo, sin reinvertir?", "dividends_cash_net",
@@ -3009,7 +3014,8 @@ def preguntas_clave_data(resultados: dict) -> dict | None:
     cobró un solo dividendo: las cuatro cifras serían cero y el bloque sobraría).
 
     **Cada cifra lleva su momento**, porque no todas son del mismo (Regla 2 del contrato):
-    lo pagado, lo retenido y el efectivo son `al cobro`; el ROC es
+    lo pagado y el efectivo son `al cobro`; lo retenido es `al_cobro_menos_lo_devuelto`
+    (`withheld_tax_total` ya descuenta lo que el bróker devolvió); el ROC es
     `tras_reclasificacion_anual`. Por eso el bloque los muestra en líneas separadas y
     **no resta el ROC de lo pagado** — serían dos momentos distintos en la misma cuenta.
 

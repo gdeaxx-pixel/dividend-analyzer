@@ -89,16 +89,23 @@ def _render_1042s(resultados: dict) -> dict | None:
     if not validacion:
         return None
     accent_var, etiqueta = _V1042S_ESTILO.get(validacion["status"], _V1042S_ESTILO["no_overlap"])
+    retenido = (f'${validacion["retenido_1042s"]:,.2f}'
+                if validacion.get("retenido_1042s_completo", True) else "no legible")
+    sin_leer = int(validacion.get("formularios_sin_leer") or 0)
+    aviso = ("" if not sin_leer else
+             '<p class="vd-1042s-nota">No pudimos leer '
+             + texto.plural(sin_leer, "formulario", "formularios")
+             + " de tu 1042-S: estas cifras no los incluyen.</p>")
     st.markdown(
         f'<div class="vd-1042s-card" style="border-left-color: var({accent_var});">'
         f'<p class="vd-1042s-titulo">Validación 1042-S · <span style="color: var({accent_var});">'
         f'{etiqueta}</span></p>'
         f'<p class="vd-1042s-detalle">Dividendo bruto {validacion["tax_year"]} — Tu archivo: '
         f'<b>${validacion["bruto_portafolio"]:,.2f}</b> · 1042-S: <b>${validacion["bruto_1042s"]:,.2f}</b> · '
-        f'Retenido: <b>${validacion["retenido_1042s"]:,.2f}</b> · ROC: '
+        f'Retenido: <b>{retenido}</b> · ROC: '
         f'<b>${validacion["roc_1042s"]:,.2f}</b> ({validacion["roc_pct"]:.1f}%)</p>'
         f'<p class="vd-1042s-nota">{validacion["note"]}</p>'
-        '</div>', unsafe_allow_html=True)
+        f'{aviso}</div>', unsafe_allow_html=True)
     return validacion
 
 
