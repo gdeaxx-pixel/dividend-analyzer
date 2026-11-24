@@ -906,6 +906,10 @@ def _render_1042s_resumen() -> None:
     if ilegibles:
         st.warning("No pudimos leer " + ", ".join(f"el {i}.º archivo" for i in ilegibles)
                    + "; usamos los demás.")
+    sin_leer = int(lectura.get("formularios_sin_leer") or 0)
+    if sin_leer:
+        st.warning("No pudimos leer " + texto.plural(sin_leer, "formulario", "formularios")
+                   + " de tu 1042-S: las cifras de este formulario no los incluyen.")
     _render_aviso_1042s_tda(lectura)
     _render_aviso_1042s_viejo(lectura)
     _render_residencia_detectada()

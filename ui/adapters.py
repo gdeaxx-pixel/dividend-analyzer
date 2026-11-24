@@ -788,6 +788,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
     foreign_tax_paid_total = 0.0
     fondos_sin_desglose: list[str] = []
     fondos_sin_roc: list[str] = []   # peldaño 2: sin dato de ROC → tributan sobre el 100% del bruto
+    anios_archivo: set[int] = set()
 
     for ticker, stats in sorted((resultados or {}).items()):
         if not _tiene_datos(stats):
@@ -797,6 +798,9 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         netted = _f(ts.get("withheld_real"), _f(stats.get("withheld_tax_total")))
         if bruto <= 0.005 and netted <= 0.005:
             continue  # posición de crecimiento sin distribuciones: no entra en la escalera
+        for campo in ("dividends_gross_by_year", "withheld_by_year"):
+            anios_archivo.update(int(a) for a, v in (stats.get(campo) or {}).items()
+                                 if abs(_f(v)) > 0.005)
 
         try:
             fuente_bruto = logic.build_dividend_tax_totals(
@@ -1008,6 +1012,7 @@ def impuestos_data(resultados: dict, perfil: dict, forms_1042s: list,
         "residencia_1042s": residencia_1042s,
         "tiene_tratado": bool(perfil.get("has_treaty")),
         "bruto_inicial": round(bruto_total, 2),
+        "anios_archivo": sorted(anios_archivo),
         "peldanos": peldanos,
         "fondos": fondos,
         "concentracion": concentracion,
@@ -1450,10 +1455,11 @@ def _tasa_efectiva_neta(ticker: str, modo: str, roc19a: dict) -> float:
     −18.7 pp (TSLY) a +28.0 pp (MSTY) en el retorno total Con DRIP. Ver el docstring de
     `backtest.run_backtest` y `specs/roc-nra-invariants.md` (Regla 2: base Y momento).
 
-    Como cifra **reportada** sigue siendo correcta —el total pagado al final del ciclo es el
-    mismo— y es la que la nota al pie de la 3ª gráfica de «La matriz» usa para decir
-    «8.7%–17.6% según el fondo». Lo que una tasa no puede expresar es el MOMENTO, que es
-    justo lo que mueve el resultado.
+    Para 'bruto' y 'plano' es la cifra que se reporta. Para 'roc' **ya no** (2026-11-24): la
+    nota al pie de la 3ª gráfica de «La matriz» («la tasa que acabas pagando») lee
+    `_tasa_neta_simulada`, que sale de la corrida y por tanto del %ROC por año con el cierre
+    anual por delante. Esta versión con el ponderado 19(a) queda como contraste en
+    `test_comparacion_data.py`.
 
     `weighted_pct` es un PROMEDIO PONDERADO sobre una ventana rodante (~52 avisos más
     recientes, ver `logic.load_roc_19a`) — no la historia completa del fondo desde su
@@ -1476,6 +1482,24 @@ def _tasa_efectiva_neta(ticker: str, modo: str, roc19a: dict) -> float:
     except (TypeError, ValueError):
         return _CMP_FLAT_RATE
     return max(0.0, min(1.0, _CMP_FLAT_RATE * (1.0 - weighted / 100.0)))
+
+
+def _tasa_neta_simulada(corrida) -> float:
+    """Lo que la simulación acaba reteniendo de cada dólar repartido, ya cerrado el ciclo:
+    (retenido al cobro − reembolso cobrado − reembolso devengado por cobrar) / bruto.
+
+    Sale de la MISMA corrida que dibuja la curva «ROC», así que hereda su %ROC por año
+    (`logic.roc_pct_by_year`: el cierre anual ICI manda sobre el aviso 19(a), Regla 4b).
+    `_tasa_efectiva_neta` aplicaba el ponderado 19(a) a todo el horizonte, y la frase «la
+    tasa que acabas pagando» describía otra cuenta que la de la gráfica. Se lee de la
+    corrida SIN reinversión: con las acciones constantes cada año pesa por lo que repartió.
+    Sin distribuciones, la tasa al cobro."""
+    bruto = corrida.gross_dividends_total
+    if bruto <= 0:
+        return float(corrida.nra_rate)
+    neto = (corrida.nra_withheld_total - corrida.roc_refund_total
+            - corrida.roc_receivable_final)
+    return max(0.0, min(1.0, neto / bruto))
 
 
 def _mensualizar_desde(serie, origen, decimales: int = 4) -> dict:
@@ -2367,8 +2391,8 @@ def metodo_serie_data() -> dict | None:
         for modo in TRG_MODOS:
             pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
             # La tasa que se REPORTA es la neta de reembolso —lo que el inversor acaba
-            # pagando— aunque el motor retenga el 30% y devuelva después. Es la cifra que
-            # la nota al pie usa para decir «8.7%–17.6% según el fondo».
+            # pagando— aunque el motor retenga el 30% y devuelva después. En «roc» se lee
+            # de la corrida sin reinversión, más abajo: es la que usa el cierre anual.
             tasa_efectiva[modo][tk] = round(_tasa_efectiva_neta(tk, modo, roc19a) * 100.0, 2)
             for drip in MET_SERIE_DRIP:
                 r = backtest.run_backtest(tk, start_date=caso["start"],
@@ -2377,6 +2401,8 @@ def metodo_serie_data() -> dict | None:
                                           roc_pct_by_year=pol.roc_pct_by_year)
                 if r.daily.empty:
                     return None
+                if modo == "roc" and drip == "sin":
+                    tasa_efectiva[modo][tk] = round(_tasa_neta_simulada(r) * 100.0, 2)
                 # `total_value` = valor de mercado de las acciones + efectivo acumulado.
                 # Es la única columna que se puede sumar entre escenarios sin doble
                 # conteo: con DRIP el dividendo reinvertido YA vive dentro de las
@@ -2994,7 +3020,7 @@ PREGUNTAS_CLAVE = (
     ("pagado", "¿Cuánto te pagaron en total?", "dividends_gross_total",
      "al_cobro", ("dividendos", "viaje", True)),
     ("retenido", "¿Cuánto se quedó el impuesto?", "withheld_tax_total",
-     "al_cobro", ("impuestos", "impuestos", False)),
+     "al_cobro_menos_lo_devuelto", ("impuestos", "impuestos", False)),
     ("roc", "¿Cuánto era tu propio dinero de vuelta?", "roc_accumulated",
      "tras_reclasificacion_anual", ("impuestos", "impuestos", False)),
     ("efectivo", "¿Cuánto quedó en efectivo, sin reinvertir?", "dividends_cash_net",
@@ -3009,7 +3035,8 @@ def preguntas_clave_data(resultados: dict) -> dict | None:
     cobró un solo dividendo: las cuatro cifras serían cero y el bloque sobraría).
 
     **Cada cifra lleva su momento**, porque no todas son del mismo (Regla 2 del contrato):
-    lo pagado, lo retenido y el efectivo son `al cobro`; el ROC es
+    lo pagado y el efectivo son `al cobro`; lo retenido es `al_cobro_menos_lo_devuelto`
+    (`withheld_tax_total` ya descuenta lo que el bróker devolvió); el ROC es
     `tras_reclasificacion_anual`. Por eso el bloque los muestra en líneas separadas y
     **no resta el ROC de lo pagado** — serían dos momentos distintos en la misma cuenta.
 

@@ -112,6 +112,7 @@ def _parse_1042s_text(text):
 
     forms = []
     seen = {}
+    sin_leer = []
     for i, m in enumerate(matches):
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
@@ -123,6 +124,8 @@ def _parse_1042s_text(text):
         # qué retención aplicaron.
         code_m = re.search(r"\n(\d{2})\s+([\d,]+\.\d{2})\s+3b Tax rate([^\n]*)", block)
         if not code_m:
+            # Se anota: tirarlo sin rastro dejaba el bruto y el ROC cortos sin avisar.
+            sin_leer.append(unique_form_id)
             continue
         income_code = code_m.group(1)
         gross_income = float(code_m.group(2).replace(",", ""))
@@ -170,6 +173,9 @@ def _parse_1042s_text(text):
                        text, re.MULTILINE)
     return {"tax_year": tax_year, "forms": forms, "source": "pdfplumber",
             "recipient_country_code": pais_m.group(1) if pais_m else None,
+            # Formularios con identificador cuya línea de ingreso no se pudo leer en
+            # ninguna de sus copias (las copias B/C/D repiten el identificador).
+            "ids_sin_leer": sorted(set(sin_leer) - set(seen)),
             # El agente de retención de los 1042-S de TD Ameritrade se nombra en el propio
             # formulario; el de Schwab, no (medido: 5 y 0 apariciones). No lee nada del titular.
             "td_ameritrade": "AMERITRADE" in text.upper()}
@@ -243,9 +249,11 @@ def combinar_1042s(lecturas):
             if fid:
                 ids.add(fid)
             forms.append(f)
+    sin_leer = {i for l in usadas for i in (l.get("ids_sin_leer") or [])} - ids
     return {
         "tax_year": anio,
         "forms": forms,
+        "formularios_sin_leer": len(sin_leer),
         "source": "pdfplumber",
         "recipient_country_code": next(
             (l.get("recipient_country_code") for l in usadas if l.get("recipient_country_code")),

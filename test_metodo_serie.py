@@ -160,16 +160,48 @@ def test_bruto_sin_drip_reconcilia_contra_una_corrida_independiente(serie, ultim
     assert serie["serie"]["bruto"]["sin"][ultimo] == pytest.approx(total, abs=0.05)
 
 
-def test_la_tasa_roc_sale_del_yaml_vivo_no_de_una_copia(serie):
-    """Reconcilia contra `logic.load_roc_19a()` directamente — la fuente, no la fórmula
-    que la consumió."""
-    roc = logic.load_roc_19a()
+def _roc_por_anio_independiente(tk):
+    """El cierre anual leído del yaml APARTE (sin pasar por `logic.load_roc_ici`); solo los
+    años sin cierre caen al aviso 19(a) del objeto único."""
+    import yaml
+    with open(os.path.join(BASE, "knowledge", "roc_ici.yaml"), encoding="utf-8") as f:
+        ici = {int(a): float(v["roc_pct"]) for a, v in (yaml.safe_load(f).get(tk) or {}).items()}
+    estimado = logic.roc_pct_by_year(tk, logic.load_roc_19a(), {})
+    return ici, {**estimado, **ici}
+
+
+def test_la_tasa_roc_es_la_de_la_simulacion_con_el_cierre_anual(serie):
+    """«La tasa que acabas pagando» se rehace desde las fuentes: lo que el fondo repartió
+    por acción cada año (caché de precios) y el %ROC de ESE año, con el cierre anual
+    mandando sobre el aviso 19(a). Un año sin dato no tiene escudo: 30% entero."""
+    con_cierre = 0
     for caso in MET_CASO:
         tk = caso["t"]
-        weighted = (roc.get(tk) or {}).get("weighted_pct")
-        assert weighted is not None, f"{tk} perdió sus avisos 19(a) en el yaml"
-        esperada = 30.0 * (1 - float(weighted) / 100.0)
-        assert serie["tasaEfectivaPct"]["roc"][tk] == pytest.approx(esperada, abs=0.01)
+        h = price_cache.load_history(tk).history.sort_index()
+        # La posición se compra al cierre del primer día: lo que reparta ESE día no se cobra.
+        primer_dia = h.index[h.index >= caso["start"]][0]
+        div = h.loc[h.index > primer_dia, "Dividends"]
+        por_anio = div[div > 0].groupby(div[div > 0].index.year).sum()
+        ici, roc = _roc_por_anio_independiente(tk)
+        con_cierre += sum(1 for a in por_anio.index if int(a) in ici)
+        pagado = sum(d * (1 - roc.get(int(a), 0.0) / 100.0) for a, d in por_anio.items())
+        esperada = 30.0 * pagado / por_anio.sum()
+        assert serie["tasaEfectivaPct"]["roc"][tk] == pytest.approx(esperada, abs=0.01), tk
+    assert con_cierre, "ningún año del caso de estudio tiene cierre anual: la prueba no lo ejercita"
+
+
+def test_el_cierre_anual_mueve_la_tasa_donde_difiere_del_aviso(serie):
+    """Sin esto la prueba de arriba pasaría igual si el cierre y el aviso coincidieran."""
+    roc19a = logic.load_roc_19a()
+    distintos = []
+    for caso in MET_CASO:
+        tk = caso["t"]
+        ponderado = (roc19a.get(tk) or {}).get("weighted_pct")
+        assert ponderado is not None, f"{tk} perdió sus avisos 19(a) en el yaml"
+        vieja = 30.0 * (1 - float(ponderado) / 100.0)
+        if abs(serie["tasaEfectivaPct"]["roc"][tk] - vieja) > 0.05:
+            distintos.append(tk)
+    assert distintos, "la tasa reportada volvió a ser el ponderado 19(a) de todo el horizonte"
 
 
 def test_las_tasas_de_los_extremos_son_las_declaradas(serie):

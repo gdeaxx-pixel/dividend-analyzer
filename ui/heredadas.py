@@ -188,7 +188,8 @@ def _botones_ruta(resultados: dict) -> None:
             st.button(_DESTINO[p["cat"]] + " →", key=f"vd_preg_{p['clave']}",
                       type="tertiary", on_click=_ir_a_ruta,
                       args=(p["cat"], p["vista"], p["etf"]))
-    st.caption("El dinero de vuelta sale de la reclasificación anual del fondo, así que no "
+    st.caption("Lo que se quedó el impuesto ya descuenta lo que el bróker te devolvió. "
+               "El dinero de vuelta sale de la reclasificación anual del fondo, así que no "
                "se resta de lo pagado: son dos momentos distintos.")
     # Esta vista ya dice a dónde ir, y con más criterio que el recorrido: el pie se calla.
     from ui import estado
