@@ -1533,10 +1533,17 @@
     var nV = (TR.ge_2y.n_ventas || 0) + (TR.lt_2y.n_ventas || 0) + (TR.sin_tramo.n_ventas || 0);
     if (nV > 0) {
       var anios = Math.round((L.corte_tramo_dias || 730) / 365);
+      var nAprox = L.ventas_tramo_aproximado || 0;
       lBody += '<div class="imp-conc">Y por lo que <b>vendiste</b>: '
         + '<b>' + money(TR.ge_2y.monto) + '</b> con ' + anios + ' años o más de tenencia, '
         + '<b>' + money(TR.lt_2y.monto) + '</b> por debajo de ese corte. '
-        + 'Van separadas porque varios países las gravan distinto según la antigüedad.</div>';
+        + 'Van separadas porque varios países las gravan distinto según la antigüedad.'
+        + (nAprox > 0
+            ? ' <b>Reparto aproximado:</b> en ' + (nAprox === 1 ? '1 venta' : nAprox + ' ventas')
+              + ' tenías compras de antes y de después de ese corte, y cada venta se cuenta '
+              + 'entera en el tramo de su antigüedad promedio.'
+            : '')
+        + '</div>';
     }
 
     if (L.no_realizado_excluido != null) {

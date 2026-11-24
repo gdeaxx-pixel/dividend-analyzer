@@ -232,6 +232,17 @@ def reconciliar_dividendos(dividendos: pd.Series, oficial: pd.Series, splits=Non
     return divs, correcciones, sin_fila
 
 
+def _filas_guardadas(tk):
+    """Filas del parquet ya guardado de `tk`; 0 si no hay o no se puede leer."""
+    ruta = _parquet_path(tk)
+    if not os.path.exists(ruta):
+        return 0
+    try:
+        return int(len(pd.read_parquet(ruta)))
+    except Exception:
+        return 0
+
+
 def main(argv):
     tickers = [t.upper() for t in argv[1:]] or TICKERS
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -317,6 +328,16 @@ def main(argv):
                 print(f"::warning::{tk}: la tabla oficial trae ex-date {fecha.date()} y yfinance "
                       f"no tiene fila de precio ese día; no se aplica.", file=sys.stderr)
 
+        filas_previas = _filas_guardadas(tk)
+        if roc.refresco_recortado(len(cols), filas_previas, tk):
+            print(f"::warning::{tk}: la historia nueva trae {len(cols)} filas y había "
+                  f"{filas_previas} guardadas (menos del {roc.MIN_FRACCION_FILAS:.0%}). "
+                  f"Conservo el cache previo. Si el recorte es real: "
+                  f"{roc.ACEPTAR_RECORTE_ENV}={tk}.", file=sys.stderr)
+            failures.append(tk)
+            regressions.append(tk)
+            continue
+
         cols.to_parquet(_parquet_path(tk))
 
         meta[tk] = {
@@ -329,10 +350,19 @@ def main(argv):
         if correcciones is not None:
             meta[tk]["dividend_corrections"] = [
                 f"{c['fecha']}: {c['yfinance']} -> {c['oficial']}" for c in correcciones]
-        splits_out[tk] = [
+        splits_nuevos = [
             {"date": ts.date().isoformat(), "ratio": float(ratio)}
             for ts, ratio in splits.items()
         ] if splits is not None else []
+        splits_previos = splits_out.get(tk) or []
+        if len(splits_nuevos) < len(splits_previos) \
+                and tk.upper() not in roc.recortes_aceptados():
+            # Un split no desaparece: si llegan menos, la respuesta vino incompleta.
+            print(f"::warning::{tk}: llegaron {len(splits_nuevos)} split(s) y había "
+                  f"{len(splits_previos)} guardados. Conservo los previos.", file=sys.stderr)
+            regressions.append(tk)
+        else:
+            splits_out[tk] = splits_nuevos
 
         print(f"{tk}: {len(cols)} filas [{meta[tk]['start']} .. {meta[tk]['end']}], "
               f"{len(splits_out[tk])} split(s)")

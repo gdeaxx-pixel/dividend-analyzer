@@ -1870,7 +1870,7 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
     tickers = df['Ticker'].unique()
 
     for ticker in tickers:
-        ticker_df = df[df['Ticker'] == ticker].sort_values('Date')
+        ticker_df = _compras_antes_que_ventas(df[df['Ticker'] == ticker].sort_values('Date'))
         if ticker_df.empty:
             continue
 
@@ -4456,6 +4456,49 @@ def _dividend_tax_netted(history_df) -> bool:
 CAPITAL_GAINS_TRAMO_DIAS = 730  # 2 años — el corte que la Fase 4 usará para la tarifa local
 
 
+def _es_venta_de_capital(action) -> bool:
+    """La fila que `build_capital_gains` trata como venta: mismo orden de predicados que su
+    recorrido, donde compra, traspaso y reinversión se deciden antes."""
+    a = str(action).lower()
+    if 'reinvest' in a or 'reinversión' in a or 'drip' in a:
+        return False
+    if 'buy' in a or 'bought' in a or 'compra' in a:
+        return False
+    if ('deposit' in a or 'depósito' in a or 'transfer' in a or 'journal' in a
+            or 'contribution' in a):
+        return False
+    return 'sell' in a or 'sold' in a or 'venta' in a
+
+
+def _compras_antes_que_ventas(ticker_df):
+    """Dentro de cada grupo de filas seguidas con la MISMA fecha y hora, deja las ventas al
+    final sin tocar el resto del orden.
+
+    Un CSV con fecha sin hora no dice qué pasó primero ese día, y el orden en que llegan las
+    filas depende del bróker (Schwab exporta de lo más nuevo a lo más viejo) y de una
+    ordenación que no conserva empates. Con la venta antes que la compra del mismo día la base
+    promedio sale de otra posición y la venta puede quedar «sin compras registradas». Se cuenta
+    siempre la compra primero. Si la fecha trae hora, las filas de horas distintas no forman
+    grupo y su orden real se respeta. Lo usan el recorrido de `analyze_portfolio` y
+    `build_capital_gains`, para que los dos cuenten las mismas acciones."""
+    if ticker_df is None or len(ticker_df) < 2 \
+            or 'Date' not in ticker_df.columns or 'Action' not in ticker_df.columns:
+        return ticker_df
+    fechas = ticker_df['Date']
+    cambia_fecha = (fechas != fechas.shift()) | fechas.isna()
+    grupo = cambia_fecha.cumsum().to_numpy()
+    venta = ticker_df['Action'].map(_es_venta_de_capital).to_numpy()
+    # Una fila de split anuncia el saldo que queda DESPUÉS del split: si la venta de ese día
+    # iba antes o después de ella cambia el saldo, y el archivo es lo único que lo dice. Los
+    # grupos con split se dejan como vienen.
+    con_split = ticker_df['Action'].astype(str).str.lower().str.contains('split').to_numpy()
+    venta = venta & ~np.isin(grupo, grupo[con_split])
+    orden = np.lexsort((np.arange(len(ticker_df)), venta, grupo))
+    if (orden == np.arange(len(ticker_df))).all():
+        return ticker_df
+    return ticker_df.iloc[orden]
+
+
 def build_capital_gains(ticker_df, ticker: str = None, market_price: float = None,
                         today=None, splits=None,
                         history_incomplete: bool = False,
@@ -4607,6 +4650,11 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
     # resultado correcto en un falso 'indeterminado'.
     basis_roc = 0.0
     dias_wsum = 0.0       # Σ(acciones × día de adquisición) — compañero natural del promedio
+    # Primera y última adquisición de la posición viva. El tramo sale del día promedio; con
+    # compras a los dos lados del corte ese promedio pone toda la venta en un solo tramo, así
+    # que se marca como aproximado (`tramo_aproximado`) sin cambiar el método.
+    dia_adq_min = None
+    dia_adq_max = None
     realized = []
     indeterminado = bool(history_incomplete)
     motivo = 'history_incomplete' if history_incomplete else None
@@ -4652,7 +4700,13 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             roc_aplicado += baja
             roc_exceso += monto - baja
 
-    for _etiqueta, row in ticker_df.iterrows():
+    def _a_ambos_lados(dia_ref):
+        if dia_ref is None or dia_adq_min is None or dia_adq_max is None:
+            return False
+        return (dia_ref - dia_adq_min >= CAPITAL_GAINS_TRAMO_DIAS
+                and dia_ref - dia_adq_max < CAPITAL_GAINS_TRAMO_DIAS)
+
+    for _etiqueta, row in _compras_antes_que_ventas(ticker_df).iterrows():
         action = str(row.get('Action', '')).lower()
         qty = _safe_float(row.get('Quantity', 0))
         amount = _safe_float(row.get('Amount', 0))
@@ -4673,8 +4727,14 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
 
         def _adquirir(cantidad, costo):
             nonlocal shares, basis_total, basis_roc, dias_wsum, indeterminado, motivo
+            nonlocal dia_adq_min, dia_adq_max
             if cantidad <= 0:
                 return
+            if shares <= 1e-9:
+                dia_adq_min = dia_adq_max = None
+            if dia is not None:
+                dia_adq_min = dia if dia_adq_min is None else min(dia_adq_min, dia)
+                dia_adq_max = dia if dia_adq_max is None else max(dia_adq_max, dia)
             if costo <= 0:
                 # Acciones que ENTRAN sin importe: el CSV no dice qué costaron. Es la trampa
                 # 3 en su forma parcial y más traicionera — no deja la base en cero, la
@@ -4750,6 +4810,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 'holding_days': dias_tenencia,
                 'tramo': (None if dias_tenencia is None else
                           ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
+                'tramo_aproximado': dias_tenencia is not None and _a_ambos_lados(dia),
             })
             basis_total -= base_vendida
             basis_roc -= base_roc_vendida
@@ -4768,6 +4829,8 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         if 'split' in action and qty > 0:
             if shares > 0:
                 dias_wsum *= qty / shares
+            else:
+                dia_adq_min = dia_adq_max = None
             shares = qty
 
         # Fracción pagada en efectivo por un split sin fila en el CSV: mismo trato que el
@@ -4835,6 +4898,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
                 # gobierna la tarifa en la capa de pais y no se inventa (limite 2).
                 'holding_days_ponderado': None,
                 'tramo': None,
+                'tramo_aproximado': None,
                 'basis_source': 'captura_broker',
             }
         return salida
@@ -4862,6 +4926,7 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
             'holding_days_ponderado': dias_tenencia,
             'tramo': (None if dias_tenencia is None else
                       ('ge_2y' if dias_tenencia >= CAPITAL_GAINS_TRAMO_DIAS else 'lt_2y')),
+            'tramo_aproximado': dias_tenencia is not None and _a_ambos_lados(dia_hoy),
             'basis_source': 'csv',
         }
 
