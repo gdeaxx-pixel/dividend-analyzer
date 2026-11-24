@@ -498,6 +498,15 @@ class TestMonotoniaFiscalEstructural:
     # fuente del ROC al cierre fiscal: con el escudo real de MSTY 2024 (0%, no 95.9%) ningún
     # fondo de ESTA vista ilustra ya que «más impuesto ⇒ peor resultado» sea falso.
     #
+    # Ese 0% es un cero publicado, no una celda vacía que el parser leyó como cero (verificado
+    # el 2026-11-24 contra la fuente). En «2024 ICI Primary Layout - YieldMax.xlsx», hoja
+    # «Primary Layout FINAL», filas 208-216 (las 9 distribuciones de MSTY, ex del 4-abr al
+    # 19-dic-2024), la columna Z (casilla 3, «Nondividend Distributions») trae un 0 numérico
+    # en las 9, y el total de cada fila (J) está entero en «Income Dividends» (N), que es la
+    # casilla 1a (Q). En el archivo entero ninguna Z viene vacía y las 343 filas cumplen
+    # M = N+O+V+Z+AB+AD. Un 1042-S real de 2024 (Schwab, `real_examples`) coincide en lo que
+    # cubre: no trae código 37 (ROC), y el pago de MSTY de diciembre entró como dividendo (06).
+    #
     # No se retira porque falle: se retira porque **guardaba una lección que esta vista no
     # enseña**. El copy que la enseña está en `metodo.html`, y su guard —vivo y verde— es
     # `test_contrafactico_sin_drip.py::test_mas_impuesto_no_implica_peor_resultado_con_drip`,
