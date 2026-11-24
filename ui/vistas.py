@@ -6,13 +6,14 @@ llegue su fase. Aquí no hay cálculo: se pide a `logic.py` y se pasa por `ui.ad
 
 from __future__ import annotations
 
+import html
 import time
 
 import streamlit as st
 
 import logic
 from ui import estado, heredadas, impuestos, nav, riesgo
-from ui.adapters import (ROC_FRASE_CARGA, DatosIncompletos, cashflow_data,
+from ui.adapters import (ROC_FRASE_CARGA, DatosIncompletos, _tiene_datos, cashflow_data,
                          comparacion_data, diagnosticar_bloqueo, hoja_data, metodo_data,
                          metodo_real_data, metodo_serie_data, roc_salud_data,
                          salud_nav_data, trg_real_data, verificar_identidades)
@@ -134,9 +135,18 @@ def _stats_o_aviso(ruta: Ruta) -> dict | None:
     muestre en Cash flow — mapa-datos.md § 3).
     """
     stats = _resultados().get(ruta.etf)
+    etf = html.escape(str(ruta.etf))
+    if isinstance(stats, dict) and not stats.get("skipped") and not _tiene_datos(stats):
+        st.markdown('<span class="vd-badge">Sin precios</span>', unsafe_allow_html=True)
+        st.markdown(f'<h2 class="vd-title">No pudimos traer los precios de {etf}</h2>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            '<p class="vd-lede">Lo volvemos a intentar solos en unos minutos. Mientras tanto, '
+            'elige otro ETF en la ruta de arriba.</p>', unsafe_allow_html=True)
+        return None
     if not stats or stats.get("skipped"):
         st.markdown('<span class="vd-badge">Sin datos</span>', unsafe_allow_html=True)
-        st.markdown(f'<h2 class="vd-title">{ruta.etf} no está en tu archivo</h2>',
+        st.markdown(f'<h2 class="vd-title">{etf} no está en tu archivo</h2>',
                     unsafe_allow_html=True)
         st.markdown(
             '<p class="vd-lede">Elige otro ETF en la ruta de arriba, o vuelve a la carga '
