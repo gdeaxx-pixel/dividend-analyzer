@@ -1455,10 +1455,11 @@ def _tasa_efectiva_neta(ticker: str, modo: str, roc19a: dict) -> float:
     −18.7 pp (TSLY) a +28.0 pp (MSTY) en el retorno total Con DRIP. Ver el docstring de
     `backtest.run_backtest` y `specs/roc-nra-invariants.md` (Regla 2: base Y momento).
 
-    Como cifra **reportada** sigue siendo correcta —el total pagado al final del ciclo es el
-    mismo— y es la que la nota al pie de la 3ª gráfica de «La matriz» usa para decir
-    «8.7%–17.6% según el fondo». Lo que una tasa no puede expresar es el MOMENTO, que es
-    justo lo que mueve el resultado.
+    Para 'bruto' y 'plano' es la cifra que se reporta. Para 'roc' **ya no** (2026-11-24): la
+    nota al pie de la 3ª gráfica de «La matriz» («la tasa que acabas pagando») lee
+    `_tasa_neta_simulada`, que sale de la corrida y por tanto del %ROC por año con el cierre
+    anual por delante. Esta versión con el ponderado 19(a) queda como contraste en
+    `test_comparacion_data.py`.
 
     `weighted_pct` es un PROMEDIO PONDERADO sobre una ventana rodante (~52 avisos más
     recientes, ver `logic.load_roc_19a`) — no la historia completa del fondo desde su
