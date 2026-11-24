@@ -84,7 +84,7 @@ def test_solo_se_mueven_las_ventas_y_solo_dentro_de_su_fecha():
 @pytest.mark.parametrize('accion', [
     'Sell', 'Sold', 'Venta', 'Buy', 'Bought', 'Compra', 'Reinvest Shares', 'Reinvest Dividend',
     'Journaled Shares', 'Internal Transfer', 'Deposit', 'Qualified Dividend', 'Sell to Cover',
-    'Transfer Sold Shares', 'NRA Tax Adj', 'Stock Split',
+    'Transfer Sold Shares', 'NRA Tax Adj', 'Stock Split', 'Buy - Sell Adjustment',
 ])
 def test_lo_que_se_manda_al_final_es_lo_que_el_recorrido_trata_como_venta(accion):
     """El ordenador y el recorrido deciden «venta» por separado: aquí se comparan. Una fila es
@@ -106,6 +106,7 @@ VIEJA = ('2022-01-10', 'Buy', 'AAA', 100, 10.00, -1000.00)
     ('2022-01-12', '2024-01-11', 'ge_2y', True),    # 731 y 729 días: a un día de cada lado
     ('2022-01-11', '2024-01-11', 'ge_2y', False),   # 731 y 730: las dos ya pasaron
     ('2022-01-12', '2024-01-09', 'lt_2y', False),   # 729 y 727: ninguna ha pasado
+    ('2023-06-01', '2024-01-10', 'lt_2y', True),    # la vieja cumple justo 730 días
 ])
 def test_la_venta_con_compras_a_ambos_lados_del_corte_va_marcada(fecha_nueva, fecha_venta,
                                                                  tramo, aproximado):
