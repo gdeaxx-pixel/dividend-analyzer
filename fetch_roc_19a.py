@@ -54,6 +54,16 @@ def _parse_date(v):
         return None
 
 
+# Un refresco que trae menos de esta fracción de las filas que ya había guardadas no reemplaza
+# lo guardado: una tabla o una historia a medias llega sin error y con aspecto correcto.
+MIN_FRACCION_FILAS = 0.90
+
+
+def refresco_recortado(n_nuevo, n_previo) -> bool:
+    """¿Lo nuevo trae menos del 90 % de las filas que ya había? Sin dato previo, nunca."""
+    return bool(n_previo) and n_nuevo < MIN_FRACCION_FILAS * n_previo
+
+
 def _parse_pct(v):
     m = re.search(r"(\d{1,3}(?:\.\d+)?)", str(v))
     if not m:
@@ -310,8 +320,15 @@ def main(argv):
             time.sleep(FUND_DELAY)
             continue
         time.sleep(FUND_DELAY)
-        if rows:
-            out[tk] = build_entry(tk, rows)
+        n_previo = len((existing.get(tk) or {}).get("per_distribution") or [])
+        nueva = build_entry(tk, rows) if rows else None
+        if nueva and refresco_recortado(len(nueva["per_distribution"]), n_previo):
+            regressions.append(tk)
+            print(f"::error::{tk}: la tabla trae {len(nueva['per_distribution'])} distribuciones "
+                  f"y había {n_previo} guardadas (menos del {MIN_FRACCION_FILAS:.0%}). "
+                  f"Conservo la entrada previa.", file=sys.stderr)
+        elif nueva:
+            out[tk] = nueva
             print(f"{tk}: {len(rows)} distribuciones, weighted_pct {out[tk]['weighted_pct']}%")
         else:
             had_prior = bool((existing.get(tk) or {}).get("per_distribution"))
