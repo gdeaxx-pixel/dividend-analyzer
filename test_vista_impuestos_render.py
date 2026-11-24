@@ -1321,3 +1321,54 @@ def test_1042s_a_medias_no_anuncia_la_parte_que_es_cero(devuelto, pendiente, si,
 def test_1042s_entero_conserva_su_frase(veredicto, frag):
     html = _rutas(veredicto, 12.5, 30.0)
     assert frag in html and "Una parte ya te la devolvieron" not in html
+
+
+# ── «Te retuvieron menos»: solo cuando la diferencia pasa del margen ─────────────────
+
+def _D_falta(falta, gap=0.0, sin_roc=()):
+    d = _D_para("justo")
+    R = d["peldanos"]["retenido"]
+    R["monto"] = round(d["peldanos"]["corresponde"]["monto"] - falta, 2)
+    R["gap_w8ben"] = {"monto": gap, "pct": 0.0}
+    d["peldanos"]["gravable"]["sin_roc"] = list(sin_roc)
+    return d
+
+
+@_node
+@pytest.mark.parametrize("falta,borde,frag", [
+    (0.03, "cash", "Te retuvieron $210.20, prácticamente lo que te tocaba."),
+    (2.10, "cash", "Te retuvieron $208.13, prácticamente lo que te tocaba."),
+    (2.11, "warn", "Te retuvieron $208.12 — menos de los $210.23 que te tocaban."),
+])
+def test_unos_centavos_de_redondeo_no_son_retener_de_menos(falta, borde, frag):
+    """El margen es el 1 % de lo que tocaba ($2.10 sobre $210.23): a un centavo de cada lado."""
+    html = _corte(_D_falta(falta))
+    big, _sub = _titular_y_sub(html)
+    assert frag in big, big
+    assert re.search(r'class="imp-verdict" data-borde="(\w+)"', html).group(1) == borde
+
+
+@_node
+def test_el_margen_minimo_es_de_cincuenta_centavos():
+    d = _D_falta(0.0)
+    d["peldanos"]["corresponde"]["monto"] = 10.00
+    for retenido, esperado in ((9.50, "prácticamente lo que te tocaba"),
+                               (9.49, "menos de los $10.00 que te tocaban")):
+        d["peldanos"]["retenido"]["monto"] = retenido
+        big, _sub = _titular_y_sub(_corte(d))
+        assert esperado in big, (retenido, big)
+
+
+@_node
+def test_con_residuo_de_w8ben_no_se_dice_que_retuvieron_de_menos():
+    big, sub = _titular_y_sub(_corte(_D_falta(50.0, gap=0.01)))
+    assert "menos de los" not in big, big
+    assert "prácticamente lo que te tocaba" in big, big
+    assert "Quedan $0.01 de gap de W-8BEN" in sub, sub
+
+
+@_node
+def test_con_un_fondo_sin_dato_de_roc_no_se_dice_que_retuvieron_de_menos():
+    big, _sub = _titular_y_sub(_corte(_D_falta(50.0, sin_roc=["SVOL"])))
+    assert "menos de los" not in big, big
+    assert "prácticamente lo que te tocaba" in big, big

@@ -558,16 +558,23 @@
         sub: subResidual };
     }
     // Sin exceso no quiere decir «justo»: si lo retenido queda por debajo de lo que
-    // tocaba se dice, comparando los dos importes tal como se pintan (a centavos).
-    var deMenos = Pc && R.monto != null && R.monto < Pc.monto && X !== Y;
+    // tocaba, se dice. Lo retenido suma los cobros del bróker y lo que tocaba suma un
+    // redondeo por fondo, así que unos centavos de diferencia no son «menos»: hace falta
+    // que la diferencia pase del margen. Tampoco se afirma con un fondo sin dato de ROC
+    // (ahí lo que tocaba está calculado de más a propósito) ni con un residuo de W-8BEN,
+    // que dice lo contrario.
+    var falta = (Pc && R.monto != null) ? Pc.monto - R.monto : 0;
+    var MARGEN_DE_MENOS = Math.max(0.50, 0.01 * (Pc ? Pc.monto : 0));
+    var sinRocVer = (((DATA.peldanos || {}).gravable || {}).sin_roc || []).length > 0;
+    var deMenos = falta > MARGEN_DE_MENOS && !gapResidual && !sinRocVer;
     if (deMenos) {
       return { borde: "warn", kick: kick,
         big: "Te retuvieron " + X + " — menos de los " + Y + " que te tocaban.",
-        sub: subResidual || "No hay exceso que recuperar: al cobro te descontaron menos de lo esperado para tu país." };
+        sub: "No hay exceso que recuperar: al cobro te descontaron menos de lo esperado para tu país." };
     }
     return { borde: "cash", kick: kick,
       big: "Te retuvieron " + X + ", "
-           + (gapResidual ? "prácticamente" : "justo") + " lo que te tocaba.",
+           + ((gapResidual || X !== Y) ? "prácticamente" : "justo") + " lo que te tocaba.",
       sub: subResidual };
   }
 
