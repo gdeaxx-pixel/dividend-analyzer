@@ -14,6 +14,7 @@ haberla escondido detrás de un clic (mockup aprobado por Daniel en la misma ses
 
 from __future__ import annotations
 
+import html
 from fractions import Fraction
 
 import streamlit as st
@@ -67,6 +68,12 @@ _V1042S_ESTILO = {
 }
 
 
+def _e(valor) -> str:
+    """Texto que viene del archivo del cliente (símbolo, nota del motor que lo cita):
+    se escribe como texto, nunca como etiquetas."""
+    return html.escape(str(valor))
+
+
 def _tarjeta(accent_var: str, titulo_html: str, cuerpo_html: str) -> str:
     return (f'<div class="vd-pie-card" style="border-left-color: var({accent_var});">'
             f'<p class="vd-pie-card-titulo">{titulo_html}</p>{cuerpo_html}</div>')
@@ -110,11 +117,11 @@ def _render_calidad_datos(resultados: dict) -> None:
         for ticker, q in no_ok.items():
             accent_var, etiqueta = _QUALITY_STYLE.get(q["level"], _QUALITY_STYLE["partial"])
             razon = _RAZON_RECONCILIADO if q["level"] == "reconciled" else q["reason"]
-            accion = (f'<p class="vd-pie-card-accion">→ {q["action"]}</p>' if q.get("action") else "")
+            accion = (f'<p class="vd-pie-card-accion">→ {_e(q["action"])}</p>' if q.get("action") else "")
             st.markdown(
                 _tarjeta(accent_var,
-                        f'{ticker} · <span style="color: var({accent_var});">{etiqueta}</span>',
-                        f'<p class="vd-pie-card-cuerpo">{razon}</p>{accion}'),
+                        f'{_e(ticker)} · <span style="color: var({accent_var});">{etiqueta}</span>',
+                        f'<p class="vd-pie-card-cuerpo">{_e(razon)}</p>{accion}'),
                 unsafe_allow_html=True)
     else:
         verificadas = texto.plural(len(dq), "posición verificada", "posiciones verificadas")
@@ -153,10 +160,10 @@ def _render_calidad_datos(resultados: dict) -> None:
                     ventana = f' (en ventana común: ${r["csv_in_window"]:,.2f})'
                 st.markdown(
                     _tarjeta(accent_var,
-                            f'{ticker} · <span style="color: var({accent_var});">{etiqueta}</span>',
+                            f'{_e(ticker)} · <span style="color: var({accent_var});">{_e(etiqueta)}</span>',
                             f'<p class="vd-pie-card-cuerpo">Dividendo bruto — CSV: <b>{csv_v}</b>'
                             f'{ventana} · Broker recibido: <b>{inc_v}</b></p>'
-                            f'<p class="vd-pie-card-accion">{r["note"]}</p>'),
+                            f'<p class="vd-pie-card-accion">{_e(r["note"])}</p>'),
                     unsafe_allow_html=True)
 
 
@@ -199,10 +206,10 @@ def _render_notas_tecnicas(resultados: dict) -> None:
                      + texto.plural(len(eventos), "evento", "eventos")):
         filas = "".join(
             '<tr class="vd-pie-fila">'
-            f'<td class="vd-pie-celda vd-pie-celda-fecha">{e["date"] or "—"}</td>'
-            f'<td class="vd-pie-celda vd-pie-celda-ticker">{e["ticker"]}</td>'
-            f'<td class="vd-pie-celda vd-pie-celda-tipo">{e["tipo"]}</td>'
-            f'<td class="vd-pie-celda">{e["desc"]}</td>'
+            f'<td class="vd-pie-celda vd-pie-celda-fecha">{_e(e["date"] or "—")}</td>'
+            f'<td class="vd-pie-celda vd-pie-celda-ticker">{_e(e["ticker"])}</td>'
+            f'<td class="vd-pie-celda vd-pie-celda-tipo">{_e(e["tipo"])}</td>'
+            f'<td class="vd-pie-celda">{_e(e["desc"])}</td>'
             "</tr>"
             for e in eventos)
         st.markdown(
@@ -277,8 +284,8 @@ def _etiqueta_excluido(s: dict) -> str:
 
 def _render_lista_excluidos(grupo: dict) -> None:
     for ticker, s in grupo.items():
-        st.markdown(f'<p class="vd-pie-excluido">— <b>{ticker}</b> · '
-                    f'<span class="vd-pie-excluido-razon">{_etiqueta_excluido(s)}</span></p>',
+        st.markdown(f'<p class="vd-pie-excluido">— <b>{_e(ticker)}</b> · '
+                    f'<span class="vd-pie-excluido-razon">{_e(_etiqueta_excluido(s))}</span></p>',
                     unsafe_allow_html=True)
 
 
