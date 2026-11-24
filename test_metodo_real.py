@@ -295,3 +295,30 @@ def test_precio_ignora_la_barra_en_curso_sin_datos(monkeypatch):
     for s in valorados:
         mv = s.get("market_value")
         assert mv == mv, "market_value salió NaN: volvió a colarse la barra en curso"
+
+
+def test_la_rentabilidad_anual_de_la_cartera_cuenta_el_valor_de_hoy_una_sola_vez(monkeypatch):
+    """Dos fondos: $1,000 y $500 puestos hace 366 días, que hoy valen $1,100 y $550.
+    Esperado a mano: `1.1 ** (365.25 / 366) − 1` = 9,98 %. Contar dos veces el valor de hoy
+    daría más del 100 %; no contarlo, una pérdida casi total."""
+    import datetime
+
+    import pandas as pd
+
+    from ui import adapters
+
+    hoy = datetime.date(2025, 1, 2)
+
+    class _Fecha(datetime.date):
+        @classmethod
+        def today(cls):
+            return hoy
+
+    monkeypatch.setattr(adapters.datetime, "date", _Fecha)
+    inicio = pd.Timestamp("2024-01-02")
+    res = {"A": {"cash_flows_dated": [(inicio, -1000.0)], "market_value": 1100.0},
+           "B": {"cash_flows_dated": [(inicio, -500.0)], "market_value": 550.0},
+           "C": {"cash_flows_dated": [(inicio, -900.0)], "market_value": 5.0}}
+    tasa = adapters._xirr_cartera(res, ["A", "B"])
+    assert tasa == pytest.approx((1.1 ** (365.25 / 366) - 1) * 100, abs=0.006)
+    assert tasa == pytest.approx(9.98, abs=0.006)

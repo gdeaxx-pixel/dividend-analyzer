@@ -1174,7 +1174,11 @@
   // Etiqueta del concepto: si el CSV trae un solo tipo (lo normal: un Cash In Lieu de
   // un split inverso), se nombra ese; si trae varios, el genérico.
   var OTROS_TIPOS = Object.keys(D.OTROS_DETALLE || {});
-  var OTROS_LABEL = OTROS_TIPOS.length === 1 ? OTROS_TIPOS[0] : "Otros movimientos";
+  function esc(t) {
+    return String(t).split("&").join("&amp;").split("<").join("&lt;")
+      .split(">").join("&gt;").split('"').join("&quot;");
+  }
+  var OTROS_LABEL = esc(OTROS_TIPOS.length === 1 ? OTROS_TIPOS[0] : "Otros movimientos");
 
   // 8 pasos (Salud NAV es ahora su propia sección, no un paso). Mismos nombres que el
   // rail nativo (`ui/adapters.py::STEP_LABELS`) y que el `lab` de cada columna (D5, 30-oct).

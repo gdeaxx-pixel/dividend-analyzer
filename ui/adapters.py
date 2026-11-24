@@ -139,7 +139,10 @@ def _tiene_datos(stats) -> bool:
     y `ui.heredadas` ya importa de `ui.adapters` — el helper no puede vivir en
     heredadas sin crear un import circular.
     """
-    return isinstance(stats, dict) and "error" not in stats and not stats.get("skipped")
+    if not isinstance(stats, dict) or "error" in stats or stats.get("skipped"):
+        return False
+    valor = stats.get("market_value")
+    return not (isinstance(valor, float) and not math.isfinite(valor))
 
 
 # Tipo de `logic.classify_tickers` de los fondos de cada categoría con Cash flow (P3).
@@ -157,7 +160,7 @@ def fondos_por_categoria(resultados: dict) -> dict:
     criterio de `ui.vistas._stats_o_aviso`."""
     from ui import nav
 
-    con_datos = {t for t, s in (resultados or {}).items() if s and not s.get("skipped")}
+    con_datos = {t for t, s in (resultados or {}).items() if s and _tiene_datos(s)}
     modos = logic.classify_tickers(sorted(con_datos))
     out = {}
     for cat, fijos in nav.CATS.items():
@@ -177,7 +180,7 @@ def cashflow_data(stats: dict, ticker: str, tax_summary: dict = None) -> dict:
     capa 1, SIN DECLARAR, y por tanto no trae devolución estimada. Nunca se recalcula el
     concepto aquí (Regla 3): o llega el objeto, o se lee el de `stats`.
     """
-    if not stats or stats.get("skipped"):
+    if not stats or not _tiene_datos(stats):
         raise DatosIncompletos(f"{ticker}: sin datos analizables")
 
     pocket = _f(stats.get("pocket_investment"))

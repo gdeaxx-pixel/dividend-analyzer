@@ -297,7 +297,7 @@ def test_render_metodo_inyecta_la_serie_aparte_de_datos():
     m = re.search(r"def render_metodo\(([^)]*)\)", src)
     assert m is not None and "serie" in m.group(1)
     cuerpo = src[src.index("def render_metodo("):src.index("\ndef ", src.index("def render_metodo(") + 1)]
-    assert '"{{SERIE_JSON}}"' in cuerpo and "json.dumps(serie" in cuerpo
+    assert '"{{SERIE_JSON}}"' in cuerpo and "_json(serie" in cuerpo
     assert '"null"' in cuerpo, "sin serie el componente tiene que recibir null, no romper"
 
 

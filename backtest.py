@@ -396,11 +396,16 @@ def run_backtest(
     # artificial: el caracter de ROC existe desde que se paga el dividendo; lo que llega
     # tarde es la CONFIRMACION —y el dinero— via 1042-S.
     receivable_by_year: dict[int, float] = {}
+    ultimo_precio = 0.0
     rows = []
     for i, (date, row) in enumerate(history.iterrows()):
         elegibles = shares if (i > 0 or preexistente) else 0.0
 
-        price = float(row["Close"]) if pd.notna(row["Close"]) else 0.0
+        # Un día sin cierre se valora y reinvierte al último cierre válido: con 0 la
+        # posición valdría cero ese día y el dividendo reinvertido se quedaría fuera.
+        if pd.notna(row["Close"]) and float(row["Close"]) > 0:
+            ultimo_precio = float(row["Close"])
+        price = ultimo_precio
         div_rate = float(row["Dividends"]) if pd.notna(row.get("Dividends", 0.0)) else 0.0
 
         # 1) ¿llego hoy el 1042-S de algun año ya cerrado? Se cobra ANTES de procesar la
@@ -440,7 +445,8 @@ def run_backtest(
         # La cuenta por cobrar suma: es un activo real del inversor, no una promesa. Si no
         # sumara, la serie mostraria un hueco entre el cobro del dividendo y el 1042-S y
         # luego un salto — dinero que aparece de la nada.
-        total_value = portfolio_value + (0.0 if drip else cash_accum) + roc_receivable
+        # Con reinversión la caja solo existe si aún no hubo ningún cierre válido; cuenta igual.
+        total_value = portfolio_value + cash_accum + roc_receivable
 
         rows.append({
             "date": date, "price": price, "dividend_per_share": div_rate, "shares": shares,
