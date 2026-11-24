@@ -1175,9 +1175,8 @@
   // un split inverso), se nombra ese; si trae varios, el genérico.
   var OTROS_TIPOS = Object.keys(D.OTROS_DETALLE || {});
   function esc(t) {
-    return String(t).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
+    return String(t).split("&").join("&amp;").split("<").join("&lt;")
+      .split(">").join("&gt;").split('"').join("&quot;");
   }
   var OTROS_LABEL = esc(OTROS_TIPOS.length === 1 ? OTROS_TIPOS[0] : "Otros movimientos");
 

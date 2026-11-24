@@ -141,8 +141,8 @@ def _stats_o_aviso(ruta: Ruta) -> dict | None:
         st.markdown(f'<h2 class="vd-title">No pudimos traer los precios de {etf}</h2>',
                     unsafe_allow_html=True)
         st.markdown(
-            '<p class="vd-lede">Lo volvemos a intentar solos en unos minutos. Mientras tanto, '
-            'elige otro ETF en la ruta de arriba.</p>', unsafe_allow_html=True)
+            '<p class="vd-lede">Vuelve a intentarlo en unos minutos. Mientras tanto, elige '
+            'otro ETF en la ruta de arriba.</p>', unsafe_allow_html=True)
         return None
     if not stats or stats.get("skipped"):
         st.markdown('<span class="vd-badge">Sin datos</span>', unsafe_allow_html=True)

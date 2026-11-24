@@ -4,6 +4,8 @@ Un símbolo o un concepto del CSV puede traer `<img …>`: la pantalla de valida
 interpolaba en `st.markdown(unsafe_allow_html=True)` y el Cash flow en `innerHTML`. Aquí se
 mete esa cadena por cada camino y se comprueba que llega escapada.
 """
+import ast
+import inspect
 import json
 import re
 
@@ -104,7 +106,8 @@ def test_el_texto_normal_no_cambia(fake):
 
 # --- Cash flow: la etiqueta de «otros movimientos» sale del concepto del CSV -------------
 
-CONCEPTO = "Cash In Lieu " + HOSTIL
+# Con `</script>` delante: sin escapar el JSON, eso cierra el bloque antes de que corra nada.
+CONCEPTO = "Cash In Lieu </script>" + HOSTIL
 DATOS = cashflow_data(dict(STATS_SCHB, misc_cash_total=30.0,
                            misc_cash_breakdown={CONCEPTO: 30.0}), "SCHB")
 
@@ -128,30 +131,59 @@ def test_el_adaptador_entrega_el_concepto_tal_cual():
     assert list(DATOS["OTROS_DETALLE"]) == [CONCEPTO]
 
 
+def test_el_json_incrustado_no_puede_cerrar_el_script():
+    hostil = {"</script><img src=x>&\u2028": ["<!--", "]]>"]}
+    texto = componentes._json(hostil, ensure_ascii=False)
+    assert not set("<>&\u2028\u2029") & set(texto), texto
+    assert json.loads(texto) == hostil
+
+
+def test_ningun_componente_incrusta_json_sin_escapar():
+    """Estructural: en `ui.componentes` solo `_json` llama a `json.dumps`."""
+    arbol = ast.parse(inspect.getsource(componentes))
+    fuera = [n.lineno for f in arbol.body
+             if not (isinstance(f, ast.FunctionDef) and f.name == "_json")
+             for n in ast.walk(f)
+             if isinstance(n, ast.Attribute) and n.attr == "dumps"]
+    assert fuera == []
+
+
+def _html_que_monta_la_app(monkeypatch_setattr, paso):
+    montado = []
+    monkeypatch_setattr(componentes, "_montar", lambda html, alto: montado.append(html))
+    componentes.render_cashflow(DATOS, paso, "Claro")
+    return montado[0]
+
+
 @pytest.fixture(scope="module")
 def pasos():
     sync_api = pytest.importorskip("playwright.sync_api")
     try:
-        with sync_api.sync_playwright() as pw:
-            nav = pw.chromium.launch()
-            out = {}
-            for paso in range(len(DATOS["STEP_LABELS"])):
-                html = componentes._con_tema(componentes._plantilla("cashflow.html"), "Claro")
-                html = (html.replace("{{DATA_JSON}}", json.dumps(DATOS, ensure_ascii=False))
-                            .replace("{{PASO}}", str(paso)))
-                pagina = nav.new_page(viewport={"width": 860, "height": 1400})
-                pagina.set_content("<!doctype html>" + html)
-                pagina.wait_for_timeout(300)
-                out[paso] = pagina.evaluate(_LEER)
-                pagina.close()
-            nav.close()
-            return out
+        pw = sync_api.sync_playwright().start()
+        nav = pw.chromium.launch()
     except Exception as error:
         pytest.skip(f"Chromium no disponible: {error}")
+    parche = pytest.MonkeyPatch()
+    try:
+        out = {}
+        for paso in range(len(DATOS["STEP_LABELS"])):
+            pagina = nav.new_page(viewport={"width": 860, "height": 1400})
+            errores = []
+            pagina.on("pageerror", lambda e: errores.append(str(e)))
+            pagina.set_content("<!doctype html>" + _html_que_monta_la_app(parche.setattr, paso))
+            pagina.wait_for_timeout(300)
+            out[paso] = dict(pagina.evaluate(_LEER), errores=errores)
+            pagina.close()
+        return out
+    finally:
+        parche.undo()
+        nav.close()
+        pw.stop()
 
 
 def test_el_concepto_del_csv_no_crea_etiquetas_en_ningun_paso(pasos):
     for paso, leido in pasos.items():
+        assert leido["errores"] == [], (paso, leido["errores"])
         assert leido["imgs"] == 0, paso
         assert not leido["colado"], paso
 

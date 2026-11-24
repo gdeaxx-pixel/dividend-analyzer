@@ -131,6 +131,15 @@ ALTO_VIGILAR = 640
 ALTO_COBERTURA = 700
 
 
+
+def _json(valor, **opciones) -> str:
+    """JSON listo para vivir dentro de un `<script>`. `json.dumps` no escapa `<`: un texto
+    del archivo del cliente con `</script>` cerraría el bloque y lo que siga se leería como
+    HTML. Los escapes `\\u003c` valen lo mismo para JavaScript y no cierran nada."""
+    return (json.dumps(valor, **opciones).replace("<", "\\u003c").replace(">", "\\u003e")
+            .replace("&", "\\u0026").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+
+
 def _plantilla(nombre: str) -> str:
     ruta = os.path.join(_AQUI, nombre)
     if not os.path.exists(ruta):
@@ -173,7 +182,7 @@ def _con_anchor(html: str, anchor: str | None) -> str:
     componente se comporta como hoy (índice sin resaltar)."""
     if not anchor:
         return html
-    script = f'<script>window.__vdAnchor = {json.dumps(anchor)};</script>\n'
+    script = f'<script>window.__vdAnchor = {_json(anchor)};</script>\n'
     i = html.find("<style>")
     if i < 0:
         raise ValueError("No encontré <style> en el componente — ¿cambió el extractor?")
@@ -194,12 +203,12 @@ def render_cashflow(datos: dict, paso: int, tema: str, alto: int = ALTO_CASHFLOW
     """Dibuja el recorrido del dinero en el paso indicado.
 
     `datos` viene de `ui.adapters.cashflow_data`; `paso` es 0-7 y lo controla el rail
-    nativo. El JSON se serializa con `json.dumps`, que ya escapa lo necesario para vivir
+    nativo. El JSON se serializa con `_json`, que escapa lo necesario para vivir
     dentro de un `<script>`. `tema` es "Claro"/"Oscuro" (`st.session_state["vd_tema"]`).
     """
     html = _plantilla("cashflow.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     html = html.replace("{{PASO}}", str(int(paso)))
     _montar(html, alto)
 
@@ -210,7 +219,7 @@ def render_hoja(datos: dict, tema: str, alto: int = ALTO_HOJA) -> None:
     """
     html = _plantilla("hoja.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -224,7 +233,7 @@ def render_comparacion(datos: dict, tema: str, alto: int = ALTO_COMPARACION) -> 
     """
     html = _plantilla("comparacion.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -245,7 +254,7 @@ def render_comparacion_real(datos: dict, tema: str, alto: int = ALTO_COMPARACION
     """
     html = _plantilla("comparacion_real.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -269,9 +278,9 @@ def render_metodo(vista_activa: str, tema: str, datos: dict, serie: dict | None 
     html = _plantilla("metodo.html")
     html = _con_tema(html, tema)
     html = html.replace("{{VISTA_ACTIVA}}", vista_activa)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     html = html.replace("{{SERIE_JSON}}",
-                        json.dumps(serie, ensure_ascii=False) if serie else "null")
+                        _json(serie, ensure_ascii=False) if serie else "null")
     _montar(html, alto)
 
 
@@ -286,7 +295,7 @@ def render_metodo_real(datos: dict, tema: str, alto: int = ALTO_METODO_REAL) -> 
     """
     html = _plantilla("metodo_real.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -301,7 +310,7 @@ def render_impuestos(datos: dict, tema: str, alto: int = ALTO_IMPUESTOS) -> None
     """
     html = _plantilla("impuestos_v2.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -315,7 +324,7 @@ def render_portafolios(datos: dict, tema: str, alto: int = ALTO_PORTAFOLIOS) -> 
     """
     html = _plantilla("portafolios.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -328,7 +337,7 @@ def render_riesgo(datos: dict, tema: str, alto: int = ALTO_RIESGO) -> None:
     """
     html = _plantilla("riesgo.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -340,7 +349,7 @@ def render_vigilar(datos: dict, tema: str, alto: int = ALTO_VIGILAR) -> None:
     `Obsidian/APPs/Dividend-Analyzer/demos/portafolios-v4-detalle.html`."""
     html = _plantilla("vigilar.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -355,7 +364,7 @@ def render_cobertura(datos: dict, tema: str, alto: int = ALTO_COBERTURA) -> None
     """
     html = _plantilla("cobertura.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False))
     _montar(html, alto)
 
 
@@ -381,11 +390,11 @@ def render_roc(estado: str, tema: str, frase: str | None = None, tam: int = 72,
         raise ValueError(f"Reacción de ROC {reaccion!r} no vale con el estado {estado!r}")
     html = _plantilla("roc.html")
     html = _con_tema(html, tema)
-    html = html.replace("{{ESTADO_JSON}}", json.dumps(estado))
-    html = html.replace("{{FRASE_JSON}}", json.dumps(frase, ensure_ascii=False))
+    html = html.replace("{{ESTADO_JSON}}", _json(estado))
+    html = html.replace("{{FRASE_JSON}}", _json(frase, ensure_ascii=False))
     html = html.replace("{{TAM}}", str(int(tam)))
-    html = html.replace("{{REACCION_JSON}}", json.dumps(reaccion, ensure_ascii=False))
-    html = html.replace("{{BUHO_JSON}}", json.dumps(bool(buho)))
+    html = html.replace("{{REACCION_JSON}}", _json(reaccion, ensure_ascii=False))
+    html = html.replace("{{BUHO_JSON}}", _json(bool(buho)))
     html = html.replace("{{SPRITE_JS}}", _plantilla("roc_sprite.js"))
     alto = alto_roc(tam, bool(frase)) if buho else alto_roc(0, bool(frase))
     _montar(html, alto)
@@ -435,7 +444,7 @@ def render_metodologia(tema: str, alto: int = ALTO_METODOLOGIA, anchor: str | No
     html = _plantilla("metodologia.html")
     html = _con_tema(html, tema)
     html = _con_anchor(html, anchor)
-    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False) if datos else "null")
+    html = html.replace("{{DATA_JSON}}", _json(datos, ensure_ascii=False) if datos else "null")
     _montar(html, alto)
 
 
