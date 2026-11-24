@@ -94,6 +94,38 @@ def test_lo_que_se_manda_al_final_es_lo_que_el_recorrido_trata_como_venta(accion
     assert logic._es_venta_de_capital(accion) == (len(cg['realized']) == 1), accion
 
 
+def test_el_dia_de_un_split_declarado_no_se_reordena():
+    """La fila de split anuncia el saldo posterior: el orden del archivo manda ese día."""
+    df = _df([
+        ('2024-06-03', 'Sell', 'AAA', 10, 12.00, 120.00),
+        ('2024-06-03', 'Stock Split', 'AAA', 180, 0.0, 0.0),
+        ('2024-06-03', 'Buy', 'AAA', 5, 6.00, -30.00),
+    ])
+    assert logic._compras_antes_que_ventas(df) is df
+    todo = _df([PREVIA] + df.values.tolist())
+    cg = logic.build_capital_gains(todo, 'AAA')
+    assert cg['realized'][0]['basis'] == pytest.approx(100.00, abs=0.005)
+    assert cg['unrealized']['shares'] == pytest.approx(185.0)
+
+
+def test_el_recorrido_principal_cuenta_las_mismas_acciones(monkeypatch):
+    """`analyze_portfolio` y las ganancias de capital reciben las filas ya ordenadas: con la
+    venta escrita antes que la compra del mismo día no falta historia ni sobran acciones."""
+    filas = pd.DataFrame({
+        'Date': pd.to_datetime(['2024-01-10', '2024-06-03', '2024-06-03']),
+        'Action': ['Buy', 'Sell', 'Buy'], 'Quantity': [100.0, 150.0, 100.0],
+        'Price': [10.0, 12.0, 20.0], 'Amount': [-1000.0, 1800.0, -2000.0],
+    }, index=[7, 3, 5])
+    ordenadas = logic._compras_antes_que_ventas(filas)
+    assert list(ordenadas.index) == [7, 5, 3]
+    for df, incompleta, acciones in ((filas, True, 100.0), (ordenadas, False, 50.0)):
+        rec = logic._recorrer_transacciones(df, pd.Series(dtype=float))
+        assert rec['history_incomplete'] is incompleta
+        assert rec['shares_owned'] == pytest.approx(acciones)
+    fuente = __import__('inspect').getsource(logic.analyze_portfolio)
+    assert "_compras_antes_que_ventas(df[df['Ticker'] == ticker]" in fuente
+
+
 # ── Tramo aproximado ─────────────────────────────────────────────────────────────────
 
 VIEJA = ('2022-01-10', 'Buy', 'AAA', 100, 10.00, -1000.00)
@@ -138,6 +170,15 @@ def test_lo_no_vendido_lleva_la_misma_marca(hoy, aproximado):
     df = _df([VIEJA, ('2025-06-02', 'Buy', 'AAA', 100, 10.00, -1000.00)])
     u = logic.build_capital_gains(df, 'AAA', market_price=12.0, today=hoy)['unrealized']
     assert u['tramo_aproximado'] is aproximado
+
+
+def test_un_split_sobre_posicion_cerrada_no_arrastra_la_antiguedad_vieja():
+    df = _df([VIEJA, ('2025-01-10', 'Sell', 'AAA', 100, 12.00, 1200.00),
+              ('2025-05-01', 'Stock Split', 'AAA', 10, 0.0, 0.0),
+              ('2025-06-02', 'Buy', 'AAA', 100, 10.00, -1000.00),
+              ('2025-07-01', 'Sell', 'AAA', 50, 12.00, 600.00)])
+    ventas = logic.build_capital_gains(df, 'AAA')['realized']
+    assert ventas and ventas[-1]['tramo_aproximado'] is False
 
 
 def test_la_reinversion_tambien_cuenta_como_compra_reciente():

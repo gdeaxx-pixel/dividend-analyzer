@@ -1870,7 +1870,7 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
     tickers = df['Ticker'].unique()
 
     for ticker in tickers:
-        ticker_df = df[df['Ticker'] == ticker].sort_values('Date')
+        ticker_df = _compras_antes_que_ventas(df[df['Ticker'] == ticker].sort_values('Date'))
         if ticker_df.empty:
             continue
 
@@ -4479,7 +4479,8 @@ def _compras_antes_que_ventas(ticker_df):
     ordenación que no conserva empates. Con la venta antes que la compra del mismo día la base
     promedio sale de otra posición y la venta puede quedar «sin compras registradas». Se cuenta
     siempre la compra primero. Si la fecha trae hora, las filas de horas distintas no forman
-    grupo y su orden real se respeta."""
+    grupo y su orden real se respeta. Lo usan el recorrido de `analyze_portfolio` y
+    `build_capital_gains`, para que los dos cuenten las mismas acciones."""
     if ticker_df is None or len(ticker_df) < 2 \
             or 'Date' not in ticker_df.columns or 'Action' not in ticker_df.columns:
         return ticker_df
@@ -4487,6 +4488,11 @@ def _compras_antes_que_ventas(ticker_df):
     cambia_fecha = (fechas != fechas.shift()) | fechas.isna()
     grupo = cambia_fecha.cumsum().to_numpy()
     venta = ticker_df['Action'].map(_es_venta_de_capital).to_numpy()
+    # Una fila de split anuncia el saldo que queda DESPUÉS del split: si la venta de ese día
+    # iba antes o después de ella cambia el saldo, y el archivo es lo único que lo dice. Los
+    # grupos con split se dejan como vienen.
+    con_split = ticker_df['Action'].astype(str).str.lower().str.contains('split').to_numpy()
+    venta = venta & ~np.isin(grupo, grupo[con_split])
     orden = np.lexsort((np.arange(len(ticker_df)), venta, grupo))
     if (orden == np.arange(len(ticker_df))).all():
         return ticker_df
@@ -4823,6 +4829,8 @@ def build_capital_gains(ticker_df, ticker: str = None, market_price: float = Non
         if 'split' in action and qty > 0:
             if shares > 0:
                 dias_wsum *= qty / shares
+            else:
+                dia_adq_min = dia_adq_max = None
             shares = qty
 
         # Fracción pagada en efectivo por un split sin fila en el CSV: mismo trato que el

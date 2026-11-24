@@ -153,3 +153,31 @@ def test_el_umbral_es_el_mismo_en_los_dos_refrescos():
     assert roc.refresco_recortado(89, 100) and not roc.refresco_recortado(90, 100)
     assert not roc.refresco_recortado(0, 0) and not roc.refresco_recortado(5, None)
     assert roc.refresco_recortado(0, 1)
+
+
+# ── La salida para un recorte que sí es real ────────────────────────────────────────────
+
+def test_un_recorte_aceptado_a_mano_entra_solo_para_ese_ticker(cache, tabla, monkeypatch):
+    tmp_path, correr_precios = cache
+    correr_tabla, leer = tabla
+    assert correr_precios(_hist(100), _splits(2)) == 0
+    assert correr_tabla(_filas(40)) == 0
+
+    monkeypatch.setenv(roc.ACEPTAR_RECORTE_ENV, "OTRO, nvdy")
+    assert correr_precios(_hist(50, cierre=20.0), _splits(1)) == 1
+    assert correr_tabla(_filas(10, pct=80.0)) == 1
+    assert len(_guardado(tmp_path)) == 100 and len(leer()["per_distribution"]) == 40
+
+    monkeypatch.setenv(roc.ACEPTAR_RECORTE_ENV, "msty, schb")
+    assert correr_precios(_hist(50, cierre=20.0), _splits(1)) == 0
+    assert correr_tabla(_filas(10, pct=80.0)) == 0
+    assert len(_guardado(tmp_path)) == 50
+    assert len(yaml.safe_load((tmp_path / "_splits.yaml").read_text())["SCHB"]) == 1
+    assert len(leer()["per_distribution"]) == 10
+
+
+def test_el_aviso_dice_como_aceptar_el_recorte(cache, capsys):
+    _tmp, correr = cache
+    correr(_hist(100))
+    correr(_hist(10))
+    assert "REFRESCO_ACEPTAR_RECORTE=SCHB" in capsys.readouterr().err

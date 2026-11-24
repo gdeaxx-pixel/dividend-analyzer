@@ -329,10 +329,11 @@ def main(argv):
                       f"no tiene fila de precio ese día; no se aplica.", file=sys.stderr)
 
         filas_previas = _filas_guardadas(tk)
-        if roc.refresco_recortado(len(cols), filas_previas):
+        if roc.refresco_recortado(len(cols), filas_previas, tk):
             print(f"::warning::{tk}: la historia nueva trae {len(cols)} filas y había "
                   f"{filas_previas} guardadas (menos del {roc.MIN_FRACCION_FILAS:.0%}). "
-                  f"Conservo el cache previo.", file=sys.stderr)
+                  f"Conservo el cache previo. Si el recorte es real: "
+                  f"{roc.ACEPTAR_RECORTE_ENV}={tk}.", file=sys.stderr)
             failures.append(tk)
             regressions.append(tk)
             continue
@@ -354,7 +355,8 @@ def main(argv):
             for ts, ratio in splits.items()
         ] if splits is not None else []
         splits_previos = splits_out.get(tk) or []
-        if len(splits_nuevos) < len(splits_previos):
+        if len(splits_nuevos) < len(splits_previos) \
+                and tk.upper() not in roc.recortes_aceptados():
             # Un split no desaparece: si llegan menos, la respuesta vino incompleta.
             print(f"::warning::{tk}: llegaron {len(splits_nuevos)} split(s) y había "
                   f"{len(splits_previos)} guardados. Conservo los previos.", file=sys.stderr)
