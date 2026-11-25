@@ -64,8 +64,14 @@ _V1042S_ESTILO = {
     "match":             ("--cash", "Coincide"),
     "portfolio_higher":  ("--warn", "Tu archivo reporta más"),
     "form_higher":       ("--warn", "El 1042-S reporta más"),
-    "no_overlap":        ("--ink-mut", "Sin año en común"),
+    "no_overlap":        ("--ink-mut", "Sin comparar"),
 }
+
+SIN_CONTRASTAR = "Sin contrastar"
+
+
+def clase_nivel(nivel: str) -> str:
+    return nivel.lower().replace(" ", "-")
 
 
 def _e(valor) -> str:
@@ -92,6 +98,7 @@ def _render_1042s(resultados: dict) -> dict | None:
     retenido = (f'${validacion["retenido_1042s"]:,.2f}'
                 if validacion.get("retenido_1042s_completo", True) else "no legible")
     sin_leer = int(validacion.get("formularios_sin_leer") or 0)
+    anio = f' {validacion["tax_year"]}' if validacion.get("tax_year") else ""
     aviso = ("" if not sin_leer else
              '<p class="vd-1042s-nota">No pudimos leer '
              + texto.plural(sin_leer, "formulario", "formularios")
@@ -100,7 +107,7 @@ def _render_1042s(resultados: dict) -> dict | None:
         f'<div class="vd-1042s-card" style="border-left-color: var({accent_var});">'
         f'<p class="vd-1042s-titulo">Validación 1042-S · <span style="color: var({accent_var});">'
         f'{etiqueta}</span></p>'
-        f'<p class="vd-1042s-detalle">Dividendo bruto {validacion["tax_year"]} — Tu archivo: '
+        f'<p class="vd-1042s-detalle">Dividendo bruto{anio} — Tu archivo: '
         f'<b>${validacion["bruto_portafolio"]:,.2f}</b> · 1042-S: <b>${validacion["bruto_1042s"]:,.2f}</b> · '
         f'Retenido: <b>{retenido}</b> · ROC: '
         f'<b>${validacion["roc_1042s"]:,.2f}</b> ({validacion["roc_pct"]:.1f}%)</p>'
@@ -330,7 +337,9 @@ def _render_excluidos(resultados: dict) -> None:
 
 
 def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
-    """Etiqueta de confiabilidad (Alta/Media/Baja) — lectura conjunta de las señales que
+    """Etiqueta de confiabilidad (Alta/Media/Baja, o «Sin contrastar» cuando nada la
+    baja pero una fuente quedó sin comparar: un 1042-S sin dividendos que cruzar, un
+    reporte de ingresos que no toca ninguna posición o un fondo sin precios) — lectura conjunta de las señales que
     ya se calculaban por separado (1042-S, calidad de datos, validación cruzada de
     ingresos, posiciones propias excluidas). No es una métrica nueva ni un número que
     nadie pueda auditar a ojo (decisión de Daniel: etiqueta cualitativa, no 0-100): cada
@@ -338,10 +347,14 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     nivel = "Alta"
     razones: list[str] = []
 
+    sin_comparar: list[str] = []
+
     v1042s = validacion_1042s(resultados)
     if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
         nivel = "Media"
         razones.append(v1042s["note"])
+    elif v1042s and v1042s["status"] == "no_overlap":
+        sin_comparar.append("El 1042-S no se pudo comparar con tu archivo.")
 
     classify_map = logic.classify_tickers(list(resultados.keys()))
     dq = logic.assess_data_quality(resultados, classify_map)
@@ -376,6 +389,16 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
             razones.append(texto.plural(
                 len(warns), "posición con alerta en la validación de ingresos.",
                 "posiciones con alerta en la validación de ingresos."))
+        if not any(r["badge"] in ("ok", "warn") for r in recon.values()):
+            sin_comparar.append(
+                "El reporte de ingresos no coincide con ninguna posición analizada.")
+
+    sin_precios = sum(1 for s in resultados.values()
+                      if isinstance(s, dict) and not s.get("skipped") and "error" in s)
+    if sin_precios:
+        sin_comparar.append(texto.plural(
+            sin_precios, "posición sin precios: no se pudo revisar.",
+            "posiciones sin precios: no se pudieron revisar."))
 
     tuyos = excluidos_pendientes_de_sesion(resultados)
     if tuyos:
@@ -385,13 +408,15 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
             len(tuyos), "posición tuya excluida por datos insuficientes.",
             "posiciones tuyas excluidas por datos insuficientes."))
 
+    if nivel == "Alta" and sin_comparar:
+        return SIN_CONTRASTAR, sin_comparar
     if not razones:
         razones.append("Sin discrepancias entre las fuentes disponibles.")
     return nivel, razones
 
 
 def nivel_confiabilidad(resultados: dict) -> str | None:
-    """«Alta», «Media» o «Baja» para la etiqueta visible de la cabecera (P1, 30-oct); `None`
+    """«Alta», «Media», «Baja» o «Sin contrastar» para la etiqueta visible de la cabecera (P1, 30-oct); `None`
     sin resultados. Es la misma lectura que encabeza Validación datos."""
     if not resultados:
         return None
@@ -414,7 +439,7 @@ def render_validacion_datos(resultados: dict) -> None:
 
     nivel, razones = _puntuacion_acertividad(resultados)
     st.markdown(
-        f'<div class="vd-val-score vd-val-score-{nivel.lower()}">'
+        f'<div class="vd-val-score vd-val-score-{clase_nivel(nivel)}">'
         f'<p class="vd-val-score-etiqueta">Confiabilidad {nivel.lower()}</p>'
         f'<p class="vd-val-score-razon">{" · ".join(razones)}</p>'
         '</div>', unsafe_allow_html=True)
@@ -458,6 +483,7 @@ ESTILOS_VALIDACION = """
         .vd-val-score-media .vd-val-score-etiqueta { color: var(--warn); }
         .vd-val-score-baja { border-left-color: var(--loss); }
         .vd-val-score-baja .vd-val-score-etiqueta { color: var(--loss); }
+        .vd-val-score-sin-contrastar .vd-val-score-etiqueta { color: var(--ink-mut); }
 
         .vd-pie-subtitulo {
           font-family: var(--font-mono); font-size: 12px; font-weight: 700;
