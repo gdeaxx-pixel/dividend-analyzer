@@ -2930,7 +2930,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
 
     def _solo_dolares(df):
         col = next((c for c in df.columns
-                    if str(c).strip().lower() in ('currency', 'moneda', 'divisa')), None)
+                    if str(c).strip().lower() == 'currency'), None)
         if col is None:
             return df
         moneda = df[col].astype(str).str.strip().str.upper()
@@ -3046,7 +3046,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             # Filter stocks only
             if 'Asset Category' in trades_df.columns:
                 trades_df = trades_df[trades_df['Asset Category'].str.lower().str.contains('stock|equity', na=False)]
-            trades_df = _solo_dolares(trades_df)
+            trades_df = _solo_dolares(trades_df).copy()
 
             # Map columns
             col_map = {}
@@ -3125,7 +3125,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
         return _con_aviso(pd.concat(frames, ignore_index=True))
 
     # Fallback: return raw first-pass parse
-    return pd.read_csv(io.StringIO(text), engine='python', on_bad_lines='skip')
+    return _con_aviso(pd.read_csv(io.StringIO(text), engine='python', on_bad_lines='skip'))
 
 
 def load_and_detect_csv(uploaded_file) -> tuple:

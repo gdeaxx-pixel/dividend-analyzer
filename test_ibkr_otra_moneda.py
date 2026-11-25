@@ -115,6 +115,32 @@ def test_todo_en_otra_moneda_no_deja_filas_y_lo_dice():
     assert crudo.attrs["otra_moneda"] == {"total": 3, "por_moneda": {"CAD": 3}}
 
 
+def test_sin_columna_de_moneda_no_se_excluye_nada():
+    sin_columna = (_CABECERA + b'Dividends,Header,Date,Description,Amount\n'
+                   b'Dividends,Data,2025-02-01,XYZ(CA123) Cash Dividend CAD 0.50 per Share,50\n')
+    _, crudo, n = _cadena(sin_columna)
+    assert "otra_moneda" not in crudo.attrs
+    assert n["Amount"].tolist() == [50.0]
+
+
+def test_si_ninguna_seccion_se_puede_leer_la_cuenta_no_se_pierde(monkeypatch):
+    partir = logic.re.split
+
+    def _falla_en_la_fecha(patron, *a, **k):
+        if patron == r'[,;]':
+            raise ValueError("fecha")
+        return partir(patron, *a, **k)
+
+    monkeypatch.setattr(logic.re, "split", _falla_en_la_fecha)
+    crudo = logic.parse_ibkr_csv(_SOLO_CAD)
+    assert crudo.attrs["otra_moneda"] == {"total": 3, "por_moneda": {"CAD": 3}}
+
+
+def test_el_aviso_se_limpia_con_el_resto_de_la_cartera():
+    assert "_wizard_csv_otra_moneda" in carga.CLAVES_CONTEXTO_CARTERA
+    assert "_wizard_csv_descarte" in carga.CLAVES_CONTEXTO_CARTERA
+
+
 def test_el_historial_de_transacciones_no_cambia():
     with open(_IB_SYNTH, "rb") as f:
         datos = f.read()

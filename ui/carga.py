@@ -25,6 +25,7 @@ from ui import adapters, componentes, estado, riesgo, texto
 
 CLAVES_CONTEXTO_CARTERA = (
     "_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker", "_wizard_csv_name",
+    "_wizard_csv_descarte", "_wizard_csv_otra_moneda",
     "_wizard_positions", "_wizard_income_summary", "_wizard_income_df", "_wizard_income_multi",
     "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
     "_wizard_1042s_ilegibles",
