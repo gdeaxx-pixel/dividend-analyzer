@@ -2927,6 +2927,10 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
     Parses an Interactive Brokers Activity Statement CSV.
     IBKR exports are multi-section: each section has a Header row and Data rows.
     Extracts Trades (Stocks), Dividends and Withholding Tax sections and merges into unified format.
+
+    Las filas de esas secciones cuya columna de moneda trae un código distinto de USD se dejan
+    fuera: su importe no está en dólares y aquí no hay tipo de cambio. Cuántas y de qué moneda
+    queda en `attrs['otra_moneda']` del resultado.
     """
     for encoding in ['utf-8', 'latin1', 'cp1252']:
         try:
@@ -2951,6 +2955,25 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
         # Con las dos formas en una misma columna, normalize_csv infiere el formato de la
         # primera fila y descarta el resto como NaT: el dividendo desaparecía sin aviso.
         return re.split(r'[,;]', str(raw), maxsplit=1)[0].strip()
+
+    otra_moneda: dict = {}
+
+    def _solo_dolares(df):
+        col = next((c for c in df.columns
+                    if str(c).strip().lower() == 'currency'), None)
+        if col is None:
+            return df
+        moneda = df[col].astype(str).str.upper()
+        fuera = moneda.str.fullmatch(r'[A-Z]{3}') & (moneda != 'USD')
+        for codigo, cuantas in moneda[fuera].value_counts().items():
+            otra_moneda[codigo] = otra_moneda.get(codigo, 0) + int(cuantas)
+        return df[~fuera]
+
+    def _con_aviso(df):
+        if otra_moneda:
+            df.attrs['otra_moneda'] = {'total': sum(otra_moneda.values()),
+                                       'por_moneda': dict(otra_moneda)}
+        return df
 
     def _ibkr_reader(section_name: str):
         """Yield (header, [data_rows]) for a named IB section using csv.reader."""
@@ -3053,6 +3076,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             # Filter stocks only
             if 'Asset Category' in trades_df.columns:
                 trades_df = trades_df[trades_df['Asset Category'].str.lower().str.contains('stock|equity', na=False)]
+            trades_df = _solo_dolares(trades_df).copy()
 
             # Map columns
             col_map = {}
@@ -3101,7 +3125,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             sec_header, sec_rows = _ibkr_reader(section_name)
 
             if sec_header and sec_rows:
-                sec_df = pd.DataFrame(sec_rows, columns=sec_header)
+                sec_df = _solo_dolares(pd.DataFrame(sec_rows, columns=sec_header)).copy()
 
                 # Extract ticker from Description (pattern: "TICKER(CUSIP) Cash Dividend")
                 if 'Description' in sec_df.columns:
@@ -3128,10 +3152,10 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
             print(f"IBKR {section_name} parse error: {e}")
 
     if frames:
-        return pd.concat(frames, ignore_index=True)
+        return _con_aviso(pd.concat(frames, ignore_index=True))
 
     # Fallback: return raw first-pass parse
-    return pd.read_csv(io.StringIO(text), engine='python', on_bad_lines='skip')
+    return _con_aviso(pd.read_csv(io.StringIO(text), engine='python', on_bad_lines='skip'))
 
 
 def load_and_detect_csv(uploaded_file) -> tuple:
