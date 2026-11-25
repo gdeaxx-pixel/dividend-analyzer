@@ -3182,6 +3182,20 @@ _COBERTURA_TEXTOS = {
         "Tu 1042-S y tu archivo difieren en ${dif} en {anio}.",
         "Revisa que el archivo cubra el año completo y una sola cuenta.",
     ),
+    "fiscal_1042s_sin_comparar": (
+        "Tu 1042-S no se pudo comparar con tu archivo.",
+        "Revisa que tu archivo de transacciones traiga los dividendos del año del "
+        "formulario.",
+    ),
+    "fiscal_ingresos_sin_cruce": (
+        "Tu reporte de ingresos no se pudo cruzar con ninguna posición.",
+        "Revisa que el reporte sea de la misma cuenta y de las mismas fechas que tu "
+        "archivo.",
+    ),
+    "valoracion_sin_precios": (
+        "{cuantas}: no se pudo revisar.",
+        "Este control depende de la fuente de precios; vuelve a intentarlo más tarde.",
+    ),
     "valoracion": (
         "Falta verificar los precios para la fecha de valoración.",
         "Este control depende de la fuente de precios; no exige otro documento al "
@@ -3252,6 +3266,11 @@ def cobertura_data(resultados: dict) -> dict:
     Regla 3b (spec U4 §4.2): estos estados y la etiqueta Alta/Media/Baja de
     `ui/validacion.py::_puntuacion_acertividad` leen las mismas señales y no pueden
     contradecirse — lo pina `test_carga_cobertura.py`.
+
+    Lo que quedó sin comparar (`ui.validacion.fuentes_sin_comparar`) también deja su
+    segmento pendiente: un 1042-S o un reporte de ingresos sin nada que cruzar, en
+    Información fiscal; un fondo sin precios, en Valoración. Es lo que la etiqueta llama
+    «Sin contrastar».
     """
     # Importación DENTRO de la función: `ui.adapters` no importa streamlit a nivel de
     # módulo (lo importan decenas de tests puros), y `ui.validacion` vive detrás del
@@ -3259,8 +3278,9 @@ def cobertura_data(resultados: dict) -> dict:
     # `portafolios_data` (spec U4 §4.3 / §7.9).
     import streamlit as st
 
-    from ui import estado
-    from ui.validacion import excluidos_pendientes_de_sesion, validacion_1042s
+    from ui import estado, texto
+    from ui.validacion import (excluidos_pendientes_de_sesion, fuentes_sin_comparar,
+                               validacion_1042s)
 
     def _segmento(clave: str, nombre: str, ok: bool,
                   variante: str | None = None, datos: dict | None = None) -> dict:
@@ -3316,6 +3336,13 @@ def cobertura_data(resultados: dict) -> dict:
             recon = logic.reconcile_income(resultados, ingreso)
             if any(r["badge"] == "warn" for r in recon.values()):
                 fiscal_ok = False
+    sin_comparar = fuentes_sin_comparar(resultados)
+    if fiscal_ok and "1042s" in sin_comparar:
+        fiscal_ok = False
+        variantes["fiscal"] = "fiscal_1042s_sin_comparar"
+    elif fiscal_ok and "ingresos" in sin_comparar:
+        fiscal_ok = False
+        variantes["fiscal"] = "fiscal_ingresos_sin_cruce"
 
     # Valoración: los tickers ANALIZADOS (mismo filtro que `assess_data_quality`:
     # fuera `skipped` y `error`). Trampa 4 de la spec: `in` + no nulo para
@@ -3335,6 +3362,12 @@ def cobertura_data(resultados: dict) -> dict:
         fechas.add(stats["valuation_date"])
     if val_ok and len(fechas) != 1:
         val_ok = False
+    if val_ok and "sin_precios" in sin_comparar:
+        val_ok = False
+        variantes["valoracion"] = "valoracion_sin_precios"
+        datos_variante["valoracion"] = {"cuantas": texto.plural(
+            sin_comparar["sin_precios"], "posición no tiene precios",
+            "posiciones no tienen precios")}
 
     excl_ok = not excluidos_pendientes_de_sesion(resultados)
 
