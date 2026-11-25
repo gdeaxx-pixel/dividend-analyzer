@@ -10,21 +10,33 @@ import numpy as np
 import pandas as pd
 
 
-def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20):
+def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None):
     """Acota una serie de retornos diarios a sus cuantiles [lower, upper] para que outliers
     espurios (transferencias de acciones sin efectivo, desfases de split, ticks malos de la API)
     no distorsionen vol/Sharpe/Sortino/beta. Series cortas (<min_len) se devuelven tal cual
-    (los cuantiles no serían fiables). Defensiva ante entradas no-Series."""
+    (los cuantiles no serían fiables). Defensiva ante entradas no-Series.
+
+    Con `solo` (serie booleana por día) se acotan únicamente los días marcados y los límites
+    salen de los días SIN marcar: una caída de mercado de verdad no se recorta."""
     try:
         r = returns.dropna()
     except AttributeError:
         return returns
-    if len(r) < min_len:
+    if solo is None:
+        base = r
+    else:
+        marcados = solo.reindex(r.index).fillna(False).astype(bool)
+        if not marcados.any():
+            return r
+        base = r[~marcados]
+    if len(base) < min_len:
         return r
-    lo, hi = r.quantile(lower), r.quantile(upper)
+    lo, hi = base.quantile(lower), base.quantile(upper)
     if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
         return r
-    return r.clip(lo, hi)
+    if solo is None:
+        return r.clip(lo, hi)
+    return r.where(~marcados, r.clip(lo, hi))
 
 
 def _drawdown_twr(daily_returns_q):
