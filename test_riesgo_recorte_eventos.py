@@ -155,6 +155,15 @@ def test_el_respaldo_del_indice_se_sigue_acotando_entero():
     assert beta == pytest.approx(esperado, abs=1e-9)
 
 
+def test_una_serie_sin_la_marca_se_acota_entera_como_antes():
+    r = _con_caida()
+    lo, hi = np.quantile(r, 0.01), np.quantile(r, 0.99)
+    acotada = _caida_maxima(np.clip(r, lo, hi))
+    _vol, _sh, _so, caida, _cal, _b, _a = logic._metricas_riesgo(_historia(r, sin_columna=True))
+    assert caida == pytest.approx(acotada, abs=1e-6)
+    assert acotada > _caida_maxima(r) + 5
+
+
 # ── 3. Qué días marca la serie ──────────────────────────────────────────────────────────
 
 def _serie(acciones, flujo=None, pago=None):
@@ -198,6 +207,15 @@ def test_de_la_fila_de_split_al_split_del_mercado_se_marca_todo():
 
 def test_fila_de_split_sin_split_cercano_en_el_mercado_marca_solo_su_dia():
     assert _marcados(_serie([10.0] * 12), splits={10: 0.2}, reinicios=[2]) == [2, 10]
+
+
+def test_el_tramo_llega_hasta_un_split_a_cinco_sesiones_y_no_a_seis():
+    assert _marcados(_serie([10.0] * 12), splits={7: 0.2}, reinicios=[2]) == [2, 3, 4, 5, 6, 7]
+    assert _marcados(_serie([10.0] * 12), splits={8: 0.2}, reinicios=[2]) == [2, 8]
+
+
+def test_fila_de_split_y_split_la_misma_sesion_marcan_un_solo_dia():
+    assert _marcados(_serie([10.0] * 8), splits={2: 0.2}, reinicios=[2]) == [2]
 
 
 # ── 4. La cadena completa ───────────────────────────────────────────────────────────────

@@ -17,7 +17,8 @@ def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None):
     (los cuantiles no serían fiables). Defensiva ante entradas no-Series.
 
     Con `solo` (serie booleana por día) se acotan únicamente los días marcados, con los mismos
-    límites: en un día sin marcar una caída de mercado de verdad no se recorta."""
+    límites: en un día sin marcar una caída de mercado de verdad no se recorta. Tampoco un
+    precio malo de la fuente en un día sin marcar: por tamaño no se distinguen."""
     try:
         r = returns.dropna()
     except AttributeError:
