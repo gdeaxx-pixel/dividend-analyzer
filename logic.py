@@ -1202,7 +1202,7 @@ def _dias_con_evento(daily_history, splits, reinicios):
     del CSV y las sesiones entre ambos si no coinciden). Son las únicas que `_metricas_riesgo`
     acota; en las demás el retorno del día es el del precio."""
     acciones = daily_history['Shares Held']
-    evento = (acciones.diff().fillna(acciones).abs() > 1e-9) \
+    evento = (acciones.diff().abs() > 1e-9) \
         | (daily_history['Flujo Efectivo'].abs() > 1e-9) \
         | (daily_history['Daily Cash Div'].abs() > 1e-9)
     con_split = [i for i, v in enumerate(splits.to_numpy()) if v > 0]
