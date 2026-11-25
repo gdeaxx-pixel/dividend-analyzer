@@ -1154,6 +1154,11 @@
     var MES = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
     function mDate(m) { return new Date(DATA.origen[0], DATA.origen[1] + m, 1); }
     function mLabel(m) { var d = mDate(m); return MES[d.getMonth()] + " " + d.getFullYear(); }
+    function notaTasaSupuesta(tasa) {
+      return '<span class="flag">Tasa supuesta:</span> no has declarado tu país de residencia, '
+        + 'así que estas cifras usan el ' + tasa + '%, la tasa máxima. Con el tratado de tu '
+        + 'país puede ser menor: decláralo para ver la tuya.';
+    }
 
     var COL = DATA.col;
     // F ya no fabrica precio/dividendo/ROC ilustrativos (mapa-datos.md § 5):
@@ -1442,6 +1447,7 @@
         + '19(a) mientras el año sigue abierto. Los ETFs de crecimiento no reclasifican '
         + 'nada: retienen la tasa plana.'
       ];
+      if (!DATA.pais) parts.push(notaTasaSupuesta(DATA.tasa_pct));
       if (DATA.pais) parts.push('<span class="flag">Tu tasa:</span> ' + DATA.tasa_pct + '% por tu residencia declarada (' + DATA.pais + '). Es la tasa a la que tienes DERECHO; lo que tu bróker retuvo de verdad se mide aparte, contra tus números.');
       if (lateTk.length) parts.push("* "+lateTk.join(", ")+": incepción posterior al fondo base — arranca en 0% en su propia fecha; su cifra final no cubre el mismo horizonte.");
       if (DATA.degradado && DATA.degradado.length) parts.push('<span class="flag">Aviso:</span> ' + DATA.degradado.join(", ") + ' no tenían caché fresco al cargar esta vista — se usaron datos en vivo o un caché vencido como respaldo.');
