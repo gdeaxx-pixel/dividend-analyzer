@@ -148,6 +148,14 @@ def _leer_transacciones(archivo) -> tuple:
     return logic.load_and_detect_csv(archivo)
 
 
+def _texto_otra_moneda(descarte: dict) -> str:
+    """Aviso de las filas que el archivo trae en una moneda distinta del dólar."""
+    monedas = ", ".join(sorted(descarte["por_moneda"]))
+    filas = texto.plural(descarte["total"], f"fila en otra moneda ({monedas}) quedó fuera",
+                         f"filas en otra moneda ({monedas}) quedaron fuera")
+    return f"{filas}: aquí todo se calcula en dólares y no se convierte."
+
+
 def _resumen_por_ticker(df_limpio) -> dict:
     """Vista previa del Bloque 1 — réplica de `app_old.py:1400-1412`.
 
@@ -298,6 +306,9 @@ def render_bloque_transacciones() -> bool:
                     "fila con una fecha que no pudimos leer, excluida",
                     "filas con una fecha que no pudimos leer, excluidas")
                 st.caption(f"⚠️ {filas}.")
+        _moneda = st.session_state.get("_wizard_csv_otra_moneda")
+        if _moneda and _moneda.get("total"):
+            st.caption(f"⚠️ {_texto_otra_moneda(_moneda)}")
         return True
 
     st.markdown(bloque_header(1, "Transacciones", "activo"),
@@ -317,6 +328,11 @@ def render_bloque_transacciones() -> bool:
 
     try:
         crudo, broker = _leer_transacciones(archivo)
+        otra_moneda = crudo.attrs.get("otra_moneda")
+        if crudo.empty and otra_moneda:
+            _roc_bloque1(hueco_roc, "confundido")
+            st.error(f"{_texto_otra_moneda(otra_moneda)} No quedó nada que analizar.")
+            return False
         if crudo.empty:
             _roc_bloque1(hueco_roc, "confundido")
             st.error("No pudimos leer el formato del archivo. "
@@ -338,6 +354,7 @@ def render_bloque_transacciones() -> bool:
         st.session_state["_wizard_csv_name"] = archivo.name
         st.session_state["_wizard_csv_descarte"] = getattr(
             logic.normalize_csv, "ultimo_descarte", None)
+        st.session_state["_wizard_csv_otra_moneda"] = otra_moneda
         st.session_state["_roc_asiente"] = True
         st.rerun()
     except Exception as error:                                    # noqa: BLE001
