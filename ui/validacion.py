@@ -336,6 +336,45 @@ def _render_excluidos(resultados: dict) -> None:
             _render_lista_excluidos(ruido)
 
 
+SIN_COMPARAR_1042S = "El 1042-S no se pudo comparar con tu archivo."
+SIN_COMPARAR_INGRESOS = ("El reporte de ingresos no se pudo cruzar con ninguna posición "
+                         "analizada.")
+
+
+def fuentes_sin_comparar(resultados: dict) -> dict:
+    """Lo que el cliente aportó o la app pidió y no llegó a compararse con nada: un 1042-S
+    sin dividendos que cruzar (`"1042s"`: la nota del motor), un reporte de ingresos que no
+    toca ninguna posición (`"ingresos"`) y los fondos sin precios (`"sin_precios"`: cuántos).
+    La etiqueta de confiabilidad y la dona de cobertura leen esto mismo (Regla 3b)."""
+    out: dict = {}
+    v1042s = validacion_1042s(resultados)
+    if v1042s and v1042s["status"] == "no_overlap":
+        out["1042s"] = v1042s.get("note") or SIN_COMPARAR_1042S
+    ingreso = st.session_state.get("_wizard_income_summary")
+    if ingreso and ingreso.get("tickers"):
+        recon = logic.reconcile_income(resultados, ingreso)
+        if not any(r["badge"] in ("ok", "warn") for r in recon.values()):
+            out["ingresos"] = True
+    sin_precios = sum(1 for s in resultados.values()
+                      if isinstance(s, dict) and not s.get("skipped") and "error" in s)
+    if sin_precios:
+        out["sin_precios"] = sin_precios
+    return out
+
+
+def razones_sin_comparar(fuentes: dict) -> list[str]:
+    razones = []
+    if "1042s" in fuentes:
+        razones.append(fuentes["1042s"])
+    if "ingresos" in fuentes:
+        razones.append(SIN_COMPARAR_INGRESOS)
+    if "sin_precios" in fuentes:
+        razones.append(texto.plural(
+            fuentes["sin_precios"], "posición sin precios: no se pudo revisar.",
+            "posiciones sin precios: no se pudieron revisar."))
+    return razones
+
+
 def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     """Etiqueta de confiabilidad (Alta/Media/Baja, o «Sin contrastar» cuando nada la
     baja pero una fuente quedó sin comparar: un 1042-S sin dividendos que cruzar, un
@@ -347,14 +386,10 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
     nivel = "Alta"
     razones: list[str] = []
 
-    sin_comparar: list[str] = []
-
     v1042s = validacion_1042s(resultados)
     if v1042s and v1042s["status"] in ("portfolio_higher", "form_higher"):
         nivel = "Media"
         razones.append(v1042s["note"])
-    elif v1042s and v1042s["status"] == "no_overlap":
-        sin_comparar.append("El 1042-S no se pudo comparar con tu archivo.")
 
     classify_map = logic.classify_tickers(list(resultados.keys()))
     dq = logic.assess_data_quality(resultados, classify_map)
@@ -389,16 +424,6 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
             razones.append(texto.plural(
                 len(warns), "posición con alerta en la validación de ingresos.",
                 "posiciones con alerta en la validación de ingresos."))
-        if not any(r["badge"] in ("ok", "warn") for r in recon.values()):
-            sin_comparar.append(
-                "El reporte de ingresos no coincide con ninguna posición analizada.")
-
-    sin_precios = sum(1 for s in resultados.values()
-                      if isinstance(s, dict) and not s.get("skipped") and "error" in s)
-    if sin_precios:
-        sin_comparar.append(texto.plural(
-            sin_precios, "posición sin precios: no se pudo revisar.",
-            "posiciones sin precios: no se pudieron revisar."))
 
     tuyos = excluidos_pendientes_de_sesion(resultados)
     if tuyos:
@@ -408,8 +433,10 @@ def _puntuacion_acertividad(resultados: dict) -> tuple[str, list[str]]:
             len(tuyos), "posición tuya excluida por datos insuficientes.",
             "posiciones tuyas excluidas por datos insuficientes."))
 
+    sin_comparar = razones_sin_comparar(fuentes_sin_comparar(resultados))
     if nivel == "Alta" and sin_comparar:
         return SIN_CONTRASTAR, sin_comparar
+    razones.extend(sin_comparar)
     if not razones:
         razones.append("Sin discrepancias entre las fuentes disponibles.")
     return nivel, razones

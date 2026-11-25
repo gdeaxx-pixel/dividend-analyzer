@@ -9,13 +9,17 @@ import pandas as pd
 import pytest
 
 from ui import componentes, validacion
-from ui.adapters import trg_real_data
+from ui import estado
+from ui.adapters import cobertura_data, trg_real_data
 from ui.validacion import (SIN_CONTRASTAR, _puntuacion_acertividad, clase_nivel,
                            hay_alertas, nivel_confiabilidad)
 
 SIN_NADA = ["Sin discrepancias entre las fuentes disponibles."]
-R_1042S = "El 1042-S no se pudo comparar con tu archivo."
-R_INGRESOS = "El reporte de ingresos no coincide con ninguna posición analizada."
+R_SIN_DIVIDENDOS = ("Tu archivo de transacciones no registra dividendos en 2025, el ano del "
+                    "formulario. No hay solapamiento que comparar — no es un error.")
+R_SIN_ANIO = ("El formulario no declara ano fiscal, asi que no se puede acotar la "
+              "comparacion a un ano. Se muestran solo las cifras del 1042-S.")
+R_INGRESOS = "El reporte de ingresos no se pudo cruzar con ninguna posición analizada."
 
 
 class _FakeSt:
@@ -46,7 +50,17 @@ class _FakeSt:
 def fake(monkeypatch):
     f = _FakeSt()
     monkeypatch.setattr(validacion, "st", f)
+    import streamlit
+    monkeypatch.setattr(streamlit, "session_state", f.session_state)
+    monkeypatch.setattr(estado, "perfil_fiscal",
+                        lambda: {"rate_declared": True, "country": "Colombia",
+                                 "rate_pct": 30.0, "has_treaty": False})
     return f
+
+
+def _pendientes(cartera):
+    return {s["clave"]: s["falta"] for s in cobertura_data(cartera)["segmentos"]
+            if s["estado"] == "pendiente"}
 
 
 def _ok():
@@ -72,6 +86,7 @@ def _form(bruto, anio=2025):
 def test_sin_fuentes_extra_la_cartera_sana_sigue_en_alta(fake):
     assert _puntuacion_acertividad(_cartera()) == ("Alta", SIN_NADA)
     assert hay_alertas(_cartera()) is False
+    assert _pendientes(_cartera()) == {}
 
 
 # --- 1042-S ------------------------------------------------------------------------------
@@ -79,14 +94,16 @@ def test_sin_fuentes_extra_la_cartera_sana_sigue_en_alta(fake):
 def test_un_1042s_sin_dividendos_que_cruzar_no_da_alta(fake):
     fake.session_state["_wizard_1042s"] = _form(1000.0)
     assert validacion.validacion_1042s(_cartera())["status"] == "no_overlap"
-    assert _puntuacion_acertividad(_cartera()) == (SIN_CONTRASTAR, [R_1042S])
+    assert _puntuacion_acertividad(_cartera()) == (SIN_CONTRASTAR, [R_SIN_DIVIDENDOS])
+    assert _pendientes(_cartera()) == {
+        "fiscal": "Tu 1042-S no se pudo comparar con tu archivo."}
 
 
 def test_un_1042s_sin_anio_no_da_alta_ni_escribe_none(fake):
     cartera = _cartera()
     cartera["MSTY"]["history"] = _hist([("2025-06-01", "Cash Dividend", 1000.0)])
     fake.session_state["_wizard_1042s"] = _form(1000.0, anio=None)
-    assert _puntuacion_acertividad(cartera) == (SIN_CONTRASTAR, [R_1042S])
+    assert _puntuacion_acertividad(cartera) == (SIN_CONTRASTAR, [R_SIN_ANIO])
     validacion._render_1042s(cartera)
     assert "None" not in fake.html()
     assert "Dividendo bruto — Tu archivo" in fake.html()
@@ -99,6 +116,7 @@ def test_un_1042s_que_coincide_si_da_alta(fake):
     fake.session_state["_wizard_1042s"] = _form(1000.0)
     assert validacion.validacion_1042s(cartera)["status"] == "match"
     assert _puntuacion_acertividad(cartera) == ("Alta", SIN_NADA)
+    assert _pendientes(cartera) == {}
     validacion._render_1042s(cartera)
     assert "Dividendo bruto 2025 — Tu archivo" in fake.html()
 
@@ -109,6 +127,8 @@ def test_un_reporte_de_ingresos_que_no_cruza_con_nada_no_da_alta(fake):
     fake.session_state["_wizard_income_summary"] = {
         "tickers": {"ZZZ": {"received_total": 50.0}}}
     assert _puntuacion_acertividad(_cartera()) == (SIN_CONTRASTAR, [R_INGRESOS])
+    assert _pendientes(_cartera()) == {
+        "fiscal": "Tu reporte de ingresos no se pudo cruzar con ninguna posición."}
 
 
 def test_basta_una_posicion_validada_contra_ingresos_para_alta(fake):
@@ -117,6 +137,7 @@ def test_basta_una_posicion_validada_contra_ingresos_para_alta(fake):
     fake.session_state["_wizard_income_summary"] = {
         "tickers": {"MSTY": {"received_total": 100.0}}}
     assert _puntuacion_acertividad(cartera) == ("Alta", SIN_NADA)
+    assert _pendientes(cartera) == {}
 
 
 def test_una_alerta_de_ingresos_sigue_siendo_media(fake):
@@ -131,13 +152,16 @@ def test_una_alerta_de_ingresos_sigue_siendo_media(fake):
 
 # --- Fondo sin precios -------------------------------------------------------------------
 
-@pytest.mark.parametrize("rotos, razon", [
-    (["CONY"], "1 posición sin precios: no se pudo revisar."),
-    (["CONY", "NVDY"], "2 posiciones sin precios: no se pudieron revisar."),
+@pytest.mark.parametrize("rotos, razon, dona", [
+    (["CONY"], "1 posición sin precios: no se pudo revisar.",
+     "1 posición no tiene precios: no se pudo revisar."),
+    (["CONY", "NVDY"], "2 posiciones sin precios: no se pudieron revisar.",
+     "2 posiciones no tienen precios: no se pudo revisar."),
 ])
-def test_un_fondo_sin_precios_no_da_alta(fake, rotos, razon):
+def test_un_fondo_sin_precios_no_da_alta(fake, rotos, razon, dona):
     cartera = dict(_cartera(), **{t: {"error": "sin precios"} for t in rotos})
     assert _puntuacion_acertividad(cartera) == (SIN_CONTRASTAR, [razon])
+    assert _pendientes(cartera) == {"valoracion": dona}
 
 
 def test_un_excluido_no_cuenta_como_fondo_sin_precios(fake):
@@ -153,16 +177,21 @@ def test_las_tres_causas_se_listan_juntas(fake):
         "tickers": {"ZZZ": {"received_total": 50.0}}}
     assert _puntuacion_acertividad(cartera) == (
         SIN_CONTRASTAR,
-        [R_1042S, R_INGRESOS, "1 posición sin precios: no se pudo revisar."])
+        [R_SIN_DIVIDENDOS, R_INGRESOS, "1 posición sin precios: no se pudo revisar."])
+    assert _pendientes(cartera) == {
+        "fiscal": "Tu 1042-S no se pudo comparar con tu archivo.",
+        "valoracion": "1 posición no tiene precios: no se pudo revisar."}
 
 
-def test_una_discrepancia_real_manda_sobre_sin_contrastar(fake):
+def test_una_discrepancia_real_manda_y_lo_no_comparado_se_sigue_diciendo(fake):
     cartera = dict(_cartera(), CONY={"error": "sin precios"})
     cartera["MSTY"]["history"] = _hist([("2025-06-01", "Cash Dividend", 100.0)])
     fake.session_state["_wizard_1042s"] = _form(1000.0)
     nivel, razones = _puntuacion_acertividad(cartera)
     assert nivel == "Media"
-    assert not any("sin precios" in r for r in razones)
+    assert len(razones) == 2 and "900.00 dolares mas" in razones[0]
+    assert razones[1] == "1 posición sin precios: no se pudo revisar."
+    assert set(_pendientes(cartera)) == {"fiscal", "valoracion"}
 
 
 # --- Dónde se ve -------------------------------------------------------------------------
@@ -227,6 +256,20 @@ def notas():
         parche.undo()
         nav.close()
         pw.stop()
+
+
+def test_la_nota_de_tasa_supuesta_sin_navegador():
+    """Sin Chromium las dos pruebas de abajo se saltan; esto vigila el texto y la llamada."""
+    import shutil
+    if shutil.which("node") is None:
+        pytest.skip("node ausente")
+    from test_comparacion_render import _HTML_REAL, _correr_js, _extraer_funcion_de
+    fn = _extraer_funcion_de(_HTML_REAL, "notaTasaSupuesta")
+    nota = _correr_js(fn, {}, 0, "{t: notaTasaSupuesta(30)}")["t"]
+    assert "usan el 30%, la tasa máxima" in nota and "Tasa supuesta:" in nota
+    with open(_HTML_REAL, encoding="utf-8") as f:
+        assert f.read().count(
+            "if (!DATA.pais) parts.push(notaTasaSupuesta(DATA.tasa_pct));") == 1
 
 
 def test_sin_pais_el_30_se_dice_que_es_supuesto(notas):
