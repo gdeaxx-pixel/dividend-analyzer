@@ -132,7 +132,8 @@ def test_si_ninguna_seccion_se_puede_leer_la_cuenta_no_se_pierde(monkeypatch):
         return partir(patron, *a, **k)
 
     monkeypatch.setattr(logic.re, "split", _falla_en_la_fecha)
-    crudo = logic.parse_ibkr_csv(_SOLO_CAD)
+    crudo = logic.parse_ibkr_csv(_MIXTO)
+    assert "Action" not in crudo.columns
     assert crudo.attrs["otra_moneda"] == {"total": 3, "por_moneda": {"CAD": 3}}
 
 

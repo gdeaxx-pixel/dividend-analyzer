@@ -2933,7 +2933,7 @@ def parse_ibkr_csv(raw_bytes: bytes) -> pd.DataFrame:
                     if str(c).strip().lower() == 'currency'), None)
         if col is None:
             return df
-        moneda = df[col].astype(str).str.strip().str.upper()
+        moneda = df[col].astype(str).str.upper()
         fuera = moneda.str.fullmatch(r'[A-Z]{3}') & (moneda != 'USD')
         for codigo, cuantas in moneda[fuera].value_counts().items():
             otra_moneda[codigo] = otra_moneda.get(codigo, 0) + int(cuantas)
