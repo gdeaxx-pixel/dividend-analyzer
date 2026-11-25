@@ -25,6 +25,7 @@ from ui import adapters, componentes, estado, riesgo, texto
 
 CLAVES_CONTEXTO_CARTERA = (
     "_wizard_df_clean", "_wizard_csv_ticker_data", "_wizard_broker", "_wizard_csv_name",
+    "_wizard_csv_descarte", "_wizard_csv_otra_moneda",
     "_wizard_positions", "_wizard_income_summary", "_wizard_income_df", "_wizard_income_multi",
     "_vd_resultados", "_wizard_1042s", "_wizard_1042s_sig", "_wizard_1042s_error",
     "_wizard_1042s_ilegibles",
@@ -146,6 +147,14 @@ def _leer_transacciones(archivo) -> tuple:
         import pandas as pd
         return pd.read_excel(archivo), "generic"
     return logic.load_and_detect_csv(archivo)
+
+
+def _texto_otra_moneda(descarte: dict) -> str:
+    """Aviso de las filas que el archivo trae en una moneda distinta del dólar."""
+    monedas = ", ".join(sorted(descarte["por_moneda"]))
+    filas = texto.plural(descarte["total"], f"fila en otra moneda ({monedas}) quedó fuera",
+                         f"filas en otra moneda ({monedas}) quedaron fuera")
+    return f"{filas}: aquí todo se calcula en dólares y no se convierte."
 
 
 def _resumen_por_ticker(df_limpio) -> dict:
@@ -298,6 +307,9 @@ def render_bloque_transacciones() -> bool:
                     "fila con una fecha que no pudimos leer, excluida",
                     "filas con una fecha que no pudimos leer, excluidas")
                 st.caption(f"⚠️ {filas}.")
+        _moneda = st.session_state.get("_wizard_csv_otra_moneda")
+        if _moneda and _moneda.get("total"):
+            st.caption(f"⚠️ {_texto_otra_moneda(_moneda)}")
         return True
 
     st.markdown(bloque_header(1, "Transacciones", "activo"),
@@ -317,6 +329,11 @@ def render_bloque_transacciones() -> bool:
 
     try:
         crudo, broker = _leer_transacciones(archivo)
+        otra_moneda = crudo.attrs.get("otra_moneda")
+        if crudo.empty and otra_moneda:
+            _roc_bloque1(hueco_roc, "confundido")
+            st.error(f"{_texto_otra_moneda(otra_moneda)} No quedó nada que analizar.")
+            return False
         if crudo.empty:
             _roc_bloque1(hueco_roc, "confundido")
             st.error("No pudimos leer el formato del archivo. "
@@ -338,6 +355,7 @@ def render_bloque_transacciones() -> bool:
         st.session_state["_wizard_csv_name"] = archivo.name
         st.session_state["_wizard_csv_descarte"] = getattr(
             logic.normalize_csv, "ultimo_descarte", None)
+        st.session_state["_wizard_csv_otra_moneda"] = otra_moneda
         st.session_state["_roc_asiente"] = True
         st.rerun()
     except Exception as error:                                    # noqa: BLE001
