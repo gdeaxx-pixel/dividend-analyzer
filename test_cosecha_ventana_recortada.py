@@ -163,6 +163,20 @@ def test_si_el_destino_no_cubre_la_ventana_no_hay_linea(monkeypatch):
         assert d["idxCosechaDesde"][modo] == {} and d["cosechaUSDDesde"][modo] == {}
 
 
+def test_un_hueco_del_destino_el_primer_dia_deja_esa_ventana_sin_linea(monkeypatch):
+    """Al destino le falta la fila del día en que empieza la ventana (el último cierre
+    del mes de inicio). Desde la incepción el hueco se cubre con el cierre anterior; la
+    compra nueva no tiene cierre anterior dentro de su corrida, así que esa ventana se
+    queda sin línea en vez de inventarla."""
+    universo = _universo()
+    primer_dia = universo["TSLY"].loc["2024-07"].index.max()
+    universo["SCHB"] = universo["SCHB"].drop(primer_dia)
+    d = _datos_sin_comprobar(monkeypatch, universo)
+    for modo in MODOS:
+        assert {"TSLY", "NVDY"} <= set(d["idxCosecha"][modo]), "desde su incepción sí hay línea"
+        assert d["idxCosechaDesde"][modo] == {} and d["cosechaUSDDesde"][modo] == {}
+
+
 def _datos_sin_comprobar(monkeypatch, universo):
     monkeypatch.setattr(price_cache, "load_history", lambda tk, *a, **k: (
         price_cache.HistoryResult(history=universo[tk], source="cache", ticker=tk,

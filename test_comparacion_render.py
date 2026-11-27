@@ -232,13 +232,14 @@ _PRECIO_ESPERADO = {0: 1.5, 1: 0.25}
 #   bruto (160−40)/100 = 1.2 · plano (145−35)/100 = 1.1 · roc (155−38)/100 = 1.17
 # Con la ventana recortada (t0=1) NO se resta: sale de la corrida limpia desde ese mes
 # (`idxCosechaDesde`), normalizada a su propio arranque:
-#   bruto 270/200 − 1 = 0.35 · plano 250/200 − 1 = 0.25 · roc 230/200 − 1 = 0.15
+#   bruto 135/100 − 1 = 0.35 · plano 125/100 − 1 = 0.25 · roc 115/100 − 1 = 0.15
+# La corrida arranca en 100 y el precio de ese mes es 200: dividir por el precio da −50 %.
 # Ninguno coincide con restar ((160−100)/200 = 0.3, (145−90)/200 = 0.275,
 # (155−105)/200 = 0.25): si la función volviera a restar, este test cae.
 _COSECHA_DESDE_POR_MODO = {
-    "bruto": {"1": 200.0, "2": 270.0},
-    "plano": {"1": 200.0, "2": 250.0},
-    "roc":   {"1": 200.0, "2": 230.0},
+    "bruto": {"1": 100.0, "2": 135.0},
+    "plano": {"1": 100.0, "2": 125.0},
+    "roc":   {"1": 100.0, "2": 115.0},
 }
 _COSECHA_ESPERADA = {
     0: {"bruto": 1.2, "plano": 1.1, "roc": 1.17},
