@@ -23,9 +23,10 @@ import pandas as pd
 import pytest
 
 import logic
+import ui.heredadas
 from ui.adapters import (diagnosticar_bloqueo, portafolios_data, salud_nav_data,
-                         total_cuenta_data)
-from ui.heredadas import _agregados, _notas_total_cuenta
+                         total_cuenta_data, vigilar_data)
+from ui.heredadas import _agregados, _notas_total_cuenta, _render_total_cuenta
 
 COMPONENTE = (Path(__file__).resolve().parent / "ui" / "componentes"
               / "portafolios.html").read_text(encoding="utf-8")
@@ -86,6 +87,16 @@ def test_lo_comprado_suma_cada_compra_y_no_resta_ninguna_venta(monkeypatch):
                 _mercado(SUBE_A_30))
     assert s["capital_comprado"] == pytest.approx(2500.0 + 1100.0, abs=0.01)
     assert s["pocket_investment"] == pytest.approx(2500.0 + 1100.0 - 1800.0, abs=0.01)
+
+
+@pytest.mark.parametrize("accion", ["Journaled Shares", "Deposit"])
+def test_lo_que_entra_con_costo_por_transferencia_o_deposito_tambien_es_comprado(monkeypatch, accion):
+    s = _correr(monkeypatch, [COMPRA_100_A_25,
+                              dict(Date="2024-02-01", Action=accion, Quantity=20, Amount=-600.0),
+                              dict(Date="2024-03-01", Action="Sell", Quantity=30, Amount=900.0)],
+                _mercado(SUBE_A_30))
+    assert s["capital_comprado"] == pytest.approx(2500.0 + 600.0, abs=0.01)
+    assert s["pocket_investment"] == pytest.approx(2500.0 + 600.0 - 900.0, abs=0.01)
 
 
 def test_sin_ventas_lo_comprado_es_el_capital_aportado(monkeypatch):
@@ -216,6 +227,15 @@ def test_el_fondo_poco_fiable_pesa_en_el_reparto_y_no_en_el_resultado():
     assert crec["retorno_pct"] == pytest.approx(20.0)
 
 
+def test_un_fondo_reconciliado_con_la_captura_si_se_cuenta():
+    """«unreliable» sale; «reconciled» no: su costo viene del bróker."""
+    reconciliado = _stats(1000.0, 0.0, 1300.0, reconciled_from_snapshot=True,
+                          history_incomplete=True)
+    assert logic.assess_ticker_quality({"REC": reconciliado}, "REC")["level"] == "reconciled"
+    d = total_cuenta_data({"REC": reconciliado, "ZZZ": POCO_FIABLE})
+    assert d["sin_contar"] == ["ZZZ"] and d["retorno"] == pytest.approx(300.0)
+
+
 def test_los_agregados_del_grupo_dividen_por_lo_comprado():
     inv, mv, div, tr, pct = _agregados({"BBB": VENDIO_CASI_TODO}, ["BBB"])
     assert (inv, mv, tr) == pytest.approx((2500.0, 300.0, 500.0))
@@ -237,6 +257,23 @@ def test_la_caida_del_precio_se_mide_contra_lo_que_costaron_las_acciones():
     g = portafolios_data({"BBB": cayo}, {"BBB": "mode_b"})["grupos"][0]
     assert g["precio"] == pytest.approx(-500.0)
     assert "cayó 25%" in g["veredicto"]
+
+
+def test_la_caida_no_se_diluye_con_el_valor_de_un_fondo_que_no_se_cuenta():
+    cayo = _stats(2000.0, 800.0, 700.0)
+    g = portafolios_data({"BBB": cayo, "ZZZ": POCO_FIABLE},
+                         {"BBB": "mode_b", "ZZZ": "mode_b"})["grupos"][0]
+    assert "cayó 25%" in g["veredicto"]
+
+
+def test_vigilar_da_el_porcentaje_sobre_lo_comprado():
+    """Compró 2.000, vendió 800 y pierde 500: −25 %, arriba y en el detalle del yield."""
+    vendio = dict(_stats(2000.0, 800.0, 700.0), realized_yield=9.0)
+    d = vigilar_data({"VEND": vendio}, {"VEND": {"verdict": "destructive", "nav_cagr": -60.0}})
+    fondo = d["fondos"][0]
+    assert fondo["retorno_pct"] == "−25.00%"
+    del_yield = next(f for f in fondo["flags"] if f["clave"] == "yield")
+    assert ["Tu retorno total", "−25.00%", "loss"] in del_yield["tip"]["filas"]
 
 
 def test_salud_del_fondo_muestra_el_porcentaje_aunque_el_bolsillo_no_sea_positivo():
@@ -263,6 +300,25 @@ def test_el_nombre_del_fondo_llega_escapado_a_la_nota():
     malo = "<img src=x>"
     nota = _notas_total_cuenta(total_cuenta_data({malo: POCO_FIABLE, "AAA": SIN_VENTA}))
     assert "<img" not in nota and "&lt;img" in nota
+
+
+def _pintado(monkeypatch, resultados):
+    trozos = []
+    monkeypatch.setattr(ui.heredadas.st, "markdown", lambda html, **kw: trozos.append(html))
+    _render_total_cuenta(resultados)
+    return "".join(trozos)
+
+
+def test_la_linea_se_pinta_con_su_nota_debajo(monkeypatch):
+    pintado = _pintado(monkeypatch, CUENTA)
+    assert 'class="vd-cuenta"' in pintado
+    assert pintado.index('class="vd-cuenta"') < pintado.index("no cuenta ZZZ")
+
+
+def test_si_ningun_fondo_se_puede_medir_no_hay_cifras_solo_el_aviso(monkeypatch):
+    pintado = _pintado(monkeypatch, {"ZZZ": POCO_FIABLE})
+    assert 'class="vd-cuenta"' not in pintado and "Pusiste" not in pintado
+    assert "no cuenta ZZZ" in pintado
 
 
 def test_la_tarjeta_avisa_de_los_fondos_que_no_cuenta():

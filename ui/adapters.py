@@ -3141,7 +3141,7 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
         stats = resultados.get(ticker)
         if not _tiene_datos(stats):
             continue
-        inv = stats["pocket_investment"]
+        inv = _todo_lo_comprado(stats)
         tr = stats["net_profit"]
         div = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
                else stats.get("dividends_collected_cash", 0))
