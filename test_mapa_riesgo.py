@@ -861,6 +861,7 @@ CACHE_REAL = RAIZ / "knowledge" / "price_cache"
 
 def _rangos(mr, tmp_path, **kw):
     d, _ = _paradas(mr, tmp_path, rangos=True, **kw)
+    assert d["mapa_b"]["rangos"] is not None, d["calidad"]
     return d, d["mapa_b"]["rangos"]
 
 
@@ -1016,7 +1017,9 @@ def test_el_recorte_de_la_corrida_da_lo_mismo_que_correr_el_motor_hasta_el_fin(m
             fines |= {h.index[h.index.get_loc(compra) + 10], h.index[-1]}
             for fin in sorted(f for f in fines if f >= h.index[h.index.get_loc(compra) + 3]):
                 recortada = mr.metricas(mr.recortar(hasta_t, fin), 10_000.0)
-                directa = mr.metricas(mr.correr(tk, h, compra, fin, drip, 10_000.0), 10_000.0)
+                corrida = mr.correr(tk, h, compra, fin, drip, 10_000.0)
+                directa = mr.metricas(corrida, 10_000.0)
+                assert recortada["valor_final"] == pytest.approx(corrida.final_total_value, rel=1e-12)
                 assert recortada.keys() == directa.keys()
                 for k, v in directa.items():
                     if isinstance(v, float):
