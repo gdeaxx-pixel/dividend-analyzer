@@ -1694,6 +1694,11 @@ def comparacion_data() -> dict | None:
     convertido en unidades de destino en vez de acumulado sin invertir. Se omite (la clave
     ni aparece) para el propio `CMP_COSECHA_DESTINO`, para tickers sin dividendo
     (`sin_dividendos`), y si el destino no cubre la ventana completa del ticker.
+
+    Cuando la ventana del componente arranca después de la incepción del fondo, esa serie
+    no vale rebasada: lleva dentro el destino comprado antes. `idxCosechaDesde[modo][tk][t0]`
+    y `cosechaUSDDesde` son la misma cosecha sobre una corrida limpia desde `t0`, en los
+    tres modos y para los mismos `t0` que `idxDesde`.
     """
     historias: dict[str, price_cache.HistoryResult] = {}
     for tk in TRG_UNIVERSO:
