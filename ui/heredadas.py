@@ -34,6 +34,8 @@ fiscal).
 
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 import logic
@@ -61,11 +63,18 @@ def _usd(v: float, signo: bool = False) -> str:
 
 
 def _agregados(resultados: dict, tickers: list[str]) -> tuple:
-    from ui.adapters import _tiene_datos
+    """`(invertido, valor de hoy, dividendos, retorno, %)` de un grupo de fondos.
 
-    filas = [(t, resultados[t]) for t in tickers if _tiene_datos(resultados.get(t))]
-    inv = sum(s["pocket_investment"] for _, s in filas)
-    mv = sum(s["market_value"] for _, s in filas)
+    El valor de hoy suma todos los fondos con datos: es el reparto de la cuenta. Lo
+    invertido, los dividendos y el retorno dejan fuera a los que `assess_ticker_quality`
+    marca «unreliable», y el % va sobre todo lo comprado (una venta no encoge la base)."""
+    from ui.adapters import _poco_fiables, _tiene_datos, _todo_lo_comprado
+
+    con_datos = [(t, resultados[t]) for t in tickers if _tiene_datos(resultados.get(t))]
+    mv = sum(s["market_value"] for _, s in con_datos)
+    fuera = _poco_fiables(resultados, tickers)
+    filas = [(t, s) for t, s in con_datos if t not in fuera]
+    inv = sum(_todo_lo_comprado(s) for _, s in filas)
     # `dividends_collected_cash` no se puede sumar entre tickers: viene BRUTO en Schwab
     # y NETO en IB (misma mezcla de bases que ya resolvió el PR C en `_cuadricula_roc_
     # consolidada` de este archivo y en `report._dividendos_netos`). `dividends_net_total`
@@ -207,6 +216,11 @@ def _render_total_cuenta(resultados: dict) -> None:
     d = total_cuenta_data(resultados)
     if d is None:
         return
+    notas = _notas_total_cuenta(d)
+    if not d["fondos"]:
+        if notas:
+            st.markdown(notas, unsafe_allow_html=True)
+        return
     signo = "pos" if d["retorno_vista"] >= 0 else "neg"
     st.markdown(
         '<div class="vd-cuenta">'
@@ -217,8 +231,25 @@ def _render_total_cuenta(resultados: dict) -> None:
         f'<div class="vd-cta vd-cta-r"><span class="vd-cta-k">Tu resultado</span>'
         f'<span class="vd-cta-v {signo}">{_usd(d["retorno_vista"], signo=True)}'
         f'<small class="{signo}">{d["pct"]:+.1f}%</small></span></div>'
-        '</div>',
+        '</div>' + notas,
         unsafe_allow_html=True)
+
+
+def _notas_total_cuenta(d: dict) -> str:
+    """Lo que la línea de la cuenta deja dicho debajo: qué fondos no entran en el resultado
+    y cuánto de «Tienes hoy» es dinero cobrado por ventas. Vacío si no hay nada que decir."""
+    frases = []
+    fuera = [html.escape(str(t)) for t in d.get("sin_contar") or ()]
+    if fuera:
+        nombres = fuera[0] if len(fuera) == 1 else ", ".join(fuera[:-1]) + " y " + fuera[-1]
+        frases.append(
+            f"El resultado no cuenta {nombres}: su historial no deja medirlo. "
+            "Su valor de hoy sí está en el reparto de abajo.")
+    if round(d.get("cobrado_ventas") or 0) > 0:
+        frases.append(f"«Tienes hoy» cuenta los {_usd(d['cobrado_ventas'])} que cobraste al vender.")
+    if not frases:
+        return ""
+    return '<p class="vd-cuenta-nota">' + " ".join(frases) + "</p>"
 
 
 def render_portafolios(resultados: dict, tema: str = "Claro") -> None:
@@ -270,6 +301,9 @@ ESTILOS_HEREDADAS = """
         .vd-cta-v small { font-size: 13px; font-weight: 700; margin-left: 8px; }
         .vd-cta-v.pos, .vd-cta-v small.pos { color: var(--cash); }
         .vd-cta-v.neg, .vd-cta-v small.neg { color: var(--loss); }
+        [data-testid="stMarkdownContainer"] p.vd-cuenta-nota {
+          font-size: 13px; color: var(--ink-mut); margin: 6px 0 0;
+        }
         [data-testid="stMarkdownContainer"] p.vd-her-subtitulo {
           font-family: var(--font-mono); font-size: 11px; font-weight: 700;
           letter-spacing: .05em; text-transform: uppercase; color: var(--ink);

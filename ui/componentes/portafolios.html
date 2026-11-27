@@ -438,6 +438,11 @@
 
     grupos.forEach((g) => {
       const tono = g.retorno >= 0 ? "pos" : "neg";
+      const sinContar = (grupo) => {
+        const fuera = grupo.sin_contar || [];
+        if (!fuera.length) return "";
+        return " · sin " + (fuera.length > 3 ? fuera.length + " fondos" : fuera.map(esc).join(", "));
+      };
       const rows = filas(g).map((r) => {
         const a = pos(Math.min(r.from, r.to)), b = pos(Math.max(r.from, r.to));
         return '<button type="button" class="wf-row' + (r.total ? ' total' : '') + '"' +
@@ -456,7 +461,7 @@
           '<div class="card-top"><h2 class="card-title">' + esc(g.nombre) + '</h2><span class="card-weight"><b>' + pctTxt(g.pct) + '</b> de tu dinero</span></div>' +
           '<p class="card-funds">' + g.tickers.map(esc).join(' · ') + ' — ' + plural(g.fondos.length) + '</p>' +
           '<div class="weight" style="--w:' + peso + '%;--c:' + g.color + '"><i></i></div>' +
-          '<p class="k">Retorno total</p>' +
+          '<p class="k">Retorno total' + sinContar(g) + '</p>' +
           '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>' +
           '<p class="verdict">' + (g.veredicto ? esc(g.veredicto) : '') + '</p>' +
         '</div>' +

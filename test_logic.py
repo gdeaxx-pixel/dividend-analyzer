@@ -616,6 +616,17 @@ _MKT_MOCK = lambda t, d: (pd.DataFrame({"Close": [20.0], "Dividends": [0.0], "St
                                        index=[pd.Timestamp("2024-10-15")]), None)
 
 
+def _mkt_con_historia(precio: float):
+    """Un mercado con un cierre por día hábil. El de una sola fila deja la curva de costo
+    vacía, y `assess_ticker_quality` marca el fondo «unreliable» (`no_cost_recorded`): los
+    agregados de la cuenta ya no lo cuentan."""
+    def fetch(t, d):
+        idx = pd.bdate_range(pd.Timestamp(d).normalize() - pd.Timedelta(days=7), "2026-08-31")
+        return pd.DataFrame({"Close": precio, "Dividends": 0.0, "Stock Splits": 0.0},
+                            index=idx), None
+    return fetch
+
+
 def test_roc_includes_reinvested_drip(monkeypatch):
     """El arreglo: el ROC suma lo reinvertido (DRIP). Con costo base = lo invertido en cash,
     la fórmula vieja daba ~0; la nueva da ROC = reinvertido."""
@@ -4170,8 +4181,12 @@ def test_analyze_portfolio_roi_neto_ib_no_resta_la_retencion_dos_veces(monkeypat
     s = res["MSTY"]
     expected_net_profit = s["market_value"] + s["dividends_collected_cash"] - s["pocket_investment"]
     assert s["net_profit"] == pytest.approx(expected_net_profit, abs=0.01)
-    assert s["roi_percent"] == pytest.approx(
-        expected_net_profit / s["pocket_investment"] * 100, abs=0.01)
+    # El % va sobre todo lo comprado, releído del archivo: esta posición tiene una venta, y
+    # sobre el bolsillo (que la venta ya bajó) el porcentaje salía más alto.
+    filas = dfc[dfc["Ticker"] == "MSTY"]
+    comprado = filas[filas["Action"].str.lower() == "buy"]["Amount"].abs().sum()
+    assert comprado > s["pocket_investment"] + 0.01
+    assert s["roi_percent"] == pytest.approx(expected_net_profit / comprado * 100, abs=0.01)
 
 
 def test_build_hoja_excel_sin_tax_summary_no_rompe():
@@ -4500,10 +4515,11 @@ def test_agregados_schwab_resta_retencion_nra_en_retorno_total(monkeypatch):
                              "synthetic_transactions.csv"), "rb").read()
     df, broker = logic.load_and_detect_csv(FakeFile(raw, "schwab_synth_2.csv"))
     dfc = logic.normalize_csv(df)
-    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
-    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_SCHWAB_NETO")
+    monkeypatch.setattr(logic, "fetch_market_data", _mkt_con_historia(20.0))
+    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_SCHWAB_NETO_HIST")
 
     tickers = ["MSTY", "SCHB"]
+    assert [logic.assess_ticker_quality(results, t)["level"] for t in tickers] == ["ok", "ok"]
     inv, mv, div, tr, pct = _agregados(results, tickers)
 
     div_bruto_buggy = sum(results[t]["dividends_collected_cash"] for t in tickers)
@@ -4527,16 +4543,19 @@ def test_agregados_ib_no_cambia_dividendos_ya_netos(monkeypatch):
                              "synthetic_transactions.csv"), "rb").read()
     df, broker = logic.load_and_detect_csv(FakeFile(raw, "ib_synth_1.csv"))
     dfc = logic.normalize_csv(df)
-    monkeypatch.setattr(logic, "fetch_market_data", _MKT_MOCK)
-    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_IB_NETO")
+    monkeypatch.setattr(logic, "fetch_market_data", _mkt_con_historia(10.0))
+    results = logic.analyze_portfolio(dfc, version="TEST_AGREGADOS_IB_NETO_HIST")
 
     from ui.adapters import _tiene_datos
     tickers = [t for t in results if _tiene_datos(results.get(t))]
     assert tickers  # confirma la fixture antes de usarla
+    assert {logic.assess_ticker_quality(results, t)["level"] for t in tickers} == {"ok"}
 
     inv, mv, div, tr, pct = _agregados(results, tickers)
     div_bruto_style = sum(results[t]["dividends_collected_cash"] for t in tickers)
-    tr_bruto_style = mv + div_bruto_style - inv
+    # El retorno resta el flujo neto (lo comprado menos lo que devolvió la venta de NVDY);
+    # `inv` es todo lo comprado, la base del porcentaje.
+    tr_bruto_style = mv + div_bruto_style - sum(results[t]["pocket_investment"] for t in tickers)
 
     for t in tickers:
         assert results[t]["dividends_net_total"] == pytest.approx(

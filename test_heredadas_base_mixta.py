@@ -46,8 +46,11 @@ class FakeFile:
         self._buf.seek(n)
 
 
-_MKT_MOCK = lambda t, d: (pd.DataFrame({"Close": [20.0], "Dividends": [0.0], "Stock Splits": [0.0]},
-                                       index=[pd.Timestamp("2024-10-15")]), None)
+def _MKT_MOCK(t, d):
+    """Un cierre por día hábil. Con una sola fila la curva de costo queda vacía, el fondo
+    sale «unreliable» (`no_cost_recorded`) y los agregados de la cuenta ya no lo cuentan."""
+    idx = pd.bdate_range(pd.Timestamp(d).normalize() - pd.Timedelta(days=7), "2026-08-31")
+    return pd.DataFrame({"Close": 10.0, "Dividends": 0.0, "Stock Splits": 0.0}, index=idx), None
 
 
 def _df_broker(fixture_dir, csv_name):
@@ -81,12 +84,13 @@ def test_e1_retorno_total_de_cartera_es_la_suma_de_net_profit(monkeypatch):
     acciones reinvertidas) para probar que el código LEE net_profit y no recalcula."""
     results, _mixto = _resultados_mixtos(monkeypatch)
     todos = ["MSTY", "SCHB", "NVDY", "CONY", "SMH"]
+    assert {logic.assess_ticker_quality(results, t)["level"] for t in todos} == {"ok"}
     results["MSTY"]["net_profit"] = results["MSTY"]["net_profit"] + 500.0  # divergencia forzada
 
     inv, mv, div, tr, pct = _agregados(results, todos)
 
     esperado = sum(results[t]["net_profit"] for t in todos)
-    formula_vieja = mv + div - inv
+    formula_vieja = mv + div - sum(results[t]["pocket_investment"] for t in todos)
     assert tr == pytest.approx(esperado, abs=0.01)
     assert tr != pytest.approx(formula_vieja, abs=0.01), (
         "el total sigue siendo mv + div - inv, no net_profit")
