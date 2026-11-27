@@ -11,9 +11,30 @@ calendario, los últimos 3 años y desde `--inicio-b`). Mapa A: fondos de largo 
 periodos, con la historia que pasa quien llama (`{TK}.csv` o `{TK}.parquet`: fecha, `Close` sin ajustar por dividendo y
 `Dividends`). No baja nada de la red. Escribe JSON por stdout; si los datos no pasan sus
 controles, sale con código 2 y el motivo por stderr.
+
+Con `--rangos` (apagada por defecto: sin ella la salida es la de siempre) el Mapa B añade
+`mapa_b.rangos`, la tabla de rangos libres de la barra de inicio y fin:
+
+    {"meses_min": 3, "meses_total": 12,
+     "cortes": ["2022-12-30", ..., T],            # compra de la primera parada de año calendario,
+                                                  # último cierre de cada mes y T (sin repetir)
+     "campos": [rendimiento, rendimiento_anual, se_mueve, peor_caida, valor_final],
+     "campos_cobrando": [sigue_invertido, efectivo_cobrado],   # van detrás de `campos` en las _cobrando
+     "lista": [{"i": 0, "j": 3, "medida": "total" | "anual",
+                "series": {clave de serie: [valores en el orden de campos] | null}}, ...]}
+
+Hay un rango por cada par de cortes `i < j` con `j - i >= 3`, en orden de (i, j); `medida` es "total"
+si `j - i <= 12` y "anual" si no, y `rendimiento` la sigue, igual que en `paradas`. Las claves de serie
+son las de una parada; un fondo que no cotizaba el día de compra va en null en sus dos versiones y su
+acción sí va. Proporciones a 6 decimales, dólares a centavos. Cada cifra sale del motor (`correr` y
+`metricas`): se corre una vez por (serie, compra) hasta T y cada fin recorta esa corrida, que da lo mismo
+que correr el motor con `end_date` en el fin (lo demuestra una prueba con los precios reales). Si los
+rangos no se pueden calcular, o una parada de año calendario no coincide con su rango, sale
+`mapa_b.rangos: null` y un aviso en `calidad.avisos`; las paradas nunca se pierden.
 """
 import argparse
 import contextlib
+import dataclasses
 import json
 import math
 import re
@@ -38,6 +59,12 @@ INICIO_B = "2024-02-22"
 FONDOS_A = ["SCHB", "QQQ", "XLK", "SMH"]
 ANIOS_A = [10, 5, 3]
 ANIOS_PARADA_B = 3
+MESES_MIN_RANGO = 3
+MESES_TOTAL_RANGO = 12
+CAMPOS_RANGO = ["rendimiento", "rendimiento_anual", "se_mueve", "peor_caida", "valor_final"]
+CAMPOS_RANGO_COBRANDO = ["sigue_invertido", "efectivo_cobrado"]
+DECIMALES_RANGO = {"valor_final": 2, "sigue_invertido": 2, "efectivo_cobrado": 2}
+DECIMALES_PROPORCION = 6
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 DESDE_A = "2011-12-31"
 MERCADO = "SCHB"
@@ -284,8 +311,113 @@ def paradas_b(crudas, buenas, parejas, referencias, T, inicio, inicio_b, mercado
     return paradas
 
 
+def cortes_rango(indice, T, compra_inicial):
+    """Cortes de la rejilla de meses: la compra de la primera parada de año calendario, el último cierre
+    de cada mes que viene después y T (que ya es el último cierre de su mes, así que no se repite)."""
+    ultimos = indice.to_series().groupby(indice.to_period("M")).max()
+    cortes = [compra_inicial] + [d for d in ultimos if compra_inicial < d <= T]
+    if cortes[-1] != T:
+        cortes.append(T)
+    return cortes
+
+
+def medida_rango(i, j):
+    return "total" if j - i <= MESES_TOTAL_RANGO else "anual"
+
+
+def decimales(campo):
+    return DECIMALES_RANGO.get(campo, DECIMALES_PROPORCION)
+
+
+def valores_rango(m, medida, capital, cobrando):
+    """Las cifras de una serie en un rango, en el orden de `campos` (y `campos_cobrando` si cobra)."""
+    m = {**m, "rendimiento": m["rendimiento_anual"] if medida == "anual" else m["valor_final"] / capital - 1}
+    campos = CAMPOS_RANGO + (CAMPOS_RANGO_COBRANDO if cobrando else [])
+    if not all(math.isfinite(m[c]) for c in campos):
+        raise DatosMalos("un rango dio una cifra que no es un número finito")
+    return [round(m[c], decimales(c)) for c in campos]
+
+
+def recortar(res, fin):
+    """La corrida hasta T, cortada en `fin`: lo que daría el motor con `end_date=fin`."""
+    n = res.daily.index.get_loc(fin) + 1
+    return dataclasses.replace(res, daily=res.daily.iloc[:n])
+
+
+def rangos_b(crudas, buenas, parejas, referencias, cortes, mercado, capital, directo=False):
+    """La tabla de rangos libres del Mapa B (esquema en el docstring del módulo). `directo=True` corre el
+    motor una vez por rango en vez de recortar la corrida hasta T; da lo mismo y tarda mucho más."""
+    T = cortes[-1]
+    nace = {tk: h.index[0] for tk, h in crudas.items()}
+    lista = []
+    for i, compra in enumerate(cortes):
+        fines = [(j, cortes[j]) for j in range(i + MESES_MIN_RANGO, len(cortes))]
+        if not fines:
+            continue
+        vivos = {f for _, f in parejas if nace[f] <= compra}
+        usados = sorted({a for a, _ in parejas} | vivos | set(referencias))
+        mismas_fechas({tk: crudas[tk] for tk in usados}, mercado, compra, T, f"Mapa B (rango desde el {compra.date()})")
+        corridas = {}
+
+        def corrida(tk, drip, fin):
+            if directo:
+                return correr(tk, buenas[tk], compra, fin, drip, capital)
+            if (tk, drip) not in corridas:
+                corridas[(tk, drip)] = correr(tk, buenas[tk], compra, T, drip, capital)
+            return recortar(corridas[(tk, drip)], fin)
+
+        for j, fin in fines:
+            for tk in usados:
+                for fecha in (compra, fin):
+                    if fecha not in buenas[tk].index:
+                        raise DatosMalos(f"{tk}: falta el cierre del {fecha.date()}, que usa un rango")
+            medida = medida_rango(i, j)
+
+            def serie(tk, drip):
+                return valores_rango(metricas(corrida(tk, drip, fin), capital), medida, capital, not drip)
+
+            series = {}
+            for accion, fondo in parejas:
+                series[accion] = serie(accion, True)
+                for variante, drip in (("reinvirtiendo", True), ("cobrando", False)):
+                    series[f"{fondo}_{variante}"] = serie(fondo, drip) if fondo in vivos else None
+            for tk in referencias:
+                series[tk] = serie(tk, True)
+            lista.append({"i": i, "j": j, "medida": medida, "series": series})
+    return {"meses_min": MESES_MIN_RANGO, "meses_total": MESES_TOTAL_RANGO,
+            "cortes": [str(c.date()) for c in cortes],
+            "campos": CAMPOS_RANGO, "campos_cobrando": CAMPOS_RANGO_COBRANDO, "lista": lista}
+
+
+def cuadran_con_paradas(bloque, paradas):
+    """Cada parada de año calendario coincide en fechas con un rango y sus cifras son las mismas, dentro
+    del redondeo. Sin rango posible (menos de tres cortes de distancia) no hay con qué comparar."""
+    cortes = bloque["cortes"]
+    por_par = {(r["i"], r["j"]): r for r in bloque["lista"]}
+    for p in paradas:
+        if p["medida"] != "total":
+            continue
+        if p["compra"] not in cortes or p["fin"] not in cortes:
+            raise DatosMalos(f"la parada {p['id']} ({p['compra']} a {p['fin']}) no cae en los cortes de los rangos")
+        par = (cortes.index(p["compra"]), cortes.index(p["fin"]))
+        if par[1] - par[0] < MESES_MIN_RANGO:
+            continue
+        r = por_par.get(par)
+        if r is None or r["medida"] != p["medida"] or set(r["series"]) != set(p["series"]):
+            raise DatosMalos(f"la parada {p['id']} no tiene su rango o este no trae sus series")
+        for clave, s in p["series"].items():
+            v = r["series"][clave]
+            if (s is None) != (v is None):
+                raise DatosMalos(f"la parada {p['id']} y su rango no coinciden en si {clave} existe")
+            if s is None:
+                continue
+            for campo, x in zip(CAMPOS_RANGO + (CAMPOS_RANGO_COBRANDO if clave.endswith("_cobrando") else []), v):
+                if abs(s[campo] - x) > 10.0 ** -decimales(campo):
+                    raise DatosMalos(f"la parada {p['id']} y su rango difieren en {clave}.{campo}: {s[campo]} y {x}")
+
+
 def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referencias=REFERENCIAS,
-             inicio_b=INICIO_B, fondos_a=FONDOS_A, anios_a=ANIOS_A, mercado=MERCADO):
+             inicio_b=INICIO_B, fondos_a=FONDOS_A, anios_a=ANIOS_A, mercado=MERCADO, rangos=False):
     validar(capital, parejas, referencias, inicio_b, fondos_a, anios_a, mercado)
     malas = []
     crudas_b = {tk: leer(historia_b, tk) for tk in sorted({t for p in parejas for t in p} | set(referencias))}
@@ -353,6 +485,19 @@ def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referenci
     mapa_b["linea_mercado"] = linea_mercado(mapa_b["referencias"][mercado], mercado)
     mapa_b["semanas"] = semanas(B, parejas, inicio, T)
     mapa_b["paradas"] = paradas_b(crudas_b, hb, parejas, referencias, T, inicio, inicio_b, mercado, capital)
+    avisos = []
+    if rangos:
+        try:
+            inicial = next((p["compra"] for p in mapa_b["paradas"] if p["medida"] == "total"), None)
+            if inicial is None:
+                raise DatosMalos("no hay parada de año calendario de donde arrancar los cortes")
+            cortes = cortes_rango(hb[mercado].index, T, pd.Timestamp(inicial))
+            bloque = rangos_b(crudas_b, hb, parejas, referencias, cortes, mercado, capital)
+            cuadran_con_paradas(bloque, mapa_b["paradas"])
+        except DatosMalos as e:
+            bloque = None
+            avisos.append(f"los rangos libres del Mapa B no se calcularon: {e}")
+        mapa_b["rangos"] = bloque
     mapa_a = {"periodos": []}
     for pid, _ in periodos:
         series = {tk: m(A[(pid, tk)], T) for tk in fondos_a}
@@ -361,7 +506,7 @@ def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referenci
             "en_cierre_anterior": {tk: m(A1[(pid, tk)], T1) for tk in fondos_a},
             "linea_mercado": linea_mercado(series[mercado], mercado),
         })
-    return {
+    salida = {
         "base": "bruto", "base_texto": "Antes de impuestos",
         "T": str(T.date()), "T_anterior": str(T1.date()), "capital": capital,
         "origen": {
@@ -373,6 +518,9 @@ def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referenci
         "filas_malas": malas,
         "mapa_a": mapa_a, "mapa_b": mapa_b,
     }
+    if rangos:
+        salida["calidad"] = {"avisos": avisos}
+    return salida
 
 
 def _lista(s):
@@ -398,12 +546,13 @@ def main(argv=None):
     p.add_argument("--fondos-a", default=",".join(FONDOS_A))
     p.add_argument("--anios-a", default=",".join(map(str, ANIOS_A)))
     p.add_argument("--mercado", default=MERCADO)
+    p.add_argument("--rangos", action="store_true", help="añade mapa_b.rangos, la tabla de rangos libres")
     a = p.parse_args(argv)
     try:
         d = calcular(a.historia_a, a.historia_b, a.capital,
                      parejas=[tuple(x.split(":")) for x in _lista(a.parejas)],
                      referencias=_lista(a.referencias), inicio_b=a.inicio_b, fondos_a=_lista(a.fondos_a),
-                     anios_a=_enteros(a.anios_a), mercado=a.mercado.strip().upper())
+                     anios_a=_enteros(a.anios_a), mercado=a.mercado.strip().upper(), rangos=a.rangos)
         texto = json.dumps(d, ensure_ascii=False, allow_nan=False)
     except DatosMalos as e:
         print(f"mapa_riesgo: {e}", file=sys.stderr)
