@@ -69,7 +69,12 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 > ventas (`capital_comprado − pocket_investment`), de modo que la resta sigue dando
 > `net_profit`. Los fondos que `assess_ticker_quality` deja en «unreliable» no entran en ese
 > resultado ni en el de las tarjetas (sí en el reparto por valor) y la pantalla dice cuáles:
-> su `net_profit` cuenta como ganancia lo que entró sin costo. Gates:
+> su `net_profit` no es una medición: cuenta como ganancia lo que entró sin costo y como
+> pérdida lo que salió por transferencia sin volver (`acciones_traspasadas_fuera`; una ida y
+> vuelta entre cuentas no cuenta, porque la entrada sin costo compensa la salida).
+>
+> **Siguen sobre el flujo neto** las vistas que parten de `cashflow_data` (Cash flow, la hoja
+> y el Método tradicional): su `POCKET` y sus porcentajes no cambiaron en este paso. Gates:
 > `test_ventas_sobre_lo_comprado.py`.
 
 ---

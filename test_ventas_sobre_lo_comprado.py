@@ -16,6 +16,7 @@ Tres cosas vigilan estos guards:
 
 Los esperados salen de las filas del propio caso, calculados a mano.
 """
+import json
 import re
 from pathlib import Path
 
@@ -157,6 +158,55 @@ def test_sin_salidas_por_transferencia_el_fondo_sigue_fiable(monkeypatch):
     assert "shares_transferred_out" not in logic.assess_ticker_quality({"VTI": entra}, "VTI")["flags"]
 
 
+SALEN_10 = dict(Date="2024-02-01", Action="Internal Transfer", Quantity=-10)
+
+
+@pytest.mark.parametrize("filas", [
+    [dict(Date="2024-02-01", Action="Journaled Shares", Quantity=-10),
+     dict(Date="2024-02-05", Action="Internal Transfer", Quantity=10)],
+    [SALEN_10, dict(Date="2024-02-01", Action="Internal Transfer", Quantity=10)],
+    [dict(Date="2024-02-01", Action="Internal Transfer", Quantity=10),
+     dict(Date="2024-02-05", Action="Internal Transfer", Quantity=-10)],
+], ids=["vuelven otro dia", "salen y vuelven el mismo dia", "entran y luego salen"])
+def test_una_ida_y_vuelta_entre_cuentas_no_es_una_salida(monkeypatch, filas):
+    """Las diez acciones siguen ahí y costaron lo mismo: compró a 100, valen 150."""
+    s = _correr(monkeypatch, [COMPRA_10_A_100] + filas, _mercado(SUBE_A_150))
+    assert s["acciones_traspasadas_fuera"] == 0
+    assert s["net_profit"] == pytest.approx(500.0, abs=0.01)
+    assert logic.assess_ticker_quality({"VTI": s}, "VTI")["level"] == "ok"
+
+
+def test_el_ajuste_de_una_migracion_no_es_una_salida(monkeypatch):
+    """La migración deja la posición en las acciones traspasadas. Si el archivo contaba dos
+    de más, quitarlas es una corrección de la cuenta, no acciones que se fueron."""
+    s = _correr(monkeypatch, [dict(Date="2024-01-02", Action="Buy", Quantity=12, Amount=-1200.0),
+                              dict(Date="2024-02-01", Action="Journaled Shares", Quantity=-10),
+                              dict(Date="2024-02-01", Action="Internal Transfer", Quantity=10)],
+                _mercado([100.0] * 270))
+    assert s["shares"] == pytest.approx(10.0)
+    assert s["acciones_traspasadas_fuera"] == 0
+
+
+def test_las_que_no_vuelven_siguen_siendo_una_salida(monkeypatch):
+    s = _correr(monkeypatch, [COMPRA_10_A_100, SALEN_10,
+                              dict(Date="2024-02-05", Action="Internal Transfer", Quantity=6)],
+                _mercado([100.0] * 270))
+    assert s["acciones_traspasadas_fuera"] == pytest.approx(4.0)
+    assert logic.assess_ticker_quality({"VTI": s}, "VTI")["level"] == "unreliable"
+
+
+def test_lo_que_entra_con_costo_no_compensa_la_salida(monkeypatch):
+    """Salen las diez de 1.000 y entran otras diez que costaron 1.500: son otra compra. Lo
+    comprado sube a 2.500 y las que salieron siguen sin valor declarado."""
+    s = _correr(monkeypatch, [COMPRA_10_A_100, SALEN_10,
+                              dict(Date="2024-02-05", Action="Internal Transfer",
+                                   Quantity=10, Amount=-1500.0)],
+                _mercado(SUBE_A_150))
+    assert s["capital_comprado"] == pytest.approx(2500.0, abs=0.01)
+    assert s["acciones_traspasadas_fuera"] == pytest.approx(10.0)
+    assert logic.assess_ticker_quality({"VTI": s}, "VTI")["level"] == "unreliable"
+
+
 # ── La línea de la cuenta y las tarjetas ────────────────────────────────────────────────
 
 def _stats(comprado, cobrado_ventas, mv, cash=0.0, **extra):
@@ -244,8 +294,9 @@ def test_los_agregados_del_grupo_dividen_por_lo_comprado():
 
 def test_un_grupo_sin_ningun_fondo_medible_lo_dice():
     g = portafolios_data({"ZZZ": POCO_FIABLE}, {"ZZZ": "mode_b"})["grupos"][0]
-    assert g["retorno"] == 0 and g["retorno_pct"] == 0
+    assert g["medible"] is False
     assert "no deja medir" in g["veredicto"]
+    assert all(x["medible"] is True for x in portafolios_data(CUENTA, CLASES)["grupos"])
     d = total_cuenta_data({"ZZZ": POCO_FIABLE})
     assert d["fondos"] == 0 and d["sin_contar"] == ["ZZZ"]
 
@@ -327,6 +378,44 @@ def test_la_tarjeta_avisa_de_los_fondos_que_no_cuenta():
     funcion = COMPONENTE[COMPONENTE.index("const sinContar ="):COMPONENTE.index("const rows = filas(g)")]
     assert "grupo.sin_contar" in funcion
     assert "fuera.map(esc)" in funcion, "el ticker viene del archivo del cliente"
+
+
+_TARJETAS = """() => [...document.querySelectorAll('.card')].map(c => ({
+  titulo: c.querySelector('.card-title').textContent,
+  cifra: c.querySelector('.big').textContent,
+  apagada: !!c.querySelector('.big .num.sin-medir'),
+  filas: c.querySelectorAll('.wf-row').length,
+  etiqueta: c.querySelector('p.k').textContent,
+  veredicto: c.querySelector('.verdict').textContent,
+}))"""
+
+
+def test_la_tarjeta_de_un_grupo_sin_fondos_medibles_no_pinta_un_cero():
+    """Con Chromium: el grupo de Crecimiento solo tiene un fondo poco fiable. Un «+$0» en
+    verde con su cascada sería una cifra que nadie midió."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from ui import componentes
+    datos = portafolios_data({"AAA": SIN_VENTA, "ZZZ": POCO_FIABLE},
+                             {"AAA": "mode_a", "ZZZ": "mode_b"})
+    html = componentes._con_tema(componentes._plantilla("portafolios.html"), "Claro")
+    html = html.replace("{{DATA_JSON}}", json.dumps(datos, ensure_ascii=False))
+    try:
+        with sync_api.sync_playwright() as pw:
+            nav = pw.chromium.launch()
+            pagina = nav.new_page(viewport={"width": 1000, "height": 1400})
+            pagina.set_content("<!doctype html>" + html)
+            pagina.wait_for_timeout(300)
+            tarjetas = {t["titulo"]: t for t in pagina.evaluate(_TARJETAS)}
+            nav.close()
+    except sync_api.Error as e:
+        pytest.skip(f"Chromium no disponible: {e}")
+    sin, con = tarjetas["Crecimiento"], tarjetas["Dividendos"]
+    assert sin["cifra"] == "Sin medir" and sin["apagada"] and sin["filas"] == 0
+    assert sin["etiqueta"] == "Retorno total · sin ZZZ"
+    assert "no deja medir" in sin["veredicto"]
+    assert con["filas"] == 3 and not con["apagada"]
+    assert "150" in con["cifra"] and "15" in con["cifra"], "ganó 150 sobre 1.000"
+    assert con["etiqueta"] == "Retorno total"
 
 
 FALLO_BOLSILLO = ["bolsillo negativo: -200.00"]

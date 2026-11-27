@@ -1621,8 +1621,10 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     pocket_investment = 0.0 # Net cash flow from user's pocket
     # Todo lo comprado, sin restar lo que devuelve una venta: la base de los porcentajes.
     capital_comprado = 0.0
-    # Acciones que salieron por transferencia sin pareja: el archivo no dice a qué valor.
-    acciones_traspasadas_fuera = 0.0
+    # Acciones que salieron por transferencia y no volvieron: el archivo no dice a qué valor.
+    # Las que entran sin costo las compensan: es una ida y vuelta entre cuentas.
+    _salieron_por_traspaso = 0.0
+    _entraron_sin_costo = 0.0
     shares_owned = 0.0
     shares_owned_pocket = 0.0
     shares_owned_drip = 0.0
@@ -1724,8 +1726,11 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
                     ticker_df.at[idx, 'Quantity'] = _adj_qty / _sf if _sf else 0.0
                 shares_owned += _adj_qty
                 shares_owned_pocket += _adj_qty
-                if _adj_qty < 0 and pd.isna(row.get('_migracion_q', np.nan)):
-                    acciones_traspasadas_fuera += -_adj_qty
+                if pd.isna(row.get('_migracion_q', np.nan)):
+                    if _adj_qty < 0:
+                        _salieron_por_traspaso += -_adj_qty
+                    elif amount == 0:
+                        _entraron_sin_costo += _adj_qty
                 if _adj_qty > 0:
                     total_shares_bought += _adj_qty
                     if amount != 0:
@@ -1841,7 +1846,7 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     return {
         'pocket_investment': pocket_investment,
         'capital_comprado': capital_comprado,
-        'acciones_traspasadas_fuera': acciones_traspasadas_fuera,
+        'acciones_traspasadas_fuera': max(_salieron_por_traspaso - _entraron_sin_costo, 0.0),
         'shares_owned': shares_owned,
         'shares_owned_pocket': shares_owned_pocket,
         'shares_owned_drip': shares_owned_drip,

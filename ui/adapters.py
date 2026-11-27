@@ -2812,7 +2812,8 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
     que tengan tickers con datos analizables (`_tiene_datos`). Ninguno → `None` (el
     componente se oculta). Por grupo, los agregados salen de `_agregados` (import local
     desde `ui.heredadas` para no crear ciclo) y `precio = retorno − dividendos`. Los fondos
-    «unreliable» van en `sin_contar`: pesan en el reparto y no en el resultado. Por fondo,
+    «unreliable» van en `sin_contar`: pesan en el reparto y no en el resultado; si el grupo
+    no tiene ninguno medible, `medible` es falso y la tarjeta no pinta cifra. Por fondo,
     `market_value or 0`; se excluyen los `<= 0`; orden por `mv` descendente. `pct` de
     grupo y de fondo sobre `total_mv`, sin redondear — el JS redondea al dibujar.
     """
@@ -2846,6 +2847,7 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
             "veredicto": (_veredicto_portafolio(precio, div, tr, inv, costo=costo) if medidos
                           else "El historial de estos fondos no deja medir su resultado."),
             "sin_contar": sin_contar,
+            "medible": bool(medidos),
             "fondos": fondos,
         })
     if not grupos:
