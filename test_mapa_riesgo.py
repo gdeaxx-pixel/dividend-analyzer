@@ -536,6 +536,170 @@ def test_el_parquet_real_del_cache_se_lee_con_sus_fechas(mr):
     assert list(h.index.strftime("%Y-%m-%d")) == list(pd.DatetimeIndex(crudo.index).strftime("%Y-%m-%d"))
 
 
+# ---- las paradas de la barra del Mapa B ----
+
+DIAS_P = ["2021-12-31", "2022-06-30", "2022-12-30", "2023-01-03", "2023-06-30", "2023-11-17", "2023-11-21",
+          "2023-12-29", "2024-01-02", "2024-02-22", "2024-06-28", "2024-12-31", "2025-01-02", "2025-06-30",
+          "2025-12-31", "2026-01-02", "2026-06-30", "2026-11-19", "2026-11-20"]
+ACC_P = dict(zip(DIAS_P, [40, 44, 50, 60, 75, 70, 72, 90, 99, 110, 130, 180, 170, 150, 120, 130, 160, 190, 198]))
+UNIVERSO_P = dict(parejas=[("ACC", "FON"), ("ACD", "NUE")], referencias=["MKT"], inicio_b="2024-02-22",
+                  fondos_a=["MKT"], anios_a=[1], mercado="MKT")
+FIN_P = {"2023": ("2022-12-30", "2023-12-29"), "2024": ("2023-12-29", "2024-12-31"),
+         "2025": ("2024-12-31", "2025-12-31"), "2026": ("2025-12-31", "2026-11-20"),
+         "3-anios": ("2023-11-17", "2026-11-20"), "feb-2024": ("2024-02-22", "2026-11-20")}
+
+
+def _paradas(mr, tmp_path, dias=DIAS_P, nace_fon="2022-12-30", nace_nue="2024-01-02", cambiar=None):
+    """Dos parejas: FON nace el día de compra de 2023 y NUE el primer día hábil de 2024. MKT, ACC y
+    ACD cotizan desde fines de 2021, cuando todavía no había ningún fondo."""
+    precios = {**ACC_P, **{d: 200 + i for i, d in enumerate(d for d in dias if d not in ACC_P)}}
+    filas = {
+        "MKT": [(d, 100 + 2 * i + 3 * (i % 2), 0) for i, d in enumerate(dias)],
+        "ACC": [(d, precios[d], 0) for d in dias],
+        "ACD": [(d, 30 + i + 2 * (i % 3), 0) for i, d in enumerate(dias)],
+        "FON": [(d, 20 + i % 3, 0.4 if d.endswith(("-06-30", "-06-28")) else 0)
+                for i, d in enumerate(dias) if d >= nace_fon],
+        "NUE": [(d, 25 - i % 2, 0.5 if d.endswith(("-06-30", "-06-28")) else 0)
+                for i, d in enumerate(dias) if d >= nace_nue],
+    }
+    for tk, cambio in (cambiar or {}).items():
+        filas[tk] = cambio(filas[tk])
+    for tk, f in filas.items():
+        _guardar(tmp_path / "b", tk, f)
+    _guardar(tmp_path / "a", "MKT", [("2011-12-30", 50, 0)] + filas["MKT"])
+    d = mr.calcular(tmp_path / "a", tmp_path / "b", **UNIVERSO_P)
+    return d, {p["id"]: p for p in d["mapa_b"]["paradas"]}
+
+
+def test_las_paradas_van_en_el_orden_de_la_barra_con_su_medida(mr, tmp_path):
+    d, _ = _paradas(mr, tmp_path)
+    assert [(p["id"], p["medida"]) for p in d["mapa_b"]["paradas"]] == [
+        ("2023", "total"), ("2024", "total"), ("2025", "total"), ("2026", "total"),
+        ("3-anios", "anual"), ("feb-2024", "anual")]
+
+
+def test_cada_parada_compra_y_termina_en_sus_fechas(mr, tmp_path):
+    """Un año calendario compra al último cierre del año anterior; «últimos 3 años», al último cierre
+    que no pasa de T menos 3 años (el 20-nov-2023 aquí no hubo mercado)."""
+    _, pa = _paradas(mr, tmp_path)
+    assert {k: (p["compra"], p["fin"]) for k, p in pa.items()} == FIN_P
+    for k, p in pa.items():
+        for nombre, s in p["series"].items():
+            if s is not None:
+                assert (s["inicio"], s["fin"], s["momento"]) == (*FIN_P[k], f"al cierre del {FIN_P[k][1]}"), (k, nombre)
+
+
+def test_ultimos_3_anios_compra_en_el_aniversario_si_hubo_cierre(mr, tmp_path):
+    dias = sorted(DIAS_P + ["2023-11-20"])
+    _, pa = _paradas(mr, tmp_path, dias=dias)
+    assert pa["3-anios"]["compra"] == "2023-11-20"
+
+
+def test_un_anio_calendario_da_el_rendimiento_del_periodo_sin_anualizar(mr, tmp_path):
+    _, pa = _paradas(mr, tmp_path)
+    for anio in ("2023", "2024", "2025", "2026"):
+        compra, fin = FIN_P[anio]
+        s = pa[anio]["series"]["ACC"]
+        assert s["rendimiento"] == pytest.approx(ACC_P[fin] / ACC_P[compra] - 1, rel=1e-12), anio
+        assert s["rendimiento"] != pytest.approx(s["rendimiento_anual"], rel=1e-6), anio
+
+
+def test_las_paradas_de_varios_anios_dan_el_rendimiento_por_anio(mr, tmp_path):
+    _, pa = _paradas(mr, tmp_path)
+    for pid in ("3-anios", "feb-2024"):
+        compra, fin = FIN_P[pid]
+        dias = (pd.Timestamp(fin) - pd.Timestamp(compra)).days
+        esperado = (ACC_P[fin] / ACC_P[compra]) ** (365.25 / dias) - 1
+        s = pa[pid]["series"]["ACC"]
+        assert s["rendimiento"] == s["rendimiento_anual"] == pytest.approx(esperado, rel=1e-12), pid
+
+
+def test_un_fondo_que_no_existia_el_dia_de_compra_va_en_null_y_su_accion_si_va(mr, tmp_path):
+    """NUE nace dentro de 2024 y dentro de «últimos 3 años»: en las dos falta, con sus dos versiones.
+    FON nace el mismo día de compra de 2023, así que ahí sí está."""
+    _, pa = _paradas(mr, tmp_path)
+    todas = {"ACC", "FON_reinvirtiendo", "FON_cobrando", "ACD", "NUE_reinvirtiendo", "NUE_cobrando", "MKT"}
+    faltan = {k: {n for n, s in p["series"].items() if s is None} for k, p in pa.items()}
+    assert all(set(p["series"]) == todas for p in pa.values())
+    nue = {"NUE_reinvirtiendo", "NUE_cobrando"}
+    assert faltan == {"2023": nue, "2024": nue, "2025": set(), "2026": set(), "3-anios": nue, "feb-2024": set()}
+
+
+def test_en_las_paradas_solo_cobrando_lleva_lo_que_sigue_invertido(mr, tmp_path):
+    _, pa = _paradas(mr, tmp_path)
+    for p in pa.values():
+        for nombre, s in p["series"].items():
+            if s is None:
+                continue
+            extra = CAMPOS_COBRANDO if nombre.endswith("_cobrando") else set()
+            assert set(s) == CAMPOS_SERIE | {"rendimiento"} | extra, (p["id"], nombre)
+            assert s["base"] == "bruto"
+    s = pa["2025"]["series"]["FON_cobrando"]
+    precios = pd.read_csv(tmp_path / "b" / "FON.csv").set_index("Date")["Close"]
+    acciones = 10_000 / precios["2024-12-31"]
+    assert s["efectivo_cobrado"] == pytest.approx(acciones * 0.4, rel=1e-12)
+    assert s["sigue_invertido"] == pytest.approx(acciones * precios["2025-12-31"], rel=1e-12)
+    assert s["rendimiento"] == pytest.approx((s["sigue_invertido"] + s["efectivo_cobrado"]) / 10_000 - 1, rel=1e-12)
+
+
+def test_no_hay_boton_de_un_anio_sin_ningun_fondo_vivo_al_comprar(mr, tmp_path):
+    """Si el fondo más viejo nace el primer día hábil de 2023, ese año no se podía comprar ninguno."""
+    d, _ = _paradas(mr, tmp_path, nace_fon="2023-01-03")
+    assert [p["id"] for p in d["mapa_b"]["paradas"]] == ["2024", "2025", "2026", "3-anios", "feb-2024"]
+
+
+@pytest.mark.parametrize("nuevos, aparece", [
+    (["2026-12-31", "2027-01-04"], False),
+    (["2026-12-31", "2027-01-04", "2027-01-05"], True),
+])
+def test_el_anio_nuevo_aparece_solo_cuando_ya_tiene_tres_cierres(mr, tmp_path, nuevos, aparece):
+    """El primer día hábil de enero la ventana tiene dos cierres y el motor pide tres: el año nuevo
+    espera un día, y el cálculo no se cae por eso."""
+    _, pa = _paradas(mr, tmp_path, dias=DIAS_P + nuevos)
+    anios = [k for k in pa if k.isdigit()]
+    assert anios == ["2023", "2024", "2025", "2026"] + (["2027"] if aparece else [])
+    assert pa["2026"]["fin"] == "2026-12-31"
+    if aparece:
+        assert (pa["2027"]["compra"], pa["2027"]["fin"], pa["2027"]["medida"]) == ("2026-12-31", "2027-01-05", "total")
+
+
+def test_la_parada_del_inicio_es_la_misma_corrida_que_las_parejas(mr, tmp_path):
+    d, pa = _paradas(mr, tmp_path)
+    series = {k: v for p in d["mapa_b"]["parejas"] for k, v in p["series"].items()}
+    series["MKT"] = d["mapa_b"]["referencias"]["MKT"]
+    de_la_parada = {k: {c: x for c, x in s.items() if c != "rendimiento"}
+                    for k, s in pa["feb-2024"]["series"].items()}
+    assert de_la_parada == series
+
+
+def test_la_parada_del_inicio_toma_su_nombre_del_inicio_pedido(mr, tmp_path):
+    a, b = _escenario(tmp_path)
+    d = mr.calcular(a, b, **{**UNIVERSO, "inicio_b": "2024-01-04"})
+    assert [(p["id"], p["compra"], p["medida"]) for p in d["mapa_b"]["paradas"]] == [("ene-2024", "2024-01-05", "anual")]
+
+
+@pytest.mark.parametrize("tk, fecha, pid", [("ACC", "2023-06-30", "2023"), ("FON", "2023-06-30", "2023"),
+                                            ("MKT", "2023-11-21", "2023")])
+def test_un_dia_que_falta_antes_del_inicio_para_en_la_parada_que_lo_usa(mr, tmp_path, tk, fecha, pid):
+    quitar = {tk: lambda f: [x for x in f if x[0] != fecha]}
+    with pytest.raises(mr.DatosMalos, match=rf"en el Mapa B \(parada {pid}\) no tiene las mismas fechas que MKT "
+                                            rf"\(la primera distinta, el {fecha}\)"):
+        _paradas(mr, tmp_path, cambiar=quitar)
+
+
+@pytest.mark.parametrize("fecha", ["2022-12-30", "2023-12-29"])
+def test_si_la_fila_mala_quitada_era_la_compra_o_el_fin_de_una_parada_para(mr, tmp_path, fecha):
+    """Sin ese cierre el motor compraría o terminaría otro día sin decirlo."""
+    romper = {"ACC": lambda f: [(d, float("nan") if d == fecha else c, v) for d, c, v in f]}
+    with pytest.raises(mr.DatosMalos, match=f"ACC: falta el cierre del {fecha}, que usa la parada 2023"):
+        _paradas(mr, tmp_path, cambiar=romper)
+
+
+def test_sin_tres_anios_de_historia_no_hay_boton_de_tres_anios(mr, tmp_path):
+    a, b = _universo_por_defecto(tmp_path)
+    assert [p["id"] for p in mr.calcular(a, b)["mapa_b"]["paradas"]] == ["feb-2024"]
+
+
 # ---- sin red ----
 
 def test_el_cli_no_importa_nada_de_red_y_siempre_pasa_la_historia():
@@ -672,6 +836,11 @@ def test_de_punta_a_punta_la_salida_es_un_solo_json_con_el_contrato(tmp_path):
         assert set(p["series"]) == set(p["en_cierre_anterior"]) == {"SCHB", "QQQ", "XLK", "SMH"}
         assert all(set(s) == CAMPOS_SERIE for s in p["series"].values())
     assert set(d["mapa_b"]["semanas"]["parejas"]) == {"NVDA", "TSLA", "MSTR"}
+    (parada,) = d["mapa_b"]["paradas"]
+    assert set(parada) == {"id", "compra", "fin", "medida", "series"}
+    assert (parada["id"], parada["compra"], parada["fin"], parada["medida"]) == (
+        "feb-2024", "2024-02-22", "2024-08-30", "anual")
+    assert set(parada["series"]) == {"SCHB", "SMH"} | {k for p in d["mapa_b"]["parejas"] for k in p["series"]}
 
 
 def test_de_punta_a_punta_datos_malos_salen_con_codigo_2_y_el_motivo(tmp_path):
