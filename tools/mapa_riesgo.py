@@ -6,8 +6,9 @@ Uso, con cwd en la raíz del repo o de una copia sacada con `git archive`:
 
 Todo va antes de impuestos (modo `bruto` de `ui.adapters._politica_fiscal`): sin retención y sin
 devolución de capital. Mapa B: cada acción contra su YieldMax, reinvirtiendo y cobrando, con el
-caché de precios del repo. Mapa A: fondos de largo plazo en cuatro periodos, con la historia que
-pasa quien llama (`{TK}.csv` o `{TK}.parquet`: fecha, `Close` sin ajustar por dividendo y
+caché de precios del repo, desde `--inicio-b` y en las paradas de la barra de la nota (cada año
+calendario, los últimos 3 años y desde `--inicio-b`). Mapa A: fondos de largo plazo en cuatro
+periodos, con la historia que pasa quien llama (`{TK}.csv` o `{TK}.parquet`: fecha, `Close` sin ajustar por dividendo y
 `Dividends`). No baja nada de la red. Escribe JSON por stdout; si los datos no pasan sus
 controles, sale con código 2 y el motivo por stderr.
 """
@@ -36,6 +37,8 @@ REFERENCIAS = ["SCHB", "SMH"]
 INICIO_B = "2024-02-22"
 FONDOS_A = ["SCHB", "QQQ", "XLK", "SMH"]
 ANIOS_A = [10, 5, 3]
+ANIOS_PARADA_B = 3
+MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 DESDE_A = "2011-12-31"
 MERCADO = "SCHB"
 FUERTES = 0.8
@@ -230,6 +233,57 @@ def mismas_fechas(crudas, mercado, desde, hasta, mapa):
                              f"(la primera distinta, el {distintas[0].date()})")
 
 
+def cortes_b(indice, T, inicio, inicio_b, primer_fondo):
+    """(id, compra, fin, medida) de cada parada del Mapa B, en el orden de la barra. Un año calendario
+    va del último cierre del año anterior al último suyo, o a T, y da el rendimiento del periodo; las
+    otras dos dan el rendimiento por año. Hay año desde que algún fondo ya cotizaba el día de compra y
+    la ventana tiene los tres cierres que pide el motor: el primer día hábil de enero todavía no."""
+    cortes = []
+    for anio in range(indice[0].year + 1, T.year + 1):
+        compra = indice[indice < pd.Timestamp(anio, 1, 1)][-1]
+        fin = indice[indice < pd.Timestamp(anio + 1, 1, 1)][-1]
+        if compra >= primer_fondo and ((indice >= compra) & (indice <= fin)).sum() >= 3:
+            cortes.append((str(anio), compra, fin, "total"))
+    previos = indice[indice <= T - pd.DateOffset(years=ANIOS_PARADA_B)]
+    if len(previos):
+        cortes.append((f"{ANIOS_PARADA_B}-anios", previos[-1], T, "anual"))
+    desde = pd.Timestamp(inicio_b)
+    cortes.append((f"{MESES[desde.month - 1]}-{desde.year}", inicio, T, "anual"))
+    return cortes
+
+
+def paradas_b(crudas, buenas, parejas, referencias, T, inicio, inicio_b, mercado, capital):
+    """Las series del Mapa B en cada parada. Un fondo que no cotizaba el día de compra va en null en
+    sus dos versiones; su acción sí va."""
+    nace = {tk: h.index[0] for tk, h in crudas.items()}
+    primer_fondo = min(nace[f] for _, f in parejas)
+    paradas = []
+    for pid, compra, fin, medida in cortes_b(buenas[mercado].index, T, inicio, inicio_b, primer_fondo):
+        vivos = {f for _, f in parejas if nace[f] <= compra}
+        usados = sorted({a for a, _ in parejas} | vivos | set(referencias))
+        for tk in usados:
+            for fecha in (compra, fin):
+                if fecha not in buenas[tk].index:
+                    raise DatosMalos(f"{tk}: falta el cierre del {fecha.date()}, que usa la parada {pid}")
+        mismas_fechas({tk: crudas[tk] for tk in usados}, mercado, compra, fin, f"Mapa B (parada {pid})")
+
+        def serie(tk, drip):
+            s = con_base(metricas(correr(tk, buenas[tk], compra, fin, drip, capital), capital), fin)
+            s["rendimiento"] = s["rendimiento_anual"] if medida == "anual" else s["valor_final"] / capital - 1
+            return s
+
+        series = {}
+        for accion, fondo in parejas:
+            series[accion] = serie(accion, True)
+            for variante, drip in (("reinvirtiendo", True), ("cobrando", False)):
+                series[f"{fondo}_{variante}"] = serie(fondo, drip) if fondo in vivos else None
+        for tk in referencias:
+            series[tk] = serie(tk, True)
+        paradas.append({"id": pid, "compra": str(compra.date()), "fin": str(fin.date()), "medida": medida,
+                        "series": series})
+    return paradas
+
+
 def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referencias=REFERENCIAS,
              inicio_b=INICIO_B, fondos_a=FONDOS_A, anios_a=ANIOS_A, mercado=MERCADO):
     validar(capital, parejas, referencias, inicio_b, fondos_a, anios_a, mercado)
@@ -298,6 +352,7 @@ def calcular(historia_a, historia_b, capital=CAPITAL, parejas=PAREJAS, referenci
         mapa_b["referencias"][tk + "_en_cierre_anterior"] = m(B1[tk], T1)
     mapa_b["linea_mercado"] = linea_mercado(mapa_b["referencias"][mercado], mercado)
     mapa_b["semanas"] = semanas(B, parejas, inicio, T)
+    mapa_b["paradas"] = paradas_b(crudas_b, hb, parejas, referencias, T, inicio, inicio_b, mercado, capital)
     mapa_a = {"periodos": []}
     for pid, _ in periodos:
         series = {tk: m(A[(pid, tk)], T) for tk in fondos_a}
