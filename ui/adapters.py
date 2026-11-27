@@ -1163,7 +1163,9 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
     faltan filas» las 9 posiciones reales que se bloqueaban; el 2026-09-27 resultó que la
     mayoría eran filas que SÍ estaban y la calculadora no leía (historial migrado de TD
     Ameritrade, #172–#174). Por eso solo el bolsillo negativo culpa al export; las compras
-    huérfanas se describen con cifras del propio CSV y ofrecen las dos salidas.
+    huérfanas se describen con cifras del propio CSV y ofrecen las dos salidas. Y el bolsillo
+    negativo tampoco lo culpa cuando es el único fallo y las compras están todas: ahí las
+    ventas devolvieron más de lo que costó la posición, y se dice eso.
 
     Devuelve `{'titular', 'cuerpo': [str, ...], 'accion', 'nuestro'}`. `nuestro=True`
     significa que la causa apunta al motor y no al export: ahí el aviso pide que lo
