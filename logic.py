@@ -1078,13 +1078,15 @@ def _metricas_riesgo(daily_history):
     # diario espurio de miles de % que disparaba la volatilidad/Sharpe/Sortino/beta. Solo se
     # acotan, al rango [1%, 99%] de la serie, los días en que el archivo mueve algo
     # (`Dia Con Evento`). Un día sin operación ni pago rinde lo que rindió el precio: una
-    # caída de mercado es el dato y no se recorta. No toca la reconstrucción de
-    # P&L/ROI/equity curve.
+    # caída de mercado es el dato y no se recorta. Y si cae justo un día con operación, el
+    # límite de ese día se abre hasta lo que se movió el precio (`Retorno Del Precio`, que
+    # en un día de split no existe). No toca la reconstrucción de P&L/ROI/equity curve.
     # (Caso real: SCHB transfer 18.9 acc. el 2024-05-13 → MV $16→$1164 → vol falsa de 3443%.)
     # El índice de referencia sale del precio y no tiene eventos; su respaldo (`SPY Profit`)
     # salta con cada aporte y se sigue acotando entero.
     daily_returns_q = _winsorize_returns(
-        daily_returns_q, solo=daily_history.get('Dia Con Evento'))
+        daily_returns_q, solo=daily_history.get('Dia Con Evento'),
+        hasta=daily_history.get('Retorno Del Precio'))
     if not _referencia_por_precio:
         spy_daily_returns_q = _winsorize_returns(spy_daily_returns_q)
 
@@ -1200,18 +1202,23 @@ def _dias_con_evento(daily_history, splits, reinicios):
     """Sesiones en las que el salto del valor puede no ser rendimiento: cambian las acciones,
     entra o sale dinero, se cobra un pago o hay un split (el de la fuente de precios, la fila
     del CSV y las sesiones entre ambos si no coinciden). Son las únicas que `_metricas_riesgo`
-    acota; en las demás el retorno del día es el del precio."""
+    acota; en las demás el retorno del día es el del precio.
+
+    Devuelve dos marcas: la de todas esas sesiones y la de las que son de split, donde ni
+    el precio de ese día sirve de referencia."""
     acciones = daily_history['Shares Held']
-    evento = (acciones.diff().abs() > 1e-9) \
-        | (daily_history['Flujo Efectivo'].abs() > 1e-9) \
-        | (daily_history['Daily Cash Div'].abs() > 1e-9)
     con_split = [i for i, v in enumerate(splits.to_numpy()) if v > 0]
-    evento.iloc[con_split] = True
+    de_split = pd.Series(False, index=daily_history.index)
+    de_split.iloc[con_split] = True
     for sesion in reinicios:
         desde = daily_history.index.get_loc(sesion)
         hasta = next((i for i in con_split if desde < i <= desde + 5), desde)
-        evento.iloc[desde:hasta + 1] = True
-    return evento
+        de_split.iloc[desde:hasta + 1] = True
+    evento = (acciones.diff().abs() > 1e-9) \
+        | (daily_history['Flujo Efectivo'].abs() > 1e-9) \
+        | (daily_history['Daily Cash Div'].abs() > 1e-9) \
+        | de_split
+    return evento, de_split
 
 
 def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investment,
@@ -1395,7 +1402,9 @@ def _serie_diaria(ticker_df, market_data, _bench_df, first_date, pocket_investme
         daily_history['Daily Cash Div'] = 0.0
         
     daily_history['Cumulative Cash Div'] = daily_history['Daily Cash Div'].cumsum()
-    daily_history['Dia Con Evento'] = _dias_con_evento(daily_history, splits, reinicios)
+    daily_history['Dia Con Evento'], _de_split = _dias_con_evento(daily_history, splits, reinicios)
+    daily_history['Retorno Del Precio'] = daily_history['Price'].pct_change(
+        fill_method=None).where(~_de_split)
     
     # User Profit = (Market Value + Cumulative Cash Received) - Invested Capital
     daily_history['User Profit'] = (daily_history['Market Value'] + daily_history['Cumulative Cash Div']) - daily_history['Invested Capital']

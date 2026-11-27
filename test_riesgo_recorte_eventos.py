@@ -2,7 +2,8 @@
 
 Un día sin operación ni pago rinde lo que rindió el precio y no se recorta: una caída de
 mercado es el dato. Los días con operación, traspaso, pago o split siguen acotados al rango
-[1 %, 99 %] de la serie, porque ahí un salto puede ser contabilidad y no rendimiento.
+[1 %, 99 %] de la serie, porque ahí un salto puede ser contabilidad y no rendimiento; pero
+el límite de ese día se abre hasta lo que se movió el precio, salvo en un día de split.
 Todo sintético; los esperados se calculan aparte con numpy, no con la función vigilada.
 """
 import numpy as np
@@ -29,7 +30,7 @@ def _caida_maxima(r):
     return float((w / np.maximum.accumulate(w) - 1.0).min() * 100.0)
 
 
-def _historia(r, eventos=(), voo=None, sin_columna=False):
+def _historia(r, eventos=(), voo=None, sin_columna=False, precio=None):
     idx = pd.bdate_range('2023-01-02', periods=len(r) + 1)
     twr = (np.cumprod(np.r_[1.0, 1.0 + np.asarray(r, dtype=float)]) - 1.0) * 100.0
     h = pd.DataFrame({'User Return %': twr, 'VOO Price': 100.0, 'VOO Div': 0.0,
@@ -40,6 +41,8 @@ def _historia(r, eventos=(), voo=None, sin_columna=False):
         marca = pd.Series(False, index=idx)
         marca.iloc[[i + 1 for i in eventos]] = True
         h['Dia Con Evento'] = marca
+    if precio is not None:
+        h['Retorno Del Precio'] = np.r_[np.nan, np.asarray(precio, dtype=float)]
     return h
 
 
@@ -94,6 +97,55 @@ def test_sin_marca_se_acota_la_serie_entera_como_antes():
     salida = metricas._winsorize_returns(r)
     assert salida.min() == pytest.approx(np.quantile(crudo, 0.01), abs=1e-12)
     assert salida.iloc[100] > -0.12
+
+
+def _marcada(crudo, dias):
+    r = pd.Series(crudo)
+    marca = pd.Series(False, index=r.index)
+    marca.iloc[list(dias)] = True
+    return r, marca, np.quantile(crudo, 0.01), np.quantile(crudo, 0.99)
+
+
+def test_un_dia_marcado_no_se_recorta_mas_alla_de_lo_que_se_movio_el_precio():
+    crudo = _con_caida()
+    crudo[50] = 68.43
+    r, marca, lo, hi = _marcada(crudo, [50, 100, 101])
+    precio = pd.Series(0.0, index=r.index)
+    precio.iloc[50], precio.iloc[100], precio.iloc[101] = 0.07, -0.115, -0.20
+    salida = metricas._winsorize_returns(r, solo=marca, hasta=precio)
+    assert lo > -0.10 and hi < 0.07
+    assert salida.iloc[50] == pytest.approx(0.07, abs=1e-12)
+    assert salida.iloc[100] == pytest.approx(-0.115, abs=1e-12)
+    assert salida.iloc[101] == -0.10
+
+
+def test_el_precio_dentro_del_rango_no_estrecha_el_limite():
+    crudo = _con_caida()
+    crudo[50], crudo[60] = 68.43, -0.95
+    r, marca, lo, hi = _marcada(crudo, [50, 60])
+    salida = metricas._winsorize_returns(r, solo=marca, hasta=pd.Series(0.001, index=r.index))
+    assert salida.iloc[50] == pytest.approx(hi, abs=1e-12)
+    assert salida.iloc[60] == pytest.approx(lo, abs=1e-12)
+
+
+def test_sin_precio_ese_dia_valen_los_limites_de_la_serie():
+    crudo = _con_caida()
+    crudo[50], crudo[60] = 68.43, -0.95
+    r, marca, lo, hi = _marcada(crudo, [50, 60])
+    precio = pd.Series(np.nan, index=r.index)
+    salida = metricas._winsorize_returns(r, solo=marca, hasta=precio)
+    assert salida.iloc[50] == pytest.approx(hi, abs=1e-12)
+    assert salida.iloc[60] == pytest.approx(lo, abs=1e-12)
+    corto = metricas._winsorize_returns(r, solo=marca, hasta=pd.Series([-0.99], index=[60]))
+    assert corto.iloc[50] == pytest.approx(hi, abs=1e-12)
+    assert corto.iloc[60] == -0.95
+
+
+def test_el_precio_no_abre_el_limite_de_un_dia_sin_marcar_ni_lo_cierra():
+    crudo = _con_caida()
+    r, marca, _lo, _hi = _marcada(crudo, [])
+    salida = metricas._winsorize_returns(r, solo=marca, hasta=pd.Series(0.0, index=r.index))
+    assert salida.tolist() == r.tolist()
 
 
 # ── 2. `_metricas_riesgo` ───────────────────────────────────────────────────────────────
@@ -164,6 +216,28 @@ def test_una_serie_sin_la_marca_se_acota_entera_como_antes():
     assert acotada > _caida_maxima(r) + 5
 
 
+def test_la_caida_en_dias_con_operacion_sale_entera_si_el_precio_cayo_lo_mismo():
+    r = _con_caida()
+    con_precio = logic._metricas_riesgo(_historia(r, eventos=[100, 101, 102], precio=r))
+    sin_precio = logic._metricas_riesgo(_historia(r, eventos=[100, 101, 102]))
+    lo = np.quantile(r, 0.01)
+    acotado = r.copy()
+    acotado[[100, 101, 102]] = lo
+    assert con_precio[3] == pytest.approx(_caida_maxima(r), abs=1e-6)
+    assert con_precio[0] == pytest.approx(float(np.std(r, ddof=1) * np.sqrt(252) * 100), abs=1e-6)
+    assert sin_precio[3] == pytest.approx(_caida_maxima(acotado), abs=1e-6)
+    assert _caida_maxima(acotado) > _caida_maxima(r) + 5
+
+
+def test_un_salto_de_contabilidad_se_queda_en_lo_que_se_movio_el_precio():
+    crudo = _con_caida()
+    crudo[50] = 68.43
+    precio = _con_caida()
+    precio[50] = 0.07
+    vol = logic._metricas_riesgo(_historia(crudo, eventos=[50], precio=precio))[0]
+    assert vol == pytest.approx(float(np.std(precio, ddof=1) * np.sqrt(252) * 100), abs=1e-6)
+
+
 # ── 3. Qué días marca la serie ──────────────────────────────────────────────────────────
 
 def _serie(acciones, flujo=None, pago=None):
@@ -178,7 +252,17 @@ def _marcados(h, splits=None, reinicios=()):
     for i, factor in (splits or {}).items():
         s.iloc[i] = factor
     reinicios = {h.index[i]: (0.0, 0.0) for i in reinicios}
-    return [i for i, v in enumerate(logic._dias_con_evento(h, s, reinicios)) if v]
+    evento, de_split = logic._dias_con_evento(h, s, reinicios)
+    assert not (de_split & ~evento).any()
+    return [i for i, v in enumerate(evento) if v]
+
+
+def _de_split(h, splits=None, reinicios=()):
+    s = pd.Series(0.0, index=h.index)
+    for i, factor in (splits or {}).items():
+        s.iloc[i] = factor
+    reinicios = {h.index[i]: (0.0, 0.0) for i in reinicios}
+    return [i for i, v in enumerate(logic._dias_con_evento(h, s, reinicios)[1]) if v]
 
 
 def test_un_dia_quieto_no_se_marca():
@@ -216,6 +300,15 @@ def test_el_tramo_llega_hasta_un_split_a_cinco_sesiones_y_no_a_seis():
 
 def test_fila_de_split_y_split_la_misma_sesion_marcan_un_solo_dia():
     assert _marcados(_serie([10.0] * 8), splits={2: 0.2}, reinicios=[2]) == [2]
+
+
+def test_solo_el_split_y_su_tramo_quedan_sin_precio_de_referencia():
+    h = _serie([10.0, 10.0, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5],
+               flujo=[0.0, 300.0] + [0.0] * 7, pago=[0.0] * 8 + [4.0])
+    assert _de_split(h) == []
+    assert _de_split(h, splits={6: 0.2}) == [6]
+    assert _de_split(h, splits={6: 0.2}, reinicios=[4]) == [4, 5, 6]
+    assert _marcados(h, splits={6: 0.2}, reinicios=[4]) == [1, 2, 4, 5, 6, 8]
 
 
 # ── 4. La cadena completa ───────────────────────────────────────────────────────────────
@@ -282,3 +375,31 @@ def test_en_un_dia_sin_evento_el_retorno_es_el_del_precio(monkeypatch, fixture):
         assert float(r[~h['Dia Con Evento'] & r.notna() & ~con_posicion].abs().sum()) == 0.0
         comparados += int(quieto.sum())
     assert comparados > 100
+
+
+def test_cadena_una_caida_el_dia_del_pago_llega_entera(monkeypatch):
+    cierres, r = _cierres_con_caida()
+    dias = pd.bdate_range('2024-01-02', periods=len(cierres))
+    filas = [COMPRA] + [dict(Date=dias[i].strftime('%Y-%m-%d'), Action='Cash Dividend',
+                             Quantity=0, Amount=0.0001) for i in (61, 62, 63)]
+    vistas = []
+    real = logic._metricas_riesgo
+    monkeypatch.setattr(logic, '_metricas_riesgo', lambda h: (vistas.append(h.copy()), real(h))[1])
+    res = _analizar(monkeypatch, filas, cierres)
+    h = vistas[0]
+    assert h['Dia Con Evento'].iloc[[61, 62, 63]].all()
+    assert h['Retorno Del Precio'].iloc[1:].tolist() == pytest.approx(list(r), abs=1e-12)
+    assert res['max_drawdown'] == pytest.approx(_caida_maxima(r), abs=1e-3)
+    assert _caida_maxima(r) < -25
+
+
+def test_cadena_el_dia_del_split_no_tiene_precio_de_referencia(monkeypatch):
+    vistas = []
+    real = logic._metricas_riesgo
+    monkeypatch.setattr(logic, '_metricas_riesgo', lambda h: (vistas.append(h.copy()), real(h))[1])
+    dias = pd.bdate_range('2024-01-02', periods=60)
+    _analizar(monkeypatch, [COMPRA], [100.0] * 30 + [50.0] * 30, splits={dias[30]: 2.0})
+    h = vistas[0]
+    assert h['Dia Con Evento'].iloc[30]
+    assert np.isnan(h['Retorno Del Precio'].iloc[30])
+    assert h['Retorno Del Precio'].iloc[[29, 31]].tolist() == [0.0, 0.0]

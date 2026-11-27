@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None):
+def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None, hasta=None):
     """Acota una serie de retornos diarios a sus cuantiles [lower, upper] para que outliers
     espurios (transferencias de acciones sin efectivo, desfases de split, ticks malos de la API)
     no distorsionen vol/Sharpe/Sortino/beta. Series cortas (<min_len) se devuelven tal cual
@@ -18,7 +18,10 @@ def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None):
 
     Con `solo` (serie booleana por día) se acotan únicamente los días marcados, con los mismos
     límites: en un día sin marcar una caída de mercado de verdad no se recorta. Tampoco un
-    precio malo de la fuente en un día sin marcar: por tamaño no se distinguen."""
+    precio malo de la fuente en un día sin marcar: por tamaño no se distinguen.
+
+    Con `hasta` (retorno del precio por día) el límite de un día marcado se abre hasta ese
+    retorno: lo que el precio se movió de verdad no se recorta aunque ese día haya operación."""
     try:
         r = returns.dropna()
     except AttributeError:
@@ -31,7 +34,12 @@ def _winsorize_returns(returns, lower=0.01, upper=0.99, min_len=20, solo=None):
     if solo is None:
         return r.clip(lo, hi)
     marcados = solo.reindex(r.index).fillna(False).astype(bool)
-    return r.where(~marcados, r.clip(lo, hi))
+    piso, techo = lo, hi
+    if hasta is not None:
+        precio = hasta.reindex(r.index)
+        piso = precio.clip(upper=lo).fillna(lo)
+        techo = precio.clip(lower=hi).fillna(hi)
+    return r.where(~marcados, r.clip(piso, techo))
 
 
 def _drawdown_twr(daily_returns_q):
