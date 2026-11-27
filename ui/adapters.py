@@ -301,6 +301,21 @@ def hoja_data(stats: dict, ticker: str, df, tax_summary: dict = None) -> dict:
     return datos
 
 
+def _todo_lo_comprado(stats: dict) -> float:
+    """La base de los porcentajes: todo lo comprado, sin restar lo que devolvió una venta.
+    Unos stats sin el campo usan el capital aportado, que es lo mismo mientras no haya ventas."""
+    comprado = stats.get("capital_comprado")
+    return _f(comprado if comprado is not None else stats.get("pocket_investment"))
+
+
+def _poco_fiables(resultados: dict, tickers=None) -> list[str]:
+    """Los fondos con datos que `logic.assess_ticker_quality` deja en «unreliable»: su
+    resultado no entra en ningún total de la cuenta."""
+    return sorted(t for t in (resultados if tickers is None else tickers)
+                  if _tiene_datos(resultados.get(t))
+                  and logic.assess_ticker_quality(resultados, t)["level"] == "unreliable")
+
+
 def salud_nav_data(ticker: str, stats: dict) -> dict:
     """El veredicto de `logic.classify_roc_health` más el contexto numérico que lo
     explica — no hay diseño que extraer del demo (`panel-salud` es un placeholder,
@@ -316,7 +331,7 @@ def salud_nav_data(ticker: str, stats: dict) -> dict:
     nav_cagr = stats.get("price_cagr_recent")
     if nav_cagr is None:
         nav_cagr = stats.get("price_cagr")
-    tr_pct = stats.get("roi_percent") if stats.get("pocket_investment") else None
+    tr_pct = stats.get("roi_percent") if _todo_lo_comprado(stats) > 0 else None
 
     asof_days = None
     r19a = logic.load_roc_19a().get(str(ticker).upper())
@@ -1148,7 +1163,9 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
     faltan filas» las 9 posiciones reales que se bloqueaban; el 2026-09-27 resultó que la
     mayoría eran filas que SÍ estaban y la calculadora no leía (historial migrado de TD
     Ameritrade, #172–#174). Por eso solo el bolsillo negativo culpa al export; las compras
-    huérfanas se describen con cifras del propio CSV y ofrecen las dos salidas.
+    huérfanas se describen con cifras del propio CSV y ofrecen las dos salidas. Y el bolsillo
+    negativo tampoco lo culpa cuando es el único fallo y las compras están todas: ahí las
+    ventas devolvieron más de lo que costó la posición, y se dice eso.
 
     Devuelve `{'titular', 'cuerpo': [str, ...], 'accion', 'nuestro'}`. `nuestro=True`
     significa que la causa apunta al motor y no al export: ahí el aviso pide que lo
@@ -1190,6 +1207,19 @@ def diagnosticar_bloqueo(datos: dict, stats: dict, fallos: list, sujeto: str = "
             "Con eso, el dividendo que el archivo declara no alcanza para cubrir lo que "
             "muestra reinvertido. Dibujarlo diría que reinvertiste más de lo que el fondo "
             "te pagó.")
+    # Un bolsillo negativo con el historial entero no es un archivo incompleto: es una
+    # posición cuyas ventas ya devolvieron más de lo que costó.
+    comprado = _todo_lo_comprado(stats or {})
+    if (pocket < 0 and comprado > 0 and not (stats or {}).get("history_incomplete")
+            and fallos and all(str(f).startswith("bolsillo negativo") for f in fallos)):
+        return {
+            "titular": f"{sujeto} no se dibuja: tus ventas ya te devolvieron más de lo que pusiste.",
+            "cuerpo": [f"Compraste **${comprado:,.2f}** y las ventas te devolvieron "
+                       f"**${comprado - pocket:,.2f}**. El recorrido parte del dinero que tienes "
+                       "puesto, y en este fondo ya no queda nada puesto."],
+            "accion": "Su resultado sí está en el total de la cuenta, en Portafolios.",
+            "nuestro": False,
+        }
     if pocket < 0:
         cuerpo.append(
             f"Y el capital aportado sale **negativo (${pocket:,.2f})**: hay ventas sin las "
@@ -2724,16 +2754,20 @@ def total_cuenta_data(resultados: dict) -> dict | None:
     diferencia. `None` si no hay ningún fondo con datos (la línea no se dibuja).
 
     **Base y momento** (Regla 2 del contrato). Las tres salen de los mismos campos que ya
-    publica `analyze_portfolio` por ticker, sumados sobre los fondos con datos:
+    publica `analyze_portfolio` por ticker, sumados sobre los fondos con datos que no están
+    en «unreliable» (esos van en `sin_contar`: su resultado cuenta como ganancia lo que
+    entró sin costo, o como pérdida lo que salió por transferencia):
 
-    - `pusiste` = `pocket_investment`, el capital aportado. Invariante (Regla 1): el ROC
-      no lo mueve.
-    - `tienes_hoy` = `market_value` + `dividends_cash_net` + `misc_cash_total`. Es la caja
-      de `logic.py` (`gross_value`), que allí no se publica: el valor de las acciones de
-      hoy, más el efectivo de dividendos que de verdad entró —NETO de retención, resuelto
-      por convención de fila— más el efectivo que no es dividendo (Cash In Lieu y
-      compañía), que va como sumando propio desde el 2026-09-24.
+    - `pusiste` = `capital_comprado`, todo lo comprado. Una venta no lo baja, y el ROC
+      tampoco (Regla 1).
+    - `tienes_hoy` = `market_value` + `dividends_cash_net` + `misc_cash_total` + lo cobrado
+      por ventas. Es la caja de `logic.py` (`gross_value`), que allí no se publica: el valor
+      de las acciones de hoy, más el efectivo de dividendos que de verdad entró —NETO de
+      retención, resuelto por convención de fila— más el efectivo que no es dividendo (Cash
+      In Lieu y compañía), que va como sumando propio desde el 2026-09-24. Lo cobrado por
+      ventas (`cobrado_ventas`) es `capital_comprado − pocket_investment`.
     - `retorno` = `net_profit`, que en `logic.py` es esa misma resta.
+    - `pct` = `retorno` / `pusiste`.
 
     **Lo que NO se usa, y por qué:** `dividends_net_total` (el objeto fiscal de
     `build_dividend_tax_totals`) incluye los dividendos REINVERTIDOS, que ya están dentro
@@ -2742,12 +2776,15 @@ def total_cuenta_data(resultados: dict) -> dict | None:
     reales: +$6.211,39 y +$269,92 de más en los dos de Schwab, 0 en IB, que no tiene DRIP
     en ese caso.
     """
-    filas = [s for s in resultados.values() if _tiene_datos(s)]
-    if not filas:
+    con_datos = {t: s for t, s in resultados.items() if _tiene_datos(s)}
+    if not con_datos:
         return None
-    pusiste = sum(s["pocket_investment"] for s in filas)
-    tienes = sum(s["market_value"] + (s.get("dividends_cash_net") or 0)
-                 + (s.get("misc_cash_total") or 0) for s in filas)
+    sin_contar = _poco_fiables(con_datos)
+    filas = [s for t, s in con_datos.items() if t not in sin_contar]
+    pusiste = sum(_todo_lo_comprado(s) for s in filas)
+    cobrado_ventas = sum(_todo_lo_comprado(s) - s["pocket_investment"] for s in filas)
+    tienes = cobrado_ventas + sum(s["market_value"] + (s.get("dividends_cash_net") or 0)
+                                  + (s.get("misc_cash_total") or 0) for s in filas)
     retorno = sum(s["net_profit"] for s in filas)
     # En pantalla las tres van sin centavos, y redondear cada una por su cuenta descuadra
     # la resta que el cliente puede hacer de cabeza: medido, $8,066 + $3,207 contra un
@@ -2760,6 +2797,8 @@ def total_cuenta_data(resultados: dict) -> dict | None:
         "retorno": retorno,
         "pct": (retorno / pusiste * 100) if pusiste > 0 else 0.0,
         "fondos": len(filas),
+        "sin_contar": sin_contar,
+        "cobrado_ventas": cobrado_ventas,
         "pusiste_vista": pusiste_r,
         "tienes_hoy_vista": tienes_r,
         "retorno_vista": tienes_r - pusiste_r,
@@ -2772,7 +2811,9 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
     Grupos en orden `crec` (mode_b, Crecimiento) y `div` (mode_a, Dividendos); solo los
     que tengan tickers con datos analizables (`_tiene_datos`). Ninguno → `None` (el
     componente se oculta). Por grupo, los agregados salen de `_agregados` (import local
-    desde `ui.heredadas` para no crear ciclo) y `precio = retorno − dividendos`. Por fondo,
+    desde `ui.heredadas` para no crear ciclo) y `precio = retorno − dividendos`. Los fondos
+    «unreliable» van en `sin_contar`: pesan en el reparto y no en el resultado; si el grupo
+    no tiene ninguno medible, `medible` es falso y la tarjeta no pinta cifra. Por fondo,
     `market_value or 0`; se excluyen los `<= 0`; orden por `mv` descendente. `pct` de
     grupo y de fondo sobre `total_mv`, sin redondear — el JS redondea al dibujar.
     """
@@ -2789,6 +2830,12 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
         # `mv − inv` contaría dos veces lo reinvertido por DRIP: esas acciones ya están en
         # `mv` y su dividendo también está en `div`. Así la cascada cierra por construcción.
         precio = tr - div
+        # Lo que costaron las acciones de los fondos que sí entran en el resultado: su valor
+        # de hoy menos lo que aportó el precio, más lo cobrado por las que ya se vendieron.
+        sin_contar = _poco_fiables(resultados, tickers)
+        medidos = [resultados[t] for t in tickers if t not in sin_contar]
+        costo = (sum(_f(s.get("market_value")) for s in medidos) - precio
+                 + sum(_todo_lo_comprado(s) - _f(s.get("pocket_investment")) for s in medidos))
         fondos = [{"ticker": t, "mv": resultados[t].get("market_value") or 0}
                   for t in tickers]
         fondos = [f for f in fondos if f["mv"] > 0]
@@ -2797,7 +2844,10 @@ def portafolios_data(resultados: dict, classify_map: dict) -> dict | None:
             "clave": clave, "nombre": nombre,
             "invertido": inv, "mv": mv, "dividendos": div, "precio": precio,
             "retorno": tr, "retorno_pct": pct, "pct": 0.0,
-            "veredicto": _veredicto_portafolio(precio, div, tr, inv, costo=mv - precio),
+            "veredicto": (_veredicto_portafolio(precio, div, tr, inv, costo=costo) if medidos
+                          else "El historial de estos fondos no deja medir su resultado."),
+            "sin_contar": sin_contar,
+            "medible": bool(medidos),
             "fondos": fondos,
         })
     if not grupos:
@@ -3008,7 +3058,7 @@ def _vig_flags(ticker: str, stats: dict, salud: dict, tr: float, div: float,
         if fy is not None:
             filas.append(["Yield anunciado", f"{fy:.1f}%", ""])
         filas.append(["Yield cobrado, 12 meses", f"{ry:.1f}%", ""])
-        inv = stats.get("pocket_investment") or 0
+        inv = _todo_lo_comprado(stats)
         if inv > 0:
             filas.append(["Tu retorno total", _vig_pct(tr / inv * 100, dec=2), "loss"])
         flags.append(_flag(
@@ -3093,7 +3143,7 @@ def vigilar_data(resultados: dict, salud_por_ticker: dict) -> dict | None:
         stats = resultados.get(ticker)
         if not _tiene_datos(stats):
             continue
-        inv = stats["pocket_investment"]
+        inv = _todo_lo_comprado(stats)
         tr = stats["net_profit"]
         div = (stats.get("dividends_net_total") if stats.get("dividends_net_total") is not None
                else stats.get("dividends_collected_cash", 0))

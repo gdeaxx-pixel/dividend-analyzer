@@ -145,6 +145,7 @@
   .big .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: clamp(20px, 2.6vw, 24px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
   .big .pct { font-family: var(--font-mono); font-size: 17px; font-weight: 600; }
   .pos { color: var(--cash); }
+  .big .num.sin-medir { color: var(--ink-mut); }
   .neg { color: var(--loss); }
   .verdict { margin: 0 0 24px; font-size: 15px; color: var(--ink-2); max-width: 44ch; min-height: 3.1em; text-wrap: pretty; }
   .cards.single .verdict { margin-bottom: 0; min-height: 0; }
@@ -438,6 +439,13 @@
 
     grupos.forEach((g) => {
       const tono = g.retorno >= 0 ? "pos" : "neg";
+      /* Ningún fondo del grupo deja medir su resultado: un «+$0» sería una cifra inventada. */
+      const sinMedir = g.medible === false;
+      const sinContar = (grupo) => {
+        const fuera = grupo.sin_contar || [];
+        if (!fuera.length) return "";
+        return " · sin " + (fuera.length > 3 ? fuera.length + " fondos" : fuera.map(esc).join(", "));
+      };
       const rows = filas(g).map((r) => {
         const a = pos(Math.min(r.from, r.to)), b = pos(Math.max(r.from, r.to));
         return '<button type="button" class="wf-row' + (r.total ? ' total' : '') + '"' +
@@ -456,11 +464,13 @@
           '<div class="card-top"><h2 class="card-title">' + esc(g.nombre) + '</h2><span class="card-weight"><b>' + pctTxt(g.pct) + '</b> de tu dinero</span></div>' +
           '<p class="card-funds">' + g.tickers.map(esc).join(' · ') + ' — ' + plural(g.fondos.length) + '</p>' +
           '<div class="weight" style="--w:' + peso + '%;--c:' + g.color + '"><i></i></div>' +
-          '<p class="k">Retorno total</p>' +
-          '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>' +
+          '<p class="k">Retorno total' + sinContar(g) + '</p>' +
+          (sinMedir
+            ? '<p class="big"><span class="num sin-medir">Sin medir</span></p>'
+            : '<p class="big"><span class="num ' + tono + '">' + signed(g.retorno) + '</span><span class="pct ' + tono + '">' + signedPct(g.retorno_pct) + '</span></p>') +
           '<p class="verdict">' + (g.veredicto ? esc(g.veredicto) : '') + '</p>' +
         '</div>' +
-        '<div class="wf' + (narra ? ' narra' : '') + '" style="--zero:' + pos(0).toFixed(2) + '%" role="group" aria-label="Cómo se llegó al retorno total">' + rows + '</div>';
+        (sinMedir ? '' : '<div class="wf' + (narra ? ' narra' : '') + '" style="--zero:' + pos(0).toFixed(2) + '%" role="group" aria-label="Cómo se llegó al retorno total">' + rows + '</div>');
       const sel = { type: "group", id: g.clave };
       card.addEventListener("pointerenter", () => preview(sel));
       card.addEventListener("pointerleave", () => preview(null));

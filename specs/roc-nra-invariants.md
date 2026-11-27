@@ -55,6 +55,28 @@ Causa raíz: no existe una fuente única del "impuesto neto real de esta posici�
 - **WHEN** una vista muestra un "capital real" o "capital ajustado" que sube o baja después de aplicar un porcentaje de ROC
 - **THEN** esa cifra se considera sospechosa por definición y debe rechazarse o corregirse antes de desplegar — el ROC nunca es motivo válido para mover el capital aportado
 
+> **Nota (2026-11-27, la base de los porcentajes — decisión D3).** `pocket_investment` es el
+> **flujo neto**: lo comprado menos lo que devolvió cada venta. Sigue siendo el sustraendo del
+> resultado en dólares (`net_profit = gross_value − pocket_investment`) y no se tocó. Lo que
+> dejó de ser es el **divisor**: con ventas se encogía y hasta cambiaba de signo (comprar
+> 1.000 y vender todo en 1.500 daba −100 %). El divisor es ahora `capital_comprado`, todo lo
+> comprado sin restar ventas, que el motor publica aparte. Van sobre él `roi_percent`,
+> `yield_on_cost`, `cagr` y los porcentajes de la línea de la cuenta, de las tarjetas de
+> portafolio y de «Lo que toca vigilar». Las dos cifras cumplen esta regla: el ROC no mueve
+> ninguna. Sin ventas son iguales, y con el costo tomado de la captura del bróker también.
+>
+> En la línea de la cuenta «Pusiste» es `capital_comprado` y «Tienes hoy» suma lo cobrado por
+> ventas (`capital_comprado − pocket_investment`), de modo que la resta sigue dando
+> `net_profit`. Los fondos que `assess_ticker_quality` deja en «unreliable» no entran en ese
+> resultado ni en el de las tarjetas (sí en el reparto por valor) y la pantalla dice cuáles:
+> su `net_profit` no es una medición: cuenta como ganancia lo que entró sin costo y como
+> pérdida lo que salió por transferencia sin volver (`acciones_traspasadas_fuera`; una ida y
+> vuelta entre cuentas no cuenta, porque la entrada sin costo compensa la salida).
+>
+> **Siguen sobre el flujo neto** las vistas que parten de `cashflow_data` (Cash flow, la hoja
+> y el Método tradicional): su `POCKET` y sus porcentajes no cambiaron en este paso. Gates:
+> `test_ventas_sobre_lo_comprado.py`.
+
 ---
 
 ## Regla 2 — Toda cifra declara su base y su momento

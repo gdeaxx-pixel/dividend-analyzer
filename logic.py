@@ -1619,6 +1619,12 @@ def _fracciones_pagadas_en_efectivo(ticker_df, market_data):
 def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     # --- Analysis Variables ---
     pocket_investment = 0.0 # Net cash flow from user's pocket
+    # Todo lo comprado, sin restar lo que devuelve una venta: la base de los porcentajes.
+    capital_comprado = 0.0
+    # Acciones que salieron por transferencia y no volvieron: el archivo no dice a qué valor.
+    # Las que entran sin costo las compensan: es una ida y vuelta entre cuentas.
+    _salieron_por_traspaso = 0.0
+    _entraron_sin_costo = 0.0
     shares_owned = 0.0
     shares_owned_pocket = 0.0
     shares_owned_drip = 0.0
@@ -1699,6 +1705,7 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
         if is_buy:
             _adj_qty = abs(qty) * _sf
             pocket_investment += abs(amount)
+            capital_comprado += abs(amount)
             shares_owned += _adj_qty
             shares_owned_pocket += _adj_qty
             total_shares_bought += _adj_qty
@@ -1719,10 +1726,16 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
                     ticker_df.at[idx, 'Quantity'] = _adj_qty / _sf if _sf else 0.0
                 shares_owned += _adj_qty
                 shares_owned_pocket += _adj_qty
+                if pd.isna(row.get('_migracion_q', np.nan)):
+                    if _adj_qty < 0:
+                        _salieron_por_traspaso += -_adj_qty
+                    elif amount == 0:
+                        _entraron_sin_costo += _adj_qty
                 if _adj_qty > 0:
                     total_shares_bought += _adj_qty
                     if amount != 0:
                         pocket_investment += abs(amount)
+                        capital_comprado += abs(amount)
                         row_cash_flow = abs(amount)
                         # Capital que entra con costo: el IRR debe verlo igual que ROI/CAGR.
                         irr_flows_dated.append((_tx_date, -abs(amount)))
@@ -1730,6 +1743,7 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
                 # External deposit / contribution: new money from pocket
                 _adj_qty = abs(qty) * _sf
                 pocket_investment += abs(amount)
+                capital_comprado += abs(amount)
                 shares_owned += _adj_qty
                 shares_owned_pocket += _adj_qty
                 total_shares_bought += _adj_qty
@@ -1831,6 +1845,8 @@ def _recorrer_transacciones(ticker_df, _splits_col, fracciones=None):
     ticker_df['Cash_Flow_In'] = cash_flows
     return {
         'pocket_investment': pocket_investment,
+        'capital_comprado': capital_comprado,
+        'acciones_traspasadas_fuera': max(_salieron_por_traspaso - _entraron_sin_costo, 0.0),
         'shares_owned': shares_owned,
         'shares_owned_pocket': shares_owned_pocket,
         'shares_owned_drip': shares_owned_drip,
@@ -1974,6 +1990,7 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
         _fracciones = _fracciones_pagadas_en_efectivo(ticker_df, market_data)
         _rec = _recorrer_transacciones(ticker_df, _splits_col, _fracciones)
         pocket_investment = _rec['pocket_investment']
+        capital_comprado = _rec['capital_comprado']
         shares_owned = _rec['shares_owned']
         shares_owned_pocket = _rec['shares_owned_pocket']
         shares_owned_drip = _rec['shares_owned_drip']
@@ -2038,6 +2055,7 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
                         _prefer_19a_roc = True
                     elif abs(_ov_co_f - pocket_investment) > max(0.02 * pocket_investment, 0.5):
                         pocket_investment = _ov_co_f
+                        capital_comprado = _ov_co_f
                         reconciled_from_snapshot = True
                         reconciled_fields.append('cost_basis')
             except (TypeError, ValueError):
@@ -2129,7 +2147,9 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
         # Sin él aquí, sacarlo del balde de dividendos habría bajado el ROI en silencio.
         gross_value = market_value + _cash_collected_net + misc_cash_total
         net_profit = gross_value - pocket_investment
-        roi = (net_profit / pocket_investment * 100) if pocket_investment != 0 else 0
+        # El porcentaje va sobre todo lo comprado. Sobre el flujo neto, una venta encogía la
+        # base y hasta le cambiaba el signo: comprar 1.000, vender todo en 1.500 daba −100 %.
+        roi = (net_profit / capital_comprado * 100) if capital_comprado > 0 else 0
 
         # Total Dividends (Informational)
         total_dividends = dividends_collected_cash + dividends_collected_drip
@@ -2172,7 +2192,7 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
                         monthly_income = div_rows.groupby('Month')['Amount'].sum().abs()
                 years = max((ticker_df['Date'].max() - ticker_df['Date'].min()).days / 365.25, 0.01)
                 ann_divs = total_dividends / years
-                yield_on_cost = (ann_divs / pocket_investment * 100) if pocket_investment > 0 else 0
+                yield_on_cost = (ann_divs / capital_comprado * 100) if capital_comprado > 0 else 0
             except Exception as e:
                 print(f"Income calc error for {ticker}: {e}")
 
@@ -2182,8 +2202,11 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
         cagr = None
         try:
             years_held = max((ticker_df['Date'].max() - ticker_df['Date'].min()).days / 365.25, 0.01)
-            if pocket_investment > 0 and market_value > 0:
-                cagr = ((market_value / pocket_investment) ** (1 / years_held) - 1) * 100
+            # Lo cobrado por ventas cuenta junto a lo que queda, sobre todo lo comprado.
+            _cobrado_por_ventas = max(capital_comprado - pocket_investment, 0.0)
+            if capital_comprado > 0 and market_value + _cobrado_por_ventas > 0:
+                cagr = (((market_value + _cobrado_por_ventas) / capital_comprado)
+                        ** (1 / years_held) - 1) * 100
         except Exception:
             pass
 
@@ -2340,6 +2363,8 @@ def _analyze_portfolio_sin_cache(df: pd.DataFrame, version: str = "1.2.1", ib_co
             "shares_owned_pocket": shares_owned_pocket,
             "shares_owned_drip": shares_owned_drip,
             "pocket_investment": pocket_investment,
+            "capital_comprado": capital_comprado,
+            "acciones_traspasadas_fuera": _rec['acciones_traspasadas_fuera'],
             "market_value": market_value,
             "dividends_collected_cash": dividends_collected_cash,
             "dividends_collected_drip": dividends_collected_drip,
@@ -4292,7 +4317,8 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
     Devuelve {'level': 'ok'|'partial'|'reconciled'|'unreliable', 'flags': [...], 'coverage_pct': float|None,
               'reason': str, 'action': str}.
     'reconciled' = costo/acciones tomados de la captura del broker (cabecera confiable; timeline parcial).
-    'unreliable' = el costo base esta incompleto y NO se reconcilio -> no confiar en metricas de costo.
+    'unreliable' = el costo base esta incompleto y NO se reconcilio -> no confiar en metricas de costo;
+    o salieron acciones por transferencia sin valor en el archivo -> el resultado no se puede medir.
     'partial' = cobertura baja del CSV pero costo coherente. 'ok' = confiable.
     """
     s = results.get(ticker, {}) or {}
@@ -4324,6 +4350,8 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
             if first['User Total Value'] > first['Invested Capital'] * VALUE_WITHOUT_COST_RATIO:
                 flags.append('value_without_cost')
 
+    if (s.get('acciones_traspasadas_fuera') or 0) > 1e-6:
+        flags.append('shares_transferred_out')
     if s.get('splits_detected'):
         flags.append('splits_detected')
     if cov is not None and cov < LOW_COVERAGE_PCT:
@@ -4345,6 +4373,13 @@ def assess_ticker_quality(results: dict, ticker: str) -> dict:
         action = (f"Exporta el historial COMPLETO de {ticker} desde la apertura de la posicion "
                   "y vuelve a subir el archivo. Mientras tanto no compares 1:1 con tu broker "
                   "las acciones, el valor ni el ROI de este ticker.")
+    elif 'shares_transferred_out' in flags:
+        level = 'unreliable'
+        reason = ("De este ticker salieron acciones por transferencia y el archivo no dice a qué "
+                  "valor. Las acciones y el valor de hoy son los de tu cuenta, pero el resultado y "
+                  "el % cuentan esa salida como si fuera una pérdida.")
+        action = (f"No tomes el resultado ni el % de {ticker} como tu ganancia real: la parte "
+                  "transferida sigue siendo tuya en la otra cuenta.")
     elif low_cov_meaningful:
         level = 'partial'
         reason = (f"El CSV cubre solo ~{cov:.0f}% de la vida del fondo y además falta parte del "
