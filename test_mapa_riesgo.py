@@ -549,7 +549,7 @@ FIN_P = {"2023": ("2022-12-30", "2023-12-29"), "2024": ("2023-12-29", "2024-12-3
          "3-anios": ("2023-11-17", "2026-11-20"), "feb-2024": ("2024-02-22", "2026-11-20")}
 
 
-def _paradas(mr, tmp_path, dias=DIAS_P, nace_fon="2022-12-30", nace_nue="2024-01-02", cambiar=None):
+def _paradas(mr, tmp_path, dias=DIAS_P, nace_fon="2022-12-30", nace_nue="2024-01-02", cambiar=None, rangos=False):
     """Dos parejas: FON nace el día de compra de 2023 y NUE el primer día hábil de 2024. MKT, ACC y
     ACD cotizan desde fines de 2021, cuando todavía no había ningún fondo."""
     precios = {**ACC_P, **{d: 200 + i for i, d in enumerate(d for d in dias if d not in ACC_P)}}
@@ -567,7 +567,7 @@ def _paradas(mr, tmp_path, dias=DIAS_P, nace_fon="2022-12-30", nace_nue="2024-01
     for tk, f in filas.items():
         _guardar(tmp_path / "b", tk, f)
     _guardar(tmp_path / "a", "MKT", [("2011-12-30", 50, 0)] + filas["MKT"])
-    d = mr.calcular(tmp_path / "a", tmp_path / "b", **UNIVERSO_P)
+    d = mr.calcular(tmp_path / "a", tmp_path / "b", **UNIVERSO_P, rangos=rangos)
     return d, {p["id"]: p for p in d["mapa_b"]["paradas"]}
 
 
@@ -850,3 +850,267 @@ def test_de_punta_a_punta_datos_malos_salen_con_codigo_2_y_el_motivo(tmp_path):
     assert r.returncode == 2
     assert r.stdout == ""
     assert "mapa_riesgo: QQQ: no está en" in r.stderr
+
+
+# ---- los rangos libres de la barra de inicio y fin (`--rangos`) ----
+
+ARGV_P = ["--parejas", "ACC:FON,ACD:NUE", "--referencias", "MKT", "--inicio-b", "2024-02-22",
+          "--fondos-a", "MKT", "--anios-a", "1", "--mercado", "MKT"]
+CACHE_REAL = RAIZ / "knowledge" / "price_cache"
+
+
+def _rangos(mr, tmp_path, **kw):
+    d, _ = _paradas(mr, tmp_path, rangos=True, **kw)
+    assert d["mapa_b"]["rangos"] is not None, d["calidad"]
+    return d, d["mapa_b"]["rangos"]
+
+
+def _main_p(mr, tmp_path, capsys, *extra):
+    cod = mr.main(["--historia-a", str(tmp_path / "a"), "--historia-b", str(tmp_path / "b"), *ARGV_P, *extra])
+    salida = capsys.readouterr()
+    return cod, salida.out, salida.err
+
+
+def _fin_de_mes(dias):
+    return sorted({max(d for d in dias if d[:7] == m) for m in {d[:7] for d in dias}})
+
+
+def test_sin_rangos_la_salida_no_cambia(mr, tmp_path, capsys):
+    """Con la bandera apagada no hay ni `rangos` ni `calidad`; con ella, lo único que cambia es eso."""
+    _paradas(mr, tmp_path)
+    cod, sin, _ = _main_p(mr, tmp_path, capsys)
+    cod2, con, _ = _main_p(mr, tmp_path, capsys, "--rangos")
+    assert cod == cod2 == 0
+    d, d2 = json.loads(sin), json.loads(con)
+    assert "rangos" not in d["mapa_b"] and "calidad" not in d
+    assert d2["mapa_b"]["rangos"] and d2["calidad"] == {"avisos": []}
+    del d2["mapa_b"]["rangos"], d2["calidad"]
+    assert json.dumps(d2, ensure_ascii=False) + "\n" == sin
+
+
+def test_los_cortes_son_el_ultimo_cierre_de_cada_mes_desde_la_primera_compra_hasta_t_sin_repetir(mr, tmp_path):
+    d, r = _rangos(mr, tmp_path)
+    primera = d["mapa_b"]["paradas"][0]
+    assert primera["medida"] == "total"
+    esperados = [primera["compra"]] + [x for x in _fin_de_mes(DIAS_P) if x > primera["compra"]]
+    assert r["cortes"] == esperados
+    assert r["cortes"][-1] == d["T"] and len(set(r["cortes"])) == len(r["cortes"])
+    assert "2023-11-21" in r["cortes"] and "2023-11-17" not in r["cortes"]
+
+
+def test_hay_un_rango_por_cada_par_de_cortes_con_al_menos_tres_de_separacion(mr, tmp_path):
+    _, r = _rangos(mr, tmp_path)
+    n = len(r["cortes"])
+    pares = [(x["i"], x["j"]) for x in r["lista"]]
+    assert pares == [(i, j) for i in range(n) for j in range(i + 3, n)]
+    assert (0, 3) in pares and (0, 2) not in pares
+
+
+def test_la_medida_es_total_hasta_12_cortes_y_anual_desde_13(mr, tmp_path):
+    _, r = _rangos(mr, tmp_path)
+    por_par = {(x["i"], x["j"]): x for x in r["lista"]}
+    assert por_par[(0, 12)]["medida"] == "total"
+    assert por_par[(0, 13)]["medida"] == "anual" and por_par[(1, 14)]["medida"] == "anual"
+    assert por_par[(2, 14)]["medida"] == "total"
+    assert {x["medida"] for x in r["lista"] if x["j"] - x["i"] <= 12} == {"total"}
+    assert {x["medida"] for x in r["lista"] if x["j"] - x["i"] > 12} == {"anual"}
+
+
+def test_el_fondo_que_nace_el_dia_de_compra_entra_y_el_que_nace_al_dia_siguiente_va_en_null(mr, tmp_path):
+    _, r = _rangos(mr, tmp_path)
+    nace_nue = r["cortes"].index("2024-01-02")
+    assert r["cortes"][nace_nue - 1] == "2023-12-29"
+    antes = [x for x in r["lista"] if x["i"] < nace_nue]
+    desde = [x for x in r["lista"] if x["i"] >= nace_nue]
+    assert antes and desde
+    for x in antes:
+        assert x["series"]["NUE_reinvirtiendo"] is None and x["series"]["NUE_cobrando"] is None
+        assert x["series"]["ACD"] is not None
+    for x in desde:
+        assert x["series"]["NUE_reinvirtiendo"] is not None and x["series"]["NUE_cobrando"] is not None
+    assert all(x["series"]["FON_cobrando"] is not None for x in r["lista"])
+
+
+def test_el_rendimiento_sigue_a_la_medida_y_lo_demas_sale_del_motor(mr, tmp_path):
+    """Cada cifra de cada rango contra el motor corrido con `end_date` en su fin, una vez por rango."""
+    d, r = _rangos(mr, tmp_path)
+    buenas = {tk: mr.leer(tmp_path / "b", tk) for tk in ("ACC", "ACD", "FON", "NUE", "MKT")}
+    n = 0
+    for x in r["lista"]:
+        compra, fin = pd.Timestamp(r["cortes"][x["i"]]), pd.Timestamp(r["cortes"][x["j"]])
+        for clave, v in x["series"].items():
+            if v is None:
+                continue
+            tk = clave.split("_")[0]
+            m = mr.metricas(mr.correr(tk, buenas[tk], compra, fin, not clave.endswith("_cobrando"), 10_000.0), 10_000.0)
+            rend = m["rendimiento_anual"] if x["medida"] == "anual" else m["valor_final"] / 10_000.0 - 1
+            campos = r["campos"] + (r["campos_cobrando"] if clave.endswith("_cobrando") else [])
+            esperado = dict(m, rendimiento=rend)
+            assert len(v) == len(campos), clave
+            for c, valor in zip(campos, v):
+                assert valor == pytest.approx(esperado[c], abs=0.5e-2 if c in {"valor_final", "sigue_invertido",
+                                                                              "efectivo_cobrado"} else 0.5e-6), (clave, c)
+            n += 1
+    assert n > 300
+
+
+def test_cada_parada_de_anio_calendario_es_un_rango(mr, tmp_path):
+    d, r = _rangos(mr, tmp_path)
+    por_fechas = {(r["cortes"][x["i"]], r["cortes"][x["j"]]): x for x in r["lista"]}
+    vistas = 0
+    for p in d["mapa_b"]["paradas"]:
+        if p["medida"] != "total":
+            continue
+        x = por_fechas[(p["compra"], p["fin"])]
+        assert x["medida"] == p["medida"] and set(x["series"]) == set(p["series"])
+        for clave, s in p["series"].items():
+            if s is None:
+                assert x["series"][clave] is None
+                continue
+            campos = r["campos"] + (r["campos_cobrando"] if clave.endswith("_cobrando") else [])
+            for c, valor in zip(campos, x["series"][clave]):
+                assert valor == pytest.approx(s[c], abs=0.5e-2 if c in {"valor_final", "sigue_invertido",
+                                                                         "efectivo_cobrado"} else 0.5e-6), (p["id"], clave, c)
+        vistas += 1
+    assert vistas == 4
+
+
+def test_la_forma_del_bloque_es_la_documentada_y_estable(mr, tmp_path):
+    _, r = _rangos(mr, tmp_path)
+    assert list(r) == ["meses_min", "meses_total", "cortes", "campos", "campos_cobrando", "lista"]
+    assert (r["meses_min"], r["meses_total"]) == (3, 12)
+    assert r["campos"] == ["rendimiento", "rendimiento_anual", "se_mueve", "peor_caida", "valor_final"]
+    assert r["campos_cobrando"] == ["sigue_invertido", "efectivo_cobrado"]
+    for x in r["lista"]:
+        assert list(x) == ["i", "j", "medida", "series"]
+        assert list(x["series"]) == ["ACC", "FON_reinvirtiendo", "FON_cobrando", "ACD", "NUE_reinvirtiendo",
+                                     "NUE_cobrando", "MKT"]
+        for clave, v in x["series"].items():
+            if v is not None:
+                assert len(v) == (7 if clave.endswith("_cobrando") else 5)
+                assert all(isinstance(z, float) and math.isfinite(z) for z in v)
+                assert v[4] == round(v[4], 2) and all(z == round(z, 6) for z in v[:4])
+    otra = _rangos(mr, tmp_path)[1]
+    assert json.dumps(otra) == json.dumps(r)
+
+
+def test_el_recorte_de_la_corrida_da_lo_mismo_que_correr_el_motor_hasta_el_fin(mr):
+    """14 series reales del caché de la app. Los fines caen el día antes, el mismo día y el día después de
+    pagos del fondo; `valor_final` sale de `final_total_value` y no de la última fila de otra columna."""
+    parejas = [("NVDA", "NVDY"), ("TSLA", "TSLY"), ("MSTR", "MSTY"), ("COIN", "CONY")]
+    series = [(a, True) for a, _ in parejas] + [(f, d) for _, f in parejas for d in (True, False)] + [
+        (r, True) for r in ("SCHB", "SMH")]
+    assert len(series) == 14
+    buenas = {tk: mr.filas_buenas(tk, mr.leer(CACHE_REAL, tk), []) for tk in {t for t, _ in series}}
+    comparadas = 0
+    for compra in ("2023-12-29", "2024-02-22"):
+        compra = pd.Timestamp(compra)
+        for tk, drip in series:
+            h = buenas[tk]
+            if compra not in h.index:
+                continue
+            hasta_t = mr.correr(tk, h, compra, h.index[-1], drip, 10_000.0)
+            pagos = h.index[(h["Dividends"] > 0) & (h.index > compra)]
+            assert tk in {a for a, _ in parejas} | {"SCHB", "SMH"} or len(pagos) > 5
+            muestra = list(pagos[[0, len(pagos) // 2, -2]]) if len(pagos) > 3 else []
+            fines = {h.index[h.index.get_loc(p) + k] for p in muestra for k in (-1, 0, 1)}
+            fines |= {h.index[h.index.get_loc(compra) + 10], h.index[-1]}
+            for fin in sorted(f for f in fines if f >= h.index[h.index.get_loc(compra) + 3]):
+                recortada = mr.metricas(mr.recortar(hasta_t, fin), 10_000.0)
+                corrida = mr.correr(tk, h, compra, fin, drip, 10_000.0)
+                directa = mr.metricas(corrida, 10_000.0)
+                assert recortada["valor_final"] == pytest.approx(corrida.final_total_value, rel=1e-12)
+                assert recortada.keys() == directa.keys()
+                for k, v in directa.items():
+                    if isinstance(v, float):
+                        assert recortada[k] == pytest.approx(v, rel=1e-12, abs=1e-12), (tk, drip, str(fin.date()), k)
+                    else:
+                        assert recortada[k] == v, (tk, drip, str(fin.date()), k)
+                comparadas += 1
+    assert comparadas > 150
+
+
+def test_el_bloque_recortado_es_el_directo_en_los_datos_de_prueba(mr, tmp_path):
+    d, r = _rangos(mr, tmp_path)
+    buenas = {tk: mr.filas_buenas(tk, mr.leer(tmp_path / "b", tk), []) for tk in ("ACC", "ACD", "FON", "NUE", "MKT")}
+    cortes = [pd.Timestamp(c) for c in r["cortes"]]
+    directo = mr.rangos_b(buenas, buenas, UNIVERSO_P["parejas"], ["MKT"], cortes, "MKT", 10_000.0, directo=True)
+    assert json.dumps(directo) == json.dumps(r)
+
+
+def test_si_los_rangos_no_se_pueden_calcular_salen_en_null_con_aviso_y_las_paradas_quedan(mr, tmp_path, capsys,
+                                                                                    monkeypatch):
+    _paradas(mr, tmp_path)
+    _, sin, _ = _main_p(mr, tmp_path, capsys)
+
+    def malos(*a, **k):
+        raise mr.DatosMalos("ACC: falta el cierre del 2023-06-30, que usa un rango")
+
+    monkeypatch.setattr(mr, "rangos_b", malos)
+    cod, con, err = _main_p(mr, tmp_path, capsys, "--rangos")
+    assert cod == 0
+    d = json.loads(con)
+    assert d["mapa_b"]["rangos"] is None
+    assert len(d["calidad"]["avisos"]) == 1 and "ACC: falta el cierre del 2023-06-30" in d["calidad"]["avisos"][0]
+    assert d["mapa_b"]["paradas"] == json.loads(sin)["mapa_b"]["paradas"]
+
+
+def test_un_dia_que_falta_a_una_serie_en_un_fin_de_mes_deja_los_rangos_en_null_y_las_paradas_intactas(mr, tmp_path):
+    quita = lambda f: [x if x[0] != "2023-06-30" else (x[0], float("nan"), 0) for x in f]  # noqa: E731
+    d, _ = _paradas(mr, tmp_path, rangos=True, cambiar={"ACC": quita})
+    assert d["mapa_b"]["rangos"] is None
+    assert len(d["calidad"]["avisos"]) == 1 and "ACC" in d["calidad"]["avisos"][0] and "2023-06-30" in d["calidad"]["avisos"][0]
+    assert [p["id"] for p in d["mapa_b"]["paradas"]] == ["2023", "2024", "2025", "2026", "3-anios", "feb-2024"]
+
+
+def test_sin_parada_de_anio_calendario_no_hay_de_donde_arrancar_y_los_rangos_van_en_null(mr, tmp_path):
+    a, b = _escenario(tmp_path)
+    d = mr.calcular(a, b, **UNIVERSO, rangos=True)
+    assert d["mapa_b"]["rangos"] is None and "año calendario" in d["calidad"]["avisos"][0]
+
+
+def test_una_parada_que_no_cuadra_con_su_rango_hace_fallar_los_rangos(mr, tmp_path):
+    d, r = _rangos(mr, tmp_path)
+    paradas = d["mapa_b"]["paradas"]
+    mr.cuadran_con_paradas(r, paradas)
+    por_par = {(x["i"], x["j"]): x for x in r["lista"]}
+    p = paradas[0]
+    x = por_par[(r["cortes"].index(p["compra"]), r["cortes"].index(p["fin"]))]
+    x["series"]["ACC"][4] += 1.0
+    with pytest.raises(mr.DatosMalos, match="difieren en ACC.valor_final"):
+        mr.cuadran_con_paradas(r, paradas)
+    x["series"]["ACC"][4] -= 1.0
+    r["cortes"][r["cortes"].index(p["fin"])] = "2023-12-28"
+    with pytest.raises(mr.DatosMalos, match="no cae en los cortes"):
+        mr.cuadran_con_paradas(r, paradas)
+
+
+@pytest.mark.parametrize("malo", [float("nan"), float("inf"), -float("inf")])
+def test_un_rango_con_una_cifra_no_finita_no_sale(mr, malo):
+    m = {"rendimiento_anual": 0.1, "se_mueve": 0.2, "peor_caida": -0.1, "valor_final": 11_000.0, "sigue_invertido": 1.0,
+         "efectivo_cobrado": 2.0}
+    assert mr.valores_rango(m, "total", 10_000.0, True) == [0.1, 0.1, 0.2, -0.1, 11_000.0, 1.0, 2.0]
+    for campo in m:
+        with pytest.raises(mr.DatosMalos, match="no es un número finito"):
+            mr.valores_rango({**m, campo: malo}, "anual", 10_000.0, True)
+
+
+def test_la_salida_con_rangos_no_trae_ningun_valor_no_finito(mr, tmp_path, capsys):
+    _paradas(mr, tmp_path)
+    cod, out, _ = _main_p(mr, tmp_path, capsys, "--rangos")
+    assert cod == 0
+
+    def no(c):
+        raise AssertionError(f"valor no finito en la salida: {c}")
+
+    assert json.loads(out, parse_constant=no)["mapa_b"]["rangos"]["lista"]
+
+
+def test_la_bandera_de_rangos_en_el_cli_de_verdad(tmp_path):
+    """Sin los cuatro años de datos de la nota, el CLI de punta a punta deja los rangos en null con su aviso."""
+    a, b = _universo_por_defecto(tmp_path)
+    r = _correr_cli("--historia-a", a, "--historia-b", b, "--rangos", cwd=tmp_path)
+    assert r.returncode == 0, r.stderr[-2000:]
+    d = json.loads(r.stdout)
+    assert d["mapa_b"]["rangos"] is None and "año calendario" in d["calidad"]["avisos"][0]
+    assert [p["id"] for p in d["mapa_b"]["paradas"]] == ["feb-2024"]
