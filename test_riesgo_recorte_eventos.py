@@ -136,7 +136,7 @@ def test_sin_precio_ese_dia_valen_los_limites_de_la_serie():
     salida = metricas._winsorize_returns(r, solo=marca, hasta=precio)
     assert salida.iloc[50] == pytest.approx(hi, abs=1e-12)
     assert salida.iloc[60] == pytest.approx(lo, abs=1e-12)
-    corto = metricas._winsorize_returns(r, solo=marca, hasta=pd.Series([-0.99], index=[60]))
+    corto = metricas._winsorize_returns(r, solo=marca, hasta=pd.Series([5.0, -0.99], index=[40, 60]))
     assert corto.iloc[50] == pytest.approx(hi, abs=1e-12)
     assert corto.iloc[60] == -0.95
 
