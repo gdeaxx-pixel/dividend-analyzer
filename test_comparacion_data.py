@@ -804,3 +804,62 @@ class TestQ5IdxDesde:
         assert ret_limpio != pytest.approx(ret_viejo, abs=1e-6), (
             f"{tk} t0={t0}: la corrida limpia da lo mismo que la fórmula vieja "
             "({ret_limpio:.6f}) — sin receivable pre-t0 este caso no prueba nada")
+
+
+class TestCosechaDesdeElInicioDeLaVentana:
+    """La tercera línea de «Sin DRIP» con la ventana recortada sale de una corrida limpia
+    desde ese mes (`idxCosechaDesde`), en los tres modos. Los números se comprueban a mano
+    en `test_cosecha_ventana_recortada.py`; aquí, sobre el universo real congelado, que
+    esté donde el componente la va a pedir y que la línea y la nota cuenten lo mismo."""
+
+    def test_hay_corrida_para_todo_inicio_que_el_componente_puede_pedir(self, datos):
+        incep, last = datos["incep"], int(datos["last"])
+        comprobados, faltan = 0, []
+        for modo in TRG_MODOS:
+            for base in datos["idxCosecha"][modo]:
+                for comparador in incep:
+                    t0 = max(incep[base], incep[comparador])
+                    if t0 <= incep[base]:
+                        continue
+                    comprobados += 1
+                    serie = datos["idxCosechaDesde"][modo].get(base, {}).get(str(t0))
+                    usd = datos["cosechaUSDDesde"][modo].get(base, {}).get(str(t0))
+                    if serie is None or usd is None:
+                        faltan.append((modo, base, t0))
+                        continue
+                    assert serie[str(t0)] == pytest.approx(_INDICE_CAPITAL, abs=1e-6), (
+                        f"{modo} {base} t0={t0}: la compra nueva no arranca en lo invertido")
+                    assert set(serie) == {str(m) for m in range(t0, last + 1)}, (
+                        f"{modo} {base} t0={t0}: la serie no cubre la ventana mes a mes")
+        assert not faltan, f"sin corrida limpia, la línea desaparece en: {sorted(set(faltan))}"
+        assert comprobados > 0, "ningún fondo con cosecha tiene un inicio posterior al suyo"
+
+    @pytest.mark.parametrize("modo", ["bruto", "plano"])
+    def test_la_linea_y_la_nota_salen_de_la_misma_compra(self, datos, modo):
+        """Dos vistas del mismo número: la línea al final de la ventana es lo que valen las
+        acciones de una compra de 100 en t0 más lo que la nota dice que vale el destino.
+        En bruto y plano no hay cuenta por cobrar que sumar."""
+        last, comprobados = str(datos["last"]), 0
+        for tk, por_t0 in datos["idxCosechaDesde"][modo].items():
+            precio = datos["precioSin"][tk]
+            for t0, serie in por_t0.items():
+                acciones = _INDICE_CAPITAL * precio[last] / precio[t0]
+                destino = datos["cosechaUSDDesde"][modo][tk][t0]["destino"]
+                assert serie[last] == pytest.approx(acciones + destino, abs=0.02), (
+                    f"{modo} {tk} t0={t0}: línea {serie[last]} contra acciones "
+                    f"{acciones:.2f} + destino {destino}")
+                comprobados += 1
+        assert comprobados > 0
+
+    def test_los_dolares_de_la_ventana_no_son_los_de_la_incepcion(self, datos):
+        """Control: si la nota de una ventana recortada repitiera los importes de la
+        incepción, los guards de arriba seguirían verdes sin que nadie hubiera corrido nada
+        desde t0."""
+        iguales, vistos = [], 0
+        for modo in TRG_MODOS:
+            for tk, por_t0 in datos["cosechaUSDDesde"][modo].items():
+                for t0, usd in por_t0.items():
+                    vistos += 1
+                    if usd == datos["cosechaUSD"][modo][tk]:
+                        iguales.append((modo, tk, t0))
+        assert vistos > 0 and not iguales, iguales

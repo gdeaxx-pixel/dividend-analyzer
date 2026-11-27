@@ -1629,6 +1629,16 @@ def _serie_cosecha(r_sin, tri_destino: pd.Series) -> pd.Series | None:
     return r_sin.daily["portfolio_value"] + unidades * tri + r_sin.daily["roc_receivable"]
 
 
+def _cosecha_usd(r_sin, serie_cosecha: pd.Series) -> dict:
+    """Los dos importes de la nota «El efectivo puesto a trabajar», por cada
+    `_INDICE_CAPITAL` invertido al arrancar `r_sin`: lo cobrado y dejado quieto, y lo que
+    vale hoy eso mismo puesto en el destino. Salen de la MISMA corrida que la línea."""
+    cash = float(r_sin.daily["cash_accum"].iloc[-1])
+    destino = float(serie_cosecha.iloc[-1] - r_sin.daily["portfolio_value"].iloc[-1]
+                    - r_sin.daily["roc_receivable"].iloc[-1])
+    return {"cash": round(cash, 2), "destino": round(destino, 2)}
+
+
 def comparacion_data() -> dict | None:
     """JSON para `ui/componentes/comparacion.html` (Total Return Graph · Simulación).
 
@@ -1684,6 +1694,11 @@ def comparacion_data() -> dict | None:
     convertido en unidades de destino en vez de acumulado sin invertir. Se omite (la clave
     ni aparece) para el propio `CMP_COSECHA_DESTINO`, para tickers sin dividendo
     (`sin_dividendos`), y si el destino no cubre la ventana completa del ticker.
+
+    Cuando la ventana del componente arranca después de la incepción del fondo, esa serie
+    no vale rebasada: lleva dentro el destino comprado antes. `idxCosechaDesde[modo][tk][t0]`
+    y `cosechaUSDDesde` son la misma cosecha sobre una corrida limpia desde `t0`, en los
+    tres modos y para los mismos `t0` que `idxDesde`.
     """
     historias: dict[str, price_cache.HistoryResult] = {}
     for tk in TRG_UNIVERSO:
@@ -1796,12 +1811,7 @@ def comparacion_data() -> dict | None:
                     valores_cosecha = _mensualizar(serie_cosecha)
                     idx_cosecha[modo][tk] = valores_cosecha
                     _actualizar_last(valores_cosecha)
-                    _cash_final = float(r_sin.daily["cash_accum"].iloc[-1])
-                    _destino_final = float(
-                        serie_cosecha.iloc[-1] - r_sin.daily["portfolio_value"].iloc[-1]
-                        - r_sin.daily["roc_receivable"].iloc[-1])
-                    cosecha_usd[modo][tk] = {
-                        "cash": round(_cash_final, 2), "destino": round(_destino_final, 2)}
+                    cosecha_usd[modo][tk] = _cosecha_usd(r_sin, serie_cosecha)
 
     # Q5: «Con DRIP» en modo roc no se puede rebasar con una fórmula. `total_value` incluye
     # `roc_receivable` (backtest.py:443), y con DRIP ese reembolso COMPRA ACCIONES cuando se
@@ -1840,6 +1850,37 @@ def comparacion_data() -> dict | None:
                                       roc_pct_by_year=pol.roc_pct_by_year)
             idx_desde.setdefault(tk, {})[str(t0)] = _mensualizar_desde(
                 r.daily["total_value"], origen)
+
+    # La línea de cosecha tampoco se rebasa con una fórmula, y en ningún modo. Restar
+    # `cosecha[t0]` deja dentro las unidades de destino compradas ANTES de t0: lo que esas
+    # unidades suben o bajan después se le apunta a quien compra en t0, que nunca las tuvo
+    # (y en «roc», también el reembolso de retenciones anteriores, que compra destino al
+    # cobrarse). Como en Q5, lo exacto es correr el motor desde t0 con la cuenta limpia y
+    # cosechar esa corrida; aquí en los tres modos, porque el arrastre es de unidades, no
+    # solo de la cuenta por cobrar. Mismos t0 que `idx_desde` y misma fecha real de arranque.
+    idx_cosecha_desde: dict = {modo: {} for modo in TRG_MODOS}
+    cosecha_usd_desde: dict = {modo: {} for modo in TRG_MODOS}
+    for tk, hr in historias.items():
+        modos_tk = [modo for modo in TRG_MODOS if tk in idx_cosecha[modo]]
+        if not modos_tk:
+            continue
+        history = hr.history.sort_index()
+        fecha_de_mes = _fecha_por_mes(history["Close"], origen)
+        for t0 in t0_candidatos:
+            if t0 <= incep[tk] or str(t0) not in fecha_de_mes:
+                continue          # desde su propia incepción la serie de siempre ya es exacta
+            for modo in modos_tk:
+                pol = _politica_fiscal(tk, modo, roc19a, roc_ici)
+                r = backtest.run_backtest(tk, start_date=fecha_de_mes[str(t0)],
+                                          initial_capital=_INDICE_CAPITAL, drip=False,
+                                          nra_rate=pol.rate, history=history,
+                                          roc_pct_by_year=pol.roc_pct_by_year)
+                serie = _serie_cosecha(r, tri_por_modo[modo])
+                if serie is None:
+                    continue
+                idx_cosecha_desde[modo].setdefault(tk, {})[str(t0)] = _mensualizar_desde(
+                    serie, origen)
+                cosecha_usd_desde[modo].setdefault(tk, {})[str(t0)] = _cosecha_usd(r, serie)
 
     fuente = {tk: hr.source for tk, hr in historias.items()}
     degradado = sorted(tk for tk, s in fuente.items() if s != "cache")
@@ -1891,6 +1932,8 @@ def comparacion_data() -> dict | None:
         "sin_dividendos": sin_dividendos,
         "idxCosecha": idx_cosecha,
         "cosechaUSD": cosecha_usd,
+        "idxCosechaDesde": idx_cosecha_desde,
+        "cosechaUSDDesde": cosecha_usd_desde,
         "cosechaDestino": CMP_COSECHA_DESTINO,
     }
 
