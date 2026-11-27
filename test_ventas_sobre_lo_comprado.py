@@ -183,7 +183,7 @@ def test_el_ajuste_de_una_migracion_no_es_una_salida(monkeypatch):
                               dict(Date="2024-02-01", Action="Journaled Shares", Quantity=-10),
                               dict(Date="2024-02-01", Action="Internal Transfer", Quantity=10)],
                 _mercado([100.0] * 270))
-    assert s["shares"] == pytest.approx(10.0)
+    assert s["shares_owned"] == pytest.approx(10.0)
     assert s["acciones_traspasadas_fuera"] == 0
 
 
